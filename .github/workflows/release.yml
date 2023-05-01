@@ -1,0 +1,55 @@
+name: Create Release Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      newVersion:
+        description: A version number for this release (e.g., "0.1.0")
+        required: true
+
+jobs:  
+  prepare-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out harlequin main branch
+        uses: actions/checkout@v3
+        with:
+          ref: main
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.2.2
+      - name: Create release branch
+        run: |
+          git checkout -b release/v${{ github.event.inputs.newVersion }}
+          git push --set-upstream origin release/v${{ github.event.inputs.newVersion }}
+      - name: Bump version
+        run: poetry version ${{ github.event.inputs.newVersion }} --no-interaction
+      - name: Ensure package can be built
+        run: poetry build --no-interaction
+      - name: Update CHANGELOG
+        uses: thomaseizinger/keep-a-changelog-new-release@v1
+        with:
+          version: ${{ github.event.inputs.newVersion }}
+      - name: Commit Changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Bumps version to ${{ github.event.inputs.newVersion }}
+      - name: Create pull request into main
+        uses: thomaseizinger/create-pull-request@1.2.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          head: release/v${{ github.event.inputs.newVersion }}
+          base: main
+          title: v${{ github.event.inputs.newVersion }}
+          body: >
+            This PR was automatically generated. It bumps the version number
+            in pyproject.toml and updates CHANGELOG.md. You may have to close
+            this PR and reopen it to get the required checks to run.
+

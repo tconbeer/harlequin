@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "harlequin"
+version = "0.0.1"
+description = "A Text User Interface for DuckDB"
+authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [
+    { include = "harlequin", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+textual = "^0.22.3"
+click = "^8.1.3"
+duckdb = "^0.7.1"
+
+[tool.poetry.group.dev.dependencies]
+textual = {version="*", extras=["dev"]}
+black = "^23.3.0"
+ruff = "^0.0.264"
+mypy = "^1.2.0"
+pytest = "^7.3.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+harlequin = "harlequin.cli:harlequin"

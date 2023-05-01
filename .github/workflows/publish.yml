@@ -1,0 +1,70 @@
+name: Build and Publish Package
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  publish-package:
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out harlequin main branch
+        uses: actions/checkout@v3
+        with:
+          ref: main
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.2.2
+      - name: Configure poetry
+        run: poetry config --no-interaction pypi-token.pypi ${{ secrets.HARLEQUIN_PYPI_TOKEN }}
+      - name: Get harlequin Version
+        id: harlequin_version
+        run: echo "harlequin_version=$(poetry version --short)" >> $GITHUB_OUTPUT
+      - name: Build package
+        run: poetry build --no-interaction
+      - name: Publish package to PyPI
+        run: poetry publish --no-interaction
+      - name: Create a Github Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.harlequin_version.outputs.harlequin_version }}
+          target_commitish: main
+          token: ${{ secrets.HARLEQUIN_RELEASE_TOKEN }}
+          body_path: CHANGELOG.md
+          files: |
+            LICENSE
+            dist/*harlequin*.whl
+            dist/*harlequin*.tar.gz
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:v${{ steps.harlequin_version.outputs.harlequin_version }}
