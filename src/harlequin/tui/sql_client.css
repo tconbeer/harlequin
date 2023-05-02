@@ -4,6 +4,9 @@ Screen {
     grid-columns: 1fr 4fr;
     grid-gutter: 1 2;
 }
+Input {
+    height: 100%;
+}
 #sidebar {
     row-span: 2;
 }

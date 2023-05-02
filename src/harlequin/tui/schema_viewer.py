@@ -5,8 +5,8 @@ from textual.app import ComposeResult
 from typing import Any
 from duckdb import DuckDBPyConnection
 
-class SchemaViewer(Tree):
 
+class SchemaViewer(Tree):
     def __init__(
         self,
         label: TextType,
@@ -15,7 +15,7 @@ class SchemaViewer(Tree):
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
-        disabled: bool = False
+        disabled: bool = False,
     ) -> None:
         self.connection = connection
         super().__init__(
@@ -25,7 +25,7 @@ class SchemaViewer(Tree):
     def on_mount(self) -> None:
         self._update_tree()
         self.root.expand()
-            
+
     def _update_tree(self) -> None:
         rows = self.connection.execute(
             "select table_name, table_schema from information_schema.tables"

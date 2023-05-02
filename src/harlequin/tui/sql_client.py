@@ -1,10 +1,9 @@
 from typing import Type
 from textual.app import App, CSSPathType, ComposeResult
 from textual.driver import Driver
-from textual.widgets import Header, Footer, Static
-from textual.containers import Container, Vertical
+from textual.widgets import Header, Footer
 
-from harlequin.tui.schema_viewer import SchemaViewer
+from harlequin.tui import SchemaViewer, ResultsViewer, CodeEditor
 from duckdb import DuckDBPyConnection
 
 
@@ -12,6 +11,7 @@ class SqlClient(App):
     """
     A Textual App for a SQL client for DuckDB.
     """
+
     CSS_PATH = "sql_client.css"
 
     def __init__(
@@ -28,6 +28,21 @@ class SqlClient(App):
         """Create child widgets for the app."""
         yield Header()
         yield SchemaViewer("Data", connection=self.connection, id="sidebar")
-        yield Static("Code")
-        yield Static("Data")
+        yield CodeEditor(placeholder="Code")
+        yield ResultsViewer()
         yield Footer()
+
+    def on_input_submitted(self, message: CodeEditor.Submitted) -> None:
+        table = self.query_one(ResultsViewer)
+        table.clear(columns=True)
+        data = self.connection.sql(message.value)
+        table.add_columns(*data.columns)  # type: ignore
+        table.add_rows(data.fetchall())
+
+
+if __name__ == "__main__":
+    import duckdb
+
+    conn = duckdb.connect("dev.db")
+    app = SqlClient(conn)
+    app.run()

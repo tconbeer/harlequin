@@ -1,6 +1,6 @@
 from pathlib import Path
 import click
-from harlequin.tui.sql_client import SqlClient
+from harlequin import SqlClient
 import duckdb
 
 
