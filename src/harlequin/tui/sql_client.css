@@ -1,12 +1,50 @@
+/* VARIABLES */
+$border-color-nofocus: $primary;
+$border-title-color-nofocus: $primary-lighten-3;
+$border-color-focus: $accent;
+$border-title-color-focus: $accent;
 Screen {
     layout: grid;
     grid-size: 2 2;
     grid-columns: 1fr 4fr;
-    grid-gutter: 1 2;
 }
-Input {
+/* ALL WIDGETS */
+SchemaViewer, CodeEditor, ResultsViewer {
     height: 100%;
+    border: round $border-color-nofocus;
+    border-title-color: $border-title-color-nofocus;
 }
-#sidebar {
+SchemaViewer:focus, CodeEditor:focus, ResultsViewer:focus {
+    height: 100%;
+    border: round $border-color-focus;
+    border-title-color: $border-title-color-focus;
+}
+
+/* SCHEMA VIEWER */
+SchemaViewer {
+    padding: 0 1;
     row-span: 2;
+}
+SchemaViewer .tree--guides {
+    color: $primary;
+}
+SchemaViewer .tree--guides-hover {
+    color: $accent;
+}
+SchemaViewer .tree--guides-selected {
+    color: $secondary;
+}
+
+/* RESULTS VIEWER */
+ResultsViewer .datatable--cursor .datatable--header-cursor {
+    background: $secondary;
+}
+ResultsViewer .datatable--hover {
+    background: $boost;
+}
+ResultsViewer .datatable--header {
+    background: $boost;
+}
+ResultsViewer .datatable--header-hover {
+    background: $primary-background;
 }

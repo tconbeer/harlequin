@@ -2,4 +2,6 @@ from textual.widgets import DataTable
 
 
 class ResultsViewer(DataTable):
-    pass
+
+    def on_mount(self) -> None:
+        self.border_title = "Query Results"
