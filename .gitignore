@@ -1,3 +1,6 @@
+dev.db
+dev.db.wal
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
