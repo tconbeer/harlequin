@@ -1,0 +1,9 @@
+Screen {
+    layout: grid;
+    grid-size: 2 2;
+    grid-columns: 1fr 4fr;
+    grid-gutter: 1 2;
+}
+#sidebar {
+    row-span: 2;
+}

@@ -1,6 +1,8 @@
 from pathlib import Path
 import click
-import subprocess
+from harlequin.tui.sql_client import SqlClient
+import duckdb
+
 
 @click.command()
 @click.version_option(package_name="harlequin")
@@ -11,4 +13,6 @@ import subprocess
     type=click.Path(path_type=Path),
 )
 def harlequin(db_path: Path) -> None:
-    subprocess.run(["duckdb", str(db_path)])
+    conn = duckdb.connect(str(db_path))
+    tui = SqlClient(connection=conn)
+    tui.run()
