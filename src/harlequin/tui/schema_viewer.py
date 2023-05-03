@@ -63,6 +63,7 @@ class SchemaViewer(Tree):
         self.root.expand()
 
     def update_tree(self, data: SCHEMAS) -> None:
+        self.clear()
         if data:
             for schema in data:
                 schema_node = self.root.add(schema[0])

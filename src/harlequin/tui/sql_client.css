@@ -3,7 +3,8 @@ $border-color-nofocus: $primary;
 $border-title-color-nofocus: $primary-lighten-3;
 $border-color-focus: $accent;
 $border-title-color-focus: $accent;
-Screen {
+/* Main Screen */
+#sql_client {
     layout: grid;
     grid-size: 2 2;
     grid-columns: 1fr 4fr;
@@ -47,4 +48,39 @@ ResultsViewer .datatable--header {
 }
 ResultsViewer .datatable--header-hover {
     background: $primary-background;
+}
+
+ErrorModal {
+    align: center middle;
+    padding: 0;
+}
+#outer {
+    border: round $error;
+    background: $surface;
+    margin: 5 10;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#error_header {
+    dock: top;
+    color: $text-muted;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+#inner {
+    border: round $panel-lighten-1;
+    padding: 1 1 1 2;
+}
+
+#error_info {
+    padding: 0 3 0 0;
+}
+
+#error_footer {
+    dock: bottom;
+    color: $text-muted;
+    margin: 1 0 0 0;
+    padding: 0 1;
 }

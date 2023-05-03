@@ -9,3 +9,4 @@ from harlequin.tui.schema_viewer import (
 from harlequin.tui.schema_viewer import (
     SchemaViewer as SchemaViewer,
 )
+from harlequin.tui.error_modal import ErrorModal as ErrorModal

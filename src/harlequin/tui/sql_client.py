@@ -8,8 +8,15 @@ from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Footer, Header
 from textual.worker import Worker, get_current_worker
-
-from harlequin.tui import SCHEMAS, TABLES, CodeEditor, ResultsViewer, SchemaViewer
+from textual.containers import Container
+from harlequin.tui import (
+    SCHEMAS,
+    TABLES,
+    CodeEditor,
+    ResultsViewer,
+    SchemaViewer,
+    ErrorModal,
+)
 
 
 class Harlequin(App):
@@ -35,11 +42,12 @@ class Harlequin(App):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
-        yield Header()
-        yield SchemaViewer(self.db_name, connection=self.connection)
-        yield CodeEditor(placeholder="Code")
-        yield ResultsViewer()
-        yield Footer()
+        with Container(id="sql_client"):
+            yield Header()
+            yield SchemaViewer(self.db_name, connection=self.connection)
+            yield CodeEditor(placeholder="Code")
+            yield ResultsViewer()
+            yield Footer()
 
     def on_mount(self) -> None:
         editor = self.query_one(CodeEditor)
@@ -49,8 +57,8 @@ class Harlequin(App):
     def on_input_submitted(self, message: CodeEditor.Submitted) -> None:
         try:
             self.relation = self.connection.sql(message.value)
-        except duckdb.Error:
-            self.relation = None
+        except duckdb.Error as e:
+            self.push_screen(ErrorModal(error=e))
 
     def set_data(self, data: list[tuple]) -> None:
         self.data = data
