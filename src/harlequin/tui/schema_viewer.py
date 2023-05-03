@@ -1,12 +1,47 @@
 from rich.text import TextType
 from textual.widgets import Tree
-from textual.widgets.tree import TreeNode
-from textual.app import ComposeResult
 from typing import Any
 from duckdb import DuckDBPyConnection
 
+COLS = list[tuple[str, str]]
+TABLES = list[tuple[str, str, COLS]]
+SCHEMAS = list[tuple[str, TABLES]]
+
 
 class SchemaViewer(Tree):
+    table_type_mapping = {
+        "BASE TABLE": "t",
+        "LOCAL TEMPORARY": "tmp",
+        "VIEW": "v",
+    }
+    column_type_mapping = {
+        "BIGINT": "##",
+        "BIT": "010",
+        "BOOLEAN": "t/f",
+        "BLOB": "0b",
+        "DATE": "d",
+        "DOUBLE": "#.#",
+        "DECIMAL": "#.#",
+        "HUGEINT": "###",
+        "INTEGER": "#",
+        "INTERVAL": "|-|",
+        "REAL": "#.#",
+        "SMALLINT": "#",
+        "TIME": "t",
+        "TIMESTAMP": "ts",
+        "TIMESTAMP WITH TIME ZONE": "ttz",
+        "TINYINT": "#",
+        "UBIGINT": "u##",
+        "UINTEGER": "u#",
+        "USMALLINT": "u#",
+        "UTINYINT": "u#",
+        "UUID": "uid",
+        "VARCHAR": "s",
+        "LIST": "[]",
+        "STRUCT": "{}",
+        "MAP": "{}",
+    }
+
     def __init__(
         self,
         label: TextType,
@@ -23,20 +58,22 @@ class SchemaViewer(Tree):
         )
 
     def on_mount(self) -> None:
-        self.border_title = 'Schema'
-        self._update_tree()
+        self.border_title = "Schema"
         self.root.expand()
 
-    def _update_tree(self) -> None:
-        rows = self.connection.execute(
-            "select table_name, table_schema from information_schema.tables"
-        ).fetchall()
-        if rows:
-            schemas = {schema for _, schema in rows}
-            schema_nodes: dict[str, TreeNode] = {}
-            for schema in schemas:
-                node = self.root.add(schema)
-                schema_nodes[schema] = node
-            for table, schema in rows:
-                parent = schema_nodes[schema]
-                node = parent.add_leaf(table)
+    def update_tree(self, data: SCHEMAS) -> None:
+        if data:
+            for schema in data:
+                schema_node = self.root.add(schema[0])
+                for table in schema[1]:
+                    short_table_type = self.table_type_mapping.get(table[1], "?")  # type: ignore
+                    table_node = schema_node.add(
+                        f"{table[0]} [#888888]{short_table_type}[/]"
+                    )
+                    for col in table[2]:
+                        short_col_type = self.column_type_mapping.get(
+                            col[1].split("(")[0], "?"
+                        )
+                        table_node.add_leaf(
+                            f"{col[0]} [#888888]{short_col_type}[/]"
+                        )
