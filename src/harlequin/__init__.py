@@ -1,1 +1,1 @@
-from harlequin.tui.sql_client import SqlClient as SqlClient
+from harlequin.tui.sql_client import Harlequin as Harlequin

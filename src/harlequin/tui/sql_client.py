@@ -7,7 +7,7 @@ from harlequin.tui import SchemaViewer, ResultsViewer, CodeEditor
 from duckdb import DuckDBPyConnection
 
 
-class SqlClient(App):
+class Harlequin(App):
     """
     A Textual App for a SQL client for DuckDB.
     """
@@ -27,10 +27,14 @@ class SqlClient(App):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
-        yield SchemaViewer("Data", connection=self.connection, id="sidebar")
+        yield SchemaViewer("Main Catalog", connection=self.connection)
         yield CodeEditor(placeholder="Code")
         yield ResultsViewer()
         yield Footer()
+
+    def on_mount(self) -> None:
+        editor = self.query_one(CodeEditor)
+        self.set_focus(editor)
 
     def on_input_submitted(self, message: CodeEditor.Submitted) -> None:
         table = self.query_one(ResultsViewer)
@@ -44,5 +48,5 @@ if __name__ == "__main__":
     import duckdb
 
     conn = duckdb.connect("dev.db")
-    app = SqlClient(conn)
+    app = Harlequin(conn)
     app.run()

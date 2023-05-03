@@ -2,6 +2,7 @@
 A Text User Interface for DuckDB.
 
 (A Harlequin is a [pretty duck](https://en.wikipedia.org/wiki/Harlequin_duck).)
+
 ![harlequin](harlequin.jpg)
 
 ## Installing Harlequin

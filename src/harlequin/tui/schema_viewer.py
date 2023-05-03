@@ -23,6 +23,7 @@ class SchemaViewer(Tree):
         )
 
     def on_mount(self) -> None:
+        self.border_title = 'Schema'
         self._update_tree()
         self.root.expand()
 

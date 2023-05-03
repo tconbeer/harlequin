@@ -1,6 +1,6 @@
 from pathlib import Path
 import click
-from harlequin import SqlClient
+from harlequin import Harlequin
 import duckdb
 
 
@@ -14,5 +14,5 @@ import duckdb
 )
 def harlequin(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
-    tui = SqlClient(connection=conn)
+    tui = Harlequin(connection=conn)
     tui.run()
