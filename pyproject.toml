@@ -9,6 +9,10 @@ packages = [
     { include = "harlequin", from = "src" },
 ]
 
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
 [tool.poetry.dependencies]
 python = "^3.8"
 textual = "^0.22.3"
@@ -21,10 +25,39 @@ black = "^23.3.0"
 ruff = "^0.0.264"
 mypy = "^1.2.0"
 pytest = "^7.3.1"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+pre-commit = "^3.3.1"
 
 [tool.poetry.scripts]
 harlequin = "harlequin.cli:harlequin"
+
+[tool.ruff]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+    "src/harlequin/**/*.py"
+]
+
+show_column_numbers = true
+
+# show error messages from unrelated files
+follow_imports = "normal"
+
+# be strict
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+disallow_incomplete_defs = true
+disallow_subclassing_any = true
+strict_optional = true
+
+warn_return_any = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+
+no_implicit_reexport = true
+strict_equality = true

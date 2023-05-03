@@ -1,5 +1,7 @@
 from pathlib import Path
+
 import click
+
 from harlequin import Harlequin
 
 

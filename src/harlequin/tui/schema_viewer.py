@@ -1,7 +1,8 @@
+from typing import Any
+
+from duckdb import DuckDBPyConnection
 from rich.text import TextType
 from textual.widgets import Tree
-from typing import Any
-from duckdb import DuckDBPyConnection
 
 COLS = list[tuple[str, str]]
 TABLES = list[tuple[str, str, COLS]]
@@ -66,7 +67,7 @@ class SchemaViewer(Tree):
             for schema in data:
                 schema_node = self.root.add(schema[0])
                 for table in schema[1]:
-                    short_table_type = self.table_type_mapping.get(table[1], "?")  # type: ignore
+                    short_table_type = self.table_type_mapping.get(table[1], "?")
                     table_node = schema_node.add(
                         f"{table[0]} [#888888]{short_table_type}[/]"
                     )
@@ -74,6 +75,4 @@ class SchemaViewer(Tree):
                         short_col_type = self.column_type_mapping.get(
                             col[1].split("(")[0], "?"
                         )
-                        table_node.add_leaf(
-                            f"{col[0]} [#888888]{short_col_type}[/]"
-                        )
+                        table_node.add_leaf(f"{col[0]} [#888888]{short_col_type}[/]")

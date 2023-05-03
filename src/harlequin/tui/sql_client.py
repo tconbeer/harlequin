@@ -1,15 +1,16 @@
 from pathlib import Path
 from typing import Type
-from textual import work
-from textual.app import App, CSSPathType, ComposeResult
-from textual.driver import Driver
-from textual.widgets import Header, Footer
-from textual.worker import get_current_worker, Worker
-from textual.reactive import reactive
 
-from harlequin.tui import SchemaViewer, ResultsViewer, CodeEditor, SCHEMAS, TABLES
 import duckdb
-import time
+from textual import work
+from textual.app import App, ComposeResult, CSSPathType
+from textual.driver import Driver
+from textual.reactive import reactive
+from textual.widgets import Footer, Header
+from textual.worker import Worker, get_current_worker
+
+from harlequin.tui import SCHEMAS, TABLES, CodeEditor, ResultsViewer, SchemaViewer
+
 
 class Harlequin(App):
     """
@@ -59,7 +60,7 @@ class Harlequin(App):
         table.clear(columns=True)
         if relation is not None:
             table.add_columns(*relation.columns)
-            worker= self.fetch_relation_data(relation)
+            worker = self.fetch_relation_data(relation)
             await worker.wait()
             self.update_schema_data()
         else:
@@ -92,7 +93,7 @@ class Harlequin(App):
                 "from information_schema.tables "
                 "where table_schema = ?"
                 "order by 1",
-                [schema]
+                [schema],
             ).fetchall()
             tables_data: TABLES = []
             if tables:
