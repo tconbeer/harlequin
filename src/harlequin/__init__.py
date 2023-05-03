@@ -1,1 +1,1 @@
-from harlequin.tui.sql_client import Harlequin as Harlequin
+from harlequin.tui.app import Harlequin as Harlequin

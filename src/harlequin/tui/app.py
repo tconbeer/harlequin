@@ -9,7 +9,7 @@ from textual.reactive import reactive
 from textual.widgets import Footer, Header
 from textual.worker import Worker, get_current_worker
 from textual.containers import Container
-from harlequin.tui import (
+from harlequin.tui.components import (
     SCHEMAS,
     TABLES,
     CodeEditor,
@@ -24,7 +24,7 @@ class Harlequin(App):
     A Textual App for a SQL client for DuckDB.
     """
 
-    CSS_PATH = "sql_client.css"
+    CSS_PATH = "app.css"
 
     relation: reactive[duckdb.DuckDBPyRelation | None] = reactive(None)
     data: reactive[list[tuple]] = reactive(list)

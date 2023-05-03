@@ -50,6 +50,7 @@ ResultsViewer .datatable--header-hover {
     background: $primary-background;
 }
 
+/* ERROR MODAL */
 ErrorModal {
     align: center middle;
     padding: 0;
