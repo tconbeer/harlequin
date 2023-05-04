@@ -3,8 +3,12 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
--   Queries now run asynchronously
--   Errors from DuckDB are now handled and shown in a popup
+-   Queries now run asynchronously.
+-   Errors from DuckDB are now handled and shown in a pop-up.
+-   View columns and data types in the schema viewer sidebar.
+-   Queries can be formatted using `ctrl+` `.
+-   Queries can be saved using `ctrl+s` and opened (loaded) using `ctrl+o`.
+
 ## [0.0.2] - 2023-05-02
 
 -   View the schema of a DuckDB database in the sidebar.
@@ -12,7 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.1] - 2023-05-02
 
--   Use the DuckDB CLI
+-   Use the DuckDB CLI.
 
 [Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.2...HEAD
 

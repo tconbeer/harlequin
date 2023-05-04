@@ -6,7 +6,7 @@ from textual import work
 from textual.app import App, ComposeResult, CSSPathType
 from textual.driver import Driver
 from textual.reactive import reactive
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, Input
 from textual.worker import Worker, get_current_worker
 from textual.containers import Container
 from harlequin.tui.components import (
@@ -45,7 +45,7 @@ class Harlequin(App):
         with Container(id="sql_client"):
             yield Header()
             yield SchemaViewer(self.db_name, connection=self.connection)
-            yield CodeEditor(placeholder="Code")
+            yield CodeEditor(placeholder="select ...")
             yield ResultsViewer()
             yield Footer()
 
@@ -54,11 +54,29 @@ class Harlequin(App):
         self.set_focus(editor)
         self.update_schema_data()
 
-    def on_input_submitted(self, message: CodeEditor.Submitted) -> None:
-        try:
-            self.relation = self.connection.sql(message.value)
-        except duckdb.Error as e:
-            self.push_screen(ErrorModal(error=e))
+    def on_input_submitted(self, message: Input.Submitted) -> None:
+        if message.input.id == 'save_modal':
+            self.app.pop_screen()
+            try:
+                with open(message.input.value, 'w') as f:
+                    editor = self.query_one(CodeEditor)
+                    f.write(editor.value)
+            except OSError as e:
+                self.push_screen(ErrorModal(header="Harlequin encountered an error when attempting to save your file:", error=e))
+        elif message.input.id == 'load_modal':
+            self.app.pop_screen()
+            try:
+                with open(message.input.value, 'r') as f:
+                    editor = self.query_one(CodeEditor)
+                    editor.value = f.read()
+                    editor.action_end()
+            except OSError as e:
+                self.push_screen(ErrorModal(header="Harlequin encountered an error when attempting to load your file:", error=e))
+        else:
+            try:
+                self.relation = self.connection.sql(message.value)
+            except duckdb.Error as e:
+                self.push_screen(ErrorModal(header="DuckDB raised an error when compiling or running your query:", error=e))
 
     def set_data(self, data: list[tuple]) -> None:
         self.data = data

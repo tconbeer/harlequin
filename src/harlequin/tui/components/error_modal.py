@@ -8,14 +8,15 @@ from textual.containers import Vertical, VerticalScroll
 class ErrorModal(ModalScreen):
 
     def __init__(
-        self, error: Exception, name: str | None = None, id: str | None = None, classes: str | None = None
+        self, header: str, error: Exception, name: str | None = None, id: str | None = None, classes: str | None = None
     ) -> None:
+        self.header = header
         self.error = error
         super().__init__(name, id, classes)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="outer"):
-            yield Static("DuckDB raised an error when compiling or running your query:", id="error_header")
+            yield Static(self.header, id="error_header")
             with Vertical(id = "inner"):
                 with VerticalScroll():
                     yield Static(str(self.error), id="error_info")
