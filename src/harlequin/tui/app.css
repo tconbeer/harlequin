@@ -16,19 +16,24 @@ SchemaViewer, CodeEditor, ResultsViewer {
     border-title-color: $border-title-color-nofocus;
     background: $boost;
 }
-SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus {
+SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
-/* QUERY EDITOR */
-TextContainer {
+SchemaViewer, TextContainer, ResultsTable {
     scrollbar-background: $surface;
+    scrollbar-background-hover: $surface;
+    scrollbar-background-active: $surface;
     scrollbar-corner-color: $surface;
+    
     scrollbar-color: $panel-lighten-1;
     scrollbar-color-hover: $primary;
     scrollbar-color-active: $accent;
 }
+
+/* QUERY EDITOR */
+
 /* SCHEMA VIEWER */
 SchemaViewer {
     padding: 0 1;
@@ -45,9 +50,11 @@ SchemaViewer .tree--guides-selected {
 }
 
 /* RESULTS VIEWER */
-ResultsViewer {
-    height: 100%;
+
+ResultsViewer.non-responsive {
+    border: round $panel-lighten-1;
 }
+
 ResultsViewer .datatable--cursor .datatable--header-cursor {
     background: $secondary;
 }

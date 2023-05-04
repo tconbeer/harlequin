@@ -291,6 +291,8 @@ class TextArea(Widget, can_focus=False, can_focus_children=True):
 
     def on_click(self, event: events.Click) -> None:
         input = self.query_one(TextInput)
+        input.cursor_visible = True
+        input.blink_timer.reset()
         input.move_cursor(event.x - 1, event.y)
         input.focus()
 
