@@ -1,8 +1,8 @@
+from rich.highlighter import Highlighter
+from rich.segment import Segment
 from sqlfmt.api import Mode, format_string
 from textual.binding import Binding
 from textual.widgets import Input
-from rich.highlighter import Highlighter
-from rich.segment import Segment
 from textual.widgets._input import _InputRenderable
 
 from harlequin.tui.components.filename_modal import FilenameModal
