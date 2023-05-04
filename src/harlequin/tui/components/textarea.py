@@ -9,7 +9,8 @@ from textual.binding import Binding
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from harlequin.tui.components import ErrorModal, FilenameModal
+from harlequin.tui.components.error_modal import ErrorModal
+from harlequin.tui.components.filename_modal import FilenameModal
 
 
 class Cursor(NamedTuple):
@@ -19,8 +20,6 @@ class Cursor(NamedTuple):
 
 class TextArea(Widget, can_focus=True):
     BINDINGS = [
-        ("ctrl+enter", "submit", "Run Query"),
-        Binding("ctrl+j", "submit", "Run Query", show=False),
         ("ctrl+`", "format", "Format Query"),
         Binding("ctrl+@", "format", "Format Query", show=False),
         ("ctrl+s", "save", "Save Query"),
@@ -192,6 +191,10 @@ class TextArea(Widget, can_focus=True):
             return None
         else:
             return self.lines[self.cursor.lno][self.cursor.pos - 1]
+        
+    def reset_cursor(self) -> None:
+        self.cursor = Cursor(0, 0)
+        self.cursor_visible = True
 
     def action_format(self) -> None:
         code = "\n".join(self.lines)
@@ -200,7 +203,8 @@ class TextArea(Widget, can_focus=True):
         except SqlfmtError as e:
             self.app.push_screen(
                 ErrorModal(
-                    header="sqlfmt encounterd an error while formatting your file:",
+                    title="Formatting Error",
+                    header="There was an error while formatting your file:",
                     error=e,
                 )
             )

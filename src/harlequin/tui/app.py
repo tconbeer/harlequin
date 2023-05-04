@@ -46,7 +46,7 @@ class Harlequin(App):
         with Container(id="sql_client"):
             yield Header()
             yield SchemaViewer(self.db_name, connection=self.connection)
-            yield CodeEditor(placeholder="select ...")
+            yield CodeEditor()
             yield ResultsViewer()
             yield Footer()
 
@@ -55,16 +55,34 @@ class Harlequin(App):
         self.set_focus(editor)
         self.update_schema_data()
 
+    def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
+        query = "\n".join(message.lines)
+        try:
+            self.relation = self.connection.sql(query)
+        except duckdb.Error as e:
+            self.push_screen(
+                ErrorModal(
+                    title="DuckDB Error",
+                    header=(
+                        "DuckDB raised an error when compiling "
+                        "or running your query:"
+                    ),
+                    error=e,
+                )
+            )
+
     def on_input_submitted(self, message: Input.Submitted) -> None:
         if message.input.id == "save_modal":
             self.app.pop_screen()
             try:
                 with open(message.input.value, "w") as f:
                     editor = self.query_one(CodeEditor)
-                    f.write(editor.value)
+                    query = "\n".join([line.rstrip() for line in editor.lines])
+                    f.write(query)
             except OSError as e:
                 self.push_screen(
                     ErrorModal(
+                        title="Save File Error",
                         header=(
                             "Harlequin encountered an error when "
                             "attempting to save your file:"
@@ -76,12 +94,11 @@ class Harlequin(App):
             self.app.pop_screen()
             try:
                 with open(message.input.value, "r") as f:
-                    editor = self.query_one(CodeEditor)
-                    editor.value = f.read()
-                    editor.action_end()
+                    query = f.read()
             except OSError as e:
                 self.push_screen(
                     ErrorModal(
+                        title="Load File Error",
                         header=(
                             "Harlequin encountered an error when "
                             "attempting to load your file:"
@@ -89,19 +106,11 @@ class Harlequin(App):
                         error=e,
                     )
                 )
-        else:
-            try:
-                self.relation = self.connection.sql(message.value)
-            except duckdb.Error as e:
-                self.push_screen(
-                    ErrorModal(
-                        header=(
-                            "DuckDB raised an error when compiling "
-                            "or running your query:"
-                        ),
-                        error=e,
-                    )
-                )
+            else:
+                editor = self.query_one(CodeEditor)
+                editor.reset_cursor()
+                editor.lines = f.read().splitlines()
+            
 
     def set_data(self, data: list[tuple]) -> None:
         self.data = data

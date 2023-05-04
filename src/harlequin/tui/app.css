@@ -14,6 +14,7 @@ SchemaViewer, CodeEditor, ResultsViewer {
     height: 100%;
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
+    background: $boost;
 }
 SchemaViewer:focus, CodeEditor:focus, ResultsViewer:focus {
     height: 100%;
@@ -21,6 +22,10 @@ SchemaViewer:focus, CodeEditor:focus, ResultsViewer:focus {
     border-title-color: $border-title-color-focus;
 }
 
+/* QUERY EDITOR */
+CodeEditor {
+    padding: 0 1;
+}
 /* SCHEMA VIEWER */
 SchemaViewer {
     padding: 0 1;

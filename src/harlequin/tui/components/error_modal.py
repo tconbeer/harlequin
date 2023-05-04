@@ -7,12 +7,14 @@ from textual.widgets import Static
 class ErrorModal(ModalScreen):
     def __init__(
         self,
+        title: str,
         header: str,
         error: Exception,
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
     ) -> None:
+        self.title = title
         self.header = header
         self.error = error
         super().__init__(name, id, classes)
@@ -27,7 +29,7 @@ class ErrorModal(ModalScreen):
 
     def on_mount(self) -> None:
         container = self.query_one("#outer")
-        container.border_title = "DuckDB Error"
+        container.border_title = self.title
 
     def on_key(self) -> None:
         self.app.pop_screen()
