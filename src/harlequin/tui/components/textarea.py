@@ -1,5 +1,5 @@
 from typing import NamedTuple
-from textual import log
+
 from rich.console import RenderableType
 from rich.syntax import Syntax
 from sqlfmt.api import Mode, format_string
@@ -7,12 +7,13 @@ from sqlfmt.exception import SqlfmtError
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.reactive import reactive
-from textual.widgets import Static
-from textual.widget import Widget
 from textual.containers import ScrollableContainer
-from harlequin.tui.components.error_modal import ErrorModal
 from textual.message import Message
+from textual.reactive import reactive
+from textual.widget import Widget
+from textual.widgets import Static
+
+from harlequin.tui.components.error_modal import ErrorModal
 from harlequin.tui.components.filename_modal import FilenameModal
 
 
@@ -122,6 +123,10 @@ class TextInput(Static, can_focus=True):
             self.cursor = Cursor(self.cursor.lno, 0)
         elif event.key == "end":
             self.cursor = Cursor(self.cursor.lno, len(self.lines[self.cursor.lno]) - 1)
+        elif event.key == "ctrl+home":
+            self.cursor = Cursor(0, 0)
+        elif event.key == "ctrl+end":
+            self.cursor = Cursor(lno=len(self.lines) - 1, pos=len(self.lines[-1]) - 1)
         elif event.key == "enter":
             event.stop()
             old_line = self.lines[self.cursor.lno]
@@ -250,11 +255,7 @@ class TextInput(Static, can_focus=True):
             )
         else:
             self.lines = [f"{line} " for line in formatted.splitlines()]
-            max_y = len(self.lines) - 1
-            if self.cursor.lno > max_y:
-                self.cursor = Cursor(lno=max_y, pos=len(self.lines[-1]) - 1)
-            elif self.cursor.pos > (max_x := len(self.lines[self.cursor.lno]) - 1):
-                self.cursor = Cursor(lno=self.cursor.lno, pos=max_x)
+            self.move_cursor(self.cursor.pos, self.cursor.lno)
             self.update(self._content)
 
     def action_save(self) -> None:
@@ -263,8 +264,11 @@ class TextInput(Static, can_focus=True):
     def action_load(self) -> None:
         self.app.push_screen(FilenameModal(id="load_modal"))
 
-    def reset_cursor(self) -> None:
-        self.cursor = Cursor(0, 0)
+    def move_cursor(self, x: int, y: int) -> None:
+        max_y = len(self.lines) - 1
+        safe_y = min(max_y, y)
+        max_x = len(self.lines[safe_y]) - 1
+        self.cursor = Cursor(safe_y, min(max_x, x))
         self.update(self._content)
 
 
@@ -285,30 +289,35 @@ class TextArea(Widget, can_focus=False, can_focus_children=True):
     def on_mount(self) -> None:
         self.border_title = "Query Editor"
 
-    def on_text_input_cursor_moved(self, message: TextInput.CursorMoved) -> None:
-        message.stop()
+    def on_click(self, event: events.Click) -> None:
+        input = self.query_one(TextInput)
+        input.move_cursor(event.x - 1, event.y)
+        input.focus()
+
+    def on_text_input_cursor_moved(self, event: TextInput.CursorMoved) -> None:
+        event.stop()
         container = self.query_one(TextContainer)
         x_buffer = container.window_region.width // 4
         y_buffer = container.window_region.height // 4
-        if message.cursor_x < container.window_region.x + x_buffer:  # scroll left
-            container.scroll_to(message.cursor_x - x_buffer, container.window_region.y)
+        if event.cursor_x < container.window_region.x + x_buffer:  # scroll left
+            container.scroll_to(event.cursor_x - x_buffer, container.window_region.y)
         elif (
-            message.cursor_x
+            event.cursor_x
             >= container.window_region.x + container.window_region.width - x_buffer
         ):  # scroll right
             container.scroll_to(
-                message.cursor_x - container.window_region.width + x_buffer,
+                event.cursor_x - container.window_region.width + x_buffer,
                 container.window_region.y,
             )
-        if message.cursor_y < container.window_region.y + y_buffer:  # scroll up
-            container.scroll_to(container.window_region.x, message.cursor_y - y_buffer)
+        if event.cursor_y < container.window_region.y + y_buffer:  # scroll up
+            container.scroll_to(container.window_region.x, event.cursor_y - y_buffer)
         elif (
-            message.cursor_y
+            event.cursor_y
             >= container.window_region.y + container.window_region.height - y_buffer
         ):  # scroll down
             container.scroll_to(
                 container.window_region.x,
-                message.cursor_y - container.window_region.height + y_buffer,
+                event.cursor_y - container.window_region.height + y_buffer,
             )
 
 

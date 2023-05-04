@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   All-new text area for query editing, with syntax highlighting, scrolling, and more
 ## [0.0.3] - 2023-05-04
 
 -   Queries now run asynchronously.

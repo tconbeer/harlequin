@@ -4,7 +4,7 @@ from typing import Type
 import duckdb
 from textual import work
 from textual.app import App, ComposeResult, CSSPathType
-from textual.containers import Container, ScrollableContainer
+from textual.containers import Container
 from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Input
@@ -14,10 +14,10 @@ from harlequin.tui.components import (
     SCHEMAS,
     TABLES,
     CodeEditor,
-    TextInput,
     ErrorModal,
     ResultsViewer,
     SchemaViewer,
+    TextInput,
 )
 
 
@@ -107,7 +107,7 @@ class Harlequin(App):
                     )
                 )
             else:
-                editor.reset_cursor()
+                editor.move_cursor(0, 0)
                 editor.lines = [f"{line} " for line in query.splitlines()]
 
     def set_data(self, data: list[tuple]) -> None:

@@ -1,6 +1,6 @@
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.message import Message
+
 from harlequin.tui.components.textarea import TextArea, TextInput
 
 
