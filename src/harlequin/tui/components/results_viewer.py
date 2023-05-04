@@ -43,7 +43,7 @@ class ResultsViewer(ContentSwitcher):
         elif (total_rows and max_rows):
             self.border_title = f"Query Results (Showing {max_rows:,} of {total_rows:,} Records)."
         else:
-            self.border_title = "Query Results"
+            self.border_title = "Query Returned No Records"
         self.remove_class("non-responsive")
 
     def show_table(self) -> None:

@@ -30,8 +30,10 @@ class Harlequin(App):
     CSS_PATH = "app.css"
     MAX_RESULTS = 50_000
 
+    query_text: reactive[str] = reactive(str)
     relation: reactive[duckdb.DuckDBPyRelation | None] = reactive(None)
     data: reactive[list[tuple]] = reactive(list)
+    
 
     def __init__(
         self,
@@ -59,21 +61,7 @@ class Harlequin(App):
         self.update_schema_data()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
-        query = "\n".join(message.lines)
-        log(f"on_code_editor_submitted {query}")
-        try:
-            self.relation = self.connection.sql(query)
-        except duckdb.Error as e:
-            self.push_screen(
-                ErrorModal(
-                    title="DuckDB Error",
-                    header=(
-                        "DuckDB raised an error when compiling "
-                        "or running your query:"
-                    ),
-                    error=e,
-                )
-            )
+        self.query_text = "\n".join(message.lines)
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         self.app.pop_screen()
@@ -115,39 +103,61 @@ class Harlequin(App):
 
     def set_data(self, data: list[tuple]) -> None:
         log(f"set_data {len(data)}")
-        self.data = data
+        self.data = data    
 
-    def watch_relation(self, relation: duckdb.DuckDBPyRelation | None) -> None:
-        log(f"watch_relation {hash(relation)}")
+    def watch_query_text(self, query_text: str) -> None:
         pane = self.query_one(ResultsViewer)
         pane.show_loading()
         pane.set_not_responsive()
-        table = pane.get_table()
-        table.clear(columns=True)
-        if relation is not None:  # select query
+        try:
+            relation = self.connection.sql(query_text)
+        except duckdb.Error as e:
+            pane.show_table()
+            self.push_screen(
+                ErrorModal(
+                    title="DuckDB Error",
+                    header=(
+                        "DuckDB raised an error when compiling "
+                        "or running your query:"
+                    ),
+                    error=e,
+                )
+            )
+        else:
+            table = pane.get_table()
+            table.clear(columns=True)
+            if relation: # select query
+                self.relation = relation
+            else: # DDL/DML query
+                pane.set_responsive()
+                pane.show_table()
+                self.data = []
+                self.update_schema_data()
+
+
+    def watch_relation(self, relation: duckdb.DuckDBPyRelation | None) -> None:
+        """
+        Only runs for select statements, except when first mounted.
+        """
+        # invalidate results so watch_data runs even if the results are the same
+        self.data = []
+        if relation is not None:
+            table = self.query_one(ResultsViewer).get_table()
             table.add_columns(*relation.columns)
             self.fetch_relation_data(relation)
-        else:  # DDL/DML query or an error
-            self.data = []
-            pane.set_responsive()
-            pane.show_table()
-            self.update_schema_data()
 
     async def watch_data(self, data: list[tuple]) -> None:
-        pane = self.query_one(ResultsViewer)
-        pane.set_not_responsive(max_rows = self.MAX_RESULTS, total_rows=len(data))
-        table = pane.get_table()
         if data:
+            pane = self.query_one(ResultsViewer)
+            pane.set_not_responsive(max_rows = self.MAX_RESULTS, total_rows=len(data))
+            table = pane.get_table()
             for i, chunk in self.chunk(data[:self.MAX_RESULTS]):
                 worker = self.add_data_to_table(table, chunk)
                 await worker.wait()
                 pane.increment_progress_bar()
                 if i == 0:
                     pane.show_table()
-        else:
-            table.clear()
-            pane.show_table()
-        pane.set_responsive(max_rows = self.MAX_RESULTS, total_rows=len(data))
+            pane.set_responsive(max_rows = self.MAX_RESULTS, total_rows=len(data))
 
     @staticmethod
     def chunk(
