@@ -1,5 +1,6 @@
-dev.db
-dev.db.wal
+*.db
+*.db.wal
+*.sql
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
