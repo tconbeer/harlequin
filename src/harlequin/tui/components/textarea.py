@@ -1,15 +1,18 @@
 from typing import NamedTuple
-
+from textual import log
 from rich.console import RenderableType
 from rich.syntax import Syntax
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
 from textual import events
+from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
+from textual.widgets import Static
 from textual.widget import Widget
-
+from textual.containers import ScrollableContainer
 from harlequin.tui.components.error_modal import ErrorModal
+from textual.message import Message
 from harlequin.tui.components.filename_modal import FilenameModal
 
 
@@ -18,7 +21,7 @@ class Cursor(NamedTuple):
     pos: int
 
 
-class TextArea(Widget, can_focus=True):
+class TextInput(Static, can_focus=True):
     BINDINGS = [
         ("ctrl+`", "format", "Format Query"),
         Binding("ctrl+@", "format", "Format Query", show=False),
@@ -26,19 +29,30 @@ class TextArea(Widget, can_focus=True):
         ("ctrl+o", "load", "Open Query"),
     ]
 
+    DEFAULT_CSS = """
+    TextInput{
+        height: auto;
+        width: auto;
+        padding: 0 1;
+    }
+    """
+
     lines: reactive[list[str]] = reactive(lambda: list(" "))
     cursor: reactive[Cursor] = reactive(Cursor(0, 0))
     cursor_visible: reactive[bool] = reactive(True)
 
-    def render(self) -> RenderableType:
-        syntax = Syntax("\n".join(self.lines), "sql")
-        if self.cursor_visible:
-            syntax.stylize_range(
-                "reverse",
-                (self.cursor.lno + 1, self.cursor.pos),
-                (self.cursor.lno + 1, self.cursor.pos + 1),
-            )
-        return syntax
+    class CursorMoved(Message, bubble=True):
+        """Posted when the cursor moves
+
+        Attributes:
+            cursor_x: The x position of the cursor
+            cursor_y: The y position
+        """
+
+        def __init__(self, cursor_x: int, cursor_y: int) -> None:
+            super().__init__()
+            self.cursor_x = cursor_x
+            self.cursor_y = cursor_y
 
     def on_mount(self) -> None:
         self.blink_timer = self.set_interval(
@@ -46,15 +60,22 @@ class TextArea(Widget, can_focus=True):
             self._toggle_cursor,
             pause=not self.has_focus,
         )
-        self.blink_timer.resume()
-        self.border_title = "Query Editor"
 
-    def _toggle_cursor(self) -> None:
-        self.cursor_visible = not self.cursor_visible
+    def on_focus(self) -> None:
+        self.cursor_visible = True
+        self.blink_timer.reset()
+        self._scroll_to_cursor()
+        self.update(self._content)
+
+    def on_blur(self) -> None:
+        self.blink_timer.pause()
+        self.cursor_visible = False
+        self.update(self._content)
 
     def on_key(self, event: events.Key) -> None:
-        self.app.log(f"Cursor: {self.cursor}, visible={self.cursor_visible}")
         self.cursor_visible = True
+        self.blink_timer.reset()
+
         if event.key == "right":
             event.stop()
             max_x = len(self.lines[self.cursor.lno]) - 1
@@ -156,6 +177,29 @@ class TextArea(Widget, can_focus=True):
             assert event.character is not None
             self._insert_character_at_cursor(event.character)
 
+        self.update(self._content)
+
+    def watch_cursor(self) -> None:
+        self._scroll_to_cursor()
+
+    @property
+    def _content(self) -> RenderableType:
+        syntax = Syntax("\n".join(self.lines), "sql")
+        if self.cursor_visible:
+            syntax.stylize_range(
+                "reverse",
+                (self.cursor.lno + 1, self.cursor.pos),
+                (self.cursor.lno + 1, self.cursor.pos + 1),
+            )
+        return syntax
+
+    def _scroll_to_cursor(self) -> None:
+        self.post_message(self.CursorMoved(self.cursor.pos, self.cursor.lno))
+
+    def _toggle_cursor(self) -> None:
+        self.cursor_visible = not self.cursor_visible
+        self.update(self._content)
+
     def _insert_character_at_cursor(self, character: str) -> None:
         line = self.lines[self.cursor.lno]
         new_line = f"{line[:self.cursor.pos]}{character}{line[self.cursor.pos:]}"
@@ -191,10 +235,6 @@ class TextArea(Widget, can_focus=True):
             return None
         else:
             return self.lines[self.cursor.lno][self.cursor.pos - 1]
-        
-    def reset_cursor(self) -> None:
-        self.cursor = Cursor(0, 0)
-        self.cursor_visible = True
 
     def action_format(self) -> None:
         code = "\n".join(self.lines)
@@ -215,12 +255,61 @@ class TextArea(Widget, can_focus=True):
                 self.cursor = Cursor(lno=max_y, pos=len(self.lines[-1]) - 1)
             elif self.cursor.pos > (max_x := len(self.lines[self.cursor.lno]) - 1):
                 self.cursor = Cursor(lno=self.cursor.lno, pos=max_x)
+            self.update(self._content)
 
     def action_save(self) -> None:
         self.app.push_screen(FilenameModal(id="save_modal"))
 
     def action_load(self) -> None:
         self.app.push_screen(FilenameModal(id="load_modal"))
+
+    def reset_cursor(self) -> None:
+        self.cursor = Cursor(0, 0)
+        self.update(self._content)
+
+
+class TextContainer(
+    ScrollableContainer,
+    inherit_bindings=False,
+    can_focus=False,
+    can_focus_children=True,
+):
+    pass
+
+
+class TextArea(Widget, can_focus=False, can_focus_children=True):
+    def compose(self) -> ComposeResult:
+        with TextContainer():
+            yield TextInput()
+
+    def on_mount(self) -> None:
+        self.border_title = "Query Editor"
+
+    def on_text_input_cursor_moved(self, message: TextInput.CursorMoved) -> None:
+        message.stop()
+        container = self.query_one(TextContainer)
+        x_buffer = container.window_region.width // 4
+        y_buffer = container.window_region.height // 4
+        if message.cursor_x < container.window_region.x + x_buffer:  # scroll left
+            container.scroll_to(message.cursor_x - x_buffer, container.window_region.y)
+        elif (
+            message.cursor_x
+            >= container.window_region.x + container.window_region.width - x_buffer
+        ):  # scroll right
+            container.scroll_to(
+                message.cursor_x - container.window_region.width + x_buffer,
+                container.window_region.y,
+            )
+        if message.cursor_y < container.window_region.y + y_buffer:  # scroll up
+            container.scroll_to(container.window_region.x, message.cursor_y - y_buffer)
+        elif (
+            message.cursor_y
+            >= container.window_region.y + container.window_region.height - y_buffer
+        ):  # scroll down
+            container.scroll_to(
+                container.window_region.x,
+                message.cursor_y - container.window_region.height + y_buffer,
+            )
 
 
 if __name__ == "__main__":

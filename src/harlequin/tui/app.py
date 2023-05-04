@@ -4,7 +4,7 @@ from typing import Type
 import duckdb
 from textual import work
 from textual.app import App, ComposeResult, CSSPathType
-from textual.containers import Container
+from textual.containers import Container, ScrollableContainer
 from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Input
@@ -14,6 +14,7 @@ from harlequin.tui.components import (
     SCHEMAS,
     TABLES,
     CodeEditor,
+    TextInput,
     ErrorModal,
     ResultsViewer,
     SchemaViewer,
@@ -51,7 +52,7 @@ class Harlequin(App):
             yield Footer()
 
     def on_mount(self) -> None:
-        editor = self.query_one(CodeEditor)
+        editor = self.query_one(TextInput)
         self.set_focus(editor)
         self.update_schema_data()
 
@@ -72,11 +73,11 @@ class Harlequin(App):
             )
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
+        self.app.pop_screen()
+        editor = self.query_one(TextInput)
         if message.input.id == "save_modal":
-            self.app.pop_screen()
             try:
                 with open(message.input.value, "w") as f:
-                    editor = self.query_one(CodeEditor)
                     query = "\n".join([line.rstrip() for line in editor.lines])
                     f.write(query)
             except OSError as e:
@@ -91,7 +92,6 @@ class Harlequin(App):
                     )
                 )
         elif message.input.id == "load_modal":
-            self.app.pop_screen()
             try:
                 with open(message.input.value, "r") as f:
                     query = f.read()
@@ -107,10 +107,8 @@ class Harlequin(App):
                     )
                 )
             else:
-                editor = self.query_one(CodeEditor)
                 editor.reset_cursor()
-                editor.lines = f.read().splitlines()
-            
+                editor.lines = [f"{line} " for line in query.splitlines()]
 
     def set_data(self, data: list[tuple]) -> None:
         self.data = data

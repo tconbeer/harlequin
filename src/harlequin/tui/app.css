@@ -7,7 +7,7 @@ $border-title-color-focus: $accent;
 #sql_client {
     layout: grid;
     grid-size: 2 2;
-    grid-columns: 1fr 4fr;
+    grid-columns: 1fr 3fr;
 }
 /* ALL WIDGETS */
 SchemaViewer, CodeEditor, ResultsViewer {
@@ -16,15 +16,18 @@ SchemaViewer, CodeEditor, ResultsViewer {
     border-title-color: $border-title-color-nofocus;
     background: $boost;
 }
-SchemaViewer:focus, CodeEditor:focus, ResultsViewer:focus {
-    height: 100%;
+SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
 /* QUERY EDITOR */
-CodeEditor {
-    padding: 0 1;
+TextContainer {
+    scrollbar-background: $surface;
+    scrollbar-corner-color: $surface;
+    scrollbar-color: $panel-lighten-1;
+    scrollbar-color-hover: $primary;
+    scrollbar-color-active: $accent;
 }
 /* SCHEMA VIEWER */
 SchemaViewer {
