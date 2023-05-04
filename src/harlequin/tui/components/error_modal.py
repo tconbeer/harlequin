@@ -1,14 +1,17 @@
-from textual import events
 from textual.app import ComposeResult
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
-from textual.containers import Vertical, VerticalScroll
 
 
 class ErrorModal(ModalScreen):
-
     def __init__(
-        self, header: str, error: Exception, name: str | None = None, id: str | None = None, classes: str | None = None
+        self,
+        header: str,
+        error: Exception,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
     ) -> None:
         self.header = header
         self.error = error
@@ -17,7 +20,7 @@ class ErrorModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="outer"):
             yield Static(self.header, id="error_header")
-            with Vertical(id = "inner"):
+            with Vertical(id="inner"):
                 with VerticalScroll():
                     yield Static(str(self.error), id="error_info")
             yield Static("Press any key to continue.", id="error_footer")

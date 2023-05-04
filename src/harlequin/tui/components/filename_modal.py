@@ -1,11 +1,10 @@
 from textual.app import ComposeResult
+from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label
-from textual.containers import Vertical
 
 
 class FilenameModal(ModalScreen):
-
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:

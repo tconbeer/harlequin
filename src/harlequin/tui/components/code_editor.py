@@ -1,7 +1,9 @@
+from sqlfmt.api import Mode, format_string
 from textual.binding import Binding
 from textual.widgets import Input
-from sqlfmt.api import format_string, Mode
+
 from harlequin.tui.components.filename_modal import FilenameModal
+
 
 class CodeEditor(Input):
     BINDINGS = [

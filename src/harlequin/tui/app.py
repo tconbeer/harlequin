@@ -4,18 +4,19 @@ from typing import Type
 import duckdb
 from textual import work
 from textual.app import App, ComposeResult, CSSPathType
+from textual.containers import Container
 from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Input
 from textual.worker import Worker, get_current_worker
-from textual.containers import Container
+
 from harlequin.tui.components import (
     SCHEMAS,
     TABLES,
     CodeEditor,
+    ErrorModal,
     ResultsViewer,
     SchemaViewer,
-    ErrorModal,
 )
 
 
@@ -55,28 +56,52 @@ class Harlequin(App):
         self.update_schema_data()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
-        if message.input.id == 'save_modal':
+        if message.input.id == "save_modal":
             self.app.pop_screen()
             try:
-                with open(message.input.value, 'w') as f:
+                with open(message.input.value, "w") as f:
                     editor = self.query_one(CodeEditor)
                     f.write(editor.value)
             except OSError as e:
-                self.push_screen(ErrorModal(header="Harlequin encountered an error when attempting to save your file:", error=e))
-        elif message.input.id == 'load_modal':
+                self.push_screen(
+                    ErrorModal(
+                        header=(
+                            "Harlequin encountered an error when "
+                            "attempting to save your file:"
+                        ),
+                        error=e,
+                    )
+                )
+        elif message.input.id == "load_modal":
             self.app.pop_screen()
             try:
-                with open(message.input.value, 'r') as f:
+                with open(message.input.value, "r") as f:
                     editor = self.query_one(CodeEditor)
                     editor.value = f.read()
                     editor.action_end()
             except OSError as e:
-                self.push_screen(ErrorModal(header="Harlequin encountered an error when attempting to load your file:", error=e))
+                self.push_screen(
+                    ErrorModal(
+                        header=(
+                            "Harlequin encountered an error when "
+                            "attempting to load your file:"
+                        ),
+                        error=e,
+                    )
+                )
         else:
             try:
                 self.relation = self.connection.sql(message.value)
             except duckdb.Error as e:
-                self.push_screen(ErrorModal(header="DuckDB raised an error when compiling or running your query:", error=e))
+                self.push_screen(
+                    ErrorModal(
+                        header=(
+                            "DuckDB raised an error when compiling "
+                            "or running your query:"
+                        ),
+                        error=e,
+                    )
+                )
 
     def set_data(self, data: list[tuple]) -> None:
         self.data = data
@@ -84,13 +109,13 @@ class Harlequin(App):
     async def watch_relation(self, relation: duckdb.DuckDBPyRelation | None) -> None:
         table = self.query_one(ResultsViewer)
         table.clear(columns=True)
-        if relation is not None:
+        if relation is not None:  # select query
             table.add_columns(*relation.columns)
             worker = self.fetch_relation_data(relation)
             await worker.wait()
-            self.update_schema_data()
-        else:
+        else:  # DDL/DML query or an error
             self.data = []
+        self.update_schema_data()
 
     def watch_data(self, data: list[tuple]) -> None:
         if data:
