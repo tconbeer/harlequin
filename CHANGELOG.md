@@ -6,14 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.4] - 2023-05-05
 
--   All-new text area for query editing, with syntax highlighting, scrolling, and more
+-   All-new text area for query editing, with syntax highlighting, scrolling, and more.
+-   Loading states and progress bars for long-running queries. Better async use to maintain responsiveness.
+-   Fixed edge cases around empty and repeated queries.
 
 ## [0.0.3] - 2023-05-04
 
 -   Queries now run asynchronously.
 -   Errors from DuckDB are now handled and shown in a pop-up.
 -   View columns and data types in the schema viewer sidebar.
--   Queries can be formatted using `ctrl+` \`.
+-   Queries can be formatted using ``ctrl+` ``.
 -   Queries can be saved using `ctrl+s` and opened (loaded) using `ctrl+o`.
 
 ## [0.0.2] - 2023-05-02
