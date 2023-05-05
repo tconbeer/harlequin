@@ -1,3 +1,5 @@
+from typing import Union
+
 from textual.app import ComposeResult
 from textual.widgets import ContentSwitcher, DataTable, LoadingIndicator
 
@@ -24,7 +26,7 @@ class ResultsViewer(ContentSwitcher):
         self.current = self.TABLE_ID
 
     def set_not_responsive(
-        self, max_rows: int | None = None, total_rows: int | None = None
+        self, max_rows: Union[int, None] = None, total_rows: Union[int, None] = None
     ) -> None:
         if (total_rows and not max_rows) or (
             total_rows and max_rows and total_rows <= max_rows
@@ -41,8 +43,8 @@ class ResultsViewer(ContentSwitcher):
 
     def set_responsive(
         self,
-        max_rows: int | None = None,
-        total_rows: int | None = None,
+        max_rows: Union[int, None] = None,
+        total_rows: Union[int, None] = None,
         did_run: bool = True,
     ) -> None:
         if (total_rows and not max_rows) or (

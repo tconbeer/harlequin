@@ -1,3 +1,5 @@
+from typing import Union
+
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -10,9 +12,9 @@ class ErrorModal(ModalScreen):
         title: str,
         header: str,
         error: BaseException,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
+        name: Union[str, None] = None,
+        id: Union[str, None] = None,
+        classes: Union[str, None] = None,
     ) -> None:
         self.title = title
         self.header = header

@@ -1,4 +1,4 @@
-from typing import NamedTuple
+from typing import NamedTuple, Union
 
 from rich.console import RenderableType
 from rich.syntax import Syntax
@@ -235,7 +235,7 @@ class TextInput(Static, can_focus=True):
     def _get_character_at_cursor(self) -> str:
         return self.lines[self.cursor.lno][self.cursor.pos]
 
-    def _get_character_before_cursor(self) -> str | None:
+    def _get_character_before_cursor(self) -> Union[str, None]:
         if self.cursor.pos == 0:
             return None
         else:

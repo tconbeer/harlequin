@@ -1,3 +1,5 @@
+from typing import Union
+
 from duckdb import DuckDBPyConnection
 from rich.text import TextType
 from textual.widgets import Tree
@@ -8,7 +10,7 @@ TABLES = list[tuple[str, str, COLS]]
 SCHEMAS = list[tuple[str, TABLES]]
 
 
-class SchemaViewer(Tree[str | None]):
+class SchemaViewer(Tree[Union[str, None]]):
     table_type_mapping = {
         "BASE TABLE": "t",
         "LOCAL TEMPORARY": "tmp",
@@ -46,10 +48,10 @@ class SchemaViewer(Tree[str | None]):
         self,
         label: TextType,
         connection: DuckDBPyConnection,
-        data: str | None = None,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
+        data: Union[str, None] = None,
+        name: Union[str, None] = None,
+        id: Union[str, None] = None,
+        classes: Union[str, None] = None,
         disabled: bool = False,
     ) -> None:
         self.connection = connection
@@ -94,8 +96,8 @@ class SchemaViewer(Tree[str | None]):
 
     @classmethod
     def get_node_states(
-        cls, node: TreeNode[str | None]
-    ) -> tuple[list[str], str | None]:
+        cls, node: TreeNode[Union[str, None]]
+    ) -> tuple[list[str], Union[str, None]]:
         expanded_nodes = []
         selected_node = None
         if node.is_expanded and node.data is not None:

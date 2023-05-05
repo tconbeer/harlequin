@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterator, Type
+from typing import Iterator, Type, Union
 
 import duckdb
 from textual import log, work
@@ -31,14 +31,14 @@ class Harlequin(App):
     MAX_RESULTS = 50_000
 
     query_text: reactive[str] = reactive(str)
-    relation: reactive[duckdb.DuckDBPyRelation | None] = reactive(None)
+    relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[list[tuple]] = reactive(list)
 
     def __init__(
         self,
         db_path: Path,
-        driver_class: Type[Driver] | None = None,
-        css_path: CSSPathType | None = None,
+        driver_class: Union[Type[Driver], None] = None,
+        css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
         self.db_name = db_path.stem
@@ -140,7 +140,7 @@ class Harlequin(App):
                 pane.show_table()
                 self.data = []
 
-    def watch_relation(self, relation: duckdb.DuckDBPyRelation | None) -> None:
+    def watch_relation(self, relation: Union[duckdb.DuckDBPyRelation, None]) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
@@ -174,7 +174,7 @@ class Harlequin(App):
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
     @work(exclusive=True, exit_on_error=False)  # type: ignore
-    def build_relation(self, query_text: str) -> duckdb.DuckDBPyRelation | None:
+    def build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
         relation = self.connection.sql(query_text)
         return relation
 
