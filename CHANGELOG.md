@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.4] - 2023-05-05
+
 -   All-new text area for query editing, with syntax highlighting, scrolling, and more
+
 ## [0.0.3] - 2023-05-04
 
 -   Queries now run asynchronously.
@@ -22,7 +25,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.3...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.4...HEAD
+
+[0.0.4]: https://github.com/tconbeer/harlequin/compare/0.0.3...0.0.4
 
 [0.0.3]: https://github.com/tconbeer/harlequin/compare/0.0.2...0.0.3
 
