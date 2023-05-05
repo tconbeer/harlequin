@@ -9,7 +9,7 @@ class ErrorModal(ModalScreen):
         self,
         title: str,
         header: str,
-        error: Exception,
+        error: BaseException,
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,

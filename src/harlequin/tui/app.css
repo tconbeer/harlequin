@@ -55,8 +55,8 @@ ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
 
-ResultsViewer .datatable--cursor .datatable--header-cursor {
-    background: $secondary;
+ResultsTable.datatable--cursor .datatable--header-cursor {
+    background: $boost;
 }
 ResultsViewer .datatable--hover {
     background: $boost;

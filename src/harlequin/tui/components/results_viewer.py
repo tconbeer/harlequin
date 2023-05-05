@@ -1,6 +1,4 @@
-from textual import log
 from textual.app import ComposeResult
-from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, DataTable, LoadingIndicator
 
 
@@ -25,10 +23,14 @@ class ResultsViewer(ContentSwitcher):
         self.border_title = "Query Results"
         self.current = self.TABLE_ID
 
-    def set_not_responsive(self, max_rows: int|None=None, total_rows: int | None = None) -> None:
-        if (total_rows and not max_rows) or (total_rows and max_rows and total_rows <= max_rows):
+    def set_not_responsive(
+        self, max_rows: int | None = None, total_rows: int | None = None
+    ) -> None:
+        if (total_rows and not max_rows) or (
+            total_rows and max_rows and total_rows <= max_rows
+        ):
             self.border_title = f"LOADING {total_rows:,} Records."
-        elif (total_rows and max_rows):
+        elif total_rows and max_rows:
             self.border_title = f"LOADING {max_rows:,} of {total_rows:,} Records."
         else:
             self.border_title = "Running Query"
@@ -37,11 +39,22 @@ class ResultsViewer(ContentSwitcher):
     def increment_progress_bar(self) -> None:
         self.border_title = f"{self.border_title}."
 
-    def set_responsive(self, max_rows: int|None=None, total_rows: int | None = None) -> None:
-        if (total_rows and not max_rows) or (total_rows and max_rows and total_rows <= max_rows):
+    def set_responsive(
+        self,
+        max_rows: int | None = None,
+        total_rows: int | None = None,
+        did_run: bool = True,
+    ) -> None:
+        if (total_rows and not max_rows) or (
+            total_rows and max_rows and total_rows <= max_rows
+        ):
             self.border_title = f"Query Results ({total_rows:,} Records)"
-        elif (total_rows and max_rows):
-            self.border_title = f"Query Results (Showing {max_rows:,} of {total_rows:,} Records)."
+        elif total_rows and max_rows:
+            self.border_title = (
+                f"Query Results (Showing {max_rows:,} of {total_rows:,} Records)."
+            )
+        elif not did_run:
+            self.border_title = "Query Results"
         else:
             self.border_title = "Query Returned No Records"
         self.remove_class("non-responsive")
