@@ -1,4 +1,4 @@
-from typing import NamedTuple, Union
+from typing import List, NamedTuple, Union
 
 from rich.console import RenderableType
 from rich.syntax import Syntax
@@ -38,7 +38,7 @@ class TextInput(Static, can_focus=True):
     }
     """
 
-    lines: reactive[list[str]] = reactive(lambda: list(" "))
+    lines: reactive[List[str]] = reactive(lambda: list(" "))
     cursor: reactive[Cursor] = reactive(Cursor(0, 0))
     cursor_visible: reactive[bool] = reactive(True)
 

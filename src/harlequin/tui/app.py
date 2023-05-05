@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterator, Type, Union
+from typing import Iterator, List, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
@@ -32,7 +32,7 @@ class Harlequin(App):
 
     query_text: reactive[str] = reactive(str)
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
-    data: reactive[list[tuple]] = reactive(list)
+    data: reactive[List[Tuple]] = reactive(list)
 
     def __init__(
         self,
@@ -101,7 +101,7 @@ class Harlequin(App):
                 editor.move_cursor(0, 0)
                 editor.lines = [f"{line} " for line in query.splitlines()]
 
-    def set_data(self, data: list[tuple]) -> None:
+    def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
         self.data = data
 
@@ -151,7 +151,7 @@ class Harlequin(App):
             table.add_columns(*relation.columns)
             self.fetch_relation_data(relation)
 
-    async def watch_data(self, data: list[tuple]) -> None:
+    async def watch_data(self, data: List[Tuple]) -> None:
         if data:
             pane = self.query_one(ResultsViewer)
             pane.set_not_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
@@ -166,8 +166,8 @@ class Harlequin(App):
 
     @staticmethod
     def chunk(
-        data: list[tuple], chunksize: int = 2000
-    ) -> Iterator[tuple[int, list[tuple]]]:
+        data: List[Tuple], chunksize: int = 2000
+    ) -> Iterator[Tuple[int, List[Tuple]]]:
         log(f"chunk {len(data)}")
         for i in range(len(data) // chunksize + 1):
             log(f"yielding chunk {i}")
@@ -188,7 +188,7 @@ class Harlequin(App):
             self.call_from_thread(self.set_data, data)
 
     @work(exclusive=False)
-    def add_data_to_table(self, table: ResultsTable, data: list[tuple]) -> Worker:
+    def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
         log(f"add_data_to_table {len(data)}")
         worker = get_current_worker()
         if not worker.is_cancelled:

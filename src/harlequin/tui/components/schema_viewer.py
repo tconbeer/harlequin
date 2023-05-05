@@ -1,13 +1,13 @@
-from typing import Union
+from typing import List, Tuple, Union
 
 from duckdb import DuckDBPyConnection
 from rich.text import TextType
 from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
-COLS = list[tuple[str, str]]
-TABLES = list[tuple[str, str, COLS]]
-SCHEMAS = list[tuple[str, TABLES]]
+COLS = List[Tuple[str, str]]
+TABLES = List[Tuple[str, str, COLS]]
+SCHEMAS = List[Tuple[str, TABLES]]
 
 
 class SchemaViewer(Tree[Union[str, None]]):
@@ -97,7 +97,7 @@ class SchemaViewer(Tree[Union[str, None]]):
     @classmethod
     def get_node_states(
         cls, node: TreeNode[Union[str, None]]
-    ) -> tuple[list[str], Union[str, None]]:
+    ) -> Tuple[List[str], Union[str, None]]:
         expanded_nodes = []
         selected_node = None
         if node.is_expanded and node.data is not None:
