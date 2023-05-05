@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import List, Set, Tuple, Union
 
 from duckdb import DuckDBPyConnection
 from rich.text import TextType
@@ -65,7 +65,7 @@ class SchemaViewer(Tree[Union[str, None]]):
 
     def update_tree(self, data: SCHEMAS) -> None:
         tree_state = self.get_node_states(self.root)
-        expanded_nodes: set[str] = set(tree_state[0])
+        expanded_nodes: Set[str] = set(tree_state[0])
         # todo: tree's select_node() not working
         # unless the tree is modified, the selection will stay
         # in the same place
