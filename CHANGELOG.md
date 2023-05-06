@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 -   Comment selected text with ctrl+/
+-   Smarter indentation after pressing enter
 
 ## [0.0.6] - 2023-05-09
 
