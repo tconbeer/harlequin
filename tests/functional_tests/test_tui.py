@@ -1,8 +1,8 @@
-from harlequin.tui import Harlequin
-from harlequin.tui.components import TextInput
 from pathlib import Path
 
 import pytest
+from harlequin.tui import Harlequin
+from harlequin.tui.components import TextInput
 
 
 @pytest.fixture
