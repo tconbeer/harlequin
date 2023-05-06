@@ -1,4 +1,4 @@
-from typing import List, Union, Tuple
+from typing import List, Tuple, Union
 
 from rich.console import RenderableType
 from rich.syntax import Syntax
