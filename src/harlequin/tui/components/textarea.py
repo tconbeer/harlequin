@@ -150,10 +150,7 @@ class TextInput(Static, can_focus=True):
             self.cursor = Cursor(lno=len(self.lines) - 1, pos=len(self.lines[-1]) - 1)
         elif event.key == "ctrl+underscore":  # actually ctrl+/
             event.stop()
-            anchor = selection_before or self.cursor
-            first = min(anchor, self.cursor)
-            last = max(anchor, self.cursor)
-            lines = self.lines[first.lno : last.lno + 1]
+            lines, first, last = self._get_selected_lines(selection_before)
             stripped_lines = [line.lstrip() for line in lines]
             indents = [len(line) - len(line.lstrip()) for line in lines]
             if all([line.startswith("-- ") for line in stripped_lines]):
@@ -169,14 +166,12 @@ class TextInput(Static, can_focus=True):
                 ]
         elif event.key == "enter":
             event.stop()
-            anchor = selection_before or self.cursor
-            first = min(anchor, self.cursor)
-            last = max(anchor, self.cursor)
-            old_lines = self.lines[first.lno : last.lno + 1]
+            old_lines, first, last = self._get_selected_lines(selection_before)
             head = f"{old_lines[0][:first.pos]} "
             tail = f"{old_lines[-1][last.pos:]}"
-            self.lines[first.lno : last.lno + 1] = [head, tail]
-            self.cursor = Cursor(first.lno + 1, 0)
+            indent = len(old_lines[0]) - len(old_lines[0].lstrip())
+            self.lines[first.lno : last.lno + 1] = [head, f"{' ' * indent}{tail.lstrip()}"]
+            self.cursor = Cursor(first.lno + 1, min(first.pos, indent))
         elif event.key == "delete":
             event.stop()
             if selection_before is None:
@@ -225,7 +220,7 @@ class TextInput(Static, can_focus=True):
             first = min(self.selection_anchor, self.cursor)
             second = max(self.selection_anchor, self.cursor)
             syntax.stylize_range(
-                "on #666666",
+                "on #444444",
                 # rows are 1-indexed
                 (first.lno + 1, first.pos),
                 (second.lno + 1, second.pos),
@@ -243,6 +238,19 @@ class TextInput(Static, can_focus=True):
     def _toggle_cursor(self) -> None:
         self.cursor_visible = not self.cursor_visible
         self.update(self._content)
+
+    def _get_selected_lines(self, maybe_anchor: Union[Cursor, None], maybe_cursor: Union[Cursor, None] = None) -> tuple[List[str], Cursor, Cursor]:
+        """
+        Returns a tuple of:
+         - the lines between (inclusive) the optional selection anchor and the cursor,
+         - the first of either the cursor or anchor
+         - the last of either the cursor or anchor 
+        """
+        cursor = maybe_cursor or self.cursor
+        anchor = maybe_anchor or cursor
+        first = min(anchor, cursor)
+        last = max(anchor, cursor)
+        return self.lines[first.lno : last.lno + 1], first, last
 
     def _insert_character_at_cursor(self, character: str, cursor: Cursor) -> None:
         line = self.lines[cursor.lno]
@@ -278,9 +286,7 @@ class TextInput(Static, can_focus=True):
                 self._insert_character_at_cursor(CLOSERS[character], self.cursor)
 
     def _delete_selection(self, anchor: Cursor, cursor: Cursor) -> None:
-        first = min(anchor, cursor)
-        last = max(anchor, cursor)
-        old_lines = self.lines[first.lno : last.lno + 1]
+        old_lines, first, last = self._get_selected_lines(anchor, maybe_cursor=cursor)
         head = f"{old_lines[0][:first.pos]}"
         tail = f"{old_lines[-1][last.pos:]}"
         self.lines[first.lno : last.lno + 1] = [f"{head}{tail}"]
