@@ -1,0 +1,70 @@
+from typing import List
+
+import pytest
+from harlequin.tui.components.key_handlers import handle_arrow
+from harlequin.tui.components.textarea import Cursor
+
+
+@pytest.mark.parametrize(
+    "key,lines,cursor,expected",
+    [
+        ("right", ["select 1 "], Cursor(0, 0), Cursor(0, 1)),
+        ("left", ["select 1 "], Cursor(0, 0), Cursor(0, 0)),
+        ("up", ["select 1 "], Cursor(0, 0), Cursor(0, 0)),
+        ("down", ["select 1 "], Cursor(0, 0), Cursor(0, 8)),
+        ("right", ["select 1 "], Cursor(0, 1), Cursor(0, 2)),
+        ("left", ["select 1 "], Cursor(0, 1), Cursor(0, 0)),
+        ("up", ["select 1 "], Cursor(0, 1), Cursor(0, 0)),
+        ("down", ["select 1 "], Cursor(0, 1), Cursor(0, 8)),
+        ("right", ["select 1 "], Cursor(0, 8), Cursor(0, 8)),
+        ("left", ["select 1 "], Cursor(0, 8), Cursor(0, 7)),
+        ("up", ["select 1 "], Cursor(0, 8), Cursor(0, 0)),
+        ("down", ["select 1 "], Cursor(0, 8), Cursor(0, 8)),
+        ("right", ["select 1 ", "from a "], Cursor(0, 0), Cursor(0, 1)),
+        ("left", ["select 1 ", "from a "], Cursor(0, 0), Cursor(0, 0)),
+        ("up", ["select 1 ", "from a "], Cursor(0, 0), Cursor(0, 0)),
+        ("down", ["select 1 ", "from a "], Cursor(0, 0), Cursor(1, 0)),
+        ("right", ["select 1 ", "from a "], Cursor(0, 8), Cursor(1, 0)),
+        ("left", ["select 1 ", "from a "], Cursor(0, 8), Cursor(0, 7)),
+        ("up", ["select 1 ", "from a "], Cursor(0, 8), Cursor(0, 0)),
+        ("down", ["select 1 ", "from a "], Cursor(0, 8), Cursor(1, 6)),
+        ("right", ["select 1 ", "from a "], Cursor(1, 0), Cursor(1, 1)),
+        ("left", ["select 1 ", "from a "], Cursor(1, 0), Cursor(0, 8)),
+        ("up", ["select 1 ", "from a "], Cursor(1, 0), Cursor(0, 0)),
+        ("down", ["select 1 ", "from a "], Cursor(1, 0), Cursor(1, 6)),
+        ("right", ["select 1 ", "from a "], Cursor(1, 6), Cursor(1, 6)),
+        ("left", ["select 1 ", "from a "], Cursor(1, 6), Cursor(1, 5)),
+        ("up", ["select 1 ", "from a "], Cursor(1, 6), Cursor(0, 6)),
+        ("down", ["select 1 ", "from a "], Cursor(1, 6), Cursor(1, 6)),
+        ("ctrl+right", ["select 1 "], Cursor(0, 0), Cursor(0, 6)),
+        ("ctrl+left", ["select 1 "], Cursor(0, 0), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 "], Cursor(0, 6), Cursor(0, 8)),
+        ("ctrl+left", ["select 1 "], Cursor(0, 6), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 "], Cursor(0, 7), Cursor(0, 8)),
+        ("ctrl+left", ["select 1 "], Cursor(0, 7), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 "], Cursor(0, 8), Cursor(0, 8)),
+        ("ctrl+left", ["select 1 "], Cursor(0, 8), Cursor(0, 7)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(0, 0), Cursor(0, 6)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(0, 0), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(0, 1), Cursor(0, 6)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(0, 1), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(0, 6), Cursor(0, 8)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(0, 6), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(0, 7), Cursor(0, 8)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(0, 7), Cursor(0, 0)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(0, 8), Cursor(1, 4)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(0, 8), Cursor(0, 7)),
+        ("ctrl+right", ["select 1 ", "from a "], Cursor(1, 0), Cursor(1, 4)),
+        ("ctrl+left", ["select 1 ", "from a "], Cursor(1, 0), Cursor(0, 7)),
+        ("ctrl+left", ["    select 1 ", "    from a "], Cursor(1, 4), Cursor(1, 0)),
+        ("ctrl+right", ["    select 1 ", "    from a "], Cursor(1, 0), Cursor(1, 8)),
+        ("ctrl+right", ["sum(foo) "], Cursor(0, 0), Cursor(0, 3)),
+        ("ctrl+right", ["sum(foo) "], Cursor(0, 3), Cursor(0, 7)),
+        ("ctrl+right", ["sum(foo) "], Cursor(0, 7), Cursor(0, 8)),
+        ("ctrl+left", ["sum(foo) "], Cursor(0, 8), Cursor(0, 4)),
+        ("ctrl+left", ["sum(foo) "], Cursor(0, 4), Cursor(0, 0)),
+    ],
+)
+def test_arrows(key: str, lines: List[str], cursor: Cursor, expected: Cursor) -> None:
+    actual = handle_arrow(key, lines, cursor)
+    assert actual == expected
