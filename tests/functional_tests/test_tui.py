@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 
+
 @pytest.fixture
 def app() -> Harlequin:
     return Harlequin(Path(":memory:"))
+
 
 @pytest.mark.asyncio
 async def test_select_1(app: Harlequin) -> None:
@@ -17,8 +19,8 @@ async def test_select_1(app: Harlequin) -> None:
         q = "select 1 as foo"
         for key in q:
             await pilot.press(key)
-        await pilot.press("ctrl+j") # alias for ctrl+enter
-        
+        await pilot.press("ctrl+j")  # alias for ctrl+enter
+
         # when the query is submitted, it should update app.query_text, app.relation,
         # and app.data using three different workers.
         await app.workers.wait_for_complete()
