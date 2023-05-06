@@ -23,6 +23,7 @@ BRACKETS = {
     "{": "}",
 }
 CLOSERS = {'"': '"', "'": "'", **BRACKETS}
+TAB_SIZE = 4
 
 
 class TextInput(Static, can_focus=True):
@@ -170,8 +171,22 @@ class TextInput(Static, can_focus=True):
             head = f"{old_lines[0][:first.pos]} "
             tail = f"{old_lines[-1][last.pos:]}"
             indent = len(old_lines[0]) - len(old_lines[0].lstrip())
-            self.lines[first.lno : last.lno + 1] = [head, f"{' ' * indent}{tail.lstrip()}"]
-            self.cursor = Cursor(first.lno + 1, min(first.pos, indent))
+            char_before = self._get_character_before_cursor(first)
+            if char_before in BRACKETS and BRACKETS[
+                char_before
+            ] == self._get_character_at_cursor(last):
+                self.lines[first.lno : last.lno + 1] = [
+                    head,
+                    f"{' ' * (indent+TAB_SIZE)} ",
+                    f"{' ' * indent}{tail.lstrip()}",
+                ]
+                self.cursor = Cursor(first.lno + 1, indent + TAB_SIZE)
+            else:
+                self.lines[first.lno : last.lno + 1] = [
+                    head,
+                    f"{' ' * indent}{tail.lstrip()} ",
+                ]
+                self.cursor = Cursor(first.lno + 1, min(first.pos, indent))
         elif event.key == "delete":
             event.stop()
             if selection_before is None:
@@ -239,12 +254,16 @@ class TextInput(Static, can_focus=True):
         self.cursor_visible = not self.cursor_visible
         self.update(self._content)
 
-    def _get_selected_lines(self, maybe_anchor: Union[Cursor, None], maybe_cursor: Union[Cursor, None] = None) -> tuple[List[str], Cursor, Cursor]:
+    def _get_selected_lines(
+        self,
+        maybe_anchor: Union[Cursor, None],
+        maybe_cursor: Union[Cursor, None] = None,
+    ) -> tuple[List[str], Cursor, Cursor]:
         """
         Returns a tuple of:
          - the lines between (inclusive) the optional selection anchor and the cursor,
          - the first of either the cursor or anchor
-         - the last of either the cursor or anchor 
+         - the last of either the cursor or anchor
         """
         cursor = maybe_cursor or self.cursor
         anchor = maybe_anchor or cursor
