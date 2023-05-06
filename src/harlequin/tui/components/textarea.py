@@ -85,6 +85,8 @@ class TextInput(Static, can_focus=True):
         # set selection_anchor if it's unset
         if event.key == "shift+delete":
             pass  # todo: shift+delete should delete the whole line
+        if event.key == "ctrl+underscore":
+            pass  # this comments out a section, which should maintain selection
         elif event.key == "ctrl+a":
             self.selection_anchor = Cursor(0, 0)
         elif selection_before is None and "shift" in event.key:
@@ -141,9 +143,30 @@ class TextInput(Static, can_focus=True):
             event.stop()
             self.cursor = Cursor(self.cursor.lno, len(self.lines[self.cursor.lno]) - 1)
         elif event.key == "ctrl+home":
+            event.stop()
             self.cursor = Cursor(0, 0)
         elif event.key in ("ctrl+end", "ctrl+a"):
+            event.stop()
             self.cursor = Cursor(lno=len(self.lines) - 1, pos=len(self.lines[-1]) - 1)
+        elif event.key == "ctrl+underscore":  # actually ctrl+/
+            event.stop()
+            anchor = selection_before or self.cursor
+            first = min(anchor, self.cursor)
+            last = max(anchor, self.cursor)
+            lines = self.lines[first.lno : last.lno + 1]
+            stripped_lines = [line.lstrip() for line in lines]
+            indents = [len(line) - len(line.lstrip()) for line in lines]
+            if all([line.startswith("-- ") for line in stripped_lines]):
+                no_comment_lines = [line[3:] for line in stripped_lines]
+                self.lines[first.lno : last.lno + 1] = [
+                    f"{' ' * indent}{stripped_line}"
+                    for indent, stripped_line in zip(indents, no_comment_lines)
+                ]
+            else:
+                self.lines[first.lno : last.lno + 1] = [
+                    f"{' ' * indent}-- {stripped_line}"
+                    for indent, stripped_line in zip(indents, stripped_lines)
+                ]
         elif event.key == "enter":
             event.stop()
             anchor = selection_before or self.cursor
