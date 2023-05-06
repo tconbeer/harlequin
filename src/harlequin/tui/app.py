@@ -23,13 +23,15 @@ from harlequin.tui.components import (
 from harlequin.tui.utils import short_type
 
 
-class Harlequin(App):
+class Harlequin(App, inherit_bindings=False):
     """
     A Textual App for a SQL client for DuckDB.
     """
 
     CSS_PATH = "app.css"
     MAX_RESULTS = 50_000
+
+    BINDINGS = [("ctrl+q", "quit", "Quit")]
 
     query_text: reactive[str] = reactive(str)
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
