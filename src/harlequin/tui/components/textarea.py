@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Tuple
 
 from rich.console import RenderableType
 from rich.syntax import Syntax
@@ -258,7 +258,7 @@ class TextInput(Static, can_focus=True):
         self,
         maybe_anchor: Union[Cursor, None],
         maybe_cursor: Union[Cursor, None] = None,
-    ) -> tuple[List[str], Cursor, Cursor]:
+    ) -> Tuple[List[str], Cursor, Cursor]:
         """
         Returns a tuple of:
          - the lines between (inclusive) the optional selection anchor and the cursor,
