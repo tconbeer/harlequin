@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 -   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u`
 -   Quit with `ctrl+q`, instead of `ctrl+c`
+-   `tab` indents selected text or inserts four-ish spaces in text editor; `shift+tab` dedents selected text
 
 ## [Unreleased]
 

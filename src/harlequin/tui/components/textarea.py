@@ -1,3 +1,4 @@
+from math import ceil, floor
 from typing import List, Tuple, Union
 
 from rich.console import RenderableType
@@ -87,7 +88,9 @@ class TextInput(Static, can_focus=True):
         # set selection_anchor if it's unset
         if event.key == "shift+delete":
             pass  # todo: shift+delete should delete the whole line
-        if event.key in ("ctrl+underscore", "ctrl+`", "ctrl+@", "ctrl+s", "ctrl+c"):
+        elif event.key == "shift+tab":
+            pass
+        elif event.key in ("ctrl+underscore", "ctrl+`", "ctrl+@", "ctrl+s", "ctrl+c"):
             pass  #  these should maintain selection
         elif event.key == "ctrl+a":
             self.selection_anchor = Cursor(0, 0)
@@ -181,14 +184,16 @@ class TextInput(Static, can_focus=True):
             self.log(f"copied to clipboard: {self.clipboard}")
             if event.key == "ctrl+x":
                 self._delete_selection(first, last)
-                new_lno = min(first.lno, len(self.lines)-1)
-                self.cursor = Cursor(new_lno, min(first.pos, len(self.lines[new_lno])-1))
+                new_lno = min(first.lno, len(self.lines) - 1)
+                self.cursor = Cursor(
+                    new_lno, min(first.pos, len(self.lines[new_lno]) - 1)
+                )
         elif event.key == "ctrl+u":
             event.stop()
             if selection_before:
                 self._delete_selection(selection_before, self.cursor)
-            head = self.lines[self.cursor.lno][:self.cursor.pos]
-            tail = self.lines[self.cursor.lno][self.cursor.pos:]
+            head = self.lines[self.cursor.lno][: self.cursor.pos]
+            tail = self.lines[self.cursor.lno][self.cursor.pos :]
             self.log(f"head: {repr(head)}, tail: {repr(tail)}")
             self.log(f"clipboard: {self.clipboard}")
             if (clip_len := len(self.clipboard)) != 0:
@@ -196,8 +201,30 @@ class TextInput(Static, can_focus=True):
                 new_lines[0] = f"{head}{new_lines[0]}"
                 new_lines[-1] = f"{new_lines[-1]}{tail}"
                 self.log(f"new lines: {new_lines}")
-                self.lines[self.cursor.lno:self.cursor.lno+1] = new_lines
-                self.cursor = Cursor(self.cursor.lno + clip_len-1, len(self.lines[self.cursor.lno + clip_len-1]) - len(tail))
+                self.lines[self.cursor.lno : self.cursor.lno + 1] = new_lines
+                self.cursor = Cursor(
+                    self.cursor.lno + clip_len - 1,
+                    len(self.lines[self.cursor.lno + clip_len - 1]) - len(tail),
+                )
+        elif event.key == "tab":
+            event.stop()
+            lines, first, last = self._get_selected_lines(selection_before)
+            # in some cases, selections are replaced with four spaces
+            if first.lno == last.lno and (
+                first.pos == last.pos
+                or first.pos != 0
+                or last.pos != len(self.lines[self.cursor.lno]) - 1
+            ):
+                self._delete_selection(first, last)
+                indent = TAB_SIZE - first.pos % TAB_SIZE
+                self._insert_character_at_cursor(" " * indent, first)
+                self.cursor = Cursor(lno=first.lno, pos=first.pos + indent)
+            # usually, selected lines are prepended with four-ish spaces
+            else:
+                self._indent_selection(selection_before, self.cursor, kind="indent")
+        elif event.key == "shift+tab":
+            event.stop()
+            self._indent_selection(selection_before, self.cursor, kind="dedent")
         elif event.key == "enter":
             event.stop()
             old_lines, first, last = self._get_selected_lines(selection_before)
@@ -205,7 +232,6 @@ class TextInput(Static, can_focus=True):
             tail = f"{old_lines[-1][last.pos:]}"
             indent = len(old_lines[0]) - len(old_lines[0].lstrip())
 
-            
             char_before = self._get_character_before_cursor(first)
             if char_before in BRACKETS and BRACKETS[
                 char_before
@@ -350,6 +376,41 @@ class TextInput(Static, can_focus=True):
             if not self.lines:
                 self.lines = [" "]
         self.cursor = Cursor(first.lno, first.pos)
+
+    def _indent_selection(
+        self, anchor: Union[Cursor, None], cursor: Cursor, kind: str
+    ) -> None:
+        assert kind in ("indent", "dedent")
+        rounder, offset = (ceil, -1) if kind == "dedent" else (floor, 1)
+
+        lines, first, last = self._get_selected_lines(anchor, cursor)
+        leading_spaces = [(len(line) - len(line.lstrip())) for line in lines]
+        leading_tabs = [rounder(space / TAB_SIZE) for space in leading_spaces]
+        new_lines = [
+            f"{' ' * TAB_SIZE * max(0, indent+offset)}{line.lstrip()}"
+            for line, indent in zip(lines, leading_tabs)
+        ]
+        self.lines[first.lno : last.lno + 1] = new_lines
+        if anchor:
+            change_at_anchor_line = len(new_lines[anchor.lno - first.lno]) - len(
+                lines[anchor.lno - first.lno]
+            )
+            self.selection_anchor = (
+                anchor
+                if anchor.pos == 0
+                else Cursor(
+                    anchor.lno,
+                    anchor.pos + change_at_anchor_line,
+                )
+            )
+        change_at_cursor = len(new_lines[cursor.lno - first.lno]) - len(
+            lines[cursor.lno - first.lno]
+        )
+        self.cursor = (
+            cursor
+            if cursor.pos == 0
+            else Cursor(cursor.lno, cursor.pos + change_at_cursor)
+        )
 
     def _get_character_at_cursor(self, cursor: Cursor) -> str:
         return self.lines[cursor.lno][cursor.pos]
