@@ -44,3 +44,17 @@ You can press Tab or use your mouse to change the focus between the panes.
 When the focus is on the data pane, you can use your arrow keys or mouse to select different cells.
 
 Press Ctrl+c to quit and return to your shell.
+
+### Running Harlequin in a Container
+
+Without a database file:
+
+```bash
+docker run ghcr.io/tconbeer/harlequin:latest
+```
+
+Mounting a database file `./foo.db` into the container's working directory, `/data`:
+
+```bash
+docker run -v $(pwd)/foo.db:/data/bar.db ghcr.io/tconbeer/harlequin:latest harlequin bar.db
+```

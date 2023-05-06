@@ -3,7 +3,8 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
-
+-   Fixes compatibility with all Pythons >= 3.8
+-   Adds Dockerfile and Docker docs. We now publish an official Docker image to GHCR.
 ## [0.0.4] - 2023-05-05
 
 -   All-new text area for query editing, with syntax highlighting, scrolling, and more.
