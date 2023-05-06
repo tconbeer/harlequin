@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ## [0.0.5] - 2023-05-08
 
 -   Adds column types to the column header in the results viewer.
+-   Text editor now handles page up/down and ctrl + right/left keys.
 -   Adds Dockerfile and Docker docs. We now publish an official Docker image to GHCR.
 -   Fixes compatibility with all Pythons >= 3.8
 
