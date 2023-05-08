@@ -3,9 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+## [0.0.5] - 2023-05-08
+
 -   Adds column types to the column header in the results viewer.
+-   Text editor now handles page up/down and ctrl + right/left keys.
 -   Adds Dockerfile and Docker docs. We now publish an official Docker image to GHCR.
 -   Fixes compatibility with all Pythons >= 3.8
+
 ## [0.0.4] - 2023-05-05
 
 -   All-new text area for query editing, with syntax highlighting, scrolling, and more.
@@ -29,7 +34,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.4...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.5...HEAD
+
+[0.0.5]: https://github.com/tconbeer/harlequin/compare/0.0.4...0.0.5
 
 [0.0.4]: https://github.com/tconbeer/harlequin/compare/0.0.3...0.0.4
 
