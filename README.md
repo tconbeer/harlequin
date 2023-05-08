@@ -15,6 +15,12 @@ Use `pip` or `pipx`:
 pipx install harlequin
 ```
 
+> **Tip:**
+>
+> You can run invoke directly with [`pipx run`](https://pypa.github.io/pipx/examples/#pipx-run-examples) anywhere that `pipx` is installed. For example:
+> - `pipx run harlequin --help`
+> - `pipx run harlequin ./my.duckdb`
+
 ## Using Harlequin
 
 To open a DuckDB database file:
