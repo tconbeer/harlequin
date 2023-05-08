@@ -1,14 +1,16 @@
+from typing import List, Set, Tuple, Union
+
 from duckdb import DuckDBPyConnection
 from rich.text import TextType
 from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
-COLS = list[tuple[str, str]]
-TABLES = list[tuple[str, str, COLS]]
-SCHEMAS = list[tuple[str, TABLES]]
+COLS = List[Tuple[str, str]]
+TABLES = List[Tuple[str, str, COLS]]
+SCHEMAS = List[Tuple[str, TABLES]]
 
 
-class SchemaViewer(Tree[str | None]):
+class SchemaViewer(Tree[Union[str, None]]):
     table_type_mapping = {
         "BASE TABLE": "t",
         "LOCAL TEMPORARY": "tmp",
@@ -46,10 +48,10 @@ class SchemaViewer(Tree[str | None]):
         self,
         label: TextType,
         connection: DuckDBPyConnection,
-        data: str | None = None,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
+        data: Union[str, None] = None,
+        name: Union[str, None] = None,
+        id: Union[str, None] = None,
+        classes: Union[str, None] = None,
         disabled: bool = False,
     ) -> None:
         self.connection = connection
@@ -63,7 +65,7 @@ class SchemaViewer(Tree[str | None]):
 
     def update_tree(self, data: SCHEMAS) -> None:
         tree_state = self.get_node_states(self.root)
-        expanded_nodes: set[str] = set(tree_state[0])
+        expanded_nodes: Set[str] = set(tree_state[0])
         # todo: tree's select_node() not working
         # unless the tree is modified, the selection will stay
         # in the same place
@@ -94,8 +96,8 @@ class SchemaViewer(Tree[str | None]):
 
     @classmethod
     def get_node_states(
-        cls, node: TreeNode[str | None]
-    ) -> tuple[list[str], str | None]:
+        cls, node: TreeNode[Union[str, None]]
+    ) -> Tuple[List[str], Union[str, None]]:
         expanded_nodes = []
         selected_node = None
         if node.is_expanded and node.data is not None:

@@ -1,0 +1,89 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+# will cancel previous workflows triggered by the same event and for the same ref for PRs or same SHA otherwise
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ contains(github.event_name, 'pull_request') && github.event.pull_request.head.ref || github.sha }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-windows:
+    name: Windows - 3.10
+    runs-on: Windows-latest
+    steps:
+      - name: Check out Repo
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.4.2
+      - name: Install python dependencies
+        run: poetry install --sync --no-interaction --only main,test
+      - name: Run tests
+        run: poetry run pytest
+
+  test:
+    name: ${{ matrix.os }} - ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu
+          - MacOs
+        py:
+          - "3.11"
+          - "3.10"
+          - "3.9"
+          - "3.8"
+    steps:
+      - name: Check out Repo
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+      - name: Set up Python ${{ matrix.py }}
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Load cached Poetry installation
+        id: cached-poetry-install
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install Poetry
+        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.4.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install python dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --sync --no-interaction --only main,test
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          pytest

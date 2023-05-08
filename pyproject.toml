@@ -21,12 +21,17 @@ duckdb = "^0.7.1"
 shandy-sqlfmt = "^0.18.0"
 
 [tool.poetry.group.dev.dependencies]
+pre-commit = "^3.3.1"
 textual = {version="*", extras=["dev"]}
+
+[tool.poetry.group.static.dependencies]
 black = "^23.3.0"
 ruff = "^0.0.264"
 mypy = "^1.2.0"
+
+[tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"
-pre-commit = "^3.3.1"
+pytest-asyncio = "^0.21.0"
 
 [tool.poetry.scripts]
 harlequin = "harlequin.cli:harlequin"

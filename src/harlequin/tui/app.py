@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterator, Type
+from typing import Iterator, List, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
@@ -31,14 +31,14 @@ class Harlequin(App):
     MAX_RESULTS = 50_000
 
     query_text: reactive[str] = reactive(str)
-    relation: reactive[duckdb.DuckDBPyRelation | None] = reactive(None)
-    data: reactive[list[tuple]] = reactive(list)
+    relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
+    data: reactive[List[Tuple]] = reactive(list)
 
     def __init__(
         self,
         db_path: Path,
-        driver_class: Type[Driver] | None = None,
-        css_path: CSSPathType | None = None,
+        driver_class: Union[Type[Driver], None] = None,
+        css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
         self.db_name = db_path.stem
@@ -101,7 +101,7 @@ class Harlequin(App):
                 editor.move_cursor(0, 0)
                 editor.lines = [f"{line} " for line in query.splitlines()]
 
-    def set_data(self, data: list[tuple]) -> None:
+    def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
         self.data = data
 
@@ -140,7 +140,7 @@ class Harlequin(App):
                 pane.show_table()
                 self.data = []
 
-    def watch_relation(self, relation: duckdb.DuckDBPyRelation | None) -> None:
+    def watch_relation(self, relation: Union[duckdb.DuckDBPyRelation, None]) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
@@ -151,7 +151,7 @@ class Harlequin(App):
             table.add_columns(*relation.columns)
             self.fetch_relation_data(relation)
 
-    async def watch_data(self, data: list[tuple]) -> None:
+    async def watch_data(self, data: List[Tuple]) -> None:
         if data:
             pane = self.query_one(ResultsViewer)
             pane.set_not_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
@@ -166,15 +166,15 @@ class Harlequin(App):
 
     @staticmethod
     def chunk(
-        data: list[tuple], chunksize: int = 2000
-    ) -> Iterator[tuple[int, list[tuple]]]:
+        data: List[Tuple], chunksize: int = 2000
+    ) -> Iterator[Tuple[int, List[Tuple]]]:
         log(f"chunk {len(data)}")
         for i in range(len(data) // chunksize + 1):
             log(f"yielding chunk {i}")
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
     @work(exclusive=True, exit_on_error=False)  # type: ignore
-    def build_relation(self, query_text: str) -> duckdb.DuckDBPyRelation | None:
+    def build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
         relation = self.connection.sql(query_text)
         return relation
 
@@ -188,7 +188,7 @@ class Harlequin(App):
             self.call_from_thread(self.set_data, data)
 
     @work(exclusive=False)
-    def add_data_to_table(self, table: ResultsTable, data: list[tuple]) -> Worker:
+    def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
         log(f"add_data_to_table {len(data)}")
         worker = get_current_worker()
         if not worker.is_cancelled:
