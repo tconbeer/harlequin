@@ -1,3 +1,4 @@
+import re
 from typing import List, NamedTuple, Union
 
 from rich.console import RenderableType
@@ -15,6 +16,8 @@ from textual.widgets import Static
 
 from harlequin.tui.components.error_modal import ErrorModal
 from harlequin.tui.components.filename_modal import FilenameModal
+
+WWB = re.compile(r"\W*\w+\b")
 
 
 class Cursor(NamedTuple):
@@ -120,9 +123,56 @@ class TextInput(Static, can_focus=True):
                     lno=self.cursor.lno - 1, pos=min(max_x, self.cursor.pos)
                 )
         elif event.key == "home":
+            event.stop()
             self.cursor = Cursor(self.cursor.lno, 0)
         elif event.key == "end":
+            event.stop()
             self.cursor = Cursor(self.cursor.lno, len(self.lines[self.cursor.lno]) - 1)
+        elif event.key == "pageup":
+            event.stop()
+            self.move_cursor(
+                x=self.cursor.pos, y=(self.cursor.lno - self._visible_height() + 1)
+            )
+        elif event.key == "pagedown":
+            event.stop()
+            self.move_cursor(
+                x=self.cursor.pos, y=(self.cursor.lno + self._visible_height() - 1)
+            )
+        elif event.key == "ctrl+right":
+            event.stop()
+            max_x = len(self.lines[self.cursor.lno]) - 1
+            max_y = len(self.lines) - 1
+            if self.cursor.pos == max_x and self.cursor.lno == max_y:
+                return
+            elif self.cursor.pos == max_x:
+                lno = self.cursor.lno + 1
+                pos = 0
+            else:
+                lno = self.cursor.lno
+                pos = self.cursor.pos
+
+            tail = self.lines[lno][pos:]
+            if match := WWB.match(tail):
+                self.cursor = Cursor(lno=lno, pos=pos + match.span()[1])
+            else:  # no more words, move to end of line
+                self.cursor = Cursor(lno=lno, pos=len(self.lines[lno]) - 1)
+        elif event.key == "ctrl+left":
+            event.stop()
+            if self.cursor.pos == 0 and self.cursor.lno == 0:
+                return
+            elif self.cursor.pos == 0:
+                lno = self.cursor.lno - 1
+                pos = len(self.lines[lno]) - 1
+            else:
+                lno = self.cursor.lno
+                pos = self.cursor.pos
+
+            tail = self.lines[lno][pos::-1]
+            self.log(f"lno: {lno}, pos: {pos}, tail: {tail}")
+            if match := WWB.match(tail):
+                self.cursor = Cursor(lno=lno, pos=pos - match.span()[1] + 1)
+            else:  # no more words, move to start of line
+                self.cursor = Cursor(lno=lno, pos=0)
         elif event.key == "ctrl+home":
             self.cursor = Cursor(0, 0)
         elif event.key == "ctrl+end":
@@ -201,6 +251,11 @@ class TextInput(Static, can_focus=True):
     def _scroll_to_cursor(self) -> None:
         self.post_message(self.CursorMoved(self.cursor.pos, self.cursor.lno))
 
+    def _visible_height(self) -> int:
+        parent = self.parent
+        assert isinstance(parent, TextContainer)
+        return parent.window_region.height
+
     def _toggle_cursor(self) -> None:
         self.cursor_visible = not self.cursor_visible
         self.update(self._content)
@@ -268,7 +323,8 @@ class TextInput(Static, can_focus=True):
         max_y = len(self.lines) - 1
         safe_y = min(max_y, y)
         max_x = len(self.lines[safe_y]) - 1
-        self.cursor = Cursor(safe_y, min(max_x, x))
+        safe_x = min(max_x, x)
+        self.cursor = Cursor(lno=max(0, safe_y), pos=max(0, safe_x))
         self.update(self._content)
 
 
