@@ -20,6 +20,7 @@ from harlequin.tui.components import (
     SchemaViewer,
     TextInput,
 )
+from harlequin.tui.utils import short_type
 
 
 class Harlequin(App):
@@ -148,7 +149,13 @@ class Harlequin(App):
         self.data = []
         if relation is not None:
             table = self.query_one(ResultsViewer).get_table()
-            table.add_columns(*relation.columns)
+            short_types = [short_type(t) for t in relation.dtypes]
+            table.add_columns(
+                *[
+                    f"{name} [#888888]{type}[/]"
+                    for name, type in zip(relation.columns, short_types)
+                ]
+            )
             self.fetch_relation_data(relation)
 
     async def watch_data(self, data: List[Tuple]) -> None:

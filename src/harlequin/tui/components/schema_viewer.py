@@ -5,6 +5,8 @@ from rich.text import TextType
 from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
+from harlequin.tui.utils import short_type
+
 COLS = List[Tuple[str, str]]
 TABLES = List[Tuple[str, str, COLS]]
 SCHEMAS = List[Tuple[str, TABLES]]
@@ -15,33 +17,6 @@ class SchemaViewer(Tree[Union[str, None]]):
         "BASE TABLE": "t",
         "LOCAL TEMPORARY": "tmp",
         "VIEW": "v",
-    }
-    column_type_mapping = {
-        "BIGINT": "##",
-        "BIT": "010",
-        "BOOLEAN": "t/f",
-        "BLOB": "0b",
-        "DATE": "d",
-        "DOUBLE": "#.#",
-        "DECIMAL": "#.#",
-        "HUGEINT": "###",
-        "INTEGER": "#",
-        "INTERVAL": "|-|",
-        "REAL": "#.#",
-        "SMALLINT": "#",
-        "TIME": "t",
-        "TIMESTAMP": "ts",
-        "TIMESTAMP WITH TIME ZONE": "ttz",
-        "TINYINT": "#",
-        "UBIGINT": "u##",
-        "UINTEGER": "u#",
-        "USMALLINT": "u#",
-        "UTINYINT": "u#",
-        "UUID": "uid",
-        "VARCHAR": "s",
-        "LIST": "[]",
-        "STRUCT": "{}",
-        "MAP": "{}",
     }
 
     def __init__(
@@ -86,11 +61,8 @@ class SchemaViewer(Tree[Union[str, None]]):
                     )
                     for col in table[2]:
                         col_identifier = f"{table_identifier}.{col[0]}"
-                        short_col_type = self.column_type_mapping.get(
-                            col[1].split("(")[0], "?"
-                        )
                         table_node.add_leaf(
-                            f"{col[0]} [#888888]{short_col_type}[/]",
+                            f"{col[0]} [#888888]{short_type(col[1])}[/]",
                             data=col_identifier,
                         )
 
