@@ -1153,14 +1153,14 @@ sqlfmt-primer = ["gitpython (>=3.1.24,<4.0.0)"]
 
 [[package]]
 name = "textual"
-version = "0.23.0"
+version = "0.24.1"
 description = "Modern Text User Interface framework"
 category = "main"
 optional = false
 python-versions = ">=3.7,<4.0"
 files = [
-    {file = "textual-0.23.0-py3-none-any.whl", hash = "sha256:9eb1284ae312801b12b19668bf84faa2ae226a2ab6269e5f84edff851f2ad371"},
-    {file = "textual-0.23.0.tar.gz", hash = "sha256:f3e08d7afaf6c8562d2d5d6230fa891b515ebf9813cda4ea1807a639032edbd4"},
+    {file = "textual-0.24.1-py3-none-any.whl", hash = "sha256:a7deb7ac5a1502424c754fe165ae13cb3890e47ddc514d3f089cb2984c336d1d"},
+    {file = "textual-0.24.1.tar.gz", hash = "sha256:4c7e1f4ed12b9615c63fa3eb7cb9df68d29e0ae5b2352997958cd7ee5533f926"},
 ]
 
 [package.dependencies]
@@ -1363,4 +1363,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "babe4e3eb76f8c88f25fd49432c1aa5fcad639d1bb614d5b96cf007a06e21918"
+content-hash = "749c7c8409b32bfc5bd2a48cb9e0b9fa30b87d13f5a2e9a6e1fa5e33fdde6e8d"
