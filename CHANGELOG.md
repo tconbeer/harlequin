@@ -3,6 +3,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+## [0.0.6] - 2023-05-09
+
 -   Select text in the query editor using `shift` and arrow keys, etc. Replace/delete/quote selection, etc.
 -   Improves behavior of inserting opening brackets in the query editor.
 -   Hopefully fixes Docker build
@@ -37,7 +40,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.5...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.6...HEAD
+
+[0.0.6]: https://github.com/tconbeer/harlequin/compare/0.0.5...0.0.6
 
 [0.0.5]: https://github.com/tconbeer/harlequin/compare/0.0.4...0.0.5
 
