@@ -3,6 +3,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+-   Select text in the query editor using `shift` and arrow keys, etc. Replace/delete/quote selection, etc.
+-   Improves behavior of inserting opening brackets in the query editor.
+-   Hopefully fixes Docker build
 
 ## [0.0.5] - 2023-05-08
 
