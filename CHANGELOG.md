@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.7] - 2023-05-12
+
 -   Comment selected text with ctrl+/
 -   Smarter indentation after pressing enter
 
@@ -43,7 +45,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.6...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.7...HEAD
+
+[0.0.7]: https://github.com/tconbeer/harlequin/compare/0.0.6...0.0.7
 
 [0.0.6]: https://github.com/tconbeer/harlequin/compare/0.0.5...0.0.6
 
