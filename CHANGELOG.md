@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Comment selected text with ctrl+/
+-   Smarter indentation after pressing enter
+
 ## [0.0.6] - 2023-05-09
 
 -   Select text in the query editor using `shift` and arrow keys, etc. Replace/delete/quote selection, etc.
