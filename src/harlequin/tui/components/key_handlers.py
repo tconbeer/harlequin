@@ -14,9 +14,10 @@ class Cursor(NamedTuple):
 def handle_arrow(key: str, lines: List[str], cursor: Cursor) -> Cursor:
     arrow = key.split("+")[-1]
     if "ctrl" in key:
+        assert arrow not in ("up", "down"), "ctrl+up/down should be handled first"
         if arrow == "right":
             return _handle_ctrl_right(lines, cursor)
-        else:  # arrow == "left":
+        else:  # if arrow == "left":
             return _handle_ctrl_left(lines, cursor)
     else:
         if arrow == "right":
