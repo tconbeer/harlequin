@@ -26,7 +26,7 @@ textual = {version="*", extras=["dev"]}
 
 [tool.poetry.group.static.dependencies]
 black = "^23.3.0"
-ruff = ">=0.0.264,<0.0.266"
+ruff = ">=0.0.264,<0.0.268"
 mypy = "^1.2.0"
 
 [tool.poetry.group.test.dependencies]
