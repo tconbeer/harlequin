@@ -220,22 +220,26 @@ class TextInput(Static, can_focus=True):
             old_lines, first, last = self._get_selected_lines(selection_before)
             head = f"{old_lines[0][:first.pos]} "
             tail = f"{old_lines[-1][last.pos:]}"
-            indent = len(old_lines[0]) - len(old_lines[0].lstrip())
+            if old_lines[0].isspace():
+                indent = 0
+            else:
+                indent = len(old_lines[0]) - len(old_lines[0].lstrip())
 
             char_before = self._get_character_before_cursor(first)
             if char_before in BRACKETS and BRACKETS[
                 char_before
             ] == self._get_character_at_cursor(last):
+                new_indent = indent + TAB_SIZE - (indent % TAB_SIZE)
                 self.lines[first.lno : last.lno + 1] = [
                     head,
-                    f"{' ' * (indent+TAB_SIZE)} ",
+                    f"{' ' * new_indent} ",
                     f"{' ' * indent}{tail.lstrip()}",
                 ]
-                self.cursor = Cursor(first.lno + 1, indent + TAB_SIZE)
+                self.cursor = Cursor(first.lno + 1, new_indent)
             else:
                 self.lines[first.lno : last.lno + 1] = [
                     head,
-                    f"{' ' * indent}{tail.lstrip()} ",
+                    f"{' ' * indent}{tail.lstrip() or ' '}",
                 ]
                 self.cursor = Cursor(first.lno + 1, min(first.pos, indent))
         elif event.key == "delete":
