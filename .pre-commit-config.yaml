@@ -14,7 +14,7 @@ repos:
       - id: mypy
         additional_dependencies: ['textual']
         args:
-          - "--ignore-missing-imports"
+          # - "--ignore-missing-imports"
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"
           - "--disallow-incomplete-defs"
