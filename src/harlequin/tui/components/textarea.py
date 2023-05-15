@@ -80,6 +80,21 @@ class TextInput(Static, can_focus=True):
         self.cursor_visible = False
         self.update(self._content)
 
+    def on_paste(self, event: events.Paste) -> None:
+        """
+        If the user hits ctrl+v, we don't get that keypress;
+        we get a Paste event instead.
+
+        For now, ignore the system clipboard and mimic ctrl+u.
+        Todo: Use the system clipboard for copy/paste.
+        """
+        event.stop()
+        self.cursor_visible = True
+        self.blink_timer.reset()
+        self._insert_clipboard_at_selection(self.selection_anchor, self.cursor)
+        self.selection_anchor = None
+        self.update(self._content)
+
     def on_key(self, event: events.Key) -> None:
         self.cursor_visible = True
         self.blink_timer.reset()
@@ -190,22 +205,7 @@ class TextInput(Static, can_focus=True):
                 )
         elif event.key == "ctrl+u":
             event.stop()
-            if selection_before:
-                self._delete_selection(selection_before, self.cursor)
-            head = self.lines[self.cursor.lno][: self.cursor.pos]
-            tail = self.lines[self.cursor.lno][self.cursor.pos :]
-            self.log(f"head: {repr(head)}, tail: {repr(tail)}")
-            self.log(f"clipboard: {self.clipboard}")
-            if (clip_len := len(self.clipboard)) != 0:
-                new_lines = self.clipboard.copy()
-                new_lines[0] = f"{head}{new_lines[0]}"
-                new_lines[-1] = f"{new_lines[-1]}{tail}"
-                self.log(f"new lines: {new_lines}")
-                self.lines[self.cursor.lno : self.cursor.lno + 1] = new_lines
-                self.cursor = Cursor(
-                    self.cursor.lno + clip_len - 1,
-                    len(self.lines[self.cursor.lno + clip_len - 1]) - len(tail),
-                )
+            self._insert_clipboard_at_selection(selection_before, self.cursor)
         elif event.key == "tab":
             event.stop()
             lines, first, last = self._get_selected_lines(selection_before)
@@ -411,6 +411,24 @@ class TextInput(Static, can_focus=True):
             if cursor.pos == 0
             else Cursor(cursor.lno, cursor.pos + change_at_cursor)
         )
+
+    def _insert_clipboard_at_selection(
+        self, anchor: Union[Cursor, None], cursor: Cursor
+    ) -> None:
+        if anchor:
+            self._delete_selection(anchor, cursor)
+            cursor = self.cursor
+        head = self.lines[cursor.lno][: cursor.pos]
+        tail = self.lines[cursor.lno][cursor.pos :]
+        if (clip_len := len(self.clipboard)) != 0:
+            new_lines = self.clipboard.copy()
+            new_lines[0] = f"{head}{new_lines[0]}"
+            new_lines[-1] = f"{new_lines[-1]}{tail}"
+            self.lines[cursor.lno : cursor.lno + 1] = new_lines
+            self.cursor = Cursor(
+                cursor.lno + clip_len - 1,
+                len(self.lines[cursor.lno + clip_len - 1]) - len(tail),
+            )
 
     def _get_character_at_cursor(self, cursor: Cursor) -> str:
         return self.lines[cursor.lno][cursor.pos]
