@@ -9,7 +9,6 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import ScrollableContainer
-from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -17,6 +16,7 @@ from textual.widgets import Static
 from harlequin.tui.components.error_modal import ErrorModal
 from harlequin.tui.components.filename_modal import FilenameModal
 from harlequin.tui.components.key_handlers import Cursor, handle_arrow
+from harlequin.tui.components.messages import CursorMoved, ScrollOne
 
 BRACKETS = {
     "(": ")",
@@ -48,19 +48,6 @@ class TextInput(Static, can_focus=True):
     selection_anchor: reactive[Union[Cursor, None]] = reactive(None)
     clipboard: List[str] = list()
     cursor_visible: reactive[bool] = reactive(True)
-
-    class CursorMoved(Message, bubble=True):
-        """Posted when the cursor moves
-
-        Attributes:
-            cursor_x: The x position of the cursor
-            cursor_y: The y position (line number)
-        """
-
-        def __init__(self, cursor_x: int, cursor_y: int) -> None:
-            super().__init__()
-            self.cursor_x = cursor_x
-            self.cursor_y = cursor_y
 
     def on_mount(self) -> None:
         self.blink_timer = self.set_interval(
@@ -152,6 +139,9 @@ class TextInput(Static, can_focus=True):
             self.move_cursor(
                 x=self.cursor.pos, y=(self.cursor.lno + self._visible_height() - 1)
             )
+        elif event.key in ("ctrl+up", "ctrl+down"):
+            event.stop()
+            self.post_message(ScrollOne(direction=event.key.split("+")[1]))
         elif any([dir in event.key for dir in ["left", "right", "up", "down"]]):
             event.stop()
             self.cursor = handle_arrow(event.key, self.lines, self.cursor)
@@ -304,7 +294,7 @@ class TextInput(Static, can_focus=True):
         return syntax
 
     def _scroll_to_cursor(self) -> None:
-        self.post_message(self.CursorMoved(self.cursor.pos, self.cursor.lno))
+        self.post_message(CursorMoved(self.cursor.pos, self.cursor.lno))
 
     def _visible_height(self) -> int:
         parent = self.parent
@@ -498,7 +488,7 @@ class TextArea(Widget, can_focus=False, can_focus_children=True):
         input.move_cursor(event.x - 1, event.y)
         input.focus()
 
-    def on_text_input_cursor_moved(self, event: TextInput.CursorMoved) -> None:
+    def on_cursor_moved(self, event: CursorMoved) -> None:
         """
         Scrolls the container so the cursor is visible.
         """
@@ -526,6 +516,14 @@ class TextArea(Widget, can_focus=False, can_focus_children=True):
                 container.window_region.x,
                 event.cursor_y - container.window_region.height + y_buffer,
             )
+
+    def on_scroll_one(self, event: ScrollOne) -> None:
+        event.stop()
+        offset = 1 if event.direction == "down" else -1
+        container = self.query_one(TextContainer)
+        container.scroll_to(
+            container.window_region.x, container.window_region.y + offset
+        )
 
 
 if __name__ == "__main__":
