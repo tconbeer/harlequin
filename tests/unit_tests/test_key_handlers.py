@@ -1,8 +1,7 @@
 from typing import List
 
 import pytest
-from harlequin.tui.components.key_handlers import handle_arrow
-from harlequin.tui.components.textarea import Cursor
+from harlequin.tui.components.key_handlers import Cursor, handle_arrow
 
 
 @pytest.mark.parametrize(
