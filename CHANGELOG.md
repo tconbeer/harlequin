@@ -7,11 +7,13 @@ All notable changes to this project will be documented in this file.
 -   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u/ctrl+v`
 -   Quit with `ctrl+q`, instead of `ctrl+c`
 -   `tab` indents selected text or inserts four-ish spaces in text editor; `shift+tab` dedents selected text
+-   scroll up and down with `ctrl+up` and `ctrl+down`
+-   fixes an issue where an extra space would be added to the end of lines when pressing `enter` in some situations.
 
 ## [0.0.7] - 2023-05-12
 
--   Comment selected text with ctrl+/
--   Smarter indentation after pressing enter
+-   Comment selected text with `ctrl+/`
+-   Smarter indentation after pressing `enter`
 
 ## [0.0.6] - 2023-05-09
 
