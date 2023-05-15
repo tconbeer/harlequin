@@ -1,11 +1,12 @@
 # Harlequin CHANGELOG
 
 All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
 -   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u/ctrl+v`
 -   Quit with `ctrl+q`, instead of `ctrl+c`
 -   `tab` indents selected text or inserts four-ish spaces in text editor; `shift+tab` dedents selected text
-
-## [Unreleased]
 
 ## [0.0.7] - 2023-05-12
 
