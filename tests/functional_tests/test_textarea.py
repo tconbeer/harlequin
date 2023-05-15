@@ -2,7 +2,8 @@ from typing import List, Union
 
 import pytest
 from harlequin.tui import Harlequin
-from harlequin.tui.components.textarea import Cursor, TextInput
+from harlequin.tui.components.key_handlers import Cursor
+from harlequin.tui.components.textarea import TextInput
 
 
 @pytest.fixture
@@ -45,6 +46,24 @@ def query() -> List[str]:
             None,
             None,
             Cursor(1, 0),
+        ),
+        (
+            ["a"],
+            ["select ", " foo "],
+            None,
+            Cursor(1, 4),
+            ["select ", " fooa "],
+            None,
+            Cursor(1, 5),
+        ),
+        (
+            ["a"],
+            ["select ", " foo "],
+            Cursor(1, 0),
+            Cursor(1, 4),
+            ["select ", "a "],
+            None,
+            Cursor(1, 1),
         ),
     ],
 )

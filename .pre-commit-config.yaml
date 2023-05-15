@@ -12,8 +12,14 @@ repos:
     rev: v1.2.0
     hooks:
       - id: mypy
+        additional_dependencies:
+          - click
+          - duckdb
+          - shandy-sqlfmt[jinjafmt]
+          - textual
+          - pytest
+        exclude: '^.*tests/.*\.py$'
         args:
-          - "--ignore-missing-imports"
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"
           - "--disallow-incomplete-defs"

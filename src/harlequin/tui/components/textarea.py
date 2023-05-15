@@ -1,3 +1,4 @@
+from math import ceil, floor
 from typing import List, Tuple, Union
 
 from rich.console import RenderableType
@@ -28,10 +29,10 @@ TAB_SIZE = 4
 
 class TextInput(Static, can_focus=True):
     BINDINGS = [
-        ("ctrl+`", "format", "Format Query"),
+        Binding("ctrl+`", "format", "Format Query"),
         Binding("ctrl+@", "format", "Format Query", show=False),
-        ("ctrl+s", "save", "Save Query"),
-        ("ctrl+o", "load", "Open Query"),
+        Binding("ctrl+s", "save", "Save Query"),
+        Binding("ctrl+o", "load", "Open Query"),
     ]
 
     DEFAULT_CSS = """
@@ -45,6 +46,7 @@ class TextInput(Static, can_focus=True):
     lines: reactive[List[str]] = reactive(lambda: list(" "))
     cursor: reactive[Cursor] = reactive(Cursor(0, 0))
     selection_anchor: reactive[Union[Cursor, None]] = reactive(None)
+    clipboard: List[str] = list()
     cursor_visible: reactive[bool] = reactive(True)
 
     class CursorMoved(Message, bubble=True):
@@ -52,7 +54,7 @@ class TextInput(Static, can_focus=True):
 
         Attributes:
             cursor_x: The x position of the cursor
-            cursor_y: The y position
+            cursor_y: The y position (line number)
         """
 
         def __init__(self, cursor_x: int, cursor_y: int) -> None:
@@ -78,6 +80,21 @@ class TextInput(Static, can_focus=True):
         self.cursor_visible = False
         self.update(self._content)
 
+    def on_paste(self, event: events.Paste) -> None:
+        """
+        If the user hits ctrl+v, we don't get that keypress;
+        we get a Paste event instead.
+
+        For now, ignore the system clipboard and mimic ctrl+u.
+        Todo: Use the system clipboard for copy/paste.
+        """
+        event.stop()
+        self.cursor_visible = True
+        self.blink_timer.reset()
+        self._insert_clipboard_at_selection(self.selection_anchor, self.cursor)
+        self.selection_anchor = None
+        self.update(self._content)
+
     def on_key(self, event: events.Key) -> None:
         self.cursor_visible = True
         self.blink_timer.reset()
@@ -86,8 +103,10 @@ class TextInput(Static, can_focus=True):
         # set selection_anchor if it's unset
         if event.key == "shift+delete":
             pass  # todo: shift+delete should delete the whole line
-        if event.key == "ctrl+underscore":
-            pass  # this comments out a section, which should maintain selection
+        elif event.key == "shift+tab":
+            pass
+        elif event.key in ("ctrl+underscore", "ctrl+`", "ctrl+@", "ctrl+s", "ctrl+c"):
+            pass  #  these should maintain selection
         elif event.key == "ctrl+a":
             self.selection_anchor = Cursor(0, 0)
         elif selection_before is None and "shift" in event.key:
@@ -107,7 +126,6 @@ class TextInput(Static, can_focus=True):
             "right_curly_bracket",
         ):
             assert event.character is not None
-            self.log(f"here! {event.character}")
             if selection_before is None:
                 self._insert_closed_character_at_cursor(event.character, self.cursor)
             elif event.key in (
@@ -165,12 +183,55 @@ class TextInput(Static, can_focus=True):
                     f"{' ' * indent}-- {stripped_line}"
                     for indent, stripped_line in zip(indents, stripped_lines)
                 ]
+        elif event.key in ("ctrl+c", "ctrl+x"):
+            event.stop()
+            if selection_before:
+                lines, first, last = self._get_selected_lines(selection_before)
+            else:  # no selection, copy whole line
+                lines, first, last = (
+                    [self.lines[self.cursor.lno], ""],
+                    Cursor(self.cursor.lno, 0),
+                    Cursor(self.cursor.lno, len(self.lines[self.cursor.lno])),
+                )
+            lines[-1] = lines[-1][: last.pos]
+            lines[0] = lines[0][first.pos :]
+            self.clipboard = lines.copy()
+            self.log(f"copied to clipboard: {self.clipboard}")
+            if event.key == "ctrl+x":
+                self._delete_selection(first, last)
+                new_lno = min(first.lno, len(self.lines) - 1)
+                self.cursor = Cursor(
+                    new_lno, min(first.pos, len(self.lines[new_lno]) - 1)
+                )
+        elif event.key == "ctrl+u":
+            event.stop()
+            self._insert_clipboard_at_selection(selection_before, self.cursor)
+        elif event.key == "tab":
+            event.stop()
+            lines, first, last = self._get_selected_lines(selection_before)
+            # in some cases, selections are replaced with four spaces
+            if first.lno == last.lno and (
+                first.pos == last.pos
+                or first.pos != 0
+                or last.pos != len(self.lines[self.cursor.lno]) - 1
+            ):
+                self._delete_selection(first, last)
+                indent = TAB_SIZE - first.pos % TAB_SIZE
+                self._insert_character_at_cursor(" " * indent, first)
+                self.cursor = Cursor(lno=first.lno, pos=first.pos + indent)
+            # usually, selected lines are prepended with four-ish spaces
+            else:
+                self._indent_selection(selection_before, self.cursor, kind="indent")
+        elif event.key == "shift+tab":
+            event.stop()
+            self._indent_selection(selection_before, self.cursor, kind="dedent")
         elif event.key == "enter":
             event.stop()
             old_lines, first, last = self._get_selected_lines(selection_before)
             head = f"{old_lines[0][:first.pos]} "
             tail = f"{old_lines[-1][last.pos:]}"
             indent = len(old_lines[0]) - len(old_lines[0].lstrip())
+
             char_before = self._get_character_before_cursor(first)
             if char_before in BRACKETS and BRACKETS[
                 char_before
@@ -308,8 +369,66 @@ class TextInput(Static, can_focus=True):
         old_lines, first, last = self._get_selected_lines(anchor, maybe_cursor=cursor)
         head = f"{old_lines[0][:first.pos]}"
         tail = f"{old_lines[-1][last.pos:]}"
-        self.lines[first.lno : last.lno + 1] = [f"{head}{tail}"]
+        if new_line := f"{head}{tail}":
+            self.lines[first.lno : last.lno + 1] = [new_line]
+        else:  # empty str, no line-ending space, delete whole line
+            self.lines[first.lno : last.lno + 1] = []
+            if not self.lines:
+                self.lines = [" "]
         self.cursor = Cursor(first.lno, first.pos)
+
+    def _indent_selection(
+        self, anchor: Union[Cursor, None], cursor: Cursor, kind: str
+    ) -> None:
+        assert kind in ("indent", "dedent")
+        rounder, offset = (ceil, -1) if kind == "dedent" else (floor, 1)
+
+        lines, first, last = self._get_selected_lines(anchor, cursor)
+        leading_spaces = [(len(line) - len(line.lstrip())) for line in lines]
+        leading_tabs = [rounder(space / TAB_SIZE) for space in leading_spaces]
+        new_lines = [
+            f"{' ' * TAB_SIZE * max(0, indent+offset)}{line.lstrip()}"
+            for line, indent in zip(lines, leading_tabs)
+        ]
+        self.lines[first.lno : last.lno + 1] = new_lines
+        if anchor:
+            change_at_anchor_line = len(new_lines[anchor.lno - first.lno]) - len(
+                lines[anchor.lno - first.lno]
+            )
+            self.selection_anchor = (
+                anchor
+                if anchor.pos == 0
+                else Cursor(
+                    anchor.lno,
+                    anchor.pos + change_at_anchor_line,
+                )
+            )
+        change_at_cursor = len(new_lines[cursor.lno - first.lno]) - len(
+            lines[cursor.lno - first.lno]
+        )
+        self.cursor = (
+            cursor
+            if cursor.pos == 0
+            else Cursor(cursor.lno, cursor.pos + change_at_cursor)
+        )
+
+    def _insert_clipboard_at_selection(
+        self, anchor: Union[Cursor, None], cursor: Cursor
+    ) -> None:
+        if anchor:
+            self._delete_selection(anchor, cursor)
+            cursor = self.cursor
+        head = self.lines[cursor.lno][: cursor.pos]
+        tail = self.lines[cursor.lno][cursor.pos :]
+        if (clip_len := len(self.clipboard)) != 0:
+            new_lines = self.clipboard.copy()
+            new_lines[0] = f"{head}{new_lines[0]}"
+            new_lines[-1] = f"{new_lines[-1]}{tail}"
+            self.lines[cursor.lno : cursor.lno + 1] = new_lines
+            self.cursor = Cursor(
+                cursor.lno + clip_len - 1,
+                len(self.lines[cursor.lno + clip_len - 1]) - len(tail),
+            )
 
     def _get_character_at_cursor(self, cursor: Cursor) -> str:
         return self.lines[cursor.lno][cursor.pos]
