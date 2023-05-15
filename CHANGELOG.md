@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.8] - 2023-05-15
+
 -   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u/ctrl+v`
 -   Quit with `ctrl+q`, instead of `ctrl+c`
 -   `tab` indents selected text or inserts four-ish spaces in text editor; `shift+tab` dedents selected text
@@ -51,7 +53,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.7...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.8...HEAD
+
+[0.0.8]: https://github.com/tconbeer/harlequin/compare/0.0.7...0.0.8
 
 [0.0.7]: https://github.com/tconbeer/harlequin/compare/0.0.6...0.0.7
 
