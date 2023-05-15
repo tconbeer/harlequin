@@ -37,7 +37,7 @@ jobs:
           key: static-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --sync --no-interaction --without dev,test
+        run: poetry install --sync --no-interaction --without dev
       - name: Run analysis
         run: |
           source .venv/bin/activate
