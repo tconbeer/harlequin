@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.9] - 2023-05-16
 
+-   fixes an issue where a DuckDB Error could cause Harlequin to crash ([#56](https://github.com/tconbeer/harlequin/issues/56) - thank you [@Mause](https://github.com/Mause)!)
+
 ## [0.0.8] - 2023-05-15
 
 -   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u/ctrl+v`
