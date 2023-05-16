@@ -143,14 +143,17 @@ class Harlequin(App, inherit_bindings=False):
                 pane.show_table()
                 self.data = []
 
-    def watch_relation(self, relation: Union[duckdb.DuckDBPyRelation, None]) -> None:
+    async def watch_relation(
+        self, relation: Union[duckdb.DuckDBPyRelation, None]
+    ) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
         # invalidate results so watch_data runs even if the results are the same
         self.data = []
         if relation is not None:
-            table = self.query_one(ResultsViewer).get_table()
+            pane = self.query_one(ResultsViewer)
+            table = pane.get_table()
             short_types = [short_type(t) for t in relation.dtypes]
             table.add_columns(
                 *[
@@ -158,7 +161,29 @@ class Harlequin(App, inherit_bindings=False):
                     for name, type in zip(relation.columns, short_types)
                 ]
             )
-            self.fetch_relation_data(relation)
+            try:
+                worker = self.fetch_relation_data(relation)
+                await worker.wait()
+            except WorkerFailed as e:
+                self.push_screen(
+                    ErrorModal(
+                        title="DuckDB Error",
+                        header=("DuckDB raised an error when " "running your query:"),
+                        error=e.error,
+                    )
+                )
+                pane.show_table()
+            # Textual fails to catch some duckdb Errors,
+            # so we need this mostly- redundant block.
+            except duckdb.Error as e:
+                self.push_screen(
+                    ErrorModal(
+                        title="DuckDB Error",
+                        header=("DuckDB raised an error when " "running your query:"),
+                        error=e,
+                    )
+                )
+                pane.show_table()
 
     async def watch_data(self, data: List[Tuple]) -> None:
         if data:
@@ -187,7 +212,7 @@ class Harlequin(App, inherit_bindings=False):
         relation = self.connection.sql(query_text)
         return relation
 
-    @work(exclusive=True)
+    @work(exclusive=True, exit_on_error=False)  # type: ignore
     def fetch_relation_data(self, relation: duckdb.DuckDBPyRelation) -> None:
         log(f"fetch_relation_data {hash(relation)}")
         data = relation.fetchall()
