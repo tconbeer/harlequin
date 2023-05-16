@@ -22,20 +22,6 @@ pipx install harlequin
 > - `pipx run harlequin ./my.duckdb`
 
 
-## Running Harlequin in a Container
-
-Without a database file:
-
-```bash
-docker run ghcr.io/tconbeer/harlequin:latest
-```
-
-Mounting a database file `./foo.db` into the container's working directory, `/data`:
-
-```bash
-docker run -v $(pwd)/foo.db:/data/bar.db ghcr.io/tconbeer/harlequin:latest harlequin bar.db
-```
-
 ## Using Harlequin
 
 From any shell, to open a DuckDB database file:

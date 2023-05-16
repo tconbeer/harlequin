@@ -1,6 +1,7 @@
 *.db
 *.db.wal
 *.sql
+Pipfile
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
