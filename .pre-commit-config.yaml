@@ -14,7 +14,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - click
-          - duckdb
+          - duckdb>=0.8.0
           - shandy-sqlfmt[jinjafmt]
           - textual
           - pytest
