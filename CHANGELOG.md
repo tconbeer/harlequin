@@ -4,8 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.10] - 2023-05-17
+
 -   upgrades duckdb to v0.8.0, which includes some breaking changes. Harlequin can
     no longer support early versions of duckdb.
+
 ## [0.0.9] - 2023-05-16
 
 -   fixes an issue where a DuckDB Error could cause Harlequin to crash ([#56](https://github.com/tconbeer/harlequin/issues/56) - thank you [@Mause](https://github.com/Mause)!)
@@ -60,7 +63,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.9...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.10...HEAD
+
+[0.0.10]: https://github.com/tconbeer/harlequin/compare/0.0.9...0.0.10
 
 [0.0.9]: https://github.com/tconbeer/harlequin/compare/0.0.8...0.0.9
 
