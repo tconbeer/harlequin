@@ -4,10 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   after a query is executed and the data is loaded, the focus shifts to the data table.
 ## [0.0.10] - 2023-05-17
 
--   upgrades duckdb to v0.8.0, which includes some breaking changes. Harlequin can
-    no longer support early versions of duckdb.
+-   upgrades duckdb to v0.8.0, which includes some breaking changes around types. Harlequin can no longer support earlier versions of duckdb.
 
 ## [0.0.9] - 2023-05-16
 

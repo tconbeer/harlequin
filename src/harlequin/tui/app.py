@@ -197,6 +197,7 @@ class Harlequin(App, inherit_bindings=False):
                 if i == 0:
                     pane.show_table()
             pane.set_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
+            table.focus()
 
     @staticmethod
     def chunk(
