@@ -1,9 +1,11 @@
 [tool.poetry]
 name = "harlequin"
 version = "0.0.10"
-description = "A Text User Interface for DuckDB"
+description = "A terminal-based SQL IDE for DuckDB"
 authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
 license = "MIT"
+homepage = "https://harlequin.sh"
+repository = "https://github.com/tconbeer/harlequin"
 readme = "README.md"
 packages = [
     { include = "harlequin", from = "src" },
