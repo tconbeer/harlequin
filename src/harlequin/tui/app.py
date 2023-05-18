@@ -50,7 +50,19 @@ class Harlequin(App, inherit_bindings=False):
         try:
             self.connection = duckdb.connect(database=str(db_path), read_only=read_only)
         except (duckdb.CatalogException, duckdb.IOException) as e:
-            print(e)
+            from rich import print
+            from rich.panel import Panel
+
+            print(
+                Panel.fit(
+                    str(e),
+                    title="DuckDB couldn't connect to your database.",
+                    title_align="left",
+                    border_style="red",
+                    subtitle="Try again?",
+                    subtitle_align="right",
+                )
+            )
             self.exit()
 
     def compose(self) -> ComposeResult:
