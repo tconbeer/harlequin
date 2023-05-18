@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.11] - 2023-05-18
+
 -   adds a command-line option (`-r`, `-readonly`, or `--read-only`) for opening
     the database file in read-only mode.
 -   after a query is executed and the data is loaded, the focus shifts to the data table.
+
 ## [0.0.10] - 2023-05-17
 
 -   upgrades duckdb to v0.8.0, which includes some breaking changes around types. Harlequin can no longer support earlier versions of duckdb.
@@ -65,7 +68,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.10...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.11...HEAD
+
+[0.0.11]: https://github.com/tconbeer/harlequin/compare/0.0.10...0.0.11
 
 [0.0.10]: https://github.com/tconbeer/harlequin/compare/0.0.9...0.0.10
 
