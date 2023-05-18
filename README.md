@@ -36,6 +36,12 @@ To open an in-memory DuckDB session, run Harlequin with no arguments:
 harlequin
 ```
 
+You can also open a database in read-only mode:
+
+```bash
+harlequin -r "path/to/duck.db"
+```
+
 ### Viewing the Schema of your Database
 
 When Harlequin is open, you can view the schema of your DuckDB database in the left sidebar. You can use your mouse or the arrow keys + enter to navigate the tree. The tree shows schemas, tables/views and their types, and columns and their types.

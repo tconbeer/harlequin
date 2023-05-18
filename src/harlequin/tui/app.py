@@ -40,13 +40,30 @@ class Harlequin(App, inherit_bindings=False):
     def __init__(
         self,
         db_path: Path,
+        read_only: bool = False,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
-        self.db_name = db_path.stem
-        self.connection = duckdb.connect(database=str(db_path))
         super().__init__(driver_class, css_path, watch_css)
+        self.db_name = db_path.stem
+        try:
+            self.connection = duckdb.connect(database=str(db_path), read_only=read_only)
+        except (duckdb.CatalogException, duckdb.IOException) as e:
+            from rich import print
+            from rich.panel import Panel
+
+            print(
+                Panel.fit(
+                    str(e),
+                    title="DuckDB couldn't connect to your database.",
+                    title_align="left",
+                    border_style="red",
+                    subtitle="Try again?",
+                    subtitle_align="right",
+                )
+            )
+            self.exit()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""

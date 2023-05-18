@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   adds a command-line option (`-r`, `-readonly`, or `--read-only`) for opening
+    the database file in read-only mode.
 -   after a query is executed and the data is loaded, the focus shifts to the data table.
 ## [0.0.10] - 2023-05-17
 
