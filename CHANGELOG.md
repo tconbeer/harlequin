@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.12] - 2023-05-31
 
+-   improves documentation of `ctrl+j` as an alternative key binding for running a query ([#71](https://github.com/tconbeer/harlequin/issues/71) - thank you [@carteakey](https://github.com/carteakey)!)
+
 ## [0.0.11] - 2023-05-18
 
 -   adds a command-line option (`-r`, `-readonly`, or `--read-only`) for opening
