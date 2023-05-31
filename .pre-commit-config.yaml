@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: black
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.264
+    rev: v0.0.270
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
@@ -17,6 +17,7 @@ repos:
           - duckdb>=0.8.0
           - shandy-sqlfmt[jinjafmt]
           - textual
+          - textual-textarea>=0.1.2
           - pytest
         exclude: '^.*tests/.*\.py$'
         args:

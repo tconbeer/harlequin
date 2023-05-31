@@ -7,8 +7,9 @@ from textual.app import App, ComposeResult, CSSPathType
 from textual.containers import Container
 from textual.driver import Driver
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Input
+from textual.widgets import Footer, Header
 from textual.worker import Worker, WorkerFailed, get_current_worker
+from textual_textarea import TextArea
 
 from harlequin.tui.components import (
     SCHEMAS,
@@ -18,7 +19,6 @@ from harlequin.tui.components import (
     ResultsTable,
     ResultsViewer,
     SchemaViewer,
-    TextInput,
 )
 from harlequin.tui.utils import short_type
 
@@ -70,56 +70,18 @@ class Harlequin(App, inherit_bindings=False):
         with Container(id="sql_client"):
             yield Header()
             yield SchemaViewer(self.db_name, connection=self.connection)
-            yield CodeEditor()
+            yield CodeEditor(language="sql")
             yield ResultsViewer()
             yield Footer()
 
     async def on_mount(self) -> None:
         worker = self.update_schema_data()
-        editor = self.query_one(TextInput)
+        editor = self.query_one(TextArea)
         self.set_focus(editor)
         await worker.wait()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
-        self.query_text = "\n".join(message.lines)
-
-    def on_input_submitted(self, message: Input.Submitted) -> None:
-        self.app.pop_screen()
-        editor = self.query_one(TextInput)
-        if message.input.id == "save_modal":
-            try:
-                with open(message.input.value, "w") as f:
-                    query = "\n".join([line.rstrip() for line in editor.lines])
-                    f.write(query)
-            except OSError as e:
-                self.push_screen(
-                    ErrorModal(
-                        title="Save File Error",
-                        header=(
-                            "Harlequin encountered an error when "
-                            "attempting to save your file:"
-                        ),
-                        error=e,
-                    )
-                )
-        elif message.input.id == "load_modal":
-            try:
-                with open(message.input.value, "r") as f:
-                    query = f.read()
-            except OSError as e:
-                self.push_screen(
-                    ErrorModal(
-                        title="Load File Error",
-                        header=(
-                            "Harlequin encountered an error when "
-                            "attempting to load your file:"
-                        ),
-                        error=e,
-                    )
-                )
-            else:
-                editor.move_cursor(0, 0)
-                editor.lines = [f"{line} " for line in query.splitlines()]
+        self.query_text = message.text
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")

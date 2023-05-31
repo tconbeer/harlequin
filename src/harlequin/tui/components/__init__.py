@@ -1,6 +1,5 @@
 from harlequin.tui.components.code_editor import CodeEditor as CodeEditor
 from harlequin.tui.components.error_modal import ErrorModal as ErrorModal
-from harlequin.tui.components.filename_modal import FilenameModal as FilenameModal
 from harlequin.tui.components.messages import (
     CursorMoved as CursorMoved,
 )
@@ -21,10 +20,4 @@ from harlequin.tui.components.schema_viewer import (
 )
 from harlequin.tui.components.schema_viewer import (
     SchemaViewer as SchemaViewer,
-)
-from harlequin.tui.components.textarea import (
-    TextArea as TextArea,
-)
-from harlequin.tui.components.textarea import (
-    TextInput as TextInput,
 )
