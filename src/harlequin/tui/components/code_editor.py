@@ -8,7 +8,13 @@ from harlequin.tui.components.textarea import TextArea, TextInput
 
 class CodeEditor(TextArea):
     BINDINGS = [
-        ("ctrl+enter", "submit", "Run Query"),
+        Binding(
+            "ctrl+enter",
+            "submit",
+            "Run Query",
+            key_display="CTRL+ENTER / CTRL+J",
+            show=True,
+        ),
         Binding("ctrl+j", "submit", "Run Query", show=False),
     ]
 
