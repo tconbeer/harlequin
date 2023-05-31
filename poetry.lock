@@ -1131,14 +1131,14 @@ testing-integration = ["build[virtualenv]", "filelock (>=3.4.0)", "jaraco.envs (
 
 [[package]]
 name = "shandy-sqlfmt"
-version = "0.18.1"
+version = "0.18.2"
 description = "sqlfmt is an opinionated CLI tool that formats your sql files"
 category = "main"
 optional = false
 python-versions = ">=3.7,<4.0"
 files = [
-    {file = "shandy_sqlfmt-0.18.1-py3-none-any.whl", hash = "sha256:afe5c7be494c4e8ecf85e96ea0b96ff81d9879dcf09c2a9e43d8830bb2c0172d"},
-    {file = "shandy_sqlfmt-0.18.1.tar.gz", hash = "sha256:4ccf0dff917adc226e34a6eead5951c38939eda7777549975ed47d6fdd346140"},
+    {file = "shandy_sqlfmt-0.18.2-py3-none-any.whl", hash = "sha256:0fc2e16d4d0bbe060051199aace48437858d21eb1c86e7c0c9deaf2230ef8c5b"},
+    {file = "shandy_sqlfmt-0.18.2.tar.gz", hash = "sha256:550fd588b06730bd62a43faceb1a610e28a91a9f2c9f60c8dcd18a6027a0082b"},
 ]
 
 [package.dependencies]
