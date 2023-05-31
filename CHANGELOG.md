@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.12] - 2023-05-31
+
 ## [0.0.11] - 2023-05-18
 
 -   adds a command-line option (`-r`, `-readonly`, or `--read-only`) for opening
@@ -68,7 +70,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.11...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.12...HEAD
+
+[0.0.12]: https://github.com/tconbeer/harlequin/compare/0.0.11...0.0.12
 
 [0.0.11]: https://github.com/tconbeer/harlequin/compare/0.0.10...0.0.11
 
