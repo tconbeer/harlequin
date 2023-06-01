@@ -19,7 +19,7 @@ from harlequin import Harlequin
     "--theme",
     default="monokai",
     help=(
-        "Set the them (colors) of the text editor. "
+        "Set the theme (colors) of the text editor. "
         "Must be the name of a Pygments style; see "
         "https://pygments.org/styles/. Defaults to "
         "monokai."
