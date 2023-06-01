@@ -1,9 +1,6 @@
-from typing import List, Tuple
-
 from textual.binding import Binding
 from textual.message import Message
-
-from harlequin.tui.components.textarea import TextArea, TextInput
+from textual_textarea import TextArea
 
 
 class CodeEditor(TextArea):
@@ -26,11 +23,9 @@ class CodeEditor(TextArea):
             cursor: The position of the cursor
         """
 
-        def __init__(self, lines: List[str], cursor: Tuple[int, int]) -> None:
+        def __init__(self, text: str) -> None:
             super().__init__()
-            self.lines: List[str] = lines
-            self.cursor: Tuple[int, int] = cursor
+            self.text = text
 
     async def action_submit(self) -> None:
-        input = self.query_one(TextInput)
-        self.post_message(self.Submitted(input.lines, input.cursor))
+        self.post_message(self.Submitted(self.text))
