@@ -41,12 +41,14 @@ class Harlequin(App, inherit_bindings=False):
         self,
         db_path: Path,
         read_only: bool = False,
+        theme: str = "monokai",
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.db_name = db_path.stem
+        self.theme = theme
         try:
             self.connection = duckdb.connect(database=str(db_path), read_only=read_only)
         except (duckdb.CatalogException, duckdb.IOException) as e:
@@ -70,7 +72,7 @@ class Harlequin(App, inherit_bindings=False):
         with Container(id="sql_client"):
             yield Header()
             yield SchemaViewer(self.db_name, connection=self.connection)
-            yield CodeEditor(language="sql")
+            yield CodeEditor(language="sql", theme=self.theme)
             yield ResultsViewer()
             yield Footer()
 
