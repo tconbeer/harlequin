@@ -21,7 +21,7 @@ textual = ">=0.22.3,<1.0.0"
 textual-textarea = ">=0.1.2"
 click = "^8.1.3"
 duckdb = ">=0.8.0,<0.9.0"
-shandy-sqlfmt = "^0.18.0"
+shandy-sqlfmt = ">=0.18,<0.20"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.3.1"
