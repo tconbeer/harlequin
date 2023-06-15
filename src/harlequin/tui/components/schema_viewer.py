@@ -10,6 +10,7 @@ from harlequin.tui.utils import short_type
 COLS = List[Tuple[str, str]]
 TABLES = List[Tuple[str, str, COLS]]
 SCHEMAS = List[Tuple[str, TABLES]]
+DATABASES = List[Tuple[str, SCHEMAS]]
 
 
 class SchemaViewer(Tree[Union[str, None]]):
@@ -35,10 +36,12 @@ class SchemaViewer(Tree[Union[str, None]]):
         )
 
     def on_mount(self) -> None:
-        self.border_title = "Schema"
+        self.border_title = "Data Catalog"
+        self.show_root = False
+        self.guide_depth = 3
         self.root.expand()
 
-    def update_tree(self, data: SCHEMAS) -> None:
+    def update_tree(self, data: DATABASES) -> None:
         tree_state = self.get_node_states(self.root)
         expanded_nodes: Set[str] = set(tree_state[0])
         # todo: tree's select_node() not working
@@ -47,24 +50,28 @@ class SchemaViewer(Tree[Union[str, None]]):
         # selected_node = tree_state[1]
         self.clear()
         if data:
-            for schema in data:
-                schema_node = self.root.add(
-                    schema[0], data=schema[0], expand=schema[0] in expanded_nodes
+            for database in data:
+                database_node = self.root.add(
+                    database[0], data=database[0], expand=database[0] in expanded_nodes
                 )
-                for table in schema[1]:
-                    short_table_type = self.table_type_mapping.get(table[1], "?")
-                    table_identifier = f"{schema[0]}.{table[0]}"
-                    table_node = schema_node.add(
-                        f"{table[0]} [#888888]{short_table_type}[/]",
-                        data=table_identifier,
-                        expand=(table_identifier in expanded_nodes),
+                for schema in database[1]:
+                    schema_node = database_node.add(
+                        schema[0], data=schema[0], expand=schema[0] in expanded_nodes
                     )
-                    for col in table[2]:
-                        col_identifier = f"{table_identifier}.{col[0]}"
-                        table_node.add_leaf(
-                            f"{col[0]} [#888888]{short_type(col[1])}[/]",
-                            data=col_identifier,
+                    for table in schema[1]:
+                        short_table_type = self.table_type_mapping.get(table[1], "?")
+                        table_identifier = f"{schema[0]}.{table[0]}"
+                        table_node = schema_node.add(
+                            f"{table[0]} [#888888]{short_table_type}[/]",
+                            data=table_identifier,
+                            expand=(table_identifier in expanded_nodes),
                         )
+                        for col in table[2]:
+                            col_identifier = f"{table_identifier}.{col[0]}"
+                            table_node.add_leaf(
+                                f"{col[0]} [#888888]{short_type(col[1])}[/]",
+                                data=col_identifier,
+                            )
 
     @classmethod
     def get_node_states(

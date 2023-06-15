@@ -7,7 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 -   Reimplements ``ctrl+` `` to format files (regression from 0.0.13)
--   Updates textual_textarea, which fixes two bugs when opening files.
+-   Updates textual_textarea, which fixes two bugs when opening files
+    and another bug related to scrolling the TextArea.
 
 ## [0.0.13] - 2023-06-15
 

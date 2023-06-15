@@ -12,6 +12,7 @@ from textual.worker import Worker, WorkerFailed, get_current_worker
 from textual_textarea import TextArea
 
 from harlequin.tui.components import (
+    DATABASES,
     SCHEMAS,
     TABLES,
     CodeEditor,
@@ -214,32 +215,44 @@ class Harlequin(App, inherit_bindings=False):
     @work(exclusive=True)
     def update_schema_data(self) -> None:
         log("update_schema_data")
-        data: SCHEMAS = []
-        schemas = self.connection.execute(
-            "select distinct table_schema "
-            "from information_schema.tables "
-            "order by 1"
-        ).fetchall()
-        for (schema,) in schemas:
-            tables = self.connection.execute(
-                "select table_name, table_type "
-                "from information_schema.tables "
-                "where table_schema = ?"
+        data: DATABASES = []
+        databases = self.connection.execute("pragma show_databases").fetchall()
+        for (database,) in databases:
+            schemas = self.connection.execute(
+                "select schema_name "
+                "from information_schema.schemata "
+                "where "
+                "    catalog_name = ? "
+                "    and schema_name not in ('pg_catalog', 'information_schema') "
                 "order by 1",
-                [schema],
+                [database],
             ).fetchall()
-            tables_data: TABLES = []
-            if tables:
+            schemas_data: SCHEMAS = []
+            for (schema,) in schemas:
+                tables = self.connection.execute(
+                    "select table_name, table_type "
+                    "from information_schema.tables "
+                    "where "
+                    "    table_catalog = ? "
+                    "    and table_schema = ? "
+                    "order by 1",
+                    [database, schema],
+                ).fetchall()
+                tables_data: TABLES = []
                 for table, type in tables:
                     columns = self.connection.execute(
                         "select column_name, data_type "
                         "from information_schema.columns "
-                        "where table_schema = ? and table_name = ? "
+                        "where "
+                        "    table_catalog = ? "
+                        "    and table_schema = ? "
+                        "    and table_name = ? "
                         "order by 1",
-                        [schema, table],
+                        [database, schema, table],
                     ).fetchall()
                     tables_data.append((table, type, columns))
-            data.append((schema, tables_data))
+                schemas_data.append((schema, tables_data))
+            data.append((database, schemas_data))
         schema_viewer = self.query_one(SchemaViewer)
         worker = get_current_worker()
         if not worker.is_cancelled:
