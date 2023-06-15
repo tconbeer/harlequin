@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Updates textual_textarea, which fixes two bugs when opening files.
+
 ## [0.0.13] - 2023-06-15
 
 ### Features

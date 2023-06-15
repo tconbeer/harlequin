@@ -1188,14 +1188,14 @@ dev = ["aiohttp (>=3.8.1)", "click (>=8.1.2)", "msgpack (>=1.0.3)"]
 
 [[package]]
 name = "textual-textarea"
-version = "0.2.0"
+version = "0.2.1"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 category = "main"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.2.0-py3-none-any.whl", hash = "sha256:2abcc9f230dccf7bb73c6064bd2e28df3e47b7c5046dd554b32a17e64f455469"},
-    {file = "textual_textarea-0.2.0.tar.gz", hash = "sha256:06658525d1fccd0136e3a1f08f7ba30877298b563716d8f3377f71314cd64d85"},
+    {file = "textual_textarea-0.2.1-py3-none-any.whl", hash = "sha256:958ae9dbbd9645ea69e579b8957fe9a3a4bf197bfb135fbabc41c51065f4a170"},
+    {file = "textual_textarea-0.2.1.tar.gz", hash = "sha256:f30f85b938bf08540775f21a6efa1881d75644e301864125fccb955d58ae9ac2"},
 ]
 
 [package.dependencies]
@@ -1390,4 +1390,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "1040475fd8bfa111e8f04867f4cb30cc96b70ecfb1b8957b18110485876eb916"
+content-hash = "d15c9c3344bd4d16ea6b9a0924ecd82bc7762c0d1c0b2541e10a851300e3180b"
