@@ -11,10 +11,9 @@ from textual.widgets import Footer, Header
 from textual.worker import Worker, WorkerFailed, get_current_worker
 from textual_textarea import TextArea
 
+from harlequin.duck_ops import connect, get_catalog
+from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
-    DATABASES,
-    SCHEMAS,
-    TABLES,
     CodeEditor,
     ErrorModal,
     ResultsTable,
@@ -49,31 +48,9 @@ class Harlequin(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
-        if not db_path:
-            db_path = [Path(":memory:")]
-        primary_db, *other_dbs = db_path
         try:
-            self.connection = duckdb.connect(
-                database=str(primary_db), read_only=read_only
-            )
-            for db in other_dbs:
-                self.connection.execute(
-                    f"attach '{db}'{ '(READ ONLY)' if read_only else ''}"
-                )
-        except (duckdb.CatalogException, duckdb.IOException) as e:
-            from rich import print
-            from rich.panel import Panel
-
-            print(
-                Panel.fit(
-                    str(e),
-                    title="DuckDB couldn't connect to your database.",
-                    title_align="left",
-                    border_style="red",
-                    subtitle="Try again?",
-                    subtitle_align="right",
-                )
-            )
+            self.connection = connect(db_path, read_only=read_only)
+        except HarlequinExit:
             self.exit()
 
     def compose(self) -> ComposeResult:
@@ -158,19 +135,8 @@ class Harlequin(App, inherit_bindings=False):
                 self.push_screen(
                     ErrorModal(
                         title="DuckDB Error",
-                        header=("DuckDB raised an error when " "running your query:"),
+                        header=("DuckDB raised an error when running your query:"),
                         error=e.error,
-                    )
-                )
-                pane.show_table()
-            # Textual fails to catch some duckdb Errors,
-            # so we need this mostly- redundant block.
-            except duckdb.Error as e:
-                self.push_screen(
-                    ErrorModal(
-                        title="DuckDB Error",
-                        header=("DuckDB raised an error when " "running your query:"),
-                        error=e,
                     )
                 )
                 pane.show_table()
@@ -222,49 +188,11 @@ class Harlequin(App, inherit_bindings=False):
 
     @work(exclusive=True)
     def update_schema_data(self) -> None:
-        log("update_schema_data")
-        data: DATABASES = []
-        databases = self.connection.execute("pragma show_databases").fetchall()
-        for (database,) in databases:
-            schemas = self.connection.execute(
-                "select schema_name "
-                "from information_schema.schemata "
-                "where "
-                "    catalog_name = ? "
-                "    and schema_name not in ('pg_catalog', 'information_schema') "
-                "order by 1",
-                [database],
-            ).fetchall()
-            schemas_data: SCHEMAS = []
-            for (schema,) in schemas:
-                tables = self.connection.execute(
-                    "select table_name, table_type "
-                    "from information_schema.tables "
-                    "where "
-                    "    table_catalog = ? "
-                    "    and table_schema = ? "
-                    "order by 1",
-                    [database, schema],
-                ).fetchall()
-                tables_data: TABLES = []
-                for table, type in tables:
-                    columns = self.connection.execute(
-                        "select column_name, data_type "
-                        "from information_schema.columns "
-                        "where "
-                        "    table_catalog = ? "
-                        "    and table_schema = ? "
-                        "    and table_name = ? "
-                        "order by 1",
-                        [database, schema, table],
-                    ).fetchall()
-                    tables_data.append((table, type, columns))
-                schemas_data.append((schema, tables_data))
-            data.append((database, schemas_data))
+        catalog = get_catalog(self.connection)
         schema_viewer = self.query_one(SchemaViewer)
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.call_from_thread(schema_viewer.update_tree, data)
+            self.call_from_thread(schema_viewer.update_tree, catalog)
 
 
 if __name__ == "__main__":

@@ -5,12 +5,8 @@ from rich.text import TextType
 from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
+from harlequin.duck_ops import Catalog
 from harlequin.tui.utils import short_type
-
-COLS = List[Tuple[str, str]]
-TABLES = List[Tuple[str, str, COLS]]
-SCHEMAS = List[Tuple[str, TABLES]]
-DATABASES = List[Tuple[str, SCHEMAS]]
 
 
 class SchemaViewer(Tree[Union[str, None]]):
@@ -42,7 +38,7 @@ class SchemaViewer(Tree[Union[str, None]]):
         self.guide_depth = 3
         self.root.expand()
 
-    def update_tree(self, data: DATABASES) -> None:
+    def update_tree(self, catalog: Catalog) -> None:
         tree_state = self.get_node_states(self.root)
         expanded_nodes: Set[str] = set(tree_state[0])
         # todo: tree's select_node() not working
@@ -50,8 +46,8 @@ class SchemaViewer(Tree[Union[str, None]]):
         # in the same place
         # selected_node = tree_state[1]
         self.clear()
-        if data:
-            for database in data:
+        if catalog:
+            for database in catalog:
                 database_node = self.root.add(
                     database[0],
                     data=database[0],

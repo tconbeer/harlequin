@@ -1,0 +1,2 @@
+class HarlequinExit(Exception):
+    pass

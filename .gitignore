@@ -1,5 +1,6 @@
 *.db
 *.db.wal
+!tests/data/*/*.db
 *.sql
 Pipfile
 
