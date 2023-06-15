@@ -31,12 +31,13 @@ class SchemaViewer(Tree[Union[str, None]]):
         disabled: bool = False,
     ) -> None:
         self.connection = connection
+        self.label = label
         super().__init__(
             label, data, name=name, id=id, classes=classes, disabled=disabled
         )
 
     def on_mount(self) -> None:
-        self.border_title = "Data Catalog"
+        self.border_title = self.label
         self.show_root = False
         self.guide_depth = 3
         self.root.expand()
@@ -52,7 +53,9 @@ class SchemaViewer(Tree[Union[str, None]]):
         if data:
             for database in data:
                 database_node = self.root.add(
-                    database[0], data=database[0], expand=database[0] in expanded_nodes
+                    database[0],
+                    data=database[0],
+                    expand=database[0] in expanded_nodes,
                 )
                 for schema in database[1]:
                     schema_node = database_node.add(

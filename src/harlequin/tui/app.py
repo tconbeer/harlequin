@@ -40,7 +40,7 @@ class Harlequin(App, inherit_bindings=False):
 
     def __init__(
         self,
-        db_path: Path,
+        db_path: List[Path],
         read_only: bool = False,
         theme: str = "monokai",
         driver_class: Union[Type[Driver], None] = None,
@@ -48,10 +48,18 @@ class Harlequin(App, inherit_bindings=False):
         watch_css: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
-        self.db_name = db_path.stem
         self.theme = theme
+        if not db_path:
+            db_path = [Path(":memory:")]
+        primary_db, *other_dbs = db_path
         try:
-            self.connection = duckdb.connect(database=str(db_path), read_only=read_only)
+            self.connection = duckdb.connect(
+                database=str(primary_db), read_only=read_only
+            )
+            for db in other_dbs:
+                self.connection.execute(
+                    f"attach '{db}'{ '(READ ONLY)' if read_only else ''}"
+                )
         except (duckdb.CatalogException, duckdb.IOException) as e:
             from rich import print
             from rich.panel import Panel
@@ -72,7 +80,7 @@ class Harlequin(App, inherit_bindings=False):
         """Create child widgets for the app."""
         with Container(id="sql_client"):
             yield Header()
-            yield SchemaViewer(self.db_name, connection=self.connection)
+            yield SchemaViewer("Data Catalog", connection=self.connection)
             yield CodeEditor(language="sql", theme=self.theme)
             yield ResultsViewer()
             yield Footer()
@@ -260,5 +268,5 @@ class Harlequin(App, inherit_bindings=False):
 
 
 if __name__ == "__main__":
-    app = Harlequin(Path("f1.db"))
+    app = Harlequin([Path("f1.db")])
     app.run()

@@ -6,4 +6,4 @@ from harlequin.tui import Harlequin
 
 @pytest.fixture
 def app() -> Harlequin:
-    return Harlequin(Path(":memory:"))
+    return Harlequin([Path(":memory:")])
