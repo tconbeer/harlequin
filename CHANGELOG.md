@@ -4,10 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The schema viewer (now called Data Catalog) now supports multiple databases.
+    ([#89](https://github.com/tconbeer/harlequin/issues/89) - thank you 
+    [@ywelsch](https://github.com/ywelsch)!)
+-   Harlequin can be opened with multiple databases by passing them as CLI args:
+    `harlequin f1.db iris.db`. Databases can also be attached or detached using 
+    SQL executed in Harlequin.
 ### Bug Fixes
 
 -   Reimplements ``ctrl+` `` to format files (regression from 0.0.13)
--   Updates textual_textarea, which fixes two bugs when opening files.
+-   Updates textual_textarea, which fixes two bugs when opening files
+    and another bug related to scrolling the TextArea.
 
 ## [0.0.13] - 2023-06-15
 

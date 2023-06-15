@@ -24,10 +24,10 @@ pipx install harlequin
 
 ## Using Harlequin
 
-From any shell, to open a DuckDB database file:
+From any shell, to open one or more DuckDB database files:
 
 ```bash
-harlequin "path/to/duck.db"
+harlequin "path/to/duck.db" "another_duck.db"
 ```
 
 To open an in-memory DuckDB session, run Harlequin with no arguments:

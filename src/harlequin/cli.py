@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 
 import click
 
@@ -27,10 +28,11 @@ from harlequin import Harlequin
 )
 @click.argument(
     "db_path",
-    default=":memory:",
-    nargs=1,
+    nargs=-1,
     type=click.Path(path_type=Path),
 )
-def harlequin(db_path: Path, read_only: bool, theme: str) -> None:
+def harlequin(db_path: List[Path], read_only: bool, theme: str) -> None:
+    if not db_path:
+        db_path = [Path(":memory:")]
     tui = Harlequin(db_path=db_path, read_only=read_only, theme=theme)
     tui.run()

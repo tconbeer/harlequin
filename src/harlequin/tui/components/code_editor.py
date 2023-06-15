@@ -40,6 +40,9 @@ class CodeEditor(TextArea):
             super().__init__()
             self.text = text
 
+    def on_mount(self) -> None:
+        self.border_title = "Query Editor"
+
     async def action_submit(self) -> None:
         self.post_message(self.Submitted(self.text))
 
