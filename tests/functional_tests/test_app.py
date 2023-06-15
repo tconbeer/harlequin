@@ -1,5 +1,6 @@
 import pytest
 from harlequin.tui import Harlequin
+from harlequin.tui.components import CodeEditor
 
 
 @pytest.mark.asyncio
@@ -21,3 +22,13 @@ async def test_select_1(app: Harlequin) -> None:
         assert app.relation is not None
         await app.workers.wait_for_complete()
         assert app.data == [(1,)]
+
+
+@pytest.mark.asyncio
+async def test_query_formatting(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        editor = app.query_one(CodeEditor)
+        editor.text = "select\n\n1 FROM\n\n foo"
+
+        await pilot.press("ctrl+@")  # alias for ctrl+`
+        assert editor.text == "select 1 from foo\n"
