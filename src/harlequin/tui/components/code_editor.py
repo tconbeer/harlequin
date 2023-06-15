@@ -1,6 +1,11 @@
+from sqlfmt.api import Mode, format_string
+from sqlfmt.exception import SqlfmtError
 from textual.binding import Binding
 from textual.message import Message
 from textual_textarea import TextArea
+from textual_textarea.textarea import TextInput
+
+from harlequin.tui.components.error_modal import ErrorModal
 
 
 class CodeEditor(TextArea):
@@ -13,6 +18,14 @@ class CodeEditor(TextArea):
             show=True,
         ),
         Binding("ctrl+j", "submit", "Run Query", show=False),
+        Binding(
+            "ctrl+`",
+            "format",
+            "Format Query",
+            key_display="CTRL+` / CTRL+@",
+            show=True,
+        ),
+        Binding("ctrl+@", "format", "Format Query", show=False),
     ]
 
     class Submitted(Message, bubble=True):
@@ -29,3 +42,21 @@ class CodeEditor(TextArea):
 
     async def action_submit(self) -> None:
         self.post_message(self.Submitted(self.text))
+
+    def action_format(self) -> None:
+        input = self.query_one(TextInput)
+        old_cursor = input.cursor
+
+        try:
+            self.text = format_string(self.text, Mode())
+        except SqlfmtError as e:
+            self.app.push_screen(
+                ErrorModal(
+                    title="Formatting Error",
+                    header="There was an error while formatting your file:",
+                    error=e,
+                )
+            )
+        else:
+            input.move_cursor(old_cursor.pos, old_cursor.lno)
+            input.update(input._content)
