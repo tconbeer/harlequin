@@ -4,12 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.13] - 2023-06-15
+
 ### Features
+
 -   Harlequin accepts a new argument, `-t/--theme` to set the Pygments theme for the query editor.
 -   Harlequin uses the system clipboard for copying and pasting queries.
 
 ### Under the hood
+
 -   Refactors to use the new [tconbeer/textual-textarea](https://github.com/tconbeer/textual-textarea) package.
+
 ## [0.0.12] - 2023-05-31
 
 -   improves documentation of `ctrl+j` as an alternative key binding for running a query ([#71](https://github.com/tconbeer/harlequin/issues/71) - thank you [@carteakey](https://github.com/carteakey)!)
@@ -78,7 +83,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.12...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.13...HEAD
+
+[0.0.13]: https://github.com/tconbeer/harlequin/compare/0.0.12...0.0.13
 
 [0.0.12]: https://github.com/tconbeer/harlequin/compare/0.0.11...0.0.12
 
