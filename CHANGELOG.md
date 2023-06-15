@@ -4,8 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
 -   Harlequin accepts a new argument, `-t/--theme` to set the Pygments theme for the query editor.
--   under the hood: refactors to use the new [tconbeer/textual-textarea](https://github.com/tconbeer/textual-textarea) package.
+-   Harlequin uses the system clipboard for copying and pasting queries.
+
+### Under the hood
+-   Refactors to use the new [tconbeer/textual-textarea](https://github.com/tconbeer/textual-textarea) package.
 ## [0.0.12] - 2023-05-31
 
 -   improves documentation of `ctrl+j` as an alternative key binding for running a query ([#71](https://github.com/tconbeer/harlequin/issues/71) - thank you [@carteakey](https://github.com/carteakey)!)
