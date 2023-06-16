@@ -7,18 +7,18 @@ from textual.app import App, ComposeResult, CSSPathType
 from textual.containers import Container
 from textual.driver import Driver
 from textual.reactive import reactive
-from textual.widgets import Footer, Header
+from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerFailed, get_current_worker
 from textual_textarea import TextArea
 
+from harlequin.duck_ops import connect, get_catalog
+from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
-    DATABASES,
-    SCHEMAS,
-    TABLES,
     CodeEditor,
     ErrorModal,
     ResultsTable,
     ResultsViewer,
+    RunQueryBar,
     SchemaViewer,
 )
 from harlequin.tui.utils import short_type
@@ -35,6 +35,7 @@ class Harlequin(App, inherit_bindings=False):
     BINDINGS = [("ctrl+q", "quit", "Quit")]
 
     query_text: reactive[str] = reactive(str)
+    limit: int = 500
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[List[Tuple]] = reactive(list)
 
@@ -49,89 +50,109 @@ class Harlequin(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
-        if not db_path:
-            db_path = [Path(":memory:")]
-        primary_db, *other_dbs = db_path
         try:
-            self.connection = duckdb.connect(
-                database=str(primary_db), read_only=read_only
-            )
-            for db in other_dbs:
-                self.connection.execute(
-                    f"attach '{db}'{ '(READ ONLY)' if read_only else ''}"
-                )
-        except (duckdb.CatalogException, duckdb.IOException) as e:
-            from rich import print
-            from rich.panel import Panel
-
-            print(
-                Panel.fit(
-                    str(e),
-                    title="DuckDB couldn't connect to your database.",
-                    title_align="left",
-                    border_style="red",
-                    subtitle="Try again?",
-                    subtitle_align="right",
-                )
-            )
+            self.connection = connect(db_path, read_only=read_only)
+        except HarlequinExit:
             self.exit()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Container(id="sql_client"):
-            yield Header()
             yield SchemaViewer("Data Catalog", connection=self.connection)
             yield CodeEditor(language="sql", theme=self.theme)
+            yield RunQueryBar()
             yield ResultsViewer()
             yield Footer()
 
     async def on_mount(self) -> None:
+        self.schema_viewer = self.query_one(SchemaViewer)
+        self.editor = self.query_one(TextArea)
+        self.results_viewer = self.query_one(ResultsViewer)
+        self.run_query_bar = self.query_one(RunQueryBar)
+        self.run_query_bar.checkbox.value = False
+
         worker = self.update_schema_data()
-        editor = self.query_one(TextArea)
-        self.set_focus(editor)
+        self.set_focus(self.editor)
         await worker.wait()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
+        message.stop()
         self.query_text = message.text
+
+    def on_button_pressed(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.query_text = self.editor.text
+
+    def on_checkbox_changed(self, message: Checkbox.Changed) -> None:
+        """
+        invalidate the last query so we re-run the query with the limit
+        """
+        if message.checkbox.id == "limit_checkbox":
+            message.stop()
+            self.query_text = ""
+
+    def on_input_changed(self, message: Input.Changed) -> None:
+        """
+        invalidate the last query so we re-run the query with the limit
+        """
+        if message.input.id == "limit_input":
+            message.stop()
+            if (
+                message.validation_result
+                and message.input.value
+                and message.validation_result.is_valid
+            ):
+                self.query_text = ""
+                self.limit = int(message.input.value)
+                message.input.tooltip = None
+            elif message.validation_result:
+                failures = "\n".join(message.validation_result.failure_descriptions)
+                message.input.tooltip = f"[red]Validation Error:[/red]\n{failures}"
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
         self.data = data
 
     async def watch_query_text(self, query_text: str) -> None:
-        pane = self.query_one(ResultsViewer)
-        pane.show_loading()
-        pane.set_not_responsive()
-        try:
-            worker = self.build_relation(query_text)
-            await worker.wait()
-        except WorkerFailed as e:
-            pane.show_table()
-            self.push_screen(
-                ErrorModal(
-                    title="DuckDB Error",
-                    header=(
-                        "DuckDB raised an error when compiling "
-                        "or running your query:"
-                    ),
-                    error=e.error,
-                )
-            )
-        else:
-            table = pane.get_table()
-            table.clear(columns=True)
-            relation = worker.result
-            if relation:  # select query
-                self.relation = relation
-            elif bool(query_text.strip()):  # DDL/DML query
+        if query_text:
+            pane = self.results_viewer
+            pane.show_loading()
+            self.run_query_bar.disabled = True
+            pane.set_not_responsive()
+            try:
+                worker = self._build_relation(query_text)
+                await worker.wait()
+            except WorkerFailed as e:
+                self.run_query_bar.disabled = False
                 pane.set_responsive()
                 pane.show_table()
-                self.data = []
-                self.update_schema_data()
-            else:  # blank query
-                pane.set_responsive(did_run=False)
-                pane.show_table()
-                self.data = []
+                self.push_screen(
+                    ErrorModal(
+                        title="DuckDB Error",
+                        header=(
+                            "DuckDB raised an error when compiling "
+                            "or running your query:"
+                        ),
+                        error=e.error,
+                    )
+                )
+            else:
+                table = pane.get_table()
+                table.clear(columns=True)
+                relation = worker.result
+                if relation:  # select query
+                    self.relation = relation
+                elif bool(query_text.strip()):  # DDL/DML query
+                    self.run_query_bar.disabled = False
+                    pane.set_responsive()
+                    pane.show_table()
+                    self.data = []
+                    self.update_schema_data()
+                else:  # blank query
+                    self.run_query_bar.disabled = False
+                    pane.set_responsive(did_run=False)
+                    pane.show_table()
+                    self.data = []
 
     async def watch_relation(
         self, relation: Union[duckdb.DuckDBPyRelation, None]
@@ -142,8 +163,7 @@ class Harlequin(App, inherit_bindings=False):
         # invalidate results so watch_data runs even if the results are the same
         self.data = []
         if relation is not None:
-            pane = self.query_one(ResultsViewer)
-            table = pane.get_table()
+            table = self.results_viewer.get_table()
             short_types = [short_type(t) for t in relation.dtypes]
             table.add_columns(
                 *[
@@ -158,26 +178,15 @@ class Harlequin(App, inherit_bindings=False):
                 self.push_screen(
                     ErrorModal(
                         title="DuckDB Error",
-                        header=("DuckDB raised an error when " "running your query:"),
+                        header=("DuckDB raised an error when running your query:"),
                         error=e.error,
                     )
                 )
-                pane.show_table()
-            # Textual fails to catch some duckdb Errors,
-            # so we need this mostly- redundant block.
-            except duckdb.Error as e:
-                self.push_screen(
-                    ErrorModal(
-                        title="DuckDB Error",
-                        header=("DuckDB raised an error when " "running your query:"),
-                        error=e,
-                    )
-                )
-                pane.show_table()
+                self.results_viewer.show_table()
 
     async def watch_data(self, data: List[Tuple]) -> None:
         if data:
-            pane = self.query_one(ResultsViewer)
+            pane = self.results_viewer
             pane.set_not_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
             table = pane.get_table()
             for i, chunk in self.chunk(data[: self.MAX_RESULTS]):
@@ -187,6 +196,7 @@ class Harlequin(App, inherit_bindings=False):
                 if i == 0:
                     pane.show_table()
             pane.set_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
+            self.run_query_bar.disabled = False
             table.focus()
 
     @staticmethod
@@ -199,8 +209,10 @@ class Harlequin(App, inherit_bindings=False):
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
     @work(exclusive=True, exit_on_error=False)  # type: ignore
-    def build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
+    def _build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
         relation = self.connection.sql(query_text)
+        if relation and self.run_query_bar.checkbox.value:
+            relation = relation.limit(self.limit)
         return relation
 
     @work(exclusive=True, exit_on_error=False)  # type: ignore
@@ -222,49 +234,10 @@ class Harlequin(App, inherit_bindings=False):
 
     @work(exclusive=True)
     def update_schema_data(self) -> None:
-        log("update_schema_data")
-        data: DATABASES = []
-        databases = self.connection.execute("pragma show_databases").fetchall()
-        for (database,) in databases:
-            schemas = self.connection.execute(
-                "select schema_name "
-                "from information_schema.schemata "
-                "where "
-                "    catalog_name = ? "
-                "    and schema_name not in ('pg_catalog', 'information_schema') "
-                "order by 1",
-                [database],
-            ).fetchall()
-            schemas_data: SCHEMAS = []
-            for (schema,) in schemas:
-                tables = self.connection.execute(
-                    "select table_name, table_type "
-                    "from information_schema.tables "
-                    "where "
-                    "    table_catalog = ? "
-                    "    and table_schema = ? "
-                    "order by 1",
-                    [database, schema],
-                ).fetchall()
-                tables_data: TABLES = []
-                for table, type in tables:
-                    columns = self.connection.execute(
-                        "select column_name, data_type "
-                        "from information_schema.columns "
-                        "where "
-                        "    table_catalog = ? "
-                        "    and table_schema = ? "
-                        "    and table_name = ? "
-                        "order by 1",
-                        [database, schema, table],
-                    ).fetchall()
-                    tables_data.append((table, type, columns))
-                schemas_data.append((schema, tables_data))
-            data.append((database, schemas_data))
-        schema_viewer = self.query_one(SchemaViewer)
+        catalog = get_catalog(self.connection)
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.call_from_thread(schema_viewer.update_tree, data)
+            self.call_from_thread(self.schema_viewer.update_tree, catalog)
 
 
 if __name__ == "__main__":

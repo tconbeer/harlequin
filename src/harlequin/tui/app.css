@@ -6,8 +6,9 @@ $border-title-color-focus: $accent;
 /* Main Screen */
 #sql_client {
     layout: grid;
-    grid-size: 2 2;
+    grid-size: 2 3;
     grid-columns: 1fr 3fr;
+    grid-rows: 1fr 1 1fr;
 }
 /* ALL WIDGETS */
 SchemaViewer, CodeEditor, ResultsViewer {
@@ -32,12 +33,10 @@ SchemaViewer, TextContainer, ResultsTable {
     scrollbar-color-active: $accent;
 }
 
-/* QUERY EDITOR */
-
 /* SCHEMA VIEWER */
 SchemaViewer {
     padding: 0 1;
-    row-span: 2;
+    row-span: 3;
 }
 SchemaViewer .tree--guides {
     color: $primary;
@@ -48,6 +47,45 @@ SchemaViewer .tree--guides-hover {
 SchemaViewer .tree--guides-selected {
     color: $secondary;
 }
+
+/* RUN QUERY BAR */
+RunQueryBar {
+    height: 100%;
+    background: $panel;
+    align-horizontal: right;
+    padding: 0 2 0 0;
+}
+RunQueryBar Input {
+    border: none;
+    padding: 0;
+    width: 6;
+}
+RunQueryBar Input.-invalid {
+    border: none;
+    color: red
+}
+Tooltip {
+    border: round $panel-lighten-1;
+}
+RunQueryBar Button {
+    background: $accent;
+    border: none;
+    height: 1;
+    margin: 0 0 0 4;
+}
+RunQueryBar Button:hover {
+    background: $secondary;
+}
+RunQueryBar Button:focus {
+    text-style: bold;
+} 
+RunQueryBar:disabled {
+    text-style: italic;
+    background: $panel;
+} 
+RunQueryBar Button:disabled {
+    background: $panel;
+} 
 
 /* RESULTS VIEWER */
 
