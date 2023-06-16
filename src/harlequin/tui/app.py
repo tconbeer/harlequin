@@ -3,7 +3,7 @@ from typing import Iterator, List, Optional, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
-from textual.app import App, ComposeResult, CSSPathType
+from textual.app import App, ComposeResult, CSSPathType  # type: ignore
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.dom import DOMNode
