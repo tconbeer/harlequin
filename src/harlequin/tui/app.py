@@ -1,10 +1,12 @@
+from itertools import cycle
 from pathlib import Path
 from typing import Iterator, List, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
 from textual.app import App, ComposeResult, CSSPathType
-from textual.containers import Container
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
 from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Button, Checkbox, Footer, Input
@@ -32,10 +34,12 @@ class Harlequin(App, inherit_bindings=False):
     CSS_PATH = "app.css"
     MAX_RESULTS = 50_000
 
-    BINDINGS = [("ctrl+q", "quit", "Quit")]
+    BINDINGS = [
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
+    ]
 
     query_text: reactive[str] = reactive(str)
-    limit: int = 500
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[List[Tuple]] = reactive(list)
 
@@ -50,6 +54,8 @@ class Harlequin(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
+        self.limit = 500
+        self.sidebar_widths: Iterator[str] = cycle(["0", "1fr"])
         try:
             self.connection = connect(db_path, read_only=read_only)
         except HarlequinExit:
@@ -57,12 +63,13 @@ class Harlequin(App, inherit_bindings=False):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
-        with Container(id="sql_client"):
+        with Horizontal():
             yield SchemaViewer("Data Catalog", connection=self.connection)
-            yield CodeEditor(language="sql", theme=self.theme)
-            yield RunQueryBar()
-            yield ResultsViewer()
-            yield Footer()
+            with Vertical(id="main_panel"):
+                yield CodeEditor(language="sql", theme=self.theme)
+                yield RunQueryBar()
+                yield ResultsViewer()
+        yield Footer()
 
     async def on_mount(self) -> None:
         self.schema_viewer = self.query_one(SchemaViewer)
@@ -98,8 +105,8 @@ class Harlequin(App, inherit_bindings=False):
         if message.input.id == "limit_input":
             message.stop()
             if (
-                message.validation_result
-                and message.input.value
+                message.input.value
+                and message.validation_result
                 and message.validation_result.is_valid
             ):
                 self.query_text = ""
@@ -108,6 +115,20 @@ class Harlequin(App, inherit_bindings=False):
             elif message.validation_result:
                 failures = "\n".join(message.validation_result.failure_descriptions)
                 message.input.tooltip = f"[red]Validation Error:[/red]\n{failures}"
+
+    def on_input_submitted(self, message: Input.Submitted) -> None:
+        if message.input.id == "limit_input":
+            message.stop()
+            if (
+                message.input.value
+                and message.validation_result
+                and message.validation_result.is_valid
+            ):
+                self.query_text = self.editor.text
+
+    def action_toggle_sidebar(self) -> None:
+        self.schema_viewer.styles.width = next(self.sidebar_widths)
+        self.schema_viewer.visible = not self.schema_viewer.visible
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")

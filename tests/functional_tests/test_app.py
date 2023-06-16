@@ -78,3 +78,23 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         await pilot.click(bar.button.__class__)
         await app.workers.wait_for_complete()
         assert len(app.data) == 100
+
+
+@pytest.mark.asyncio
+async def test_toggle_sidebar(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        # initialization
+        sidebar = app.schema_viewer
+        assert sidebar.visible
+        assert sidebar.styles.width
+        assert sidebar.styles.width.value > 0
+
+        await pilot.press("ctrl+b")
+        assert not sidebar.visible
+        assert sidebar.styles.width
+        assert sidebar.styles.width.value == 0
+
+        await pilot.press("ctrl+b")
+        assert sidebar.visible
+        assert sidebar.styles.width
+        assert sidebar.styles.width.value > 0

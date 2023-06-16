@@ -5,13 +5,6 @@ from textual.widgets import Button, Checkbox, Input
 
 
 class RunQueryBar(Horizontal):
-    DEFAULT_CSS = """
-        RunQueryBar {
-            height: 1;
-            width: 100%;
-        }
-    """
-
     def compose(self) -> ComposeResult:
         yield Checkbox("Limit ", id="limit_checkbox")
         yield Input(

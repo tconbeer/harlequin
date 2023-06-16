@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 -   Adds checkbox for Limit with a configurable input ([#35](https://github.com/tconbeer/harlequin/issues/35)).
 -   Adds more obvious Run Query button ([#76](https://github.com/tconbeer/harlequin/issues/76)).
+-   Press <kbd>ctrl+b</kbd> to toggle (hide/show) the Data Catalog sidebar.
 -   Removes the Header for more working space.
 
 ## [0.0.14] - 2023-06-15
@@ -21,7 +22,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
--   Reimplements ``ctrl+` `` to format files (regression from 0.0.13)
+-   Reimplements <kbd>ctrl+`</kbd> to format files (regression from 0.0.13)
 -   Updates textual_textarea, which fixes two bugs when opening files
     and another bug related to scrolling the TextArea.
 
@@ -38,7 +39,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.12] - 2023-05-31
 
--   improves documentation of `ctrl+j` as an alternative key binding for running a query ([#71](https://github.com/tconbeer/harlequin/issues/71) - thank you [@carteakey](https://github.com/carteakey)!)
+-   improves documentation of <kbd>ctrl+j</kbd> as an alternative key binding for running a query ([#71](https://github.com/tconbeer/harlequin/issues/71) - thank you [@carteakey](https://github.com/carteakey)!)
 
 ## [0.0.11] - 2023-05-18
 
@@ -57,28 +58,27 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.8] - 2023-05-15
 
--   Cut, copy, paste in text editor with `ctrl+x`, `ctrl+c`, `ctrl+u/ctrl+v`
--   Quit with `ctrl+q`, instead of `ctrl+c`
--   `tab` indents selected text or inserts four-ish spaces in text editor; `shift+tab` dedents selected text
--   scroll up and down with `ctrl+up` and `ctrl+down`
--   fixes an issue where an extra space would be added to the end of lines when pressing `enter` in some situations.
+-   Cut, copy, paste in text editor with <kbd>ctrl+x</kbd>, <kbd>ctrl+c</kbd>, <kbd>ctrl+u/ctrl+v</kbd>
+-   Quit with <kbd>ctrl+q</kbd>, instead of <kbd>ctrl+c</kbd>
+-   <kbd>tab</kbd> indents selected text or inserts four-ish spaces in text editor; <kbd>shift+tab</kbd> dedents selected text
+-   scroll up and down with <kbd>ctrl+up</kbd> and <kbd>ctrl+down</kbd>
+-   fixes an issue where an extra space would be added to the end of lines when pressing <kbd>enter</kbd> in some situations.
 
 ## [0.0.7] - 2023-05-12
 
--   Comment selected text with `ctrl+/`
--   Smarter indentation after pressing `enter`
+-   Comment selected text with <kbd>ctrl+/</kbd>
+-   Smarter indentation after pressing <kbd>enter</kbd>
 
 ## [0.0.6] - 2023-05-09
 
--   Select text in the query editor using `shift` and arrow keys, etc. Replace/delete/quote selection, etc.
+-   Select text in the query editor using <kbd>shift</kbd> and arrow keys, etc. Replace/delete/quote selection, etc.
 -   Improves behavior of inserting opening brackets in the query editor.
 -   Hopefully fixes Docker build
 
 ## [0.0.5] - 2023-05-08
 
 -   Adds column types to the column header in the results viewer.
--   Text editor now handles page up/down and ctrl + right/left keys.
--   Adds Dockerfile and Docker docs. We now publish an official Docker image to GHCR.
+-   Text editor now handles <kbd>page up/dn</kbd> and <kbd>ctrl+right/left</kbd> keys.
 -   Fixes compatibility with all Pythons >= 3.8
 
 ## [0.0.4] - 2023-05-05
@@ -92,8 +92,8 @@ All notable changes to this project will be documented in this file.
 -   Queries now run asynchronously.
 -   Errors from DuckDB are now handled and shown in a pop-up.
 -   View columns and data types in the schema viewer sidebar.
--   Queries can be formatted using ``ctrl+` ``.
--   Queries can be saved using `ctrl+s` and opened (loaded) using `ctrl+o`.
+-   Queries can be formatted using <kbd>ctrl+`</kbd>.
+-   Queries can be saved using <kbd>ctrl+s</kbd> and opened (loaded) using <kbd>ctrl+o</kbd>.
 
 ## [0.0.2] - 2023-05-02
 
