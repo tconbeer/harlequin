@@ -4,8 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
--   Adds checkbox for Limit 500 ([#35](https://github.com/tconbeer/harlequin/issues/35))
--   Adds more obvious Run Query button ([#76](https://github.com/tconbeer/harlequin/issues/76))
+-   Adds checkbox for Limit with a configurable input ([#35](https://github.com/tconbeer/harlequin/issues/35)).
+-   Adds more obvious Run Query button ([#76](https://github.com/tconbeer/harlequin/issues/76)).
+-   Removes the Header for more working space.
 
 ## [0.0.14] - 2023-06-15
 

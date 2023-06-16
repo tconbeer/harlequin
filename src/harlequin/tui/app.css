@@ -55,6 +55,18 @@ RunQueryBar {
     align-horizontal: right;
     padding: 0 2 0 0;
 }
+RunQueryBar Input {
+    border: none;
+    padding: 0;
+    width: 6;
+}
+RunQueryBar Input.-invalid {
+    border: none;
+    color: red
+}
+Tooltip {
+    border: round $panel-lighten-1;
+}
 RunQueryBar Button {
     background: $accent;
     border: none;

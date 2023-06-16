@@ -7,7 +7,7 @@ from textual.app import App, ComposeResult, CSSPathType
 from textual.containers import Container
 from textual.driver import Driver
 from textual.reactive import reactive
-from textual.widgets import Button, Checkbox, Footer, Header
+from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerFailed, get_current_worker
 from textual_textarea import TextArea
 
@@ -35,6 +35,7 @@ class Harlequin(App, inherit_bindings=False):
     BINDINGS = [("ctrl+q", "quit", "Quit")]
 
     query_text: reactive[str] = reactive(str)
+    limit: int = 500
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[List[Tuple]] = reactive(list)
 
@@ -57,7 +58,6 @@ class Harlequin(App, inherit_bindings=False):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Container(id="sql_client"):
-            yield Header()
             yield SchemaViewer("Data Catalog", connection=self.connection)
             yield CodeEditor(language="sql", theme=self.theme)
             yield RunQueryBar()
@@ -69,6 +69,7 @@ class Harlequin(App, inherit_bindings=False):
         self.editor = self.query_one(TextArea)
         self.results_viewer = self.query_one(ResultsViewer)
         self.run_query_bar = self.query_one(RunQueryBar)
+        self.run_query_bar.checkbox.value = False
 
         worker = self.update_schema_data()
         self.set_focus(self.editor)
@@ -83,10 +84,30 @@ class Harlequin(App, inherit_bindings=False):
         self.query_text = self.editor.text
 
     def on_checkbox_changed(self, message: Checkbox.Changed) -> None:
-        message.stop()
-        # invalidate the last query so we re-run the query, even if
-        # the text of the query hasn't changed
-        self.query_text = ""
+        """
+        invalidate the last query so we re-run the query with the limit
+        """
+        if message.checkbox.id == "limit_checkbox":
+            message.stop()
+            self.query_text = ""
+
+    def on_input_changed(self, message: Input.Changed) -> None:
+        """
+        invalidate the last query so we re-run the query with the limit
+        """
+        if message.input.id == "limit_input":
+            message.stop()
+            if (
+                message.validation_result
+                and message.input.value
+                and message.validation_result.is_valid
+            ):
+                self.query_text = ""
+                self.limit = int(message.input.value)
+                message.input.tooltip = None
+            elif message.validation_result:
+                failures = "\n".join(message.validation_result.failure_descriptions)
+                message.input.tooltip = f"[red]Validation Error:[/red]\n{failures}"
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
@@ -191,7 +212,7 @@ class Harlequin(App, inherit_bindings=False):
     def _build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
         relation = self.connection.sql(query_text)
         if relation and self.run_query_bar.checkbox.value:
-            relation = relation.limit(500)
+            relation = relation.limit(self.limit)
         return relation
 
     @work(exclusive=True, exit_on_error=False)  # type: ignore
