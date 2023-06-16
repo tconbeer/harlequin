@@ -4,7 +4,7 @@ from typing import Iterator, List, Tuple, Type, Union
 import duckdb
 from textual import log, work
 from textual.app import App, ComposeResult, CSSPathType
-from textual.containers import Container
+from textual.containers import Horizontal, Vertical
 from textual.driver import Driver
 from textual.reactive import reactive
 from textual.widgets import Button, Checkbox, Footer, Input
@@ -57,12 +57,13 @@ class Harlequin(App, inherit_bindings=False):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
-        with Container(id="sql_client"):
+        with Horizontal():
             yield SchemaViewer("Data Catalog", connection=self.connection)
-            yield CodeEditor(language="sql", theme=self.theme)
-            yield RunQueryBar()
-            yield ResultsViewer()
-            yield Footer()
+            with Vertical(id="main_panel"):
+                yield CodeEditor(language="sql", theme=self.theme)
+                yield RunQueryBar()
+                yield ResultsViewer()
+        yield Footer()
 
     async def on_mount(self) -> None:
         self.schema_viewer = self.query_one(SchemaViewer)
@@ -98,8 +99,8 @@ class Harlequin(App, inherit_bindings=False):
         if message.input.id == "limit_input":
             message.stop()
             if (
-                message.validation_result
-                and message.input.value
+                message.input.value
+                and message.validation_result
                 and message.validation_result.is_valid
             ):
                 self.query_text = ""
@@ -108,6 +109,16 @@ class Harlequin(App, inherit_bindings=False):
             elif message.validation_result:
                 failures = "\n".join(message.validation_result.failure_descriptions)
                 message.input.tooltip = f"[red]Validation Error:[/red]\n{failures}"
+
+    def on_input_submitted(self, message: Input.Submitted) -> None:
+        if message.input.id == "limit_input":
+            message.stop()
+            if (
+                message.input.value
+                and message.validation_result
+                and message.validation_result.is_valid
+            ):
+                self.query_text = self.editor.text
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")

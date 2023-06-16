@@ -3,16 +3,9 @@ $border-color-nofocus: $primary;
 $border-title-color-nofocus: $primary-lighten-3;
 $border-color-focus: $accent;
 $border-title-color-focus: $accent;
-/* Main Screen */
-#sql_client {
-    layout: grid;
-    grid-size: 2 3;
-    grid-columns: 1fr 3fr;
-    grid-rows: 1fr 1 1fr;
-}
+
 /* ALL WIDGETS */
 SchemaViewer, CodeEditor, ResultsViewer {
-    height: 100%;
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
     background: $boost;
@@ -35,6 +28,7 @@ SchemaViewer, TextContainer, ResultsTable {
 
 /* SCHEMA VIEWER */
 SchemaViewer {
+    width: 1fr;
     padding: 0 1;
     row-span: 3;
 }
@@ -48,9 +42,19 @@ SchemaViewer .tree--guides-selected {
     color: $secondary;
 }
 
+/* RIGHT HAND CONTAINER */
+#main_panel {
+    width: 3fr;
+}
+
+CodeEditor {
+    height: 1fr;
+    width: 100%;
+}
 /* RUN QUERY BAR */
 RunQueryBar {
-    height: 100%;
+    height: 1;
+    width: 100%;
     background: $panel;
     align-horizontal: right;
     padding: 0 2 0 0;
@@ -89,6 +93,10 @@ RunQueryBar Button:disabled {
 
 /* RESULTS VIEWER */
 
+ResultsViewer {
+    height: 1fr;
+    width: 100%;
+}
 ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
