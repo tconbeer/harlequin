@@ -30,7 +30,11 @@ SchemaViewer, TextContainer, ResultsTable {
 SchemaViewer {
     width: 1fr;
     padding: 0 1;
-    row-span: 3;
+}
+SchemaViewer:disabled {
+    width: 0;
+    padding: 0 0;
+    border: none;
 }
 SchemaViewer .tree--guides {
     color: $primary;
