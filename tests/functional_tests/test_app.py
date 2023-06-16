@@ -98,3 +98,89 @@ async def test_toggle_sidebar(app: Harlequin) -> None:
         assert not sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value > 0
+
+
+@pytest.mark.asyncio
+async def test_toggle_full_screen(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        # initialization; all visible
+        app.editor.focus()
+        assert app.full_screen is False
+        assert app.sidebar_hidden is False
+        widgets = [app.schema_viewer, app.editor, app.results_viewer]
+        for w in widgets:
+            assert not w.disabled
+            assert w.styles.width
+            assert w.styles.width.value > 0
+
+        await pilot.press("f10")
+        # only editor visible
+        assert not app.editor.disabled
+        assert not app.run_query_bar.disabled
+        assert app.editor.styles.width
+        assert app.editor.styles.width.value > 0
+        for w in [w for w in widgets if w != app.editor]:
+            assert w.disabled
+            assert w.styles.width
+            assert w.styles.width.value == 0
+
+        await pilot.press("ctrl+b")
+        # editor and schema viewer should be visible
+        assert not app.sidebar_hidden
+        assert not app.schema_viewer.disabled
+        assert app.full_screen
+        assert not app.editor.disabled
+
+        await pilot.press("f10")
+        # all visible
+        for w in widgets:
+            assert not w.disabled
+            assert w.styles.width
+            assert w.styles.width.value > 0
+
+        await pilot.press("ctrl+b")
+        # schema viewer hidden
+        assert app.sidebar_hidden
+        assert app.schema_viewer.disabled
+        assert not app.editor.disabled
+
+        await pilot.press("f10")
+        # only editor visible
+        assert not app.editor.disabled
+        assert app.schema_viewer.disabled
+        assert app.results_viewer.disabled
+
+        await pilot.press("f10")
+        # schema viewer should still be hidden
+        assert not app.editor.disabled
+        assert not app.run_query_bar.disabled
+        assert app.schema_viewer.disabled
+        assert not app.results_viewer.disabled
+        app.editor.text = "select 1"
+        await pilot.press("ctrl+j")
+
+        app.results_viewer.focus()
+        await pilot.press("f10")
+        # only results viewer should be visible
+        assert app.editor.disabled
+        assert app.run_query_bar.disabled
+        assert app.schema_viewer.disabled
+        assert not app.results_viewer.disabled
+
+        await pilot.press("ctrl+b")
+        # results viewer and schema viewer should be visible
+        assert not app.sidebar_hidden
+        assert not app.schema_viewer.disabled
+        assert app.full_screen
+        assert app.editor.disabled
+        assert app.run_query_bar.disabled
+        assert not app.results_viewer.disabled
+
+        await pilot.press("f10")
+        # all visible
+        assert not app.sidebar_hidden
+        assert not app.full_screen
+        for w in widgets:
+            assert not w.disabled
+            assert w.styles.width
+            assert w.styles.width.value > 0

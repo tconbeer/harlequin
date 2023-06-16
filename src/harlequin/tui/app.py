@@ -1,13 +1,15 @@
 from pathlib import Path
-from typing import Iterator, List, Tuple, Type, Union
+from typing import Iterator, List, Optional, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
 from textual.app import App, ComposeResult, CSSPathType
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.reactive import reactive
+from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerFailed, get_current_worker
 from textual_textarea import TextArea
@@ -36,11 +38,14 @@ class Harlequin(App, inherit_bindings=False):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
+        Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
     ]
 
     query_text: reactive[str] = reactive(str)
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[List[Tuple]] = reactive(list)
+    full_screen: reactive[bool] = reactive(False)
+    sidebar_hidden: reactive[bool] = reactive(False)
 
     def __init__(
         self,
@@ -74,10 +79,12 @@ class Harlequin(App, inherit_bindings=False):
         self.editor = self.query_one(TextArea)
         self.results_viewer = self.query_one(ResultsViewer)
         self.run_query_bar = self.query_one(RunQueryBar)
+        self.footer = self.query_one(Footer)
+
+        self.set_focus(self.editor)
         self.run_query_bar.checkbox.value = False
 
         worker = self.update_schema_data()
-        self.set_focus(self.editor)
         await worker.wait()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
@@ -125,23 +132,67 @@ class Harlequin(App, inherit_bindings=False):
                 self.query_text = self.editor.text
 
     def action_toggle_sidebar(self) -> None:
-        self.schema_viewer.disabled = not self.schema_viewer.disabled
+        """
+        sidebar_hidden and self.sidebar.disabled both hold important state.
+        The sidebar can be hidden with either ctrl+b or f10, and we need
+        to persist the state depending on how that happens
+        """
+        if self.sidebar_hidden is False and self.schema_viewer.disabled is True:
+            # sidebar was hidden by f10; toggle should show it
+            self.schema_viewer.disabled = False
+        else:
+            self.sidebar_hidden = not self.sidebar_hidden
+
+    def action_toggle_full_screen(self) -> None:
+        self.full_screen = not self.full_screen
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
         self.data = data
 
+    def watch_full_screen(self, full_screen: bool) -> None:
+        full_screen_widgets = [self.editor, self.results_viewer]
+        other_widgets = [self.run_query_bar, self.footer]
+        all_widgets = [*full_screen_widgets, *other_widgets]
+        if full_screen:
+            target: Optional[DOMNode] = self.focused
+            while target not in full_screen_widgets:
+                if (
+                    target is None
+                    or target in other_widgets
+                    or not isinstance(target, Widget)
+                ):
+                    return
+                else:
+                    target = target.parent
+            for w in all_widgets:
+                w.disabled = w != target
+            if target == self.editor:
+                self.run_query_bar.disabled = False
+            self.schema_viewer.disabled = True
+        else:
+            for w in all_widgets:
+                w.disabled = False
+            self.schema_viewer.disabled = self.sidebar_hidden
+
+    def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
+        if sidebar_hidden:
+            if self.schema_viewer.has_focus:
+                self.editor.focus()
+        self.schema_viewer.disabled = sidebar_hidden
+
     async def watch_query_text(self, query_text: str) -> None:
         if query_text:
+            self.full_screen = False
             pane = self.results_viewer
+            self.run_query_bar.set_not_responsive()
             pane.show_loading()
-            self.run_query_bar.disabled = True
             pane.set_not_responsive()
             try:
                 worker = self._build_relation(query_text)
                 await worker.wait()
             except WorkerFailed as e:
-                self.run_query_bar.disabled = False
+                self.run_query_bar.set_responsive()
                 pane.set_responsive()
                 pane.show_table()
                 self.push_screen(
@@ -161,13 +212,13 @@ class Harlequin(App, inherit_bindings=False):
                 if relation:  # select query
                     self.relation = relation
                 elif bool(query_text.strip()):  # DDL/DML query
-                    self.run_query_bar.disabled = False
+                    self.run_query_bar.set_responsive()
                     pane.set_responsive()
                     pane.show_table()
                     self.data = []
                     self.update_schema_data()
                 else:  # blank query
-                    self.run_query_bar.disabled = False
+                    self.run_query_bar.set_responsive()
                     pane.set_responsive(did_run=False)
                     pane.show_table()
                     self.data = []
@@ -214,7 +265,7 @@ class Harlequin(App, inherit_bindings=False):
                 if i == 0:
                     pane.show_table()
             pane.set_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
-            self.run_query_bar.disabled = False
+            self.run_query_bar.set_responsive()
             table.focus()
 
     @staticmethod

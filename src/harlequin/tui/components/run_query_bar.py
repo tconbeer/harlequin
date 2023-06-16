@@ -36,3 +36,13 @@ class RunQueryBar(Horizontal):
                 self.checkbox.value = True
             else:
                 self.checkbox.value = False
+
+    def set_not_responsive(self) -> None:
+        self.checkbox.add_class("non-responsive")
+        self.input.add_class("non-responsive")
+        self.button.add_class("non-responsive")
+
+    def set_responsive(self) -> None:
+        self.checkbox.remove_class("non-responsive")
+        self.input.remove_class("non-responsive")
+        self.button.remove_class("non-responsive")
