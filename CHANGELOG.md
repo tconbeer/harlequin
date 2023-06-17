@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.15] - 2023-06-17
+
 -   Adds checkbox for Limit with a configurable input ([#35](https://github.com/tconbeer/harlequin/issues/35)).
 -   Adds more obvious Run Query button ([#76](https://github.com/tconbeer/harlequin/issues/76)).
 -   Press <kbd>ctrl+b</kbd> to toggle (hide/show) the Data Catalog sidebar.
@@ -22,7 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
--   Reimplements <kbd>ctrl+`</kbd> to format files (regression from 0.0.13)
+-   Reimplements <kbd>ctrl+\`</kbd> to format files (regression from 0.0.13)
 -   Updates textual_textarea, which fixes two bugs when opening files
     and another bug related to scrolling the TextArea.
 
@@ -92,7 +94,7 @@ All notable changes to this project will be documented in this file.
 -   Queries now run asynchronously.
 -   Errors from DuckDB are now handled and shown in a pop-up.
 -   View columns and data types in the schema viewer sidebar.
--   Queries can be formatted using <kbd>ctrl+`</kbd>.
+-   Queries can be formatted using <kbd>ctrl+\`</kbd>.
 -   Queries can be saved using <kbd>ctrl+s</kbd> and opened (loaded) using <kbd>ctrl+o</kbd>.
 
 ## [0.0.2] - 2023-05-02
@@ -104,7 +106,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.14...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.15...HEAD
+
+[0.0.15]: https://github.com/tconbeer/harlequin/compare/0.0.14...0.0.15
 
 [0.0.14]: https://github.com/tconbeer/harlequin/compare/0.0.13...0.0.14
 
