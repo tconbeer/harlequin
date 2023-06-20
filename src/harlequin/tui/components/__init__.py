@@ -7,11 +7,11 @@ from harlequin.tui.components.schema_viewer import SchemaViewer
 
 __all__ = [
     "CodeEditor",
-    "ErrorModal",
     "CursorMoved",
-    "ScrollOne",
+    "ErrorModal",
     "ResultsTable",
     "ResultsViewer",
-    "SchemaViewer",
     "RunQueryBar",
+    "SchemaViewer",
+    "ScrollOne",
 ]

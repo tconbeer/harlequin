@@ -15,7 +15,7 @@ SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus-within {
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, TextContainer, ResultsTable {
+SchemaViewer, CodeEditor, ResultsTable {
     scrollbar-background: $surface;
     scrollbar-background-hover: $surface;
     scrollbar-background-active: $surface;
@@ -26,15 +26,18 @@ SchemaViewer, TextContainer, ResultsTable {
     scrollbar-color-active: $accent;
 }
 
-/* SCHEMA VIEWER */
-SchemaViewer {
-    width: 1fr;
-    padding: 0 1;
-}
-SchemaViewer:disabled {
+SchemaViewer:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
     width: 0;
+    height: 0;
     padding: 0 0;
     border: none;
+}
+
+/* SCHEMA VIEWER */
+SchemaViewer {
+    height: 1fr;
+    width: 1fr;
+    padding: 0 1;
 }
 SchemaViewer .tree--guides {
     color: $primary;
@@ -87,13 +90,37 @@ RunQueryBar Button:hover {
 RunQueryBar Button:focus {
     text-style: bold;
 } 
-RunQueryBar:disabled {
+RunQueryBar Checkbox:focus > .toggle--label {
+    text-style: none;
+}
+RunQueryBar Checkbox > .toggle--button {
+    background: $panel-lighten-1
+}
+RunQueryBar Checkbox:hover {
+    background: $panel;
+}
+RunQueryBar Checkbox:hover > .toggle--button {
+    background: $accent;
+}
+RunQueryBar Checkbox.-on > .toggle--button {
+    color: $accent;
+    background: $panel-lighten-1
+}
+RunQueryBar Checkbox.-on:hover > .toggle--button {
+    color: $accent;
+    background: $primary;
+}
+RunQueryBar Input:hover, RunQueryBar Input:focus {
+    background: $panel-lighten-1;
+}
+RunQueryBar Input {
+    background: $panel;
+}
+
+RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQueryBar Input.non-responsive{
     text-style: italic;
     background: $panel;
-} 
-RunQueryBar Button:disabled {
-    background: $panel;
-} 
+}
 
 /* RESULTS VIEWER */
 
