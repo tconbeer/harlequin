@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.16] - 2023-06-20
+
 -   Press <kbd>F10</kbd> with either the Query Editor or Results Viewer in focus to enter "full-screen" mode for those widgets (and hide the other widgets). ([#100](https://github.com/tconbeer/harlequin/issues/100))
 -   Select text in the query editor using click and drag ([textual-textarea/#8](https://github.com/tconbeer/textual-textarea/issues/8))
 
@@ -109,7 +111,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.15...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.16...HEAD
+
+[0.0.16]: https://github.com/tconbeer/harlequin/compare/0.0.15...0.0.16
 
 [0.0.15]: https://github.com/tconbeer/harlequin/compare/0.0.14...0.0.15
 
