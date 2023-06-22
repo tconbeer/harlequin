@@ -41,9 +41,10 @@ harlequin = "harlequin.cli:harlequin"
 
 [tool.ruff]
 select = ["A", "B", "E", "F", "I"]
+target-version = "py38"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.8"
 files = [
     "src/harlequin/**/*.py",
     "tests/**/*.py",

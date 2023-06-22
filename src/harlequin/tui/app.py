@@ -239,9 +239,7 @@ class Harlequin(App, inherit_bindings=False):
             table.add_columns(
                 *[
                     f"{name} [#888888]{data_type}[/]"
-                    for name, data_type in zip(
-                        relation.columns, short_types, strict=True
-                    )
+                    for name, data_type in zip(relation.columns, short_types)
                 ]
             )
             try:
