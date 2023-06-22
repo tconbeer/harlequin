@@ -40,7 +40,7 @@ pytest-asyncio = "^0.21.0"
 harlequin = "harlequin.cli:harlequin"
 
 [tool.ruff]
-select = ["E", "F", "I"]
+select = ["A", "B", "E", "F", "I"]
 
 [tool.mypy]
 python_version = "3.11"

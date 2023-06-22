@@ -238,8 +238,10 @@ class Harlequin(App, inherit_bindings=False):
             short_types = [short_type(t) for t in relation.dtypes]
             table.add_columns(
                 *[
-                    f"{name} [#888888]{type}[/]"
-                    for name, type in zip(relation.columns, short_types)
+                    f"{name} [#888888]{data_type}[/]"
+                    for name, data_type in zip(
+                        relation.columns, short_types, strict=True
+                    )
                 ]
             )
             try:

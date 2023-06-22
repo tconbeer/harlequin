@@ -43,7 +43,7 @@ def connect(
             )
         )
 
-        raise HarlequinExit()
+        raise HarlequinExit() from None
     else:
         return connection
 
@@ -105,9 +105,9 @@ def get_catalog(conn: duckdb.DuckDBPyConnection) -> Catalog:
         for (schema,) in schemas:
             tables = get_tables(conn, database, schema)
             tables_data: TABLES = []
-            for table, type in tables:
+            for table, kind in tables:
                 columns = get_columns(conn, database, schema, table)
-                tables_data.append((table, type, columns))
+                tables_data.append((table, kind, columns))
             schemas_data.append((schema, tables_data))
         data.append((database, schemas_data))
     return data
