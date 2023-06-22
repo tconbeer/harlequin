@@ -50,6 +50,12 @@ You can use Harlequin with MotherDuck, just as you would use the DuckDB CLI:
 harlequin "md:"
 ```
 
+You can attach local databases as additional arguments (`md:` has to be first:)
+
+```bash
+harlequin "md:" "local_duck.db"
+```
+
 #### Authentication Options
 
 1. Web browser: Run `harlequin "md:"`, and Harlequin will attempt to open a web browser where you can log in.
