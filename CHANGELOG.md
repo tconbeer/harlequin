@@ -4,9 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
 -   Changes format action key binding from <kbd>ctrl+`</kbd> to <kbd>F4</kbd>. The original binding was causing compatibility
     issues with Windows Powershell and Command Prompt ([#82](https://github.com/tconbeer/harlequin/issues/82)).
 -   Adds key binding <kbd>F9</kbd> as an alternative to <kbd>ctrl+b</kbd> to hide the left-hand panel.
+-   Fixed query editor scrollbar color to match other widgets
+-   Fixed compatibility with Textual v0.28.0
 
 ## [0.0.17] - 2023-06-23
 
