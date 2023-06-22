@@ -4,12 +4,12 @@ repos:
     hooks:
       - id: black
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.270
+    rev: v0.0.274
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.2.0
+    rev: v1.4.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -19,7 +19,6 @@ repos:
           - textual
           - textual-textarea>=0.1.2
           - pytest
-        exclude: '^.*tests/.*\.py$'
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"
