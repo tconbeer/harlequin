@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Iterator, List, Optional, Tuple, Type, Union
+from typing import Iterator, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
-from textual.app import App, ComposeResult, CSSPathType  # type: ignore
+from textual.app import App, ComposeResult, CSSPathType
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.dom import DOMNode
@@ -49,9 +49,11 @@ class Harlequin(App, inherit_bindings=False):
 
     def __init__(
         self,
-        db_path: List[Path],
+        db_path: Sequence[Union[str, Path]],
         read_only: bool = False,
         theme: str = "monokai",
+        md_token: Union[str, None] = None,
+        md_saas: bool = False,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -310,5 +312,5 @@ class Harlequin(App, inherit_bindings=False):
 
 
 if __name__ == "__main__":
-    app = Harlequin([Path("f1.db")])
+    app = Harlequin(["f1.db"])
     app.run()

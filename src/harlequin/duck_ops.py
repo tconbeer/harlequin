@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple, Union
 
 import duckdb
 
@@ -11,12 +11,21 @@ SCHEMAS = List[Tuple[str, TABLES]]
 Catalog = List[Tuple[str, SCHEMAS]]
 
 
-def connect(db_path: List[Path], read_only: bool = False) -> duckdb.DuckDBPyConnection:
+def connect(
+    db_path: Sequence[Union[str, Path]],
+    read_only: bool = False,
+    md_token: Union[str, None] = None,
+    md_saas: bool = False,
+) -> duckdb.DuckDBPyConnection:
     if not db_path:
-        db_path = [Path(":memory:")]
+        db_path = [":memory:"]
     primary_db, *other_dbs = db_path
+    token = f"?token={md_token}" if md_token else ""
+    saas = "?saas_mode=true" if md_saas else ""
     try:
-        connection = duckdb.connect(database=str(primary_db), read_only=read_only)
+        connection = duckdb.connect(
+            database=f"{primary_db}{token}{saas}", read_only=read_only
+        )
         for db in other_dbs:
             connection.execute(f"attach '{db}'{' (READ_ONLY)' if read_only else ''}")
     except (duckdb.CatalogException, duckdb.IOException) as e:

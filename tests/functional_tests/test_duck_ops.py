@@ -14,12 +14,19 @@ from harlequin.exception import HarlequinExit
 
 def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
     assert connect([])
-    assert connect([Path(":memory:")])
+    assert connect([":memory:"])
     assert connect([tiny_db], read_only=False)
     assert connect([tiny_db], read_only=True)
     assert connect([tiny_db, Path(":memory:"), small_db], read_only=False)
     assert connect([tiny_db, small_db], read_only=True)
     assert connect([tmp_path / "new.db"])
+
+
+def test_connect_motherduck(tiny_db: Path) -> None:
+    # note: set environment variable motherduck_token
+    assert connect(["md:"])
+    assert connect(["md:cloudf1"], md_saas=True)
+    assert connect(["md:", tiny_db])
 
 
 def test_cannot_connect(tiny_db: Path) -> None:
