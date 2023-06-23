@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.17] - 2023-06-23
+
 ### Features
+
 -   Supports MotherDuck! `harlequin md:` connects to your MotherDuck instance. Optionally pass token with `--md_token <token>` and set SaaS mode with `--md_saas`.
 
 ### Bug Fixes
@@ -118,7 +121,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.16...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.17...HEAD
+
+[0.0.17]: https://github.com/tconbeer/harlequin/compare/0.0.16...0.0.17
 
 [0.0.16]: https://github.com/tconbeer/harlequin/compare/0.0.15...0.0.16
 
