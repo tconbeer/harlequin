@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,9 @@ def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
     assert connect([tmp_path / "new.db"])
 
 
+@pytest.mark.xfail(
+    sys.platform == "win32", reason="MotherDuck extension not yet built for Windows."
+)
 def test_connect_motherduck(tiny_db: Path) -> None:
     # note: set environment variable motherduck_token
     assert connect(["md:"])
