@@ -3,12 +3,13 @@ from typing import Iterator, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
-from textual.app import App, ComposeResult, CSSPathType
+from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.reactive import reactive
+from textual.types import CSSPathType
 from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerFailed, get_current_worker

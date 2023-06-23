@@ -15,7 +15,7 @@ SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus-within {
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, CodeEditor, ResultsTable {
+SchemaViewer, CodeEditor, TextContainer, ResultsTable {
     scrollbar-background: $surface;
     scrollbar-background-hover: $surface;
     scrollbar-background-active: $surface;
@@ -89,7 +89,12 @@ RunQueryBar Button:hover {
 }
 RunQueryBar Button:focus {
     text-style: bold;
-} 
+}
+RunQueryBar Checkbox {
+    border: none;
+    padding: 0;
+    background: $panel;
+}
 RunQueryBar Checkbox:focus > .toggle--label {
     text-style: none;
 }
