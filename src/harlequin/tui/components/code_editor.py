@@ -18,14 +18,7 @@ class CodeEditor(TextArea):
             show=True,
         ),
         Binding("ctrl+j", "submit", "Run Query", show=False),
-        Binding(
-            "ctrl+`",
-            "format",
-            "Format Query",
-            key_display="CTRL+` / CTRL+@",
-            show=True,
-        ),
-        Binding("ctrl+@", "format", "Format Query", show=False),
+        Binding("f4", "format", "Format Query", show=True),
     ]
 
     class Submitted(Message, bubble=True):

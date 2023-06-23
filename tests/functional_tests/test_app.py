@@ -28,7 +28,7 @@ async def test_query_formatting(app: Harlequin) -> None:
     async with app.run_test() as pilot:
         app.editor.text = "select\n\n1 FROM\n\n foo"
 
-        await pilot.press("ctrl+@")  # alias for ctrl+`
+        await pilot.press("f4")
         assert app.editor.text == "select 1 from foo\n"
 
 
@@ -99,6 +99,11 @@ async def test_toggle_sidebar(app: Harlequin) -> None:
         assert sidebar.styles.width
         assert sidebar.styles.width.value > 0
 
+        await pilot.press("f9")
+        assert sidebar.disabled
+        assert sidebar.styles.width
+        assert sidebar.styles.width.value == 0
+
 
 @pytest.mark.asyncio
 async def test_toggle_full_screen(app: Harlequin) -> None:
@@ -167,7 +172,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert app.schema_viewer.disabled
         assert not app.results_viewer.disabled
 
-        await pilot.press("ctrl+b")
+        await pilot.press("f9")
         # results viewer and schema viewer should be visible
         assert not app.sidebar_hidden
         assert not app.schema_viewer.disabled

@@ -38,6 +38,7 @@ class Harlequin(App, inherit_bindings=False):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
+        Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
     ]
 
