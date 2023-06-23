@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.18] - 2023-06-23
+
 ### Bug Fixes
 
--   Changes format action key binding from <kbd>ctrl+`</kbd> to <kbd>F4</kbd>. The original binding was causing compatibility
+-   Changes format action key binding from <kbd>ctrl+\`</kbd> to <kbd>F4</kbd>. The original binding was causing compatibility
     issues with Windows Powershell and Command Prompt ([#82](https://github.com/tconbeer/harlequin/issues/82)).
 -   Adds key binding <kbd>F9</kbd> as an alternative to <kbd>ctrl+b</kbd> to hide the left-hand panel.
 -   Fixed query editor scrollbar color to match other widgets
@@ -129,7 +131,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.17...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.18...HEAD
+
+[0.0.18]: https://github.com/tconbeer/harlequin/compare/0.0.17...0.0.18
 
 [0.0.17]: https://github.com/tconbeer/harlequin/compare/0.0.16...0.0.17
 
