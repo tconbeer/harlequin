@@ -1,7 +1,7 @@
 # harlequin
 A Terminal-based SQL IDE for DuckDB.
 
-![harlequin TUI](harlequinv004.gif)
+![harlequin TUI](harlequinv0018.gif)
 
 (A Harlequin is also a [pretty duck](https://en.wikipedia.org/wiki/Harlequin_duck).)
 
