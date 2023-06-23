@@ -27,14 +27,14 @@ def small_db(tmp_path: Path, data_dir: Path) -> Path:
 
 @pytest.fixture
 def app() -> Harlequin:
-    return Harlequin([Path(":memory:")])
+    return Harlequin([":memory:"])
 
 
 @pytest.fixture
 def app_small_db(small_db: Path) -> Harlequin:
-    return Harlequin([small_db])
+    return Harlequin([str(small_db)])
 
 
 @pytest.fixture
 def app_multi_db(tiny_db: Path, small_db: Path) -> Harlequin:
-    return Harlequin([tiny_db, small_db])
+    return Harlequin([str(tiny_db), str(small_db)])

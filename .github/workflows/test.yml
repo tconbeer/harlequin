@@ -18,6 +18,8 @@ jobs:
   test-windows:
     name: Windows - 3.10
     runs-on: Windows-latest
+    env:
+      motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
     steps:
       - name: Check out Repo
         uses: actions/checkout@v3
@@ -39,6 +41,8 @@ jobs:
   test:
     name: ${{ matrix.os }} - ${{ matrix.py }}
     runs-on: ${{ matrix.os }}-latest
+    env:
+      motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
     strategy:
       fail-fast: false
       matrix:

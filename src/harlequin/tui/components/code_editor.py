@@ -47,8 +47,8 @@ class CodeEditor(TextArea):
         self.post_message(self.Submitted(self.text))
 
     def action_format(self) -> None:
-        input = self.query_one(TextInput)
-        old_cursor = input.cursor
+        text_input = self.query_one(TextInput)
+        old_cursor = text_input.cursor
 
         try:
             self.text = format_string(self.text, Mode())
@@ -61,5 +61,5 @@ class CodeEditor(TextArea):
                 )
             )
         else:
-            input.move_cursor(old_cursor.pos, old_cursor.lno)
-            input.update(input._content)
+            text_input.move_cursor(old_cursor.pos, old_cursor.lno)
+            text_input.update(text_input._content)

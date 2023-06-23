@@ -22,7 +22,7 @@ class SchemaViewer(Tree[Union[str, None]]):
         connection: DuckDBPyConnection,
         data: Union[str, None] = None,
         name: Union[str, None] = None,
-        id: Union[str, None] = None,
+        id: Union[str, None] = None,  # noqa: A002
         classes: Union[str, None] = None,
         disabled: bool = False,
     ) -> None:
