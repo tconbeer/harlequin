@@ -1,6 +1,8 @@
 import pytest
 from harlequin.tui import Harlequin
 
+from ..conftest import TestHelpers
+
 
 @pytest.mark.asyncio
 async def test_select_1(app: Harlequin) -> None:
@@ -33,7 +35,7 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_query_bar(app_small_db: Harlequin) -> None:
+async def test_run_query_bar(app_small_db: Harlequin, helpers: TestHelpers) -> None:
     app = app_small_db
     async with app.run_test() as pilot:
         # initialization
@@ -46,14 +48,14 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         # dataset has 857 records
         app.editor.text = "select * from drivers"
         await pilot.click(bar.button.__class__)
-        await app.workers.wait_for_complete()
+        await helpers.await_data_loaded(app)
         assert len(app.data) > 500
 
         # apply a limit by clicking the limit checkbox
         await pilot.click(bar.checkbox.__class__)
         assert bar.checkbox.value is True
         await pilot.click(bar.button.__class__)
-        await app.workers.wait_for_complete()
+        await helpers.await_data_loaded(app)
         assert len(app.data) == 500
 
         # type an invalid limit, checkbox should be unchecked
@@ -76,7 +78,7 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
 
         # run the query with a smaller limit
         await pilot.click(bar.button.__class__)
-        await app.workers.wait_for_complete()
+        await helpers.await_data_loaded(app)
         assert len(app.data) == 100
 
 
