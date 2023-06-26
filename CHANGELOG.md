@@ -4,10 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.19] - 2023-06-26
+
 ### Features
+
 -   It's back: select text in the query editor using click and drag ([#42](https://github.com/tconbeer/textual-textarea/issues/42)).
 
 ### Bug Fixes
+
 -   Fixes a bug where <kbd>PgUp</kbd> could cause a crash ([#46](https://github.com/tconbeer/textual-textarea/issues/46)).
 
 ## [0.0.18] - 2023-06-23
@@ -137,7 +141,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.18...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.19...HEAD
+
+[0.0.19]: https://github.com/tconbeer/harlequin/compare/0.0.18...0.0.19
 
 [0.0.18]: https://github.com/tconbeer/harlequin/compare/0.0.17...0.0.18
 
