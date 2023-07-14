@@ -32,7 +32,6 @@ class ErrorModal(ModalScreen):
     def on_mount(self) -> None:
         container = self.query_one("#outer")
         container.border_title = self.title
-        self.body = self.query_one
 
     def on_key(self) -> None:
         self.app.pop_screen()
