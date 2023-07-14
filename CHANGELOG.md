@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+-   <kbd>ctrl+v</kbd> for paste is now better-supported on all platforms.
+
 ## [0.0.19] - 2023-06-26
 
 ### Features
