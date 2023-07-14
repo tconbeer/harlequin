@@ -22,9 +22,9 @@ class ErrorModal(ModalScreen):
         super().__init__(name, id, classes)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="outer"):
+        with Vertical(id="error_outer"):
             yield Static(self.header, id="error_header")
-            with Vertical(id="inner"):
+            with Vertical(id="error_inner"):
                 with VerticalScroll():
                     yield Static(str(self.error), id="error_info")
             yield Static("Press any key to continue.", id="error_footer")
@@ -32,6 +32,7 @@ class ErrorModal(ModalScreen):
     def on_mount(self) -> None:
         container = self.query_one("#outer")
         container.border_title = self.title
+        self.body = self.query_one
 
     def on_key(self) -> None:
         self.app.pop_screen()

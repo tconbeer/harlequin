@@ -155,7 +155,7 @@ ErrorModal {
     align: center middle;
     padding: 0;
 }
-#outer {
+#error_outer {
     border: round $error;
     background: $surface;
     margin: 5 10;
@@ -170,7 +170,7 @@ ErrorModal {
     padding: 0 1;
 }
 
-#inner {
+#error_inner {
     border: round $panel-lighten-1;
     padding: 1 1 1 2;
 }
@@ -180,6 +180,41 @@ ErrorModal {
 }
 
 #error_footer {
+    dock: bottom;
+    color: $text-muted;
+    margin: 1 0 0 0;
+    padding: 0 1;
+}
+
+/* HELP SCREEN */
+HelpScreen {
+    align: center middle;
+    padding: 0;
+}
+#help_outer {
+    border: round $border-color-focus;
+    background: $surface;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#help_header {
+    dock: top;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+#help_inner {
+    border: round $panel-lighten-1;
+    padding: 0 0 0 0;
+}
+
+#help_info {
+    padding: 0 0 0 0;
+}
+
+#help_footer {
     dock: bottom;
     color: $text-muted;
     margin: 1 0 0 0;
