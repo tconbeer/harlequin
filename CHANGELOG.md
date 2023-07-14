@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   <kbd>F1</kbd> now displays a help screen that lists all keyboard bindings ([#20](https://github.com/tconbeer/textual-textarea/issues/20)).
+-   <kbd>F2</kbd> focuses the keyboard on the query editor.
+-   <kbd>F5</kbd> focuses the keyboard on the results viewer.
+-   <kbd>F6</kbd> focuses the keyboard on the data catalog.
+
 ### Bug Fixes
 -   <kbd>ctrl+v</kbd> for paste is now better-supported on all platforms.
 
