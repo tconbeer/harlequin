@@ -72,19 +72,23 @@ When Harlequin is open, you can view the schema of your DuckDB database in the l
 
 ### Editing a Query
 
-The main query editor is a full-featured text editor, with features including syntax highlighting, auto-formatting with ``ctrl + ` `` (`ctrl + 2` on some terminals), text selection, copy/paste, and more.
+The main query editor is a full-featured text editor, with features including syntax highlighting, auto-formatting with <kbd>f4</kbd>, text selection, copy/paste, and more. 
 
-You can save the query currently in the editor with `ctrl + s`. You can open a query in any text or .sql file with `ctrl + o`.
+> **Tip:**
+>
+> Some Linux users may need to apt-install `xclip` or `xsel` to enable copying and pasting using the system clipboard.
+
+You can save the query currently in the editor with <kbd>ctrl + s</kbd>. You can open a query in any text or .sql file with <kbd>ctrl + o</kbd>.
 
 ### Running a Query and Viewing Results
 
-To run a query press `ctrl + enter`. Not all terminals support this key combination, so you can also use `ctrl + j`, or click the `RUN QUERY` button in the (blue) footer.
+To run a query press <kbd>ctrl + enter</kbd>. Not all terminals support this key combination, so you can also use <kbd>ctrl + j</kbd>, or click the `RUN QUERY` button in the (blue) footer.
 
 Up to 50k records will be loaded into the results pane below the query editor. When the focus is on the data pane, you can use your arrow keys or mouse to select different cells.
 
 ### Exiting Harlequin
 
-Press `ctrl + q` to quit and return to your shell.
+Press <kbd>ctrl + q</kbd> to quit and return to your shell.
 
 ## Contributing
 
