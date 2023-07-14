@@ -3,6 +3,8 @@
 - ctrl+q: Quit Harlequin
 - F1: Show this screen.
 - F2: Focus on the Query Editor.
+- F5: Focus on the Results Viewer.
+- F6: Focus on the Data Catalog.
 - F9, ctrl+b: Toggle the sidebar.
 - F10: Toggle full screen mode for the current widget.
 
