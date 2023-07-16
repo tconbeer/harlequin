@@ -191,3 +191,24 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert not w.disabled
             assert w.styles.width
             assert w.styles.width.value > 0
+
+
+@pytest.mark.asyncio
+async def test_help_screen(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        assert len(app.screen_stack) == 1
+
+        await pilot.press("f1")
+        assert len(app.screen_stack) == 2
+        assert app.screen.id == "help_screen"
+
+        await pilot.press("a")  # any key
+        assert len(app.screen_stack) == 1
+
+        app.results_viewer.focus()
+
+        await pilot.press("f1")
+        assert len(app.screen_stack) == 2
+
+        await pilot.press("space")  # any key
+        assert len(app.screen_stack) == 1

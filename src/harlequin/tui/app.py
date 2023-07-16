@@ -20,6 +20,7 @@ from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
     CodeEditor,
     ErrorModal,
+    HelpScreen,
     ResultsTable,
     ResultsViewer,
     RunQueryBar,
@@ -38,6 +39,10 @@ class Harlequin(App, inherit_bindings=False):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
+        Binding("f1", "show_help_screen", "Help"),
+        Binding("f2", "focus_query_editor", "Focus Query Editor", show=False),
+        Binding("f5", "focus_results_viewer", "Focus Results Viewer", show=False),
+        Binding("f6", "focus_data_catalog", "Focus Data Catalog", show=False),
         Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
@@ -135,6 +140,17 @@ class Harlequin(App, inherit_bindings=False):
             ):
                 self.query_text = self.editor.text
 
+    def action_focus_query_editor(self) -> None:
+        self.editor.focus()
+
+    def action_focus_results_viewer(self) -> None:
+        self.results_viewer.get_table().focus()
+
+    def action_focus_data_catalog(self) -> None:
+        if self.sidebar_hidden or self.schema_viewer.disabled:
+            self.action_toggle_sidebar()
+        self.schema_viewer.focus()
+
     def action_toggle_sidebar(self) -> None:
         """
         sidebar_hidden and self.sidebar.disabled both hold important state.
@@ -149,6 +165,9 @@ class Harlequin(App, inherit_bindings=False):
 
     def action_toggle_full_screen(self) -> None:
         self.full_screen = not self.full_screen
+
+    def action_show_help_screen(self) -> None:
+        self.push_screen(HelpScreen(id="help_screen"))
 
     def set_data(self, data: List[Tuple]) -> None:
         log(f"set_data {len(data)}")
