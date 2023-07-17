@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.20] - 2023-07-17
+
 ### Features
 
 -   <kbd>F1</kbd> now displays a help screen that lists all keyboard bindings ([#20](https://github.com/tconbeer/textual-textarea/issues/20)).
@@ -12,6 +14,7 @@ All notable changes to this project will be documented in this file.
 -   <kbd>F6</kbd> focuses the keyboard on the data catalog.
 
 ### Bug Fixes
+
 -   <kbd>ctrl+v</kbd> for paste is now better-supported on all platforms.
 
 ## [0.0.19] - 2023-06-26
@@ -151,7 +154,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.19...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.20...HEAD
+
+[0.0.20]: https://github.com/tconbeer/harlequin/compare/0.0.19...0.0.20
 
 [0.0.19]: https://github.com/tconbeer/harlequin/compare/0.0.18...0.0.19
 
