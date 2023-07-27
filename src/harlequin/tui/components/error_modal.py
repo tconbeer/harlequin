@@ -30,7 +30,7 @@ class ErrorModal(ModalScreen):
             yield Static("Press any key to continue.", id="error_footer")
 
     def on_mount(self) -> None:
-        container = self.query_one("#outer")
+        container = self.query_one("#error_outer")
         container.border_title = self.title
 
     def on_key(self) -> None:
