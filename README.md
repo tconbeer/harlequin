@@ -42,6 +42,16 @@ You can also open a database in read-only mode:
 harlequin -r "path/to/duck.db"
 ```
 
+### Loading Unsigned Extensions
+If you need to load a custom or otherwise unsigned extension, you can use the
+`-unsigned` flag just as you would with the DuckDB CLI, or `-u` for convenience:
+
+```bash
+harlequin -u
+```
+
+The long flag `--allow-unsigned-extensions` is another synonym.
+
 ### Using Harlequin with MotherDuck
 
 You can use Harlequin with MotherDuck, just as you would use the DuckDB CLI:

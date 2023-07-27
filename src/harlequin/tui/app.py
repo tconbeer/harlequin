@@ -64,12 +64,17 @@ class Harlequin(App, inherit_bindings=False):
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
+        allow_unsigned_extensions: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
         self.limit = 500
         try:
-            self.connection = connect(db_path, read_only=read_only)
+            self.connection = connect(
+                db_path,
+                read_only=read_only,
+                allow_unsigned_extensions=allow_unsigned_extensions,
+            )
         except HarlequinExit:
             self.exit()
 
