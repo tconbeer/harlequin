@@ -1,4 +1,5 @@
 # harlequin
+
 A Terminal-based SQL IDE for DuckDB.
 
 ![harlequin TUI](harlequinv0018.gif)
@@ -18,9 +19,9 @@ pipx install harlequin
 > **Tip:**
 >
 > You can run invoke directly with [`pipx run`](https://pypa.github.io/pipx/examples/#pipx-run-examples) anywhere that `pipx` is installed. For example:
+>
 > - `pipx run harlequin --help`
 > - `pipx run harlequin ./my.duckdb`
-
 
 ## Using Harlequin
 
@@ -43,6 +44,7 @@ harlequin -r "path/to/duck.db"
 ```
 
 ### Loading Unsigned Extensions
+
 If you need to load a custom or otherwise unsigned extension, you can use the
 `-unsigned` flag just as you would with the DuckDB CLI, or `-u` for convenience:
 
@@ -82,7 +84,7 @@ When Harlequin is open, you can view the schema of your DuckDB database in the l
 
 ### Editing a Query
 
-The main query editor is a full-featured text editor, with features including syntax highlighting, auto-formatting with <kbd>f4</kbd>, text selection, copy/paste, and more. 
+The main query editor is a full-featured text editor, with features including syntax highlighting, auto-formatting with <kbd>f4</kbd>, text selection, copy/paste, and more.
 
 > **Tip:**
 >
