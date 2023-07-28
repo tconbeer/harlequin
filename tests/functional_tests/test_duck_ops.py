@@ -21,6 +21,9 @@ def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
     assert connect([tiny_db, Path(":memory:"), small_db], read_only=False)
     assert connect([tiny_db, small_db], read_only=True)
     assert connect([tmp_path / "new.db"])
+    assert connect([], allow_unsigned_extensions=True)
+    assert connect([tiny_db], allow_unsigned_extensions=True)
+    assert connect([tiny_db, small_db], read_only=True, allow_unsigned_extensions=True)
 
 
 @pytest.mark.xfail(
