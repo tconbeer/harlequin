@@ -7,10 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   Add `-u`/`-unsigned`/`--allow-unsigned-extensions` CLI flag for allowing loading of unsigned extensions.
+-   File save and open dialog can now expand the user directory (`~`) ([#61](https://github.com/tconbeer/textual-textarea/pull/61))
 
 ### Bug Fixes
 
-- Error modal no longer crashes
+-   Error modal no longer crashes.
+-   Text selection is now maintained when pressing more keys.
 
 ## [0.0.20] - 2023-07-17
 
