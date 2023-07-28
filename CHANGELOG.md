@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.21] - 2023-07-28
+
 ### Features
 
 -   Add `-u`/`-unsigned`/`--allow-unsigned-extensions` CLI flag for allowing loading of unsigned extensions.
@@ -164,7 +166,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.20...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.21...HEAD
+
+[0.0.21]: https://github.com/tconbeer/harlequin/compare/0.0.20...0.0.21
 
 [0.0.20]: https://github.com/tconbeer/harlequin/compare/0.0.19...0.0.20
 
