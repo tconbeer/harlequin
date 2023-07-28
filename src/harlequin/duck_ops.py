@@ -16,15 +16,18 @@ def connect(
     read_only: bool = False,
     md_token: Union[str, None] = None,
     md_saas: bool = False,
+    allow_unsigned_extensions: bool = False,
 ) -> duckdb.DuckDBPyConnection:
     if not db_path:
         db_path = [":memory:"]
     primary_db, *other_dbs = db_path
     token = f"?token={md_token}" if md_token else ""
     saas = "?saas_mode=true" if md_saas else ""
+    config = {"allow_unsigned_extensions": str(allow_unsigned_extensions).lower()}
+
     try:
         connection = duckdb.connect(
-            database=f"{primary_db}{token}{saas}", read_only=read_only
+            database=f"{primary_db}{token}{saas}", read_only=read_only, config=config
         )
         for db in other_dbs:
             connection.execute(f"attach '{db}'{' (READ_ONLY)' if read_only else ''}")

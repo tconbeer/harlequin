@@ -15,6 +15,13 @@ from harlequin import Harlequin
     help="Open the database file in read-only mode.",
 )
 @click.option(
+    "-u",
+    "-unsigned",
+    "--allow-unsigned-extensions",
+    is_flag=True,
+    help="Allow loading unsigned extensions",
+)
+@click.option(
     "-t",
     "--theme",
     default="monokai",
@@ -48,6 +55,7 @@ def harlequin(
     theme: str,
     md_token: Union[str, None],
     md_saas: bool,
+    allow_unsigned_extensions: bool,
 ) -> None:
     if not db_path:
         db_path = [":memory:"]
@@ -57,5 +65,6 @@ def harlequin(
         theme=theme,
         md_token=md_token,
         md_saas=md_saas,
+        allow_unsigned_extensions=allow_unsigned_extensions,
     )
     tui.run()
