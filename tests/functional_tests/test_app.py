@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import pytest
 from harlequin.tui import Harlequin
+from harlequin.tui.components import ExportScreen
 
 from ..conftest import TestHelpers
 
@@ -211,4 +214,25 @@ async def test_help_screen(app: Harlequin) -> None:
         assert len(app.screen_stack) == 2
 
         await pilot.press("space")  # any key
+        assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["one.csv", "one.parquet", "one.json"])
+async def test_export(app: Harlequin, tmp_path: Path, filename: str) -> None:
+    async with app.run_test() as pilot:
+        app.editor.text = "select 1 as a"
+        await pilot.press("ctrl+j")  # run query
+        assert app.relation is not None
+        assert len(app.screen_stack) == 1
+
+        await pilot.press("ctrl+e")
+        assert len(app.screen_stack) == 2
+        assert app.screen.id == "export_screen"
+        assert isinstance(app.screen, ExportScreen)
+        export_path = tmp_path / filename
+        app.screen.file_input.value = str(export_path)  # type: ignore
+        await pilot.press("enter")
+
+        assert export_path.is_file()
         assert len(app.screen_stack) == 1
