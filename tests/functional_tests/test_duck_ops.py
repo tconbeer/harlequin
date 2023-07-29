@@ -49,9 +49,6 @@ def test_connect_prql() -> None:
     )
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32", reason="MotherDuck extension not yet built for Windows."
-)
 @pytest.mark.skipif(
     sys.version_info[0:2] != (3, 10), reason="Matrix is hitting MD too many times."
 )
