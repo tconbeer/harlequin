@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Tuple, Type, Union
 
@@ -55,6 +56,7 @@ class Harlequin(App, inherit_bindings=False):
     ]
 
     query_text: reactive[str] = reactive(str)
+    selection_text: reactive[str] = reactive(str)
     relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
     data: reactive[List[Tuple]] = reactive(list)
     full_screen: reactive[bool] = reactive(False)
@@ -111,11 +113,37 @@ class Harlequin(App, inherit_bindings=False):
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
         message.stop()
-        self.query_text = message.text
+        self.query_text = self._validate_selection() or message.text
 
     def on_button_pressed(self, message: Button.Pressed) -> None:
         message.stop()
-        self.query_text = self.editor.text
+        if message.control.id == "run_query":
+            self.query_text = self._validate_selection() or self.editor.text
+
+    def on_text_area_cursor_moved(self) -> None:
+        self.selection_text = self._validate_selection()
+
+    def _validate_selection(self) -> str:
+        """
+        If the selection is valid query, return it. Otherwise
+        return the empty string.
+        """
+        selection = self.editor.selected_text
+        if selection:
+            escaped = selection.replace("'", "''")
+            try:
+                (parsed,) = self.connection.sql(  # type: ignore
+                    f"select json_serialize_sql('{escaped}')"
+                ).fetchone()
+            except Exception:
+                return ""
+            result = json.loads(parsed)
+            if result.get("error", True):
+                return ""
+            else:
+                return selection
+        else:
+            return ""
 
     def on_checkbox_changed(self, message: Checkbox.Changed) -> None:
         """
@@ -284,6 +312,12 @@ class Harlequin(App, inherit_bindings=False):
             if self.schema_viewer.has_focus:
                 self.editor.focus()
         self.schema_viewer.disabled = sidebar_hidden
+
+    def watch_selection_text(self, selection_text: str) -> None:
+        if selection_text:
+            self.run_query_bar.button.label = "Run Selection"
+        else:
+            self.run_query_bar.button.label = "Run Query"
 
     async def watch_query_text(self, query_text: str) -> None:
         if query_text:
