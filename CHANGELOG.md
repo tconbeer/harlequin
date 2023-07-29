@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+-   Adds a new CLI option, `--extension` or `-e`, which will install and load a named DuckDB extension.
+-   Adds a new CLI option, `--force-install-extensions`, which will re-install the extensions provided
+    with the `-e` option.
+-   Adds a new CLI option, `--custom-extension-repo`, which enables installing extensions other than
+    the official DuckDB extensions.
+-   Taken together, Harlequin can now be loaded with the [PRQL](https://github.com/ywelsch/duckdb-prql) extension. Use PRQL with Harlequin:
+    ```bash
+    harlequin -u -e prql --custom-extension-repo welsch.lu/duckdb/prql/latest
+    ```
+    ([#152](https://github.com/tconbeer/harlequin/issues/152) - thank you [@dljsjr](https://github.com/dljsjr)!)
 
 ## [0.0.23] - 2023-08-03
 

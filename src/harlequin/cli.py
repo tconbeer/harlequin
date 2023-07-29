@@ -22,6 +22,27 @@ from harlequin import Harlequin
     help="Allow loading unsigned extensions",
 )
 @click.option(
+    "-e",
+    "--extension",
+    multiple=True,
+    help=(
+        "Install and load the named DuckDB extension when starting "
+        "Harlequin. To install multiple extensions, repeat this option."
+    ),
+)
+@click.option(
+    "--force-install-extensions",
+    is_flag=True,
+    help="Force install all extensions passed with -e.",
+)
+@click.option(
+    "--custom-extension-repo",
+    help=(
+        "A value to pass to DuckDB's custom_extension_repository variable. "
+        "Will be set before loading any extensions that are passing using -e."
+    ),
+)
+@click.option(
     "-t",
     "--theme",
     default="monokai",
@@ -52,16 +73,22 @@ from harlequin import Harlequin
 def harlequin(
     db_path: List[str],
     read_only: bool,
+    allow_unsigned_extensions: bool,
+    extension: List[str],
+    force_install_extensions: bool,
+    custom_extension_repo: Union[str, None],
     theme: str,
     md_token: Union[str, None],
     md_saas: bool,
-    allow_unsigned_extensions: bool,
 ) -> None:
     if not db_path:
         db_path = [":memory:"]
     tui = Harlequin(
         db_path=db_path,
         read_only=read_only,
+        extensions=extension,
+        force_install_extensions=force_install_extensions,
+        custom_extension_repo=custom_extension_repo,
         theme=theme,
         md_token=md_token,
         md_saas=md_saas,

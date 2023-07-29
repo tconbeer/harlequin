@@ -23,7 +23,26 @@ def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
     assert connect([tmp_path / "new.db"])
     assert connect([], allow_unsigned_extensions=True)
     assert connect([tiny_db], allow_unsigned_extensions=True)
-    assert connect([tiny_db, small_db], read_only=True, allow_unsigned_extensions=True)
+    assert connect([tiny_db, small_db], read_only=True)
+
+
+def test_connect_extensions() -> None:
+    assert connect([], extensions=None)
+    assert connect([], extensions=[])
+    assert connect([], extensions=["spatial"])
+    assert connect([], allow_unsigned_extensions=True, extensions=["spatial"])
+
+
+def test_connect_prql() -> None:
+    # Note: this may fail in the future if the extension doesn't support the latest
+    # duckdb version.
+    assert connect(
+        [],
+        allow_unsigned_extensions=True,
+        extensions=["prql"],
+        custom_extension_repo="welsch.lu/duckdb/prql/latest",
+        force_install_extensions=True,
+    )
 
 
 @pytest.mark.xfail(
