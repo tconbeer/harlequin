@@ -41,7 +41,7 @@ class Harlequin(App, inherit_bindings=False):
     """
 
     CSS_PATH = "app.css"
-    MAX_RESULTS = 50_000
+    MAX_RESULTS = 10_000
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -94,7 +94,7 @@ class Harlequin(App, inherit_bindings=False):
             yield SchemaViewer("Data Catalog", connection=self.connection)
             with Vertical(id="main_panel"):
                 yield CodeEditor(language="sql", theme=self.theme)
-                yield RunQueryBar()
+                yield RunQueryBar(max_results=self.MAX_RESULTS)
                 yield ResultsViewer()
         yield Footer()
 

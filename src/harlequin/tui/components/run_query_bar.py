@@ -1,10 +1,27 @@
+from typing import Union
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.validation import Integer
+from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Input
 
 
 class RunQueryBar(Horizontal):
+    def __init__(
+        self,
+        *children: Widget,
+        name: Union[str, None] = None,
+        id: Union[str, None] = None,  # noqa
+        classes: Union[str, None] = None,
+        disabled: bool = False,
+        max_results: int = 10_000,
+    ) -> None:
+        self.max_results = max_results
+        super().__init__(
+            *children, name=name, id=id, classes=classes, disabled=disabled
+        )
+
     def compose(self) -> ComposeResult:
         yield Checkbox("Limit ", id="limit_checkbox")
         yield Input(
@@ -12,8 +29,10 @@ class RunQueryBar(Horizontal):
             id="limit_input",
             validators=Integer(
                 minimum=0,
-                maximum=50000,
-                failure_description="Please enter a number between 0 and 50,000.",
+                maximum=self.max_results,
+                failure_description=(
+                    f"Please enter a number between 0 and {self.max_results}."
+                ),
             ),
         )
         yield Button("Run Query", id="run_query")
