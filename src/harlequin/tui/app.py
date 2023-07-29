@@ -254,10 +254,6 @@ class Harlequin(App, inherit_bindings=False):
     def action_show_help_screen(self) -> None:
         self.push_screen(HelpScreen(id="help_screen"))
 
-    def set_data(self, data: List[Tuple]) -> None:
-        log(f"set_data {len(data)}")
-        self.data = data
-
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor, self.results_viewer]
         other_widgets = [self.run_query_bar, self.footer]
@@ -385,36 +381,38 @@ class Harlequin(App, inherit_bindings=False):
             log(f"yielding chunk {i}")
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
-    @work(exclusive=True, exit_on_error=False)  # type: ignore
-    def _build_relation(self, query_text: str) -> Union[duckdb.DuckDBPyRelation, None]:
+    @work(exclusive=True, exit_on_error=False)
+    async def _build_relation(
+        self, query_text: str
+    ) -> Union[duckdb.DuckDBPyRelation, None]:
         relation = self.connection.sql(query_text)
         if relation and self.run_query_bar.checkbox.value:
             relation = relation.limit(self.limit)
         return relation
 
-    @work(exclusive=True, exit_on_error=False)  # type: ignore
-    def fetch_relation_data(self, relation: duckdb.DuckDBPyRelation) -> None:
+    @work(exclusive=True, exit_on_error=False)
+    async def fetch_relation_data(self, relation: duckdb.DuckDBPyRelation) -> None:
         log(f"fetch_relation_data {hash(relation)}")
         data = relation.fetchall()
         log(f"fetch_relation_data FINISHED {hash(relation)}")
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.call_from_thread(self.set_data, data)
+            self.data = data
 
     @work(exclusive=False)
-    def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
+    async def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
         log(f"add_data_to_table {len(data)}")
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.call_from_thread(table.add_rows, data)
+            table.add_rows(data)
         return worker
 
     @work(exclusive=True)
-    def update_schema_data(self) -> None:
+    async def update_schema_data(self) -> None:
         catalog = get_catalog(self.connection)
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.call_from_thread(self.schema_viewer.update_tree, catalog)
+            self.schema_viewer.update_tree(catalog)
 
 
 if __name__ == "__main__":
