@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Adds path autocomplete and validation to the file save/open and export data inputs.
+
 ## [0.0.22] - 2023-08-02
 
 ### Features

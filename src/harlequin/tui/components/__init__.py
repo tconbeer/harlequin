@@ -9,7 +9,6 @@ from harlequin.tui.components.export_screen import (
 )
 from harlequin.tui.components.help_screen import HelpScreen
 from harlequin.tui.components.messages import CursorMoved, ScrollOne
-from harlequin.tui.components.path_suggester import PathSuggester
 from harlequin.tui.components.results_viewer import ResultsTable, ResultsViewer
 from harlequin.tui.components.run_query_bar import RunQueryBar
 from harlequin.tui.components.schema_viewer import SchemaViewer
@@ -29,5 +28,4 @@ __all__ = [
     "RunQueryBar",
     "SchemaViewer",
     "ScrollOne",
-    "PathSuggester",
 ]
