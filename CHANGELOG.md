@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Changes the behavior of the "Run Query" button and <kbd>ctrl+enter</kbd>:
+    -   If text is selected, and that text does not contain parsing errors, the "Run Query" button will show "Run Selection", and <kbd>ctrl+enter</kbd> will run the selected text. If multiple queries are selected (separated by semicolons), they will all be run; if multiple `select` statements are selected, only data from the first selected `select` statement will be loaded into the Results Viewer (or exported).
+    -   If no text is selected, Harlequin will run the single query where the cursor is active. Other queries before and after semicolons will not be run.
+    -   To "Run All", first select all text with <kbd>ctrl+a</kbd>, and then run selection with <kbd>ctrl+enter</kbd>
+-   Lowers the maximum number of records loaded into the results viewer to 10,000. (All records can be exported with <kbd>ctrl+e</kbd>)
+
 ### Features
 
 -   Adds path autocomplete and validation to the file save/open and export data inputs.

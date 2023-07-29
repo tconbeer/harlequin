@@ -14,7 +14,6 @@ from textual.types import CSSPathType
 from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerFailed, get_current_worker
-from textual_textarea import TextArea
 
 from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
@@ -57,7 +56,7 @@ class Harlequin(App, inherit_bindings=False):
 
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
-    relation: reactive[Union[duckdb.DuckDBPyRelation, None]] = reactive(None)
+    relations: reactive[List[duckdb.DuckDBPyRelation]] = reactive(list)
     data: reactive[List[Tuple]] = reactive(list)
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
@@ -100,7 +99,7 @@ class Harlequin(App, inherit_bindings=False):
 
     async def on_mount(self) -> None:
         self.schema_viewer = self.query_one(SchemaViewer)
-        self.editor = self.query_one(TextArea)
+        self.editor = self.query_one(CodeEditor)
         self.results_viewer = self.query_one(ResultsViewer)
         self.run_query_bar = self.query_one(RunQueryBar)
         self.footer = self.query_one(Footer)
@@ -111,14 +110,17 @@ class Harlequin(App, inherit_bindings=False):
         worker = self.update_schema_data()
         await worker.wait()
 
+    def _set_query_text(self) -> None:
+        self.query_text = self._validate_selection() or self.editor.current_query
+
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
         message.stop()
-        self.query_text = self._validate_selection() or message.text
+        self._set_query_text()
 
     def on_button_pressed(self, message: Button.Pressed) -> None:
         message.stop()
         if message.control.id == "run_query":
-            self.query_text = self._validate_selection() or self.editor.text
+            self._set_query_text()
 
     def on_text_area_cursor_moved(self) -> None:
         self.selection_text = self._validate_selection()
@@ -138,7 +140,8 @@ class Harlequin(App, inherit_bindings=False):
             except Exception:
                 return ""
             result = json.loads(parsed)
-            if result.get("error", True):
+            # DDL statements return an error of type "not implemented"
+            if result.get("error", True) and result.get("error_type", "") == "parser":
                 return ""
             else:
                 return selection
@@ -179,17 +182,18 @@ class Harlequin(App, inherit_bindings=False):
                 and message.validation_result
                 and message.validation_result.is_valid
             ):
-                self.query_text = self.editor.text
+                self._set_query_text()
 
     def action_export(self) -> None:
         def export_data(screen_data: Tuple[Path, ExportOptions]) -> None:
-            assert self.relation, "Internal error! Could not export relation (None)"
+            assert self.relations, "Internal error! Could not export relation (None)"
+            relation = self.relations[0]
             raw_path = screen_data[0]
             options = screen_data[1]
             path = str(raw_path.expanduser())
             try:
                 if isinstance(options, CSVOptions):
-                    self.relation.write_csv(
+                    relation.write_csv(
                         file_name=path,
                         sep=options.sep,
                         na_rep=options.nullstr,
@@ -205,7 +209,7 @@ class Harlequin(App, inherit_bindings=False):
                         encoding=options.encoding,
                     )
                 elif isinstance(options, ParquetOptions):
-                    self.relation.write_parquet(
+                    relation.write_parquet(
                         file_name=path, compression=options.compression
                     )
                 elif isinstance(options, JSONOptions):
@@ -226,7 +230,8 @@ class Harlequin(App, inherit_bindings=False):
                         else ""
                     )
                     self.connection.sql(
-                        f"copy ({self.query_text}) to '{path}' (FORMAT JSON"
+                        f"copy ({self.query_text.split(';')[0]}) to '{path}' "
+                        "(FORMAT JSON"
                         f"{', ARRAY TRUE' if options.array else ''}"
                         f"{compression}{date_format}{ts_format}"
                         ")"
@@ -240,7 +245,7 @@ class Harlequin(App, inherit_bindings=False):
                     )
                 )
 
-        if self.relation is None:
+        if not self.relations:
             self.app.push_screen(
                 ErrorModal(
                     title="Export Data Error",
@@ -346,9 +351,9 @@ class Harlequin(App, inherit_bindings=False):
             else:
                 table = pane.get_table()
                 table.clear(columns=True)
-                relation = worker.result
-                if relation:  # select query
-                    self.relation = relation
+                relations = worker.result
+                if relations:  # select query
+                    self.relations = relations
                 elif bool(query_text.strip()):  # DDL/DML query
                     self.run_query_bar.set_responsive()
                     pane.set_responsive()
@@ -361,15 +366,14 @@ class Harlequin(App, inherit_bindings=False):
                     pane.show_table()
                     self.data = []
 
-    async def watch_relation(
-        self, relation: Union[duckdb.DuckDBPyRelation, None]
-    ) -> None:
+    async def watch_relations(self, relations: List[duckdb.DuckDBPyRelation]) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
         # invalidate results so watch_data runs even if the results are the same
         self.data = []
-        if relation is not None:
+        if relations:
+            relation = relations[0]
             table = self.results_viewer.get_table()
             short_types = [short_type(t) for t in relation.dtypes]
             table.add_columns(
@@ -416,13 +420,15 @@ class Harlequin(App, inherit_bindings=False):
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
     @work(exclusive=True, exit_on_error=False)
-    async def _build_relation(
-        self, query_text: str
-    ) -> Union[duckdb.DuckDBPyRelation, None]:
-        relation = self.connection.sql(query_text)
-        if relation and self.run_query_bar.checkbox.value:
-            relation = relation.limit(self.limit)
-        return relation
+    async def _build_relation(self, query_text: str) -> List[duckdb.DuckDBPyRelation]:
+        relations: List[duckdb.DuckDBPyRelation] = []
+        for q in query_text.split(";"):
+            rel = self.connection.sql(q)
+            if rel is not None:
+                if self.run_query_bar.checkbox.value:
+                    rel = rel.limit(self.limit)
+                relations.append(rel)
+        return relations
 
     @work(exclusive=True, exit_on_error=False)
     async def fetch_relation_data(self, relation: duckdb.DuckDBPyRelation) -> None:
