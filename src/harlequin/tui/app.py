@@ -19,8 +19,13 @@ from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
     CodeEditor,
+    CSVOptions,
     ErrorModal,
+    ExportOptions,
+    ExportScreen,
     HelpScreen,
+    JSONOptions,
+    ParquetOptions,
     ResultsTable,
     ResultsViewer,
     RunQueryBar,
@@ -46,6 +51,7 @@ class Harlequin(App, inherit_bindings=False):
         Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
+        Binding("ctrl+e", "export", "Export Data", show=False),
     ]
 
     query_text: reactive[str] = reactive(str)
@@ -73,6 +79,8 @@ class Harlequin(App, inherit_bindings=False):
             self.connection = connect(
                 db_path,
                 read_only=read_only,
+                md_token=md_token,
+                md_saas=md_saas,
                 allow_unsigned_extensions=allow_unsigned_extensions,
             )
         except HarlequinExit:
@@ -144,6 +152,78 @@ class Harlequin(App, inherit_bindings=False):
                 and message.validation_result.is_valid
             ):
                 self.query_text = self.editor.text
+
+    def action_export(self) -> None:
+        def export_data(screen_data: Tuple[Path, ExportOptions]) -> None:
+            assert self.relation, "Internal error! Could not export relation (None)"
+            raw_path = screen_data[0]
+            options = screen_data[1]
+            path = str(raw_path.expanduser())
+            try:
+                if isinstance(options, CSVOptions):
+                    self.relation.write_csv(
+                        file_name=path,
+                        sep=options.sep,
+                        na_rep=options.nullstr,
+                        header=options.header,
+                        quotechar=options.quote,
+                        escapechar=options.escape,
+                        date_format=options.dateformat if options.dateformat else None,
+                        timestamp_format=options.timestampformat
+                        if options.timestampformat
+                        else None,
+                        quoting="ALL" if options.force_quote else None,
+                        compression=options.compression,
+                        encoding=options.encoding,
+                    )
+                elif isinstance(options, ParquetOptions):
+                    self.relation.write_parquet(
+                        file_name=path, compression=options.compression
+                    )
+                elif isinstance(options, JSONOptions):
+                    compression = (
+                        f", COMPRESSION {options.compression}"
+                        if options.compression in ("gzip", "zstd", "uncompressed")
+                        else ""
+                    )
+                    print("compression: ", compression)
+                    date_format = (
+                        f", DATEFORMAT {options.dateformat}"
+                        if options.dateformat
+                        else ""
+                    )
+                    ts_format = (
+                        f", TIMESTAMPFORMAT {options.timestampformat}"
+                        if options.timestampformat
+                        else ""
+                    )
+                    self.connection.sql(
+                        f"copy ({self.query_text}) to '{path}' (FORMAT JSON"
+                        f"{', ARRAY TRUE' if options.array else ''}"
+                        f"{compression}{date_format}{ts_format}"
+                        ")"
+                    )
+            except (OSError, duckdb.InvalidInputException, duckdb.BinderException) as e:
+                self.app.push_screen(
+                    ErrorModal(
+                        title="Export Data Error",
+                        header=("Could not export data."),
+                        error=e,
+                    )
+                )
+
+        if self.relation is None:
+            self.app.push_screen(
+                ErrorModal(
+                    title="Export Data Error",
+                    header=("Could not export data."),
+                    error=ValueError(
+                        "There is no data to export. Run the query first."
+                    ),
+                )
+            )
+        else:
+            self.app.push_screen(ExportScreen(id="export_screen"), export_data)
 
     def action_focus_query_editor(self) -> None:
         self.editor.focus()

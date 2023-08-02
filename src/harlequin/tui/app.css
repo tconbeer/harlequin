@@ -220,3 +220,111 @@ HelpScreen {
     margin: 1 0 0 0;
     padding: 0 1;
 }
+
+/* Export Screen */
+ExportScreen {
+    align: center middle;
+    padding: 0;
+}
+#export_outer {
+    border: round $border-color-focus;
+    background: $surface;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#export_header {
+    padding: 0 1;
+}
+
+#path_input {
+    margin: 1 0 0 0;
+}
+
+ExportScreen .option_row {
+    height: 3;
+    margin: 1 1 0 0;
+}
+
+ExportScreen Horizontal Label {
+    height: 1;
+    text-align: right;
+    width: 20;
+}
+
+.select_label, .switch_label, .input_label {
+    margin: 1 2 0 1;
+}
+
+ExportScreen Horizontal Select {
+    width: 41; /* off by one!? */
+    padding: 0;
+    margin: 0;
+}
+
+ExportScreen Horizontal Select > SelectCurrent {
+    width: 40;
+    background: transparent;
+    border: round $panel;
+    margin: 0 0 0 0;
+}
+
+ExportScreen Horizontal Select:focus-within > SelectCurrent {
+    border: round $border-color-focus;
+}
+
+ExportScreen Horizontal Select > SelectOverlay {
+    width: 40;
+    border: round $border-color-focus;
+    background: transparent;
+}
+
+ExportScreen Horizontal Input {
+    width: 40;
+    border: round $panel;
+    background: transparent;
+}
+
+ExportScreen Horizontal Input:focus {
+    border: round $border-color-focus;
+}
+
+ExportScreen Switch:hover {
+    border: tall transparent;
+}
+
+ExportScreen Switch:focus:hover {
+    border: tall $border-color-focus;
+}
+
+ExportScreen Switch.-on > .switch--slider {
+    color: $accent;
+    border: tall transparent;
+}
+
+CSVOptionsMenu, ParquetOptionsMenu, JSONOptionsMenu {
+    height: auto;
+}
+
+#export_button_row {
+    height: auto;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+ExportScreen Button {
+    background: $accent;
+    height: 3;
+    margin: 0 6;
+    border: none;
+}
+ExportScreen Button:hover, #cancel:hover {
+    background: $secondary;
+}
+ExportScreen Button:focus {
+    text-style: reverse;
+}
+#cancel{
+    background: $panel;
+}
