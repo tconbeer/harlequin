@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "harlequin"
-version = "0.0.21"
+version = "0.0.22"
 description = "A terminal-based SQL IDE for DuckDB"
 authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
 license = "MIT"

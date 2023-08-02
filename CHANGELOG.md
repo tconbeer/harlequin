@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.22] - 2023-08-02
+
 ### Features
+
 -   Export data from a query with <kbd>ctrl+e</kbd> ([#149](https://github.com/tconbeer/harlequin/issues/149) - thank you, [@Avsha-Chai](https://github.com/Avsha-Chai)).
 
 ## [0.0.21] - 2023-07-28
@@ -169,7 +172,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.21...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.22...HEAD
+
+[0.0.22]: https://github.com/tconbeer/harlequin/compare/0.0.21...0.0.22
 
 [0.0.21]: https://github.com/tconbeer/harlequin/compare/0.0.20...0.0.21
 
