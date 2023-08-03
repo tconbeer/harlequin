@@ -1,6 +1,5 @@
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual import events
 from textual.binding import Binding
 from textual.message import Message
 from textual_textarea import TextArea
@@ -36,9 +35,6 @@ class CodeEditor(TextArea):
 
     def on_mount(self) -> None:
         self.border_title = "Query Editor"
-
-    def on_click(self, event: events.Click) -> None:
-        self.focus()
 
     async def action_submit(self) -> None:
         self.post_message(self.Submitted(self.text))

@@ -8,9 +8,9 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static, Switch
+from textual_textarea import PathInput
 
 from harlequin.tui.components import ErrorModal
-from harlequin.tui.components.path_suggester import PathSuggester
 
 
 class NoFocusLabel(Label, can_focus=False):
@@ -255,11 +255,17 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="export_outer"):
             yield Static(" ".join(self.header_text), id="export_header")
-            yield Input(
-                placeholder="/path/to/file  (Right arrow autocompletes)",
+            yield PathInput(
+                placeholder=(
+                    "/path/to/file  (tab autocompletes, enter exports, esc cancels)"
+                ),
                 id="path_input",
-                suggester=PathSuggester(),
+                file_okay=True,
+                dir_okay=False,
+                must_exist=False,
+                tab_advances_focus=True,
             )
+            yield Label("", id="validation_label")
             with Horizontal(classes="option_row"):
                 yield Label("Format:", classes="select_label")
                 yield Select(
@@ -276,6 +282,7 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
         container.border_title = "Data Exporter"
         self.format_select = self.query_one(Select)
         self.file_input = self.query_one("#path_input", Input)
+        self.file_input_validation_label = self.query_one("#validation_label", Label)
         self.options_container = self.query_one("#options_container", VerticalScroll)
         self.export_button = self.query_one("#export", Button)
         self.file_input.focus()
@@ -295,6 +302,13 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
     def on_input_changed(self, event: Input.Changed) -> None:
         event.stop()
         if event.control.id == "path_input":
+            if event.validation_result:
+                if event.validation_result.is_valid:
+                    self.file_input_validation_label.update("")
+                else:
+                    self.file_input_validation_label.update(
+                        " ".join(event.validation_result.failure_descriptions)
+                    )
             old_format = self.format_select.value
             try:
                 p = Path(event.value)

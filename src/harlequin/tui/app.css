@@ -242,6 +242,13 @@ ExportScreen {
     margin: 1 0 0 0;
 }
 
+#validation_label {
+    height: 1;
+    color: $error;
+    text-style: italic;
+    margin: 0 0 0 3;
+}
+
 ExportScreen .option_row {
     height: 3;
     margin: 1 1 0 0;
