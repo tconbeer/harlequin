@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.23] - 2023-08-03
+
 -   Changes the behavior of the "Run Query" button and <kbd>ctrl+enter</kbd>:
     -   If text is selected, and that text does not contain parsing errors, the "Run Query" button will show "Run Selection", and <kbd>ctrl+enter</kbd> will run the selected text. If multiple queries are selected (separated by semicolons), they will all be run; if multiple `select` statements are selected, only data from the first selected `select` statement will be loaded into the Results Viewer (or exported).
     -   If no text is selected, Harlequin will run the single query where the cursor is active. Other queries before and after semicolons will not be run.
@@ -182,7 +184,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.22...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.23...HEAD
+
+[0.0.23]: https://github.com/tconbeer/harlequin/compare/0.0.22...0.0.23
 
 [0.0.22]: https://github.com/tconbeer/harlequin/compare/0.0.21...0.0.22
 
