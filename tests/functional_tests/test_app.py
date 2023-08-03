@@ -23,7 +23,7 @@ async def test_select_1(app: Harlequin) -> None:
         await app.workers.wait_for_complete()
         assert app.query_text == q
         await app.workers.wait_for_complete()
-        assert app.relation is not None
+        assert app.relations
         await app.workers.wait_for_complete()
         assert app.data == [(1,)]
 
@@ -223,7 +223,7 @@ async def test_export(app: Harlequin, tmp_path: Path, filename: str) -> None:
     async with app.run_test() as pilot:
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
-        assert app.relation is not None
+        assert app.relations
         assert len(app.screen_stack) == 1
 
         await pilot.press("ctrl+e")
