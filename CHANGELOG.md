@@ -3,6 +3,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+## [0.0.24] - 2023-08-04
+
 -   Adds a new CLI option, `--extension` or `-e`, which will install and load a named DuckDB extension.
 -   Adds a new CLI option, `--force-install-extensions`, which will re-install the extensions provided
     with the `-e` option.
@@ -194,7 +197,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.23...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.24...HEAD
+
+[0.0.24]: https://github.com/tconbeer/harlequin/compare/0.0.23...0.0.24
 
 [0.0.23]: https://github.com/tconbeer/harlequin/compare/0.0.22...0.0.23
 
