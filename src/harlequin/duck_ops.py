@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import List, Sequence, Tuple, Union
 
 import duckdb
+from rich import print
+from rich.panel import Panel
 
 from harlequin.exception import HarlequinExit
 
@@ -14,9 +16,12 @@ Catalog = List[Tuple[str, SCHEMAS]]
 def connect(
     db_path: Sequence[Union[str, Path]],
     read_only: bool = False,
+    allow_unsigned_extensions: bool = False,
+    extensions: Union[List[str], None] = None,
+    force_install_extensions: bool = False,
+    custom_extension_repo: Union[str, None] = None,
     md_token: Union[str, None] = None,
     md_saas: bool = False,
-    allow_unsigned_extensions: bool = False,
 ) -> duckdb.DuckDBPyConnection:
     if not db_path:
         db_path = [":memory:"]
@@ -32,9 +37,6 @@ def connect(
         for db in other_dbs:
             connection.execute(f"attach '{db}'{' (READ_ONLY)' if read_only else ''}")
     except (duckdb.CatalogException, duckdb.IOException) as e:
-        from rich import print
-        from rich.panel import Panel
-
         print(
             Panel.fit(
                 str(e),
@@ -45,10 +47,35 @@ def connect(
                 subtitle_align="right",
             )
         )
-
         raise HarlequinExit() from None
-    else:
-        return connection
+
+    if custom_extension_repo:
+        connection.execute(
+            f"SET custom_extension_repository='{custom_extension_repo}';"
+        )
+
+    if extensions:
+        try:
+            for extension in extensions:
+                # todo: support installing from a URL instead.
+                connection.install_extension(
+                    extension=extension, force_install=force_install_extensions
+                )
+                connection.load_extension(extension=extension)
+        except (duckdb.HTTPException, duckdb.IOException) as e:
+            print(
+                Panel.fit(
+                    str(e),
+                    title="DuckDB couldn't install or load your extension.",
+                    title_align="left",
+                    border_style="red",
+                    subtitle="Try again?",
+                    subtitle_align="right",
+                )
+            )
+            raise HarlequinExit() from None
+
+    return connection
 
 
 def get_databases(conn: duckdb.DuckDBPyConnection) -> List[Tuple[str]]:

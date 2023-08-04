@@ -65,13 +65,16 @@ class Harlequin(App, inherit_bindings=False):
         self,
         db_path: Sequence[Union[str, Path]],
         read_only: bool = False,
+        allow_unsigned_extensions: bool = False,
+        extensions: Union[List[str], None] = None,
+        force_install_extensions: bool = False,
+        custom_extension_repo: Union[str, None] = None,
         theme: str = "monokai",
         md_token: Union[str, None] = None,
         md_saas: bool = False,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
-        allow_unsigned_extensions: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
@@ -80,9 +83,12 @@ class Harlequin(App, inherit_bindings=False):
             self.connection = connect(
                 db_path,
                 read_only=read_only,
+                allow_unsigned_extensions=allow_unsigned_extensions,
+                extensions=extensions,
+                force_install_extensions=force_install_extensions,
+                custom_extension_repo=custom_extension_repo,
                 md_token=md_token,
                 md_saas=md_saas,
-                allow_unsigned_extensions=allow_unsigned_extensions,
             )
         except HarlequinExit:
             self.exit()
