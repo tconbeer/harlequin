@@ -29,7 +29,7 @@ textual-dev = "^1.0.1"
 
 [tool.poetry.group.static.dependencies]
 black = "^23.3.0"
-ruff = ">=0.0.264,<0.0.283"
+ruff = ">=0.0.264,<0.0.285"
 mypy = "^1.2.0"
 
 [tool.poetry.group.test.dependencies]
