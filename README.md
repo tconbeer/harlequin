@@ -16,13 +16,6 @@ After installing Python 3.8 or above, install Harlequin using `pip` or `pipx` wi
 pipx install harlequin
 ```
 
-> **Tip:**
->
-> You can run invoke directly with [`pipx run`](https://pypa.github.io/pipx/examples/#pipx-run-examples) anywhere that `pipx` is installed. For example:
->
-> - `pipx run harlequin --help`
-> - `pipx run harlequin ./my.duckdb`
-
 ## Using Harlequin
 
 From any shell, to open one or more DuckDB database files:
@@ -94,9 +87,11 @@ You can save the query currently in the editor with <kbd>ctrl + s</kbd>. You can
 
 ### Running a Query and Viewing Results
 
-To run a query press <kbd>ctrl + enter</kbd>. Not all terminals support this key combination, so you can also use <kbd>ctrl + j</kbd>, or click the `RUN QUERY` button in the (blue) footer.
+To run a query press <kbd>ctrl + enter</kbd>. Not all terminals support this key combination, so you can also use <kbd>ctrl + j</kbd>, or click the `RUN QUERY` button.
 
-Up to 50k records will be loaded into the results pane below the query editor. When the focus is on the data pane, you can use your arrow keys or mouse to select different cells.
+Up to 10k records will be loaded into the results pane below the query editor. When the focus is on the data pane, you can use your arrow keys or mouse to select different cells.
+
+If you have selected text that makes one or more valid queries, you can run the selection in the same way. If you select multiple queries (separated by a semicolon), Harlequin will return the results in multiple tabs.
 
 ### Exiting Harlequin
 
