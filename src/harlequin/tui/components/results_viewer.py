@@ -1,7 +1,11 @@
-from typing import Union
+from typing import Dict, Iterator, List, Tuple, Union
 
 import duckdb
+from textual import work
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
+from textual.message import Message
+from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import (
     ContentSwitcher,
@@ -10,6 +14,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
+from textual.worker import Worker, get_current_worker
 
 from harlequin.tui.utils import short_type
 
@@ -26,6 +31,30 @@ class ResultsTable(DataTable):
 class ResultsViewer(ContentSwitcher, can_focus=True):
     TABBED_ID = "tabs"
     LOADING_ID = "loading"
+    data: reactive[Dict[str, List[Tuple]]] = reactive(dict)
+
+    class Ready(Message):
+        pass
+
+    def __init__(
+        self,
+        *children: Widget,
+        name: Union[str, None] = None,
+        id: Union[str, None] = None,  # noqa A002
+        classes: Union[str, None] = None,
+        disabled: bool = False,
+        initial: Union[str, None] = None,
+        max_results: int = 10_000,
+    ) -> None:
+        super().__init__(
+            *children,
+            name=name,
+            id=id,
+            classes=classes,
+            disabled=disabled,
+            initial=initial,
+        )
+        self.MAX_RESULTS = max_results
 
     def compose(self) -> ComposeResult:
         yield TabbedContent(id=self.TABBED_ID)
@@ -37,15 +66,59 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         self.tab_switcher = self.query_one(TabbedContent)
 
     def on_focus(self) -> None:
+        maybe_table = self.get_visible_table()
+        if maybe_table is not None:
+            maybe_table.focus()
+
+    def get_visible_table(self) -> Union[ResultsTable, None]:
         content = self.tab_switcher.query_one(ContentSwitcher)
         active_tab_id = self.tab_switcher.active
         if active_tab_id:
-            tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
-            tab_pane.query_one(ResultsTable).focus()
+            try:
+                tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
+                return tab_pane.query_one(ResultsTable)
+            except NoMatches:
+                return None
         else:
             tables = content.query(ResultsTable)
-            if tables:
-                tables[0].focus()
+            try:
+                return tables.first(ResultsTable)
+            except NoMatches:
+                return None
+
+    async def watch_data(self, data: Dict[str, List[Tuple]]) -> None:
+        if data:
+            self.set_not_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
+            for table_id, result in data.items():
+                table = self.tab_switcher.query_one(f"#{table_id}", ResultsTable)
+                for i, chunk in self.chunk(result[: self.MAX_RESULTS]):
+                    worker = self.add_data_to_table(table, chunk)
+                    await worker.wait()
+                    self.increment_progress_bar()
+                    if i == 0:
+                        self.show_table()
+            else:
+                self.set_responsive(
+                    max_rows=self.MAX_RESULTS,
+                    total_rows=len(data[table_id]),
+                    num_queries=len(data),
+                )
+            self.post_message(self.Ready())
+            self.focus()
+
+    @staticmethod
+    def chunk(
+        data: List[Tuple], chunksize: int = 2000
+    ) -> Iterator[Tuple[int, List[Tuple]]]:
+        for i in range(len(data) // chunksize + 1):
+            yield i, data[i * chunksize : (i + 1) * chunksize]
+
+    @work(exclusive=False)
+    async def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
+        worker = get_current_worker()
+        if not worker.is_cancelled:
+            table.add_rows(data)
+        return worker
 
     def set_not_responsive(
         self, max_rows: Union[int, None] = None, total_rows: Union[int, None] = None
@@ -102,17 +175,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         )
         pane = TabPane(f"Result {self.tab_switcher.tab_count+1}", table)
         self.tab_switcher.add_pane(pane)
-        self.log_children_height(self.tab_switcher)
-
         return table_id
-
-    def log_children_height(self, w: Widget) -> None:
-        self.log(f"CHILDREN od {w}: ", w.children)
-        for child in w.children:
-            assert child is not None
-            self.log("CHILD: ", child, child.size)
-            if child.children:
-                self.log_children_height(child)
 
     def clear_all_tables(self) -> None:
         self.tab_switcher.clear_panes()
