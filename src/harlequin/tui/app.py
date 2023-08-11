@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence, Tuple, Type, Union
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
 from textual import log, work
@@ -31,7 +31,6 @@ from harlequin.tui.components import (
     RunQueryBar,
     SchemaViewer,
 )
-from harlequin.tui.utils import short_type
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -57,7 +56,7 @@ class Harlequin(App, inherit_bindings=False):
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
     relations: reactive[List[duckdb.DuckDBPyRelation]] = reactive(list)
-    data: reactive[List[Tuple]] = reactive(list)
+    data: reactive[Dict[str, List[Tuple]]] = reactive(dict)
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
 
@@ -268,7 +267,7 @@ class Harlequin(App, inherit_bindings=False):
         self.editor.focus()
 
     def action_focus_results_viewer(self) -> None:
-        self.results_viewer.get_table().focus()
+        self.results_viewer.focus()
 
     def action_focus_data_catalog(self) -> None:
         if self.sidebar_hidden or self.schema_viewer.disabled:
@@ -355,39 +354,31 @@ class Harlequin(App, inherit_bindings=False):
                     )
                 )
             else:
-                table = pane.get_table()
-                table.clear(columns=True)
+                pane.clear_all_tables()
+                self.data = {}
                 relations = worker.result
                 if relations:  # select query
                     self.relations = relations
-                elif bool(query_text.strip()):  # DDL/DML query
+                elif bool(query_text.strip()):  # DDL/DML queries only
                     self.run_query_bar.set_responsive()
                     pane.set_responsive()
                     pane.show_table()
-                    self.data = []
                     self.update_schema_data()
                 else:  # blank query
                     self.run_query_bar.set_responsive()
                     pane.set_responsive(did_run=False)
                     pane.show_table()
-                    self.data = []
 
     async def watch_relations(self, relations: List[duckdb.DuckDBPyRelation]) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
         # invalidate results so watch_data runs even if the results are the same
-        self.data = []
-        if relations:
-            relation = relations[0]
-            table = self.results_viewer.get_table()
-            short_types = [short_type(t) for t in relation.dtypes]
-            table.add_columns(
-                *[
-                    f"{name} [#888888]{data_type}[/]"
-                    for name, data_type in zip(relation.columns, short_types)
-                ]
-            )
+        self.results_viewer.clear_all_tables()
+        data: Dict[str, List[Tuple]] = {}
+        for relation in relations:
+            table_id = self.results_viewer.push_table(relation=relation)
+
             try:
                 worker = self.fetch_relation_data(relation)
                 await worker.wait()
@@ -400,21 +391,31 @@ class Harlequin(App, inherit_bindings=False):
                     )
                 )
                 self.results_viewer.show_table()
+            else:
+                if worker.result is not None:
+                    data[table_id] = worker.result
+        self.data = data
 
-    async def watch_data(self, data: List[Tuple]) -> None:
+    async def watch_data(self, data: Dict[str, List[Tuple]]) -> None:
         if data:
             pane = self.results_viewer
             pane.set_not_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
-            table = pane.get_table()
-            for i, chunk in self.chunk(data[: self.MAX_RESULTS]):
-                worker = self.add_data_to_table(table, chunk)
-                await worker.wait()
-                pane.increment_progress_bar()
-                if i == 0:
-                    pane.show_table()
-            pane.set_responsive(max_rows=self.MAX_RESULTS, total_rows=len(data))
+            for table_id, result in data.items():
+                table = self.query_one(f"#{table_id}", ResultsTable)
+                for i, chunk in self.chunk(result[: self.MAX_RESULTS]):
+                    worker = self.add_data_to_table(table, chunk)
+                    await worker.wait()
+                    pane.increment_progress_bar()
+                    if i == 0:
+                        pane.show_table()
+            else:
+                pane.set_responsive(
+                    max_rows=self.MAX_RESULTS,
+                    total_rows=len(data[table_id]),
+                    num_queries=len(data),
+                )
             self.run_query_bar.set_responsive()
-            table.focus()
+            pane.focus()
 
     @staticmethod
     def chunk(
@@ -437,13 +438,17 @@ class Harlequin(App, inherit_bindings=False):
         return relations
 
     @work(exclusive=True, exit_on_error=False)
-    async def fetch_relation_data(self, relation: duckdb.DuckDBPyRelation) -> None:
+    async def fetch_relation_data(
+        self, relation: duckdb.DuckDBPyRelation
+    ) -> List[Tuple]:
         log(f"fetch_relation_data {hash(relation)}")
         data = relation.fetchall()
         log(f"fetch_relation_data FINISHED {hash(relation)}")
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.data = data
+            return data
+        else:
+            return []
 
     @work(exclusive=False)
     async def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
@@ -459,8 +464,3 @@ class Harlequin(App, inherit_bindings=False):
         worker = get_current_worker()
         if not worker.is_cancelled:
             self.schema_viewer.update_tree(catalog)
-
-
-if __name__ == "__main__":
-    app = Harlequin(["f1.db"])
-    app.run()
