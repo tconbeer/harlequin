@@ -359,6 +359,9 @@ class Harlequin(App, inherit_bindings=False):
                 relations = worker.result
                 if relations:  # select query
                     self.relations = relations
+                    if len(relations) < len(query_text.split(";")):
+                        # mixed select and DDL statements
+                        self.update_schema_data()
                 elif bool(query_text.strip()):  # DDL/DML queries only
                     self.run_query_bar.set_responsive()
                     pane.set_responsive()
