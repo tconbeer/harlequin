@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
-from textual import log, work
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -342,7 +342,6 @@ class Harlequin(App, inherit_bindings=False):
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
-            self.results_viewer.set_not_responsive()
             try:
                 worker = self._build_relation(query_text)
                 await worker.wait()
@@ -427,9 +426,7 @@ class Harlequin(App, inherit_bindings=False):
     async def fetch_relation_data(
         self, relation: duckdb.DuckDBPyRelation
     ) -> List[Tuple]:
-        log(f"fetch_relation_data {hash(relation)}")
         data = relation.fetchall()
-        log(f"fetch_relation_data FINISHED {hash(relation)}")
         worker = get_current_worker()
         if not worker.is_cancelled:
             return data

@@ -293,7 +293,6 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button = event.button
-        self.log(button.id)
         if button.id == "export":
             self._export()
         else:
