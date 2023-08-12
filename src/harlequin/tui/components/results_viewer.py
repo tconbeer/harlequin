@@ -3,6 +3,7 @@ from typing import Dict, Iterator, List, Tuple, Union
 import duckdb
 from textual import work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.reactive import reactive
@@ -32,6 +33,10 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
     TABBED_ID = "tabs"
     LOADING_ID = "loading"
     data: reactive[Dict[str, List[Tuple]]] = reactive(dict)
+    BINDINGS = [
+        Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
+        Binding("k", "switch_tab(1)", "Next Tab", show=False),
+    ]
 
     class Ready(Message):
         pass
@@ -66,6 +71,9 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         self.tab_switcher = self.query_one(TabbedContent)
 
     def on_focus(self) -> None:
+        self._focus_on_visible_table()
+
+    def _focus_on_visible_table(self) -> None:
         maybe_table = self.get_visible_table()
         if maybe_table is not None:
             maybe_table.focus()
@@ -76,6 +84,20 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             id_ = maybe_table.id
             assert id_ is not None
             self.border_title = f"Query Results {self._human_row_count(self.data[id_])}"
+
+    def action_switch_tab(self, offset: int) -> None:
+        if not self.tab_switcher.active:
+            return
+        tab_number = int(self.tab_switcher.active.split("-")[1])
+        unsafe_tab_number = tab_number + offset
+        if unsafe_tab_number < 1:
+            new_tab_number = self.tab_switcher.tab_count
+        elif unsafe_tab_number > self.tab_switcher.tab_count:
+            new_tab_number = 1
+        else:
+            new_tab_number = unsafe_tab_number
+        self.tab_switcher.active = f"tab-{new_tab_number}"
+        self._focus_on_visible_table()
 
     def get_visible_table(self) -> Union[ResultsTable, None]:
         content = self.tab_switcher.query_one(ContentSwitcher)

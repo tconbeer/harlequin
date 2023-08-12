@@ -36,7 +36,22 @@ You can also open a database in read-only mode:
 harlequin -r "path/to/duck.db"
 ```
 
-### Loading Unsigned Extensions
+### Getting Help
+
+To view all command-line options for Harlequin, after installation, simply type:
+```bash
+harlequin -h
+```
+
+To view a list of all key bindings (keyboard shortcuts) within the app, press <kbd>F1</kbd>. You can also view this list outside the app [here](https://github.com/tconbeer/harlequin/blob/main/src/harlequin/tui/components/help_screen.md).
+
+### Loading DuckDB Extensions
+
+You can install and load extensions when starting Harlequin, by passing the `-e` flag one or more times:
+
+```bash
+harlequin -e spatial -e httpfs
+```
 
 If you need to load a custom or otherwise unsigned extension, you can use the
 `-unsigned` flag just as you would with the DuckDB CLI, or `-u` for convenience:
@@ -45,7 +60,11 @@ If you need to load a custom or otherwise unsigned extension, you can use the
 harlequin -u
 ```
 
-The long flag `--allow-unsigned-extensions` is another synonym.
+You can also install extensions from custom repos, using the `--custom-extension-repo` option. For example, this combines the options above to load the unsigned `prql` extension:
+
+```bash
+harlequin -u -e prql --custom-extension-repo welsch.lu/duckdb/prql/latest
+```
 
 ### Using Harlequin with MotherDuck
 

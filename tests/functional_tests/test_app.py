@@ -55,6 +55,15 @@ async def test_multiple_queries(app: Harlequin) -> None:
         for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
             assert v == [(i,)]
             assert app.query_one(f"#{k}", ResultsTable)
+        assert app.results_viewer.tab_switcher.active == "tab-1"
+        await pilot.press("k")
+        assert app.results_viewer.tab_switcher.active == "tab-2"
+        await pilot.press("k")
+        assert app.results_viewer.tab_switcher.active == "tab-1"
+        await pilot.press("j")
+        assert app.results_viewer.tab_switcher.active == "tab-2"
+        await pilot.press("j")
+        assert app.results_viewer.tab_switcher.active == "tab-1"
 
 
 @pytest.mark.asyncio
