@@ -12,7 +12,6 @@ All notable changes to this project will be documented in this file.
 -   If there are multiple results tabs, you can switch between them with <kbd>j</kbd> and <kbd>k</kbd>.
 
 ### Bug Fixes
-
 -   Fixes issues with the loading state when loading large result sets.
 
 ## [0.0.24] - 2023-08-04
