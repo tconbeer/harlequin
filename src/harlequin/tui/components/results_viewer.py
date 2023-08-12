@@ -169,7 +169,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             table = self.get_visible_table()
             if table is not None:
                 id_ = table.id
-                assert id_
+                assert id_ is not None
                 self.border_title = f"Query Results {self._human_row_count(data[id_])}"
             else:
                 self.border_title = (

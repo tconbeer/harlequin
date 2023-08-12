@@ -198,9 +198,6 @@ class Harlequin(App, inherit_bindings=False):
             if active_table is None or active_table.id is None:
                 return
             relation = self.relations[active_table.id]
-            assert isinstance(
-                relation, duckdb.DuckDBPyRelation
-            ), "Internal Error! Got a bad relation."
             raw_path = screen_data[0]
             options = screen_data[1]
             path = str(raw_path.expanduser())
@@ -388,7 +385,6 @@ class Harlequin(App, inherit_bindings=False):
         self.results_viewer.clear_all_tables()
         data: Dict[str, List[Tuple]] = {}
         for id_, rel in relations.items():
-            assert isinstance(rel, duckdb.DuckDBPyRelation)
             self.results_viewer.push_table(table_id=id_, relation=rel)
 
             try:
