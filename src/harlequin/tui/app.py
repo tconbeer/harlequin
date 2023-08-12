@@ -54,9 +54,7 @@ class Harlequin(App, inherit_bindings=False):
 
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
-    relations: reactive[
-        Dict[str, Dict[str, Union[str, duckdb.DuckDBPyRelation]]]
-    ] = reactive(dict)
+    relations: reactive[Dict[str, duckdb.DuckDBPyRelation]] = reactive(dict)
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
 
@@ -199,7 +197,7 @@ class Harlequin(App, inherit_bindings=False):
             active_table = self.results_viewer.get_visible_table()
             if active_table is None or active_table.id is None:
                 return
-            relation = self.relations[active_table.id]["relation"]
+            relation = self.relations[active_table.id]
             assert isinstance(
                 relation, duckdb.DuckDBPyRelation
             ), "Internal Error! Got a bad relation."
@@ -244,9 +242,8 @@ class Harlequin(App, inherit_bindings=False):
                         if options.timestampformat
                         else ""
                     )
-                    query_text = self.relations[active_table.id]["text"]
                     self.connection.sql(
-                        f"copy ({query_text}) to '{path}' "
+                        f"copy ({relation.sql_query()}) to '{path}' "
                         "(FORMAT JSON"
                         f"{', ARRAY TRUE' if options.array else ''}"
                         f"{compression}{date_format}{ts_format}"
@@ -383,7 +380,7 @@ class Harlequin(App, inherit_bindings=False):
                     self.results_viewer.show_table()
 
     async def watch_relations(
-        self, relations: Dict[str, Dict[str, Union[str, List[duckdb.DuckDBPyRelation]]]]
+        self, relations: Dict[str, duckdb.DuckDBPyRelation]
     ) -> None:
         """
         Only runs for select statements, except when first mounted.
@@ -391,10 +388,9 @@ class Harlequin(App, inherit_bindings=False):
         # invalidate results so watch_data runs even if the results are the same
         self.results_viewer.clear_all_tables()
         data: Dict[str, List[Tuple]] = {}
-        for _k, v in relations.items():
-            rel = v["relation"]
+        for id_, rel in relations.items():
             assert isinstance(rel, duckdb.DuckDBPyRelation)
-            table_id = self.results_viewer.push_table(relation=rel)
+            self.results_viewer.push_table(table_id=id_, relation=rel)
 
             try:
                 worker = self.fetch_relation_data(rel)
@@ -410,21 +406,21 @@ class Harlequin(App, inherit_bindings=False):
                 self.results_viewer.show_table()
             else:
                 if worker.result is not None:
-                    data[table_id] = worker.result
+                    data[id_] = worker.result
         self.results_viewer.data = data
 
     @work(exclusive=True, exit_on_error=False)
     async def _build_relation(
         self, query_text: str
-    ) -> Dict[str, Dict[str, Union[str, duckdb.DuckDBPyRelation]]]:
-        relations: Dict[str, Dict[str, Union[str, duckdb.DuckDBPyRelation]]] = {}
+    ) -> Dict[str, duckdb.DuckDBPyRelation]:
+        relations: Dict[str, duckdb.DuckDBPyRelation] = {}
         for q in query_text.split(";"):
             rel = self.connection.sql(q)
             if rel is not None:
                 if self.run_query_bar.checkbox.value:
                     rel = rel.limit(self.limit)
                 table_id = f"t{hash(rel)}"
-                relations[table_id] = {"text": q, "relation": rel}
+                relations[table_id] = rel
         return relations
 
     @work(exclusive=True, exit_on_error=False)

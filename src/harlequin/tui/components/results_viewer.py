@@ -163,8 +163,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
     def show_table(self) -> None:
         self.current = self.TABBED_ID
 
-    def push_table(self, relation: duckdb.DuckDBPyRelation) -> str:
-        table_id = f"t{hash(relation)}"
+    def push_table(self, table_id: str, relation: duckdb.DuckDBPyRelation) -> None:
         table = ResultsTable(id=table_id)
         short_types = [short_type(t) for t in relation.dtypes]
         table.add_columns(
@@ -175,7 +174,6 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         )
         pane = TabPane(f"Result {self.tab_switcher.tab_count+1}", table)
         self.tab_switcher.add_pane(pane)
-        return table_id
 
     def clear_all_tables(self) -> None:
         self.tab_switcher.clear_panes()
