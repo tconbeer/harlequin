@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Iterator, List, Tuple, Union
 
 import duckdb
@@ -15,7 +16,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-from textual.worker import Worker, get_current_worker
+from textual.worker import Worker, WorkerState
 
 from harlequin.tui.utils import short_type
 
@@ -78,7 +79,13 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if maybe_table is not None:
             maybe_table.focus()
 
-    def on_tabbed_content_tab_activated(self) -> None:
+    def on_tabbed_content_tab_activated(
+        self, message: TabbedContent.TabActivated
+    ) -> None:
+        message.stop()
+        # Don't update the border if we're still loading the table.
+        if self.border_title and str(self.border_title).startswith("Loading"):
+            return
         maybe_table = self.get_visible_table()
         if maybe_table is not None and self.data:
             id_ = maybe_table.id
@@ -117,37 +124,41 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
 
     async def watch_data(self, data: Dict[str, List[Tuple]]) -> None:
         if data:
-            self.set_not_responsive(data=data)
-            for table_id, result in data.items():
-                table = self.tab_switcher.query_one(f"#{table_id}", ResultsTable)
-                for i, chunk in self.chunk(result[: self.MAX_RESULTS]):
-                    worker = self.add_data_to_table(table, chunk)
-                    await worker.wait()
-                    self.increment_progress_bar()
-                    if i == 0:
-                        self.show_table()
-            self.set_responsive(data=data)
+            await self.set_not_responsive(data=data)
+            self.load_data(data=data)
+
+    @work(exclusive=True, group="data_loaders", description="Loading data.")
+    async def load_data(self, data: Dict[str, List[Tuple]]) -> Dict[str, List[Tuple]]:
+        for table_id, result in data.items():
+            table = self.tab_switcher.query_one(f"#{table_id}", ResultsTable)
+            for i, chunk in self.chunk(result[: self.MAX_RESULTS]):
+                table.add_rows(chunk)
+                self.increment_progress_bar()
+                await asyncio.sleep(0)
+                if i == 0:
+                    self.show_table()
+        return data
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if (
+            event.worker.name == "load_data"
+            and event.worker.state == WorkerState.SUCCESS
+        ):
+            self.set_responsive(data=event.worker.result)
             self.post_message(self.Ready())
             self.focus()
 
     @staticmethod
     def chunk(
-        data: List[Tuple], chunksize: int = 2000
+        data: List[Tuple], chunksize: int = 1000
     ) -> Iterator[Tuple[int, List[Tuple]]]:
         for i in range(len(data) // chunksize + 1):
             yield i, data[i * chunksize : (i + 1) * chunksize]
 
-    @work(exclusive=False)
-    async def add_data_to_table(self, table: ResultsTable, data: List[Tuple]) -> Worker:
-        worker = get_current_worker()
-        if not worker.is_cancelled:
-            table.add_rows(data)
-        return worker
-
-    def set_not_responsive(self, data: Dict[str, List[Tuple]]) -> None:
+    async def set_not_responsive(self, data: Dict[str, List[Tuple]]) -> None:
         if len(data) > 1:
             self.border_title = f"Loading Data from {len(data):,} Queries."
-        else:
+        elif data:
             self.border_title = (
                 f"Loading Data {self._human_row_count(next(iter(data.values())))}."
             )

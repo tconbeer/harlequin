@@ -383,28 +383,41 @@ class Harlequin(App, inherit_bindings=False):
         """
         # invalidate results so watch_data runs even if the results are the same
         self.results_viewer.clear_all_tables()
+        self.set_result_viewer_data(relations)
+
+    @work(
+        exclusive=True,
+        exit_on_error=True,
+        group="duck_query_runners",
+        description="fetching data from duckdb.",
+    )
+    async def set_result_viewer_data(
+        self, relations: Dict[str, duckdb.DuckDBPyRelation]
+    ) -> None:
         data: Dict[str, List[Tuple]] = {}
         for id_, rel in relations.items():
             self.results_viewer.push_table(table_id=id_, relation=rel)
-
             try:
-                worker = self.fetch_relation_data(rel)
-                await worker.wait()
-            except WorkerFailed as e:
+                rel_data = rel.fetchall()
+            except duckdb.DataError as e:
                 self.push_screen(
                     ErrorModal(
                         title="DuckDB Error",
                         header=("DuckDB raised an error when running your query:"),
-                        error=e.error,
+                        error=e,
                     )
                 )
                 self.results_viewer.show_table()
             else:
-                if worker.result is not None:
-                    data[id_] = worker.result
+                data[id_] = rel_data
         self.results_viewer.data = data
 
-    @work(exclusive=True, exit_on_error=False)
+    @work(
+        exclusive=True,
+        exit_on_error=False,
+        group="duck_query_runners",
+        description="Building relation.",
+    )
     async def _build_relation(
         self, query_text: str
     ) -> Dict[str, duckdb.DuckDBPyRelation]:
@@ -418,18 +431,7 @@ class Harlequin(App, inherit_bindings=False):
                 relations[table_id] = rel
         return relations
 
-    @work(exclusive=True, exit_on_error=False)
-    async def fetch_relation_data(
-        self, relation: duckdb.DuckDBPyRelation
-    ) -> List[Tuple]:
-        data = relation.fetchall()
-        worker = get_current_worker()
-        if not worker.is_cancelled:
-            return data
-        else:
-            return []
-
-    @work(exclusive=True)
+    @work(exclusive=True, group="duck_schema_updaters")
     async def update_schema_data(self) -> None:
         catalog = get_catalog(self.connection)
         worker = get_current_worker()
