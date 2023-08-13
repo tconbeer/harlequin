@@ -42,6 +42,9 @@
 
 ### Results Viewer Bindings
 
+#### Switching Tabs
+- j: Switch to the previous tab.
+- k: Switch to the next tab.
 #### Moving the Cursor
 - up,down,left,right: Move the cursor one cell.
 - home: Move the cursor to the top of the current column.

@@ -39,7 +39,7 @@ from harlequin import Harlequin
     "--custom-extension-repo",
     help=(
         "A value to pass to DuckDB's custom_extension_repository variable. "
-        "Will be set before loading any extensions that are passing using -e."
+        "Will be set before installing any extensions that are passed using -e."
     ),
 )
 @click.option(

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from harlequin.tui import Harlequin
 from harlequin.tui.components import ExportScreen
+from harlequin.tui.components.results_viewer import ResultsTable
 
 from ..conftest import TestHelpers
 
@@ -25,7 +26,44 @@ async def test_select_1(app: Harlequin) -> None:
         await app.workers.wait_for_complete()
         assert app.relations
         await app.workers.wait_for_complete()
-        assert app.data == [(1,)]
+        assert len(app.results_viewer.data) == 1
+        assert app.results_viewer.data[next(iter(app.results_viewer.data))] == [(1,)]
+
+
+@pytest.mark.asyncio
+async def test_multiple_queries(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        q = "select 1; select 2"
+        app.editor.text = q
+        await pilot.press("ctrl+j")
+
+        # should only run one query
+        await TestHelpers.await_data_loaded(app=app)
+        assert app.query_text == "select 1;"
+        assert len(app.results_viewer.data) == 1
+        assert app.results_viewer.data[next(iter(app.results_viewer.data))] == [(1,)]
+        assert "hide-tabs" in app.results_viewer.classes
+
+        app.editor.focus()
+        await pilot.press("ctrl+a")
+        await pilot.press("ctrl+j")
+        # should run both queries
+        await TestHelpers.await_data_loaded(app=app)
+        assert app.query_text == "select 1; select 2"
+        assert len(app.results_viewer.data) == 2
+        assert "hide-tabs" not in app.results_viewer.classes
+        for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
+            assert v == [(i,)]
+            assert app.query_one(f"#{k}", ResultsTable)
+        assert app.results_viewer.tab_switcher.active == "tab-1"
+        await pilot.press("k")
+        assert app.results_viewer.tab_switcher.active == "tab-2"
+        await pilot.press("k")
+        assert app.results_viewer.tab_switcher.active == "tab-1"
+        await pilot.press("j")
+        assert app.results_viewer.tab_switcher.active == "tab-2"
+        await pilot.press("j")
+        assert app.results_viewer.tab_switcher.active == "tab-1"
 
 
 @pytest.mark.asyncio
@@ -52,14 +90,14 @@ async def test_run_query_bar(app_small_db: Harlequin, helpers: TestHelpers) -> N
         app.editor.text = "select * from drivers"
         await pilot.click(bar.button.__class__)
         await helpers.await_data_loaded(app)
-        assert len(app.data) > 500
+        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) > 500
 
         # apply a limit by clicking the limit checkbox
         await pilot.click(bar.checkbox.__class__)
         assert bar.checkbox.value is True
         await pilot.click(bar.button.__class__)
         await helpers.await_data_loaded(app)
-        assert len(app.data) == 500
+        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 500
 
         # type an invalid limit, checkbox should be unchecked
         # and a tooltip should appear on hover
@@ -82,7 +120,7 @@ async def test_run_query_bar(app_small_db: Harlequin, helpers: TestHelpers) -> N
         # run the query with a smaller limit
         await pilot.click(bar.button.__class__)
         await helpers.await_data_loaded(app)
-        assert len(app.data) == 100
+        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 100
 
 
 @pytest.mark.asyncio

@@ -129,14 +129,19 @@ RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQuery
 
 /* RESULTS VIEWER */
 
-ResultsViewer {
+ContentSwitcher, ResultsViewer TabPane {
     height: 1fr;
     width: 100%;
+}
+ResultsViewer.hide-tabs Tabs {
+    height: 0;
+}
+ResultsViewer TabPane {
+    padding: 0;
 }
 ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
-
 ResultsTable.datatable--cursor .datatable--header-cursor {
     background: $boost;
 }
