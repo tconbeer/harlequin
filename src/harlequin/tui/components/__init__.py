@@ -1,4 +1,4 @@
-from harlequin.tui.components.code_editor import CodeEditor
+from harlequin.tui.components.code_editor import CodeEditor, EditorCollection
 from harlequin.tui.components.error_modal import ErrorModal
 from harlequin.tui.components.export_screen import (
     CSVOptions,
@@ -15,6 +15,7 @@ from harlequin.tui.components.schema_viewer import SchemaViewer
 
 __all__ = [
     "CodeEditor",
+    "EditorCollection",
     "CursorMoved",
     "ErrorModal",
     "ExportOptions",

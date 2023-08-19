@@ -1,6 +1,6 @@
 .PHONY: check
 check:
-	pytest
+	pytest -m "not online"
 	black .
 	ruff . --fix
 	mypy
@@ -10,3 +10,7 @@ lint:
 	black .
 	ruff . --fix
 	mypy
+
+.PHONY: serve
+serve:
+	textual run --dev -c harlequin f1.db

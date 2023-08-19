@@ -5,17 +5,17 @@ $border-color-focus: $accent;
 $border-title-color-focus: $accent;
 
 /* ALL WIDGETS */
-SchemaViewer, CodeEditor, ResultsViewer {
+SchemaViewer, EditorCollection, ResultsViewer {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
     background: $boost;
 }
-SchemaViewer:focus, CodeEditor:focus-within, ResultsViewer:focus-within {
+SchemaViewer:focus, EditorCollection:focus-within, ResultsViewer:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, CodeEditor, TextContainer, ResultsTable {
+SchemaViewer, EditorCollection, TextContainer, ResultsTable {
     scrollbar-background: $surface;
     scrollbar-background-hover: $surface;
     scrollbar-background-active: $surface;
@@ -26,7 +26,7 @@ SchemaViewer, CodeEditor, TextContainer, ResultsTable {
     scrollbar-color-active: $accent;
 }
 
-SchemaViewer:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
+SchemaViewer:disabled, EditorCollection:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
     width: 0;
     height: 0;
     padding: 0 0;
@@ -54,7 +54,8 @@ SchemaViewer .tree--guides-selected {
     width: 3fr;
 }
 
-CodeEditor {
+
+EditorCollection, CodeEditor {
     height: 1fr;
     width: 100%;
 }
@@ -129,14 +130,14 @@ RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQuery
 
 /* RESULTS VIEWER */
 
-ContentSwitcher, ResultsViewer TabPane {
+ContentSwitcher, TabPane {
     height: 1fr;
     width: 100%;
 }
-ResultsViewer.hide-tabs Tabs {
+.hide-tabs Tabs {
     height: 0;
 }
-ResultsViewer TabPane {
+TabPane {
     padding: 0;
 }
 ResultsViewer.non-responsive {

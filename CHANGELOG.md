@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 ### New Features
 
+-   Harlequin supports multiple buffers (for tabbed editing). Create a new tab with <kbd>ctrl+n</kbd>, close a tab with <kbd>ctrl+w</kbd>, and switch to the next tab with <kbd>ctrl+k</kbd>. Opening, saving, and running queries are operations on the current buffer and have no effect on the other buffers.
+
+### New Features
+
 -   Harlequin now returns the result of multiple select queries to different tabs in the Results Viewer. To run multiple queries, type them into the Query Editor (separated by semicolons), then press <kbd>ctrl+a</kbd> to select all, and then <kbd>ctrl+enter</kbd> to run the selection ([#34](https://github.com/tconbeer/harlequin/issues/34)).
 -   If there are multiple results tabs, you can switch between them with <kbd>j</kbd> and <kbd>k</kbd>.
 
