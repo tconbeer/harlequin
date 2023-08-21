@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.26] - 2023-08-21
+
 ### New Features
 
 -   Harlequin supports multiple buffers (for tabbed editing). Create a new tab with <kbd>ctrl+n</kbd>, close a tab with <kbd>ctrl+w</kbd>, and switch to the next tab with <kbd>ctrl+k</kbd>. Opening, saving, and running queries are operations on the current buffer and have no effect on the other buffers.
@@ -17,6 +19,7 @@ All notable changes to this project will be documented in this file.
 -   <kbd>ctrl+e</kbd> exports the data from the current (visible) data table.
 
 ### Bug Fixes
+
 -   Fixes issues with the loading state when loading large result sets.
 
 ## [0.0.24] - 2023-08-04
@@ -37,6 +40,7 @@ All notable changes to this project will be documented in this file.
 ## [0.0.23] - 2023-08-03
 
 ### Features
+
 -   Changes the behavior of the "Run Query" button and <kbd>ctrl+enter</kbd>:
     -   If text is selected, and that text does not contain parsing errors, the "Run Query" button will show "Run Selection", and <kbd>ctrl+enter</kbd> will run the selected text. If multiple queries are selected (separated by semicolons), they will all be run; if multiple `select` statements are selected, only data from the first selected `select` statement will be loaded into the Results Viewer (or exported).
     -   If no text is selected, Harlequin will run the single query where the cursor is active. Other queries before and after semicolons will not be run.
@@ -44,6 +48,7 @@ All notable changes to this project will be documented in this file.
 -   Adds path autocomplete and validation to the file save/open and export data inputs.
 
 ### Other Changes
+
 -   Lowers the maximum number of records loaded into the results viewer to 10,000. (All records can be exported with <kbd>ctrl+e</kbd>)
 
 ## [0.0.22] - 2023-08-02
@@ -214,7 +219,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.25...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.26...HEAD
+
+[0.0.26]: https://github.com/tconbeer/harlequin/compare/0.0.25...0.0.26
 
 [0.0.25]: https://github.com/tconbeer/harlequin/compare/0.0.24...0.0.25
 
