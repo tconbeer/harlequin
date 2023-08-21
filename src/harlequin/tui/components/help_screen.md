@@ -16,6 +16,9 @@
 - ctrl+enter: Run the query.
 - ctrl+o: Open a text file in the Query Editor.
 - ctrl+s: Save the contents of the Query Editor to a file.
+- ctrl+n: Create a new buffer (editor tab).
+- ctrl+w: Close the current buffer (editor tab).
+- ctrl+k: View the next buffer (editor tab).
 
 #### Editing Text
 - ctrl+a: Select all, move the cursor to the end of the query.

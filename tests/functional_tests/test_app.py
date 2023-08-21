@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from harlequin.tui import Harlequin
-from harlequin.tui.components import ExportScreen
+from harlequin.tui.components import ErrorModal, ExportScreen
 from harlequin.tui.components.results_viewer import ResultsTable
 
 
@@ -149,7 +149,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         app.editor.focus()
         assert app.full_screen is False
         assert app.sidebar_hidden is False
-        widgets = [app.schema_viewer, app.editor, app.results_viewer]
+        widgets = [app.schema_viewer, app.editor_collection, app.results_viewer]
         for w in widgets:
             assert not w.disabled
             assert w.styles.width
@@ -157,11 +157,12 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
 
         await pilot.press("f10")
         # only editor visible
+        assert not app.editor_collection.disabled
         assert not app.editor.disabled
         assert not app.run_query_bar.disabled
-        assert app.editor.styles.width
-        assert app.editor.styles.width.value > 0
-        for w in [w for w in widgets if w != app.editor]:
+        assert app.editor_collection.styles.width
+        assert app.editor_collection.styles.width.value > 0
+        for w in [w for w in widgets if w != app.editor_collection]:
             assert w.disabled
             assert w.styles.width
             assert w.styles.width.value == 0
@@ -171,6 +172,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert not app.sidebar_hidden
         assert not app.schema_viewer.disabled
         assert app.full_screen
+        assert not app.editor_collection.disabled
         assert not app.editor.disabled
 
         await pilot.press("f10")
@@ -184,16 +186,19 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         # schema viewer hidden
         assert app.sidebar_hidden
         assert app.schema_viewer.disabled
+        assert not app.editor_collection.disabled
         assert not app.editor.disabled
 
         await pilot.press("f10")
         # only editor visible
+        assert not app.editor_collection.disabled
         assert not app.editor.disabled
         assert app.schema_viewer.disabled
         assert app.results_viewer.disabled
 
         await pilot.press("f10")
         # schema viewer should still be hidden
+        assert not app.editor_collection.disabled
         assert not app.editor.disabled
         assert not app.run_query_bar.disabled
         assert app.schema_viewer.disabled
@@ -204,7 +209,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         app.results_viewer.focus()
         await pilot.press("f10")
         # only results viewer should be visible
-        assert app.editor.disabled
+        assert app.editor_collection.disabled
         assert app.run_query_bar.disabled
         assert app.schema_viewer.disabled
         assert not app.results_viewer.disabled
@@ -214,7 +219,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert not app.sidebar_hidden
         assert not app.schema_viewer.disabled
         assert app.full_screen
-        assert app.editor.disabled
+        assert app.editor_collection.disabled
         assert app.run_query_bar.disabled
         assert not app.results_viewer.disabled
 
@@ -267,4 +272,71 @@ async def test_export(app: Harlequin, tmp_path: Path, filename: str) -> None:
         await pilot.press("enter")
 
         assert export_path.is_file()
+        assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_multiple_buffers(app: Harlequin) -> None:
+    async with app.run_test() as pilot:
+        assert app.editor_collection
+        assert app.editor_collection.tab_count == 1
+        assert app.editor_collection.active == "tab-1"
+        app.editor.text = "tab 1"
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        assert app.editor_collection.tab_count == 2
+        assert app.editor_collection.active == "tab-2"
+        assert app.editor.text == ""
+        app.editor.text = "tab 2"
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        assert app.editor_collection.tab_count == 3
+        assert app.editor_collection.active == "tab-3"
+        assert app.editor.text == ""
+        app.editor.text = "tab 3"
+
+        await pilot.press("ctrl+k")
+        assert app.editor_collection.tab_count == 3
+        assert app.editor_collection.active == "tab-1"
+        assert app.editor.text == "tab 1"
+
+        await pilot.press("ctrl+k")
+        assert app.editor_collection.tab_count == 3
+        assert app.editor_collection.active == "tab-2"
+        assert app.editor.text == "tab 2"
+
+        await pilot.press("ctrl+w")
+        assert app.editor_collection.tab_count == 2
+        assert app.editor_collection.active == "tab-3"
+        assert app.editor.text == "tab 3"
+
+        await pilot.press("ctrl+k")
+        assert app.editor_collection.active == "tab-1"
+        assert app.editor.text == "tab 1"
+
+        await pilot.press("ctrl+k")
+        assert app.editor_collection.active == "tab-3"
+        assert app.editor.text == "tab 3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_query",
+    [
+        "select",  # errors when building relation
+        "select 0::struct(id int)",  # errors when fetching data
+        "select; select 0::struct(id int)",  # multiple errors
+    ],
+)
+async def test_query_errors(app: Harlequin, bad_query: str) -> None:
+    async with app.run_test() as pilot:
+        app.editor.text = bad_query
+
+        await pilot.press("ctrl+j")
+        assert len(app.screen_stack) == 2
+        assert isinstance(app.screen, ErrorModal)
+
+        await pilot.press("space")
         assert len(app.screen_stack) == 1

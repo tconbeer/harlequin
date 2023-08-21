@@ -20,6 +20,7 @@ from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
     CodeEditor,
     CSVOptions,
+    EditorCollection,
     ErrorModal,
     ExportOptions,
     ExportScreen,
@@ -95,14 +96,15 @@ class Harlequin(App, inherit_bindings=False):
         with Horizontal():
             yield SchemaViewer("Data Catalog", connection=self.connection)
             with Vertical(id="main_panel"):
-                yield CodeEditor(language="sql", theme=self.theme)
+                yield EditorCollection(language="sql", theme=self.theme)
                 yield RunQueryBar(max_results=self.MAX_RESULTS)
                 yield ResultsViewer(max_results=self.MAX_RESULTS)
         yield Footer()
 
     async def on_mount(self) -> None:
         self.schema_viewer = self.query_one(SchemaViewer)
-        self.editor = self.query_one(CodeEditor)
+        self.editor_collection = self.query_one(EditorCollection)
+        self.editor = self.editor_collection.current_editor
         self.results_viewer = self.query_one(ResultsViewer)
         self.run_query_bar = self.query_one(RunQueryBar)
         self.footer = self.query_one(Footer)
@@ -115,6 +117,14 @@ class Harlequin(App, inherit_bindings=False):
 
     def _set_query_text(self) -> None:
         self.query_text = self._validate_selection() or self.editor.current_query
+
+    def on_editor_collection_editor_switched(
+        self, message: EditorCollection.EditorSwitched
+    ) -> None:
+        if message.active_editor is not None:
+            self.editor = message.active_editor
+        else:
+            self.editor = self.editor_collection.current_editor
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
         message.stop()
@@ -298,7 +308,7 @@ class Harlequin(App, inherit_bindings=False):
         self.push_screen(HelpScreen(id="help_screen"))
 
     def watch_full_screen(self, full_screen: bool) -> None:
-        full_screen_widgets = [self.editor, self.results_viewer]
+        full_screen_widgets = [self.editor_collection, self.results_viewer]
         other_widgets = [self.run_query_bar, self.footer]
         all_widgets = [*full_screen_widgets, *other_widgets]
         if full_screen:
@@ -314,7 +324,7 @@ class Harlequin(App, inherit_bindings=False):
                     target = target.parent
             for w in all_widgets:
                 w.disabled = w != target
-            if target == self.editor:
+            if target == self.editor_collection:
                 self.run_query_bar.disabled = False
             self.schema_viewer.disabled = True
         else:

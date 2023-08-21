@@ -26,6 +26,7 @@ def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
     assert connect([tiny_db, small_db], read_only=True)
 
 
+@pytest.mark.online
 def test_connect_extensions() -> None:
     assert connect([], extensions=None)
     assert connect([], extensions=[])
@@ -37,6 +38,7 @@ def test_connect_extensions() -> None:
     sys.platform == "win32",
     reason="PRQL extension not yet built for Windows and DuckDB v0.8.1.",
 )
+@pytest.mark.online
 def test_connect_prql() -> None:
     # Note: this may fail in the future if the extension doesn't support the latest
     # duckdb version.
@@ -52,6 +54,7 @@ def test_connect_prql() -> None:
 @pytest.mark.skipif(
     sys.version_info[0:2] != (3, 10), reason="Matrix is hitting MD too many times."
 )
+@pytest.mark.online
 def test_connect_motherduck(tiny_db: Path) -> None:
     # note: set environment variable motherduck_token
     assert connect(["md:"])

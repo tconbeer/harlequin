@@ -73,3 +73,8 @@ warn_unused_configs = true
 
 no_implicit_reexport = true
 strict_equality = true
+
+[tool.pytest.ini_options]
+markers = [
+    "online: requeries internet connection (deselect with '-m \"not online\"')",
+]
