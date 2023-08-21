@@ -4,21 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.0.25] - 2023-08-13
-
 ### New Features
 
 -   Harlequin supports multiple buffers (for tabbed editing). Create a new tab with <kbd>ctrl+n</kbd>, close a tab with <kbd>ctrl+w</kbd>, and switch to the next tab with <kbd>ctrl+k</kbd>. Opening, saving, and running queries are operations on the current buffer and have no effect on the other buffers.
+
+## [0.0.25] - 2023-08-13
 
 ### New Features
 
 -   Harlequin now returns the result of multiple select queries to different tabs in the Results Viewer. To run multiple queries, type them into the Query Editor (separated by semicolons), then press <kbd>ctrl+a</kbd> to select all, and then <kbd>ctrl+enter</kbd> to run the selection ([#34](https://github.com/tconbeer/harlequin/issues/34)).
 -   If there are multiple results tabs, you can switch between them with <kbd>j</kbd> and <kbd>k</kbd>.
+-   <kbd>ctrl+e</kbd> exports the data from the current (visible) data table.
 
 ### Bug Fixes
 -   Fixes issues with the loading state when loading large result sets.
 
 ## [0.0.24] - 2023-08-04
+
+### New Features
 
 -   Adds a new CLI option, `--extension` or `-e`, which will install and load a named DuckDB extension.
 -   Adds a new CLI option, `--force-install-extensions`, which will re-install the extensions provided
@@ -33,15 +36,15 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.23] - 2023-08-03
 
+### Features
 -   Changes the behavior of the "Run Query" button and <kbd>ctrl+enter</kbd>:
     -   If text is selected, and that text does not contain parsing errors, the "Run Query" button will show "Run Selection", and <kbd>ctrl+enter</kbd> will run the selected text. If multiple queries are selected (separated by semicolons), they will all be run; if multiple `select` statements are selected, only data from the first selected `select` statement will be loaded into the Results Viewer (or exported).
     -   If no text is selected, Harlequin will run the single query where the cursor is active. Other queries before and after semicolons will not be run.
     -   To "Run All", first select all text with <kbd>ctrl+a</kbd>, and then run selection with <kbd>ctrl+enter</kbd>
--   Lowers the maximum number of records loaded into the results viewer to 10,000. (All records can be exported with <kbd>ctrl+e</kbd>)
-
-### Features
-
 -   Adds path autocomplete and validation to the file save/open and export data inputs.
+
+### Other Changes
+-   Lowers the maximum number of records loaded into the results viewer to 10,000. (All records can be exported with <kbd>ctrl+e</kbd>)
 
 ## [0.0.22] - 2023-08-02
 
