@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from harlequin.tui import Harlequin
-from harlequin.tui.components import ExportScreen
+from harlequin.tui.components import ErrorModal, ExportScreen
 from harlequin.tui.components.results_viewer import ResultsTable
 
 
@@ -319,3 +319,24 @@ async def test_multiple_buffers(app: Harlequin) -> None:
         await pilot.press("ctrl+k")
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_query",
+    [
+        "select",  # errors when building relation
+        "select 0::struct(id int)",  # errors when fetching data
+        "select; select 0::struct(id int)",  # multiple errors
+    ],
+)
+async def test_query_errors(app: Harlequin, bad_query: str) -> None:
+    async with app.run_test() as pilot:
+        app.editor.text = bad_query
+
+        await pilot.press("ctrl+j")
+        assert len(app.screen_stack) == 2
+        assert isinstance(app.screen, ErrorModal)
+
+        await pilot.press("space")
+        assert len(app.screen_stack) == 1
