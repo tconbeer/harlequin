@@ -38,7 +38,7 @@ class Harlequin(App, inherit_bindings=False):
     A Textual App for a SQL client for DuckDB.
     """
 
-    CSS_PATH = "app.css"
+    CSS_PATH = "app.tcss"
     MAX_RESULTS = 10_000
 
     BINDINGS = [
