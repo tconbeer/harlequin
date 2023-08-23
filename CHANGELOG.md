@@ -230,7 +230,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.26...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.27...HEAD
+
+[0.0.27]: https://github.com/tconbeer/harlequin/compare/0.0.26...0.0.27
 
 [0.0.26]: https://github.com/tconbeer/harlequin/compare/0.0.25...0.0.26
 
