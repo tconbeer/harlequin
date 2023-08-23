@@ -25,9 +25,12 @@
 - ctrl+x: Cut selected text.
 - ctrl+c: Copy selected text.
 - ctrl+v, ctrl+u: Paste selected text.
+- ctrl+z: Undo.
+- ctrl+y: Redo.
 - ctrl+/, ctrl+_: Toggle comments on selected line(s).
 - tab: Insert spaces at cursor to move the cursor to the next tab stop, or indent the selected line(s) to the next tab stop.
 - shift+tab: Dedent the selected line(s) to the next tab stop.
+- shift+delete: Delete the current line.
 
 #### Moving the Cursor
 - up,down,left,right: Move the cursor one position.
