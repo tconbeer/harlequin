@@ -7,6 +7,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.reactive import reactive
@@ -15,6 +16,7 @@ from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
+from harlequin.colors import HarlequinColors
 from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
@@ -78,6 +80,7 @@ class Harlequin(App, inherit_bindings=False):
         self.theme = theme
         self.limit = 500
         try:
+            self.app_colors = HarlequinColors.from_theme(theme)
             self.connection = connect(
                 db_path,
                 read_only=read_only,
@@ -90,15 +93,24 @@ class Harlequin(App, inherit_bindings=False):
             )
         except HarlequinExit:
             self.exit()
+        else:
+            self.design = self.app_colors.design_system
+            self.stylesheet = Stylesheet(variables=self.get_css_variables())
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Horizontal():
-            yield SchemaViewer("Data Catalog", connection=self.connection)
+            yield SchemaViewer(
+                "Data Catalog",
+                connection=self.connection,
+                type_color=self.app_colors.gray,
+            )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
                 yield RunQueryBar(max_results=self.MAX_RESULTS)
-                yield ResultsViewer(max_results=self.MAX_RESULTS)
+                yield ResultsViewer(
+                    max_results=self.MAX_RESULTS, type_color=self.app_colors.gray
+                )
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -185,7 +197,9 @@ class Harlequin(App, inherit_bindings=False):
                 message.input.tooltip = None
             elif message.validation_result:
                 failures = "\n".join(message.validation_result.failure_descriptions)
-                message.input.tooltip = f"[red]Validation Error:[/red]\n{failures}"
+                message.input.tooltip = (
+                    f"[{self.app_colors.error}]Validation Error:[/]\n{failures}"
+                )
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         if message.input.id == "limit_input":

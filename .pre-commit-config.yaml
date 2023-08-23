@@ -19,6 +19,7 @@ repos:
           - textual>=0.31.0
           - textual-textarea>=0.4.1
           - pytest
+          - types-pygments
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"

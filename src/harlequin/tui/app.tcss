@@ -1,29 +1,29 @@
 /* VARIABLES */
-$border-color-nofocus: $primary;
-$border-title-color-nofocus: $primary-lighten-3;
-$border-color-focus: $accent;
-$border-title-color-focus: $accent;
+$border-color-nofocus: $panel;
+$border-title-color-nofocus: $panel;
+$border-color-focus: $primary;
+$border-title-color-focus: $primary;
 
 /* ALL WIDGETS */
 SchemaViewer, EditorCollection, ResultsViewer {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
-    background: $boost;
+    background: $background;
 }
 SchemaViewer:focus, EditorCollection:focus-within, ResultsViewer:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, EditorCollection, TextContainer, ResultsTable {
-    scrollbar-background: $surface;
-    scrollbar-background-hover: $surface;
-    scrollbar-background-active: $surface;
-    scrollbar-corner-color: $surface;
+SchemaViewer, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
+    scrollbar-background: $background-lighten-1;
+    scrollbar-background-hover: $background-lighten-1;
+    scrollbar-background-active: $background-lighten-1;
+    scrollbar-corner-color: $background-lighten-1;
     
-    scrollbar-color: $panel-lighten-1;
+    scrollbar-color: $panel;
     scrollbar-color-hover: $primary;
-    scrollbar-color-active: $accent;
+    scrollbar-color-active: $secondary;
 }
 
 SchemaViewer:disabled, EditorCollection:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
@@ -43,7 +43,7 @@ SchemaViewer .tree--guides {
     color: $primary;
 }
 SchemaViewer .tree--guides-hover {
-    color: $accent;
+    color: $primary;
 }
 SchemaViewer .tree--guides-selected {
     color: $secondary;
@@ -63,24 +63,26 @@ EditorCollection, CodeEditor {
 RunQueryBar {
     height: 1;
     width: 100%;
-    background: $panel;
     align-horizontal: right;
     padding: 0 2 0 0;
+    background: $background;
 }
 RunQueryBar Input {
     border: none;
     padding: 0;
     width: 6;
+    background: $background;
 }
 RunQueryBar Input.-invalid {
     border: none;
-    color: red
+    color: $error
 }
 Tooltip {
-    border: round $panel-lighten-1;
+    border: round $border-color-focus;
+    background: $background;
 }
 RunQueryBar Button {
-    background: $accent;
+    background: $primary;
     border: none;
     height: 1;
     margin: 0 0 0 4;
@@ -89,43 +91,42 @@ RunQueryBar Button:hover {
     background: $secondary;
 }
 RunQueryBar Button:focus {
-    text-style: bold;
+    text-style: reverse;
 }
 RunQueryBar Checkbox {
     border: none;
     padding: 0;
-    background: $panel;
+    background: $background;
 }
 RunQueryBar Checkbox:focus > .toggle--label {
     text-style: none;
 }
 RunQueryBar Checkbox > .toggle--button {
-    background: $panel-lighten-1
+    background: $panel
 }
 RunQueryBar Checkbox:hover {
-    background: $panel;
+    background: $background-lighten-1;
 }
 RunQueryBar Checkbox:hover > .toggle--button {
-    background: $accent;
+    background: $secondary;
 }
-RunQueryBar Checkbox.-on > .toggle--button {
+RunQueryBar Checkbox.-on > .toggle--button {    
     color: $accent;
-    background: $panel-lighten-1
+    background: $background-lighten-1
 }
 RunQueryBar Checkbox.-on:hover > .toggle--button {
-    color: $accent;
-    background: $primary;
+    background: $secondary;
 }
 RunQueryBar Input:hover, RunQueryBar Input:focus {
-    background: $panel-lighten-1;
+    background: $background-lighten-1;
 }
 RunQueryBar Input {
-    background: $panel;
+    background: $background;
 }
 
 RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQueryBar Input.non-responsive{
     text-style: italic;
-    background: $panel;
+    background: $background;
 }
 
 /* RESULTS VIEWER */
@@ -143,17 +144,23 @@ TabPane {
 ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
-ResultsTable.datatable--cursor .datatable--header-cursor {
-    background: $boost;
+ResultsTable > .datatable--header {
+    text-style: none;
+    background: $background;
+    color: $primary;
 }
-ResultsViewer .datatable--hover {
-    background: $boost;
+ResultsTable > .datatable--cursor {
+    background: $secondary;
+    color: auto;
 }
-ResultsViewer .datatable--header {
-    background: $boost;
+ResultsTable > .datatable--header-hover {
+    text-style: none;
+    background: $background;
+    color: $primary;
 }
-ResultsViewer .datatable--header-hover {
-    background: $primary-background;
+ResultsTable > .datatable--hover {
+    color: $text;
+    background: $boost;
 }
 
 /* ERROR MODAL */
@@ -163,7 +170,7 @@ ErrorModal {
 }
 #error_outer {
     border: round $error;
-    background: $surface;
+    background: $background;
     margin: 5 10;
     padding: 1 2;
     max-width: 88;
@@ -177,7 +184,7 @@ ErrorModal {
 }
 
 #error_inner {
-    border: round $panel-lighten-1;
+    border: round $border-color-nofocus ;
     padding: 1 1 1 2;
 }
 
@@ -199,7 +206,7 @@ HelpScreen {
 }
 #help_outer {
     border: round $border-color-focus;
-    background: $surface;
+    background: $background;
     margin: 2 4;
     padding: 1 2;
     max-width: 88;
@@ -212,7 +219,7 @@ HelpScreen {
 }
 
 #help_inner {
-    border: round $panel-lighten-1;
+    border: round $border-color-nofocus;
     padding: 0 0 0 0;
 }
 
@@ -234,7 +241,7 @@ ExportScreen {
 }
 #export_outer {
     border: round $border-color-focus;
-    background: $surface;
+    background: $background;
     margin: 2 4;
     padding: 1 2;
     max-width: 88;
@@ -279,7 +286,7 @@ ExportScreen Horizontal Select {
 ExportScreen Horizontal Select > SelectCurrent {
     width: 40;
     background: transparent;
-    border: round $panel;
+    border: round $border-color-nofocus;
     margin: 0 0 0 0;
 }
 
@@ -293,14 +300,17 @@ ExportScreen Horizontal Select > SelectOverlay {
     background: transparent;
 }
 
-ExportScreen Horizontal Input {
-    width: 40;
-    border: round $panel;
+ExportScreen Input {
+    border: round $border-color-nofocus;
     background: transparent;
 }
 
-ExportScreen Horizontal Input:focus {
+ExportScreen Input:focus {
     border: round $border-color-focus;
+}
+
+ExportScreen Horizontal Input {
+    width: 40;
 }
 
 ExportScreen Switch:hover {
@@ -312,7 +322,7 @@ ExportScreen Switch:focus:hover {
 }
 
 ExportScreen Switch.-on > .switch--slider {
-    color: $accent;
+    color: $primary;
     border: tall transparent;
 }
 
@@ -327,7 +337,7 @@ CSVOptionsMenu, ParquetOptionsMenu, JSONOptionsMenu {
 }
 
 ExportScreen Button {
-    background: $accent;
+    background: $primary;
     height: 3;
     margin: 0 6;
     border: none;
@@ -340,4 +350,28 @@ ExportScreen Button:focus {
 }
 #cancel{
     background: $panel;
+}
+
+/* FOOTER */
+Footer {
+    background: $background;
+    color: $secondary;
+    dock: bottom;
+    height: 1;
+}
+Footer > .footer--highlight {
+    background: $boost;
+    color: $secondary;
+}
+
+Footer > .footer--highlight-key {
+    background: $boost;
+    color: $primary;
+    text-style: none;
+}
+
+Footer > .footer--key {
+    text-style: none;
+    background: $background;
+    color: $primary;
 }

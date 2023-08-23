@@ -51,6 +51,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         disabled: bool = False,
         initial: Union[str, None] = None,
         max_results: int = 10_000,
+        type_color: str = "#888888",
     ) -> None:
         super().__init__(
             *children,
@@ -61,6 +62,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             initial=initial,
         )
         self.MAX_RESULTS = max_results
+        self.type_color = type_color
 
     def compose(self) -> ComposeResult:
         yield TabbedContent(id=self.TABBED_ID)
@@ -202,7 +204,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         short_types = [short_type(t) for t in relation.dtypes]
         table.add_columns(
             *[
-                f"{name} [#888888]{data_type}[/]"
+                f"{name} [{self.type_color}]{data_type}[/]"
                 for name, data_type in zip(relation.columns, short_types)
             ]
         )
