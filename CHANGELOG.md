@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### New Features
+
+-   Harlequin's query editor now more key bindings: <kbd>ctrl+z</kbd> and <kbd>ctrl+y</kbd> to undo/redo, and <kbd>shift+delete</kbd> to delete an entire line.
+
 ## [0.0.26] - 2023-08-21
 
 ### New Features
