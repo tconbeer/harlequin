@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
--   It is now easier to focus on the current editor buffer, instead of the tabs above it.s
+-   It is now easier to focus on the current editor buffer, instead of the tabs above it.
 
 ## [0.0.26] - 2023-08-21
 
