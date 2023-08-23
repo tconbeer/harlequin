@@ -20,6 +20,7 @@ class SchemaViewer(Tree[Union[str, None]]):
         self,
         label: TextType,
         connection: DuckDBPyConnection,
+        type_color: str = "#888888",
         data: Union[str, None] = None,
         name: Union[str, None] = None,
         id: Union[str, None] = None,  # noqa: A002
@@ -28,6 +29,7 @@ class SchemaViewer(Tree[Union[str, None]]):
     ) -> None:
         self.connection = connection
         self.label = label
+        self.type_color = type_color
         super().__init__(
             label, data, name=name, id=id, classes=classes, disabled=disabled
         )
@@ -61,14 +63,14 @@ class SchemaViewer(Tree[Union[str, None]]):
                         short_table_type = self.table_type_mapping.get(table[1], "?")
                         table_identifier = f"{schema[0]}.{table[0]}"
                         table_node = schema_node.add(
-                            f"{table[0]} [#888888]{short_table_type}[/]",
+                            f"{table[0]} [{self.type_color}]{short_table_type}[/]",
                             data=table_identifier,
                             expand=(table_identifier in expanded_nodes),
                         )
                         for col in table[2]:
                             col_identifier = f"{table_identifier}.{col[0]}"
                             table_node.add_leaf(
-                                f"{col[0]} [#888888]{short_type(col[1])}[/]",
+                                f"{col[0]} [{self.type_color}]{short_type(col[1])}[/]",
                                 data=col_identifier,
                             )
 
