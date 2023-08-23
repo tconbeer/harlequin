@@ -7,7 +7,7 @@ from sqlfmt.exception import SqlfmtError
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.message import Message
-from textual.widgets import ContentSwitcher, TabbedContent, TabPane
+from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual_textarea import TextArea
 from textual_textarea.key_handlers import Cursor
 from textual_textarea.serde import serialize_lines
@@ -55,6 +55,7 @@ class EditorCollection(TabbedContent):
         self.border_title = "Query Editor"
         self.add_class("hide-tabs")
         await self.action_new_buffer()
+        self.query_one(Tabs).can_focus = False
 
     def on_focus(self) -> None:
         self.current_editor.focus()
@@ -77,6 +78,7 @@ class EditorCollection(TabbedContent):
     ) -> None:
         message.stop()
         self.post_message(self.EditorSwitched(active_editor=None))
+        self.current_editor.focus()
 
     async def action_new_buffer(self) -> None:
         self.counter += 1

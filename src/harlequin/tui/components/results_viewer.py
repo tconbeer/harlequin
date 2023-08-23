@@ -15,6 +15,7 @@ from textual.widgets import (
     LoadingIndicator,
     TabbedContent,
     TabPane,
+    Tabs,
 )
 from textual.worker import Worker, WorkerState
 
@@ -72,6 +73,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         self.border_title = "Query Results"
         self.current = self.TABBED_ID
         self.tab_switcher = self.query_one(TabbedContent)
+        self.query_one(Tabs).can_focus = False
 
     def on_focus(self) -> None:
         self._focus_on_visible_table()
@@ -93,6 +95,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             id_ = maybe_table.id
             assert id_ is not None
             self.border_title = f"Query Results {self._human_row_count(self.data[id_])}"
+            maybe_table.focus()
 
     def action_switch_tab(self, offset: int) -> None:
         if not self.tab_switcher.active:
