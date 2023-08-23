@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.27] - 2023-08-23
+
 ### New Features
 
 -   UI glow-up: Colors are more consistent, and themes set the styling for the entire app ([#81](https://github.com/tconbeer/harlequin/issues/81)). Try `harlequin -t zenburn` or `harlequin -t one-dark` for a new look.
@@ -224,7 +226,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.26...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.27...HEAD
+
+[0.0.27]: https://github.com/tconbeer/harlequin/compare/0.0.26...0.0.27
 
 [0.0.26]: https://github.com/tconbeer/harlequin/compare/0.0.25...0.0.26
 
