@@ -45,6 +45,14 @@ harlequin -h
 
 To view a list of all key bindings (keyboard shortcuts) within the app, press <kbd>F1</kbd>. You can also view this list outside the app [here](https://github.com/tconbeer/harlequin/blob/main/src/harlequin/tui/components/help_screen.md).
 
+### Choosing a Theme
+
+You can set a theme for Harlequin, using then name of any [Pygments style](https://pygments.org/styles/). Depending on the number of colors supported by your terminal, some themes may not look great. For any terminal, we can recommend `monokai` (the default), `zenburn`, `github-dark`, `fruity`, `native` and `one-dark`.
+
+```bash
+harlequin -t zenburn
+```
+
 ### Loading DuckDB Extensions
 
 You can install and load extensions when starting Harlequin, by passing the `-e` flag one or more times:

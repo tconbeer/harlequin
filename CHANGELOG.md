@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 -   UI glow-up: Colors are more consistent, and themes set the styling for the entire app ([#81](https://github.com/tconbeer/harlequin/issues/81)). Try `harlequin -t zenburn` or `harlequin -t one-dark` for a new look.
 -   Harlequin's query editor now supports more key bindings: <kbd>ctrl+z</kbd> and <kbd>ctrl+y</kbd> to undo/redo, and <kbd>shift+delete</kbd> to delete an entire line.
 
+### Fixes
+
+-   It is now easier to focus on the current editor buffer, instead of the tabs above it.s
+
 ## [0.0.26] - 2023-08-21
 
 ### New Features
@@ -226,9 +230,7 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.27...HEAD
-
-[0.0.27]: https://github.com/tconbeer/harlequin/compare/0.0.26...0.0.27
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.26...HEAD
 
 [0.0.26]: https://github.com/tconbeer/harlequin/compare/0.0.25...0.0.26
 
