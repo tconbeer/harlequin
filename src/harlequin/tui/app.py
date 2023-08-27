@@ -16,6 +16,7 @@ from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
+from harlequin.cache import BufferState, Cache, write_cache
 from harlequin.colors import HarlequinColors
 from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
@@ -121,7 +122,7 @@ class Harlequin(App, inherit_bindings=False):
         self.run_query_bar = self.query_one(RunQueryBar)
         self.footer = self.query_one(Footer)
 
-        self.set_focus(self.editor)
+        self.editor.focus()
         self.run_query_bar.checkbox.value = False
 
         worker = self.update_schema_data()
@@ -291,6 +292,17 @@ class Harlequin(App, inherit_bindings=False):
             )
         else:
             self.app.push_screen(ExportScreen(id="export_screen"), export_data)
+
+    async def action_quit(self) -> None:
+        buffers = []
+        for i, editor in enumerate(self.editor_collection.all_editors):
+            if editor == self.editor_collection.current_editor:
+                focus_index = i
+            buffers.append(
+                BufferState(editor.cursor, editor.selection_anchor, editor.text)
+            )
+        write_cache(Cache(focus_index=focus_index, buffers=buffers))
+        await super().action_quit()
 
     def action_focus_query_editor(self) -> None:
         self.editor.focus()
