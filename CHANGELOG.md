@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Buffers are now restored when harlequin is restarted ([#175](https://github.com/tconbeer/harlequin/issues/175)).
+
 ## [0.0.27] - 2023-08-23
 
 ### New Features

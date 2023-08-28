@@ -6,6 +6,12 @@ from harlequin.tui.components import ErrorModal, ExportScreen
 from harlequin.tui.components.results_viewer import ResultsTable
 
 
+@pytest.fixture(autouse=True)
+def no_use_buffer_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("harlequin.tui.components.code_editor.load_cache", lambda: None)
+    monkeypatch.setattr("harlequin.tui.app.write_cache", lambda *_: None)
+
+
 @pytest.mark.asyncio
 async def test_select_1(app: Harlequin) -> None:
     async with app.run_test() as pilot:

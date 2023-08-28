@@ -13,6 +13,7 @@ from textual_textarea.key_handlers import Cursor
 from textual_textarea.serde import serialize_lines
 from textual_textarea.textarea import TextInput
 
+from harlequin.cache import BufferState, load_cache
 from harlequin.tui.components.error_modal import ErrorModal
 
 
@@ -54,7 +55,15 @@ class EditorCollection(TabbedContent):
     async def on_mount(self) -> None:
         self.border_title = "Query Editor"
         self.add_class("hide-tabs")
-        await self.action_new_buffer()
+        cache = load_cache()
+        if cache is not None:
+            for _i, buffer in enumerate(cache.buffers):
+                await self.action_new_buffer(state=buffer)
+                # we can't load the focus state here, since Tabs
+                # really wants to activate the first tab when it's
+                # mounted
+        else:
+            await self.action_new_buffer()
         self.query_one(Tabs).can_focus = False
 
     def on_focus(self) -> None:
@@ -73,6 +82,12 @@ class EditorCollection(TabbedContent):
         all_editors = content.query(CodeEditor)
         return all_editors.first(CodeEditor)
 
+    @property
+    def all_editors(self) -> List["CodeEditor"]:
+        content = self.query_one(ContentSwitcher)
+        all_editors = content.query(CodeEditor)
+        return list(all_editors)
+
     def on_tabbed_content_tab_activated(
         self, message: TabbedContent.TabActivated
     ) -> None:
@@ -80,19 +95,25 @@ class EditorCollection(TabbedContent):
         self.post_message(self.EditorSwitched(active_editor=None))
         self.current_editor.focus()
 
-    async def action_new_buffer(self) -> None:
+    async def action_new_buffer(self, state: Union[BufferState, None] = None) -> None:
         self.counter += 1
         new_tab_id = f"tab-{self.counter}"
+        editor = CodeEditor(
+            id=f"buffer-{self.counter}", language=self.language, theme=self.theme
+        )
         pane = TabPane(
             f"Tab {self.counter}",
-            CodeEditor(
-                id=f"buffer-{self.counter}", language=self.language, theme=self.theme
-            ),
+            editor,
             id=new_tab_id,
         )
         await self.add_pane(pane)
-        self.active = new_tab_id
-        self.current_editor.focus()
+        if state is not None:
+            editor.text = state.text
+            editor.cursor = state.cursor
+            editor.selection_anchor = state.selection_anchor
+        else:
+            self.active = new_tab_id
+            self.current_editor.focus()
         if self.counter > 1:
             self.remove_class("hide-tabs")
 
