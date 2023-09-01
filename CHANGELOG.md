@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes and Minor Updates
+
+-   Data table column headers are now bold on terminals that support it ([#203](https://github.com/tconbeer/harlequin/issues/203)).
+-   Bumped TextArea; cursor now better maintains x-position and [other minor fixes](https://github.com/tconbeer/textual-textarea/releases/tag/v0.5.4).
+
 ## [0.0.28] - 2023-09-07
 
 -   Buffers are now restored when harlequin is restarted ([#175](https://github.com/tconbeer/harlequin/issues/175)).
