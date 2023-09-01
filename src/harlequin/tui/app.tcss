@@ -145,7 +145,7 @@ ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
 ResultsTable > .datatable--header {
-    text-style: none;
+    text-style: bold;
     background: $background;
     color: $primary;
 }
@@ -154,7 +154,7 @@ ResultsTable > .datatable--cursor {
     color: auto;
 }
 ResultsTable > .datatable--header-hover {
-    text-style: none;
+    text-style: bold;
     background: $background;
     color: $primary;
 }
