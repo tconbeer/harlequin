@@ -49,6 +49,8 @@ To view a list of all key bindings (keyboard shortcuts) within the app, press <k
 
 You can set a theme for Harlequin, using then name of any [Pygments style](https://pygments.org/styles/). Depending on the number of colors supported by your terminal, some themes may not look great. For any terminal, we can recommend `monokai` (the default), `zenburn`, `github-dark`, `fruity`, `native` and `one-dark`.
 
+For a preview of each theme on a 24-bit color terminal, see the `static/themes/` directory.
+
 ```bash
 harlequin -t zenburn
 ```
