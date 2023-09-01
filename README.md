@@ -2,11 +2,10 @@
 
 A Terminal-based SQL IDE for DuckDB.
 
-![harlequin TUI](harlequinv0018.gif)
+![harlequin TUI](static/themes/monokai.svg)
 
 (A Harlequin is also a [pretty duck](https://en.wikipedia.org/wiki/Harlequin_duck).)
 
-![harlequin duck](harlequin.jpg)
 
 ## Installing Harlequin
 
@@ -30,101 +29,9 @@ To open an in-memory DuckDB session, run Harlequin with no arguments:
 harlequin
 ```
 
-You can also open a database in read-only mode:
+## More info at [harlequin.sh](https://harlequin.sh)
 
-```bash
-harlequin -r "path/to/duck.db"
-```
-
-### Getting Help
-
-To view all command-line options for Harlequin, after installation, simply type:
-```bash
-harlequin -h
-```
-
-To view a list of all key bindings (keyboard shortcuts) within the app, press <kbd>F1</kbd>. You can also view this list outside the app [here](https://github.com/tconbeer/harlequin/blob/main/src/harlequin/tui/components/help_screen.md).
-
-### Choosing a Theme
-
-You can set a theme for Harlequin, using then name of any [Pygments style](https://pygments.org/styles/). Depending on the number of colors supported by your terminal, some themes may not look great. For any terminal, we can recommend `monokai` (the default), `zenburn`, `github-dark`, `fruity`, `native` and `one-dark`.
-
-For a preview of each theme on a 24-bit color terminal, see the `static/themes/` directory.
-
-```bash
-harlequin -t zenburn
-```
-
-### Loading DuckDB Extensions
-
-You can install and load extensions when starting Harlequin, by passing the `-e` flag one or more times:
-
-```bash
-harlequin -e spatial -e httpfs
-```
-
-If you need to load a custom or otherwise unsigned extension, you can use the
-`-unsigned` flag just as you would with the DuckDB CLI, or `-u` for convenience:
-
-```bash
-harlequin -u
-```
-
-You can also install extensions from custom repos, using the `--custom-extension-repo` option. For example, this combines the options above to load the unsigned `prql` extension:
-
-```bash
-harlequin -u -e prql --custom-extension-repo welsch.lu/duckdb/prql/latest
-```
-
-### Using Harlequin with MotherDuck
-
-You can use Harlequin with MotherDuck, just as you would use the DuckDB CLI:
-
-```bash
-harlequin "md:"
-```
-
-You can attach local databases as additional arguments (`md:` has to be first:)
-
-```bash
-harlequin "md:" "local_duck.db"
-```
-
-#### Authentication Options
-
-1. Web browser: Run `harlequin "md:"`, and Harlequin will attempt to open a web browser where you can log in.
-2. Use an environment variable: Set the `motherduck_token` variable before running `harlequin "md:"`, and Harlequin will authenticate with MotherDuck using your service token.
-3. Use the CLI option: You can pass a service token to Harlequin with `harlequin "md:" --md_token <my token>`
-
-#### SaaS Mode
-
-You can run Harlequin in ["SaaS Mode"](https://motherduck.com/docs/authenticating-to-motherduck#authentication-using-saas-mode) by passing the `md_saas` option: `harlequin "md:" --md_saas`.
-
-### Viewing the Schema of your Database
-
-When Harlequin is open, you can view the schema of your DuckDB database in the left sidebar. You can use your mouse or the arrow keys + enter to navigate the tree. The tree shows schemas, tables/views and their types, and columns and their types.
-
-### Editing a Query
-
-The main query editor is a full-featured text editor, with features including syntax highlighting, auto-formatting with <kbd>f4</kbd>, text selection, copy/paste, and more.
-
-> **Tip:**
->
-> Some Linux users may need to apt-install `xclip` or `xsel` to enable copying and pasting using the system clipboard.
-
-You can save the query currently in the editor with <kbd>ctrl + s</kbd>. You can open a query in any text or .sql file with <kbd>ctrl + o</kbd>.
-
-### Running a Query and Viewing Results
-
-To run a query press <kbd>ctrl + enter</kbd>. Not all terminals support this key combination, so you can also use <kbd>ctrl + j</kbd>, or click the `RUN QUERY` button.
-
-Up to 10k records will be loaded into the results pane below the query editor. When the focus is on the data pane, you can use your arrow keys or mouse to select different cells.
-
-If you have selected text that makes one or more valid queries, you can run the selection in the same way. If you select multiple queries (separated by a semicolon), Harlequin will return the results in multiple tabs.
-
-### Exiting Harlequin
-
-Press <kbd>ctrl + q</kbd> to quit and return to your shell.
+Visit [harlequin.sh](https://harlequin.sh) for an overview of features and full documentation.
 
 ## Contributing
 

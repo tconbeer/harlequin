@@ -13,7 +13,7 @@
 
 #### Actions
 - F4: Format the query.
-- ctrl+enter: Run the query.
+- ctrl+enter, ctrl+j: Run the query.
 - ctrl+o: Open a text file in the Query Editor.
 - ctrl+s: Save the contents of the Query Editor to a file.
 - ctrl+n: Create a new buffer (editor tab).
@@ -41,10 +41,10 @@
 - PgUp: Move the cursor up one screen.
 - PgDn: Move the cursor down one screen.
 - ctrl+up: Scroll up one line.
-- ctrl+down: Scroll up one line.
+- ctrl+down: Scroll down one line.
 - ctrl+left: Move the cursor to the start of the current token.
 - ctrl+right: Move the cursor to the end of the current token.
-- shift+[up,down,left,right,home,end,PgUp,PgDn,ctrl+left,ctrl+right]: Select text while moving the cursor.
+- shift+[any]: Select text while moving the cursor.
 
 ### Results Viewer Bindings
 
