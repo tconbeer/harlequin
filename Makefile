@@ -1,7 +1,7 @@
 .PHONY: check
 check:
-	pytest -m "not online"
 	black .
+	pytest -m "not online"
 	ruff . --fix
 	mypy
 
