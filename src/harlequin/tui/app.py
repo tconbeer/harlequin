@@ -11,8 +11,9 @@ from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.reactive import reactive
+from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.types import CSSPathType
-from textual.widget import Widget
+from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
@@ -131,6 +132,21 @@ class Harlequin(App, inherit_bindings=False):
 
     def _set_query_text(self) -> None:
         self.query_text = self._validate_selection() or self.editor.current_query
+
+    def push_screen(
+        self,
+        screen: Union[Screen[ScreenResultType], str],
+        callback: Union[ScreenResultCallbackType[ScreenResultType], None] = None,
+    ) -> AwaitMount:
+        if self.editor._has_focus_within:
+            self.editor.text_input.blink_timer.pause()
+        return super().push_screen(screen, callback=callback)
+
+    def pop_screen(self) -> Screen[object]:
+        new_screen = super().pop_screen()
+        if len(self.screen_stack) == 1 and self.editor._has_focus_within:
+            self.editor.text_input.blink_timer.resume()
+        return new_screen
 
     def on_editor_collection_editor_switched(
         self, message: EditorCollection.EditorSwitched
