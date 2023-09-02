@@ -57,3 +57,11 @@
 - end: Move the cursor to the bottom of the current column.
 - PgUp: Move the cursor up one screen.
 - PgDn: Move the cursor down one screen.
+
+
+### Data Catalog Bindings
+- enter: Select the current item.
+- space: Toggle the expand/collapses state of the current item.
+- up: Move the cursor up.
+- down: Move the cursor down.
+- ctrl+enter, ctrl+j: Insert the current name into the Query Editor.
