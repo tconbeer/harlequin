@@ -4,6 +4,7 @@ import pytest
 from harlequin.tui import Harlequin
 from harlequin.tui.components import ErrorModal, ExportScreen
 from harlequin.tui.components.results_viewer import ResultsTable
+from textual.geometry import Offset
 
 
 @pytest.fixture(autouse=True)
@@ -346,3 +347,73 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
 
         await pilot.press("space")
         assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_data_catalog(app_multi_db: Harlequin) -> None:
+    app = app_multi_db
+    async with app.run_test() as pilot:
+        catalog = app.schema_viewer
+        assert not catalog.show_root
+
+        # this test app has two databases attached.
+        dbs = catalog.root.children
+        assert len(dbs) == 2
+
+        # the first db is called "small"
+        assert str(dbs[0].label) == "small"
+        assert dbs[0].data is not None
+        assert dbs[0].data.qualified_identifier == '"small"'
+        assert dbs[0].data.query_name == '"small"'
+        assert dbs[0].is_expanded is False
+
+        # the small db has two schemas, but you can't see them yet
+        assert len(dbs[0].children) == 2
+        assert all(not node.is_expanded for node in dbs[0].children)
+
+        assert str(dbs[1].label) == "tiny"
+        assert dbs[0].is_expanded is False
+
+        # click on "small" and see it expand.
+        await pilot.click(catalog.__class__, offset=Offset(x=6, y=1))
+        assert dbs[0].is_expanded is True
+        assert dbs[1].is_expanded is False
+        assert all(not node.is_expanded for node in dbs[0].children)
+
+        # small's second schema is "main". click "main"
+        schema_main = dbs[0].children[1]
+        await pilot.click(catalog.__class__, offset=Offset(x=8, y=3))
+        await pilot.pause()
+        assert schema_main.is_expanded is True
+        assert catalog.cursor_line == 2  # main is selected
+
+        # ctrl+enter to insert into editor; editor gets focus
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+        assert schema_main.is_expanded is True
+        assert app.editor.text == '"small"."main"'
+        assert app.editor._has_focus_within
+
+        # use keys to navigate the tree into main.drivers
+        await pilot.press("f6")
+        await pilot.pause()
+        assert catalog.has_focus
+        await pilot.press("down")
+        await pilot.press("space")
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.save_screenshot(filename="debug.svg", path="./")
+
+        col_node = catalog.get_node_at_line(catalog.cursor_line)
+        assert col_node is not None
+        assert col_node.data is not None
+        assert col_node.data.qualified_identifier == '"small"."main"."drivers"."dob"'
+        assert col_node.data.query_name == '"dob"'
+
+        # reset the editor, then insert "dob"
+        app.editor.text = ""
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+        assert app.editor.text == '"dob"'

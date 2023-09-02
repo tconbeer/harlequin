@@ -21,6 +21,7 @@ from harlequin.colors import HarlequinColors
 from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
 from harlequin.tui.components import (
+    CatalogItem,
     CodeEditor,
     CSVOptions,
     EditorCollection,
@@ -144,11 +145,12 @@ class Harlequin(App, inherit_bindings=False):
         self._set_query_text()
 
     def on_schema_viewer_node_submitted(
-        self, message: SchemaViewer.NodeSubmitted[str]
+        self, message: SchemaViewer.NodeSubmitted[CatalogItem]
     ) -> None:
         message.stop()
         if message.node.data:
-            self.editor.insert_text_at_selection(text=message.node.data)
+            self.editor.insert_text_at_selection(text=message.node.data.query_name)
+            self.editor.focus()
 
     def on_button_pressed(self, message: Button.Pressed) -> None:
         message.stop()

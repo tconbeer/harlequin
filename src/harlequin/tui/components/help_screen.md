@@ -9,9 +9,11 @@
 - F10: Toggle full screen mode for the current widget.
 - ctrl+e: Write the returned data to a CSV, Parquet, or JSON file.
 
+
 ### Query Editor Bindings
 
 #### Actions
+
 - F4: Format the query.
 - ctrl+enter, ctrl+j: Run the query.
 - ctrl+o: Open a text file in the Query Editor.
@@ -21,6 +23,7 @@
 - ctrl+k: View the next buffer (editor tab).
 
 #### Editing Text
+
 - ctrl+a: Select all, move the cursor to the end of the query.
 - ctrl+x: Cut selected text.
 - ctrl+c: Copy selected text.
@@ -33,6 +36,7 @@
 - shift+delete: Delete the current line.
 
 #### Moving the Cursor
+
 - up,down,left,right: Move the cursor one position.
 - home: Move the cursor to the start of the line.
 - end: Move the cursor to the end of the line.
@@ -46,12 +50,15 @@
 - ctrl+right: Move the cursor to the end of the current token.
 - shift+[any]: Select text while moving the cursor.
 
+
 ### Results Viewer Bindings
 
 #### Switching Tabs
+
 - j: Switch to the previous tab.
 - k: Switch to the next tab.
 #### Moving the Cursor
+
 - up,down,left,right: Move the cursor one cell.
 - home: Move the cursor to the top of the current column.
 - end: Move the cursor to the bottom of the current column.
@@ -60,6 +67,7 @@
 
 
 ### Data Catalog Bindings
+
 - enter: Select the current item.
 - space: Toggle the expand/collapses state of the current item.
 - up: Move the cursor up.
