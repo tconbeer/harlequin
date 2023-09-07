@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.28] - 2023-09-07
+
 -   Buffers are now restored when harlequin is restarted ([#175](https://github.com/tconbeer/harlequin/issues/175)).
 
 ## [0.0.27] - 2023-08-23
@@ -232,7 +234,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.26...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.28...HEAD
+
+[0.0.28]: https://github.com/tconbeer/harlequin/compare/0.0.26...0.0.28
 
 [0.0.26]: https://github.com/tconbeer/harlequin/compare/0.0.25...0.0.26
 
