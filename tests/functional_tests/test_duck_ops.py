@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 from harlequin.duck_ops import (
+    _get_columns,
+    _get_databases,
+    _get_schemas,
+    _get_tables,
     connect,
     get_catalog,
-    get_columns,
-    get_databases,
-    get_schemas,
-    get_tables,
 )
 from harlequin.exception import HarlequinExit
 
@@ -71,23 +71,23 @@ def test_cannot_connect(tiny_db: Path) -> None:
 
 def test_get_databases(tiny_db: Path, small_db: Path) -> None:
     conn = connect([tiny_db, small_db])
-    assert get_databases(conn) == [("small",), ("tiny",)]
+    assert _get_databases(conn) == [("small",), ("tiny",)]
 
 
 def test_get_schemas(small_db: Path) -> None:
     conn = connect([small_db], read_only=True)
-    assert get_schemas(conn, "small") == [("empty",), ("main",)]
+    assert _get_schemas(conn, "small") == [("empty",), ("main",)]
 
 
 def test_get_tables(small_db: Path) -> None:
     conn = connect([small_db], read_only=True)
-    assert get_tables(conn, "small", "empty") == []
-    assert get_tables(conn, "small", "main") == [("drivers", "BASE TABLE")]
+    assert _get_tables(conn, "small", "empty") == []
+    assert _get_tables(conn, "small", "main") == [("drivers", "BASE TABLE")]
 
 
 def test_get_columns(small_db: Path) -> None:
     conn = connect([small_db], read_only=True)
-    assert get_columns(conn, "small", "main", "drivers") == [
+    assert _get_columns(conn, "small", "main", "drivers") == [
         ("code", "VARCHAR"),
         ("dob", "DATE"),
         ("driverId", "BIGINT"),

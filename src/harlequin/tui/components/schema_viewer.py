@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from typing import Generic, List, Set, Tuple, Union
 
 from duckdb import DuckDBPyConnection
-from harlequin.duck_ops import Catalog
-from harlequin.tui.utils import short_type
+from harlequin.duck_ops import Catalog, get_column_label, get_relation_label
 from rich.text import TextType
 from textual.binding import Binding
 from textual.events import Click
@@ -90,10 +89,13 @@ class SchemaViewer(Tree[CatalogItem]):
                         expand=schema_identifier in expanded_nodes,
                     )
                     for table in schema[1]:
-                        short_table_type = self.table_type_mapping.get(table[1], "?")
                         table_identifier = f'{schema_identifier}."{table[0]}"'
                         table_node = schema_node.add(
-                            f"{table[0]} [{self.type_color}]{short_table_type}[/]",
+                            label=get_relation_label(
+                                rel_name=table[0],
+                                rel_type=table[1],
+                                type_color=self.type_color,
+                            ),
                             data=CatalogItem(table_identifier, table_identifier),
                             expand=table_identifier in expanded_nodes,
                         )
@@ -101,7 +103,11 @@ class SchemaViewer(Tree[CatalogItem]):
                             col_name = f'"{col[0]}"'
                             col_identifier = f"{table_identifier}.{col_name}"
                             table_node.add_leaf(
-                                f"{col[0]} [{self.type_color}]{short_type(col[1])}[/]",
+                                label=get_column_label(
+                                    col_name=col[0],
+                                    col_type=col[1],
+                                    type_color=self.type_color,
+                                ),
                                 data=CatalogItem(col_identifier, col_name),
                             )
 

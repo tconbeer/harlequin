@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict, Iterator, List, Tuple, Union
 
 import duckdb
-from harlequin.tui.utils import short_type
+from harlequin.duck_ops import get_column_labels_for_relation
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -203,12 +203,10 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
 
     def push_table(self, table_id: str, relation: duckdb.DuckDBPyRelation) -> None:
         table = ResultsTable(id=table_id)
-        short_types = [short_type(t) for t in relation.dtypes]
         table.add_columns(
-            *[
-                f"{name} [{self.type_color}]{data_type}[/]"
-                for name, data_type in zip(relation.columns, short_types)
-            ]
+            *get_column_labels_for_relation(
+                relation=relation, type_color=self.type_color
+            )
         )
         n = self.tab_switcher.tab_count + 1
         if n > 1:
