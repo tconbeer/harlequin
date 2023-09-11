@@ -5,17 +5,17 @@ $border-color-focus: $primary;
 $border-title-color-focus: $primary;
 
 /* ALL WIDGETS */
-SchemaViewer, EditorCollection, ResultsViewer {
+DataCatalog, EditorCollection, ResultsViewer {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
     background: $background;
 }
-SchemaViewer:focus, EditorCollection:focus-within, ResultsViewer:focus-within {
+DataCatalog:focus, EditorCollection:focus-within, ResultsViewer:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
+DataCatalog, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
     scrollbar-background: $background-lighten-1;
     scrollbar-background-hover: $background-lighten-1;
     scrollbar-background-active: $background-lighten-1;
@@ -26,26 +26,26 @@ SchemaViewer, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
     scrollbar-color-active: $secondary;
 }
 
-SchemaViewer:disabled, EditorCollection:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
+DataCatalog:disabled, EditorCollection:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
     width: 0;
     height: 0;
     padding: 0 0;
     border: none;
 }
 
-/* SCHEMA VIEWER */
-SchemaViewer {
+/* DATA CATALOG */
+DataCatalog {
     height: 1fr;
     width: 1fr;
     padding: 0 1;
 }
-SchemaViewer .tree--guides {
+DataCatalog .tree--guides {
     color: $primary;
 }
-SchemaViewer .tree--guides-hover {
+DataCatalog .tree--guides-hover {
     color: $primary;
 }
-SchemaViewer .tree--guides-selected {
+DataCatalog .tree--guides-selected {
     color: $secondary;
 }
 

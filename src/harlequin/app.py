@@ -23,6 +23,7 @@ from harlequin.components import (
     CatalogItem,
     CodeEditor,
     CSVOptions,
+    DataCatalog,
     EditorCollection,
     ErrorModal,
     ExportOptions,
@@ -32,7 +33,6 @@ from harlequin.components import (
     ParquetOptions,
     ResultsViewer,
     RunQueryBar,
-    SchemaViewer,
 )
 from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
@@ -103,7 +103,7 @@ class Harlequin(App, inherit_bindings=False):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Horizontal():
-            yield SchemaViewer(
+            yield DataCatalog(
                 connection=self.connection, type_color=self.app_colors.gray
             )
             with Vertical(id="main_panel"):
@@ -115,7 +115,7 @@ class Harlequin(App, inherit_bindings=False):
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.schema_viewer = self.query_one(SchemaViewer)
+        self.data_catalog = self.query_one(DataCatalog)
         self.editor_collection = self.query_one(EditorCollection)
         self.editor = self.editor_collection.current_editor
         self.results_viewer = self.query_one(ResultsViewer)
@@ -158,8 +158,8 @@ class Harlequin(App, inherit_bindings=False):
         message.stop()
         self._set_query_text()
 
-    def on_schema_viewer_node_submitted(
-        self, message: SchemaViewer.NodeSubmitted[CatalogItem]
+    def on_data_catalog_node_submitted(
+        self, message: DataCatalog.NodeSubmitted[CatalogItem]
     ) -> None:
         message.stop()
         if message.node.data:
@@ -334,9 +334,9 @@ class Harlequin(App, inherit_bindings=False):
         self.results_viewer.focus()
 
     def action_focus_data_catalog(self) -> None:
-        if self.sidebar_hidden or self.schema_viewer.disabled:
+        if self.sidebar_hidden or self.data_catalog.disabled:
             self.action_toggle_sidebar()
-        self.schema_viewer.focus()
+        self.data_catalog.focus()
 
     def action_toggle_sidebar(self) -> None:
         """
@@ -344,9 +344,9 @@ class Harlequin(App, inherit_bindings=False):
         The sidebar can be hidden with either ctrl+b or f10, and we need
         to persist the state depending on how that happens
         """
-        if self.sidebar_hidden is False and self.schema_viewer.disabled is True:
+        if self.sidebar_hidden is False and self.data_catalog.disabled is True:
             # sidebar was hidden by f10; toggle should show it
-            self.schema_viewer.disabled = False
+            self.data_catalog.disabled = False
         else:
             self.sidebar_hidden = not self.sidebar_hidden
 
@@ -375,17 +375,17 @@ class Harlequin(App, inherit_bindings=False):
                 w.disabled = w != target
             if target == self.editor_collection:
                 self.run_query_bar.disabled = False
-            self.schema_viewer.disabled = True
+            self.data_catalog.disabled = True
         else:
             for w in all_widgets:
                 w.disabled = False
-            self.schema_viewer.disabled = self.sidebar_hidden
+            self.data_catalog.disabled = self.sidebar_hidden
 
     def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
         if sidebar_hidden:
-            if self.schema_viewer.has_focus:
+            if self.data_catalog.has_focus:
                 self.editor.focus()
-        self.schema_viewer.disabled = sidebar_hidden
+        self.data_catalog.disabled = sidebar_hidden
 
     def watch_selection_text(self, selection_text: str) -> None:
         if selection_text:
@@ -495,4 +495,4 @@ class Harlequin(App, inherit_bindings=False):
         catalog = get_catalog(self.connection)
         worker = get_current_worker()
         if not worker.is_cancelled:
-            self.schema_viewer.update_tree(catalog)
+            self.data_catalog.update_tree(catalog)

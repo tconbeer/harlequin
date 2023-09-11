@@ -128,7 +128,7 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
 async def test_toggle_sidebar(app: Harlequin) -> None:
     async with app.run_test() as pilot:
         # initialization
-        sidebar = app.schema_viewer
+        sidebar = app.data_catalog
         assert not sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value > 0
@@ -156,7 +156,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         app.editor.focus()
         assert app.full_screen is False
         assert app.sidebar_hidden is False
-        widgets = [app.schema_viewer, app.editor_collection, app.results_viewer]
+        widgets = [app.data_catalog, app.editor_collection, app.results_viewer]
         for w in widgets:
             assert not w.disabled
             assert w.styles.width
@@ -175,9 +175,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert w.styles.width.value == 0
 
         await pilot.press("ctrl+b")
-        # editor and schema viewer should be visible
+        # editor and data catalog should be visible
         assert not app.sidebar_hidden
-        assert not app.schema_viewer.disabled
+        assert not app.data_catalog.disabled
         assert app.full_screen
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
@@ -190,9 +190,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert w.styles.width.value > 0
 
         await pilot.press("ctrl+b")
-        # schema viewer hidden
+        # data catalog hidden
         assert app.sidebar_hidden
-        assert app.schema_viewer.disabled
+        assert app.data_catalog.disabled
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
 
@@ -200,15 +200,15 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         # only editor visible
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
-        assert app.schema_viewer.disabled
+        assert app.data_catalog.disabled
         assert app.results_viewer.disabled
 
         await pilot.press("f10")
-        # schema viewer should still be hidden
+        # data catalog should still be hidden
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
         assert not app.run_query_bar.disabled
-        assert app.schema_viewer.disabled
+        assert app.data_catalog.disabled
         assert not app.results_viewer.disabled
         app.editor.text = "select 1"
         await pilot.press("ctrl+j")
@@ -218,13 +218,13 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         # only results viewer should be visible
         assert app.editor_collection.disabled
         assert app.run_query_bar.disabled
-        assert app.schema_viewer.disabled
+        assert app.data_catalog.disabled
         assert not app.results_viewer.disabled
 
         await pilot.press("f9")
-        # results viewer and schema viewer should be visible
+        # results viewer and data catalog should be visible
         assert not app.sidebar_hidden
-        assert not app.schema_viewer.disabled
+        assert not app.data_catalog.disabled
         assert app.full_screen
         assert app.editor_collection.disabled
         assert app.run_query_bar.disabled
@@ -353,7 +353,7 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
 async def test_data_catalog(app_multi_db: Harlequin) -> None:
     app = app_multi_db
     async with app.run_test() as pilot:
-        catalog = app.schema_viewer
+        catalog = app.data_catalog
         assert not catalog.show_root
 
         # this test app has two databases attached.

@@ -17,7 +17,7 @@ class CatalogItem:
     query_name: str
 
 
-class SchemaViewer(Tree[CatalogItem]):
+class DataCatalog(Tree[CatalogItem]):
     BINDINGS = [
         Binding(
             "ctrl+enter",
