@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 
 import pytest
+from harlequin import Harlequin
 from harlequin.cache import (
     BufferState,
     Cache,
@@ -11,7 +12,6 @@ from harlequin.cache import (
     load_cache,
     write_cache,
 )
-from harlequin.tui import Harlequin
 
 
 @pytest.fixture

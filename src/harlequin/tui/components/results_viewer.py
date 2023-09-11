@@ -2,6 +2,7 @@ import asyncio
 from typing import Dict, Iterator, List, Tuple, Union
 
 import duckdb
+from harlequin.tui.utils import short_type
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -18,8 +19,6 @@ from textual.widgets import (
     Tabs,
 )
 from textual.worker import Worker, WorkerState
-
-from harlequin.tui.utils import short_type
 
 
 class ResultsTable(DataTable):

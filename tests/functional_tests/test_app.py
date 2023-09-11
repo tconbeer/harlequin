@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from harlequin.tui import Harlequin
+from harlequin import Harlequin
 from harlequin.tui.components import ErrorModal, ExportScreen
 from harlequin.tui.components.results_viewer import ResultsTable
 from textual.geometry import Offset
@@ -10,7 +10,7 @@ from textual.geometry import Offset
 @pytest.fixture(autouse=True)
 def no_use_buffer_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("harlequin.tui.components.code_editor.load_cache", lambda: None)
-    monkeypatch.setattr("harlequin.tui.app.write_cache", lambda *_: None)
+    monkeypatch.setattr("harlequin.app.write_cache", lambda *_: None)
 
 
 @pytest.mark.asyncio
