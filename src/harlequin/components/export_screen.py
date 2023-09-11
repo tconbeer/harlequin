@@ -106,6 +106,21 @@ class CSVOptionsMenu(OptionsMenu):
             yield NoFocusLabel("Encoding:", classes="input_label")
             yield Input(value="UTF8", id="encoding")
 
+    @property
+    def current_options(self) -> CSVOptions:
+        return CSVOptions(
+            header=self.header.value,
+            sep=self.sep.value,
+            compression=self.compression.value,  # type: ignore
+            force_quote=self.force_quote.value,
+            dateformat=self.dateformat.value,
+            timestampformat=self.timestampformat.value,
+            quote=self.quote.value,
+            escape=self.escape.value,
+            nullstr=self.nullstr.value,
+            encoding=self.encoding.value,
+        )
+
     def on_mount(self) -> None:
         self.header = self.query_one("#header", Switch)
         self.header.tooltip = "Switch on to include column name headers."
@@ -139,21 +154,6 @@ class CSVOptionsMenu(OptionsMenu):
         self.encoding = self.query_one("#encoding", Input)
         self.encoding.tooltip = "Only UTF8 is currently supported by DuckDB.s"
 
-    @property
-    def current_options(self) -> CSVOptions:
-        return CSVOptions(
-            header=self.header.value,
-            sep=self.sep.value,
-            compression=self.compression.value,  # type: ignore
-            force_quote=self.force_quote.value,
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-            quote=self.quote.value,
-            escape=self.escape.value,
-            nullstr=self.nullstr.value,
-            encoding=self.encoding.value,
-        )
-
 
 class ParquetOptionsMenu(OptionsMenu):
     def compose(self) -> ComposeResult:
@@ -177,12 +177,6 @@ class ParquetOptionsMenu(OptionsMenu):
         #     yield NoFocusLabel("Field IDs:", classes="input_label")
         #     yield Input(value='', id="field_ids")
 
-    def on_mount(self) -> None:
-        self.compression = self.query_one("#compression", Select)
-        # not yet supported in python API
-        # self.row_group_size = self.query_one("#row_group_size", Input)
-        # self.field_ids = self.query_one("#field_ids", Input)
-
     @property
     def current_options(self) -> ParquetOptions:
         return ParquetOptions(
@@ -191,6 +185,12 @@ class ParquetOptionsMenu(OptionsMenu):
             # row_group_size = int(self.row_group_size.value),
             # field_ids = self.field_ids.value,
         )
+
+    def on_mount(self) -> None:
+        self.compression = self.query_one("#compression", Select)
+        # not yet supported in python API
+        # self.row_group_size = self.query_one("#row_group_size", Input)
+        # self.field_ids = self.query_one("#field_ids", Input)
 
 
 class JSONOptionsMenu(OptionsMenu):
@@ -218,6 +218,15 @@ class JSONOptionsMenu(OptionsMenu):
             yield NoFocusLabel("Timestamp Format:", classes="input_label")
             yield Input(value="", placeholder="%c", id="timestampformat")
 
+    @property
+    def current_options(self) -> JSONOptions:
+        return JSONOptions(
+            array=self.array.value,
+            compression=self.compression.value,  # type: ignore
+            dateformat=self.dateformat.value,
+            timestampformat=self.timestampformat.value,
+        )
+
     def on_mount(self) -> None:
         self.array = self.query_one("#array", Switch)
         self.array.tooltip = (
@@ -237,24 +246,14 @@ class JSONOptionsMenu(OptionsMenu):
             "Specifies the date format to use when writing timestamps."
         )
 
-    @property
-    def current_options(self) -> JSONOptions:
-        return JSONOptions(
-            array=self.array.value,
-            compression=self.compression.value,  # type: ignore
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-        )
-
 
 class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
-    header_text = """
-        Export the results of your query to a CSV, Parquet, or JSON file.
-    """.split()
-
     def compose(self) -> ComposeResult:
         with Vertical(id="export_outer"):
-            yield Static(" ".join(self.header_text), id="export_header")
+            yield Static(
+                "Export the results of your query to a CSV, Parquet, or JSON file.",
+                id="export_header",
+            )
             yield PathInput(
                 placeholder=(
                     "/path/to/file  (tab autocompletes, enter exports, esc cancels)"
