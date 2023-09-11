@@ -8,7 +8,6 @@ from harlequin.components.export_screen import (
     ParquetOptions,
 )
 from harlequin.components.help_screen import HelpScreen
-from harlequin.components.messages import CursorMoved, ScrollOne
 from harlequin.components.results_viewer import ResultsViewer
 from harlequin.components.run_query_bar import RunQueryBar
 from harlequin.components.schema_viewer import CatalogItem, SchemaViewer
@@ -16,7 +15,6 @@ from harlequin.components.schema_viewer import CatalogItem, SchemaViewer
 __all__ = [
     "CodeEditor",
     "EditorCollection",
-    "CursorMoved",
     "ErrorModal",
     "ExportOptions",
     "CSVOptions",
@@ -28,5 +26,4 @@ __all__ = [
     "RunQueryBar",
     "CatalogItem",
     "SchemaViewer",
-    "ScrollOne",
 ]
