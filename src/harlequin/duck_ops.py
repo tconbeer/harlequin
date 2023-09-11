@@ -7,6 +7,12 @@ from rich import print
 from rich.panel import Panel
 
 from harlequin.exception import HarlequinExit
+from harlequin.export_options import (
+    CSVOptions,
+    ExportOptions,
+    JSONOptions,
+    ParquetOptions,
+)
 
 COLS = List[Tuple[str, str]]
 TABLES = List[Tuple[str, str, COLS]]
@@ -122,6 +128,53 @@ def connect(
             raise HarlequinExit() from None
 
     return connection
+
+
+def export_relation(
+    relation: duckdb.DuckDBPyRelation,
+    connection: duckdb.DuckDBPyConnection,
+    path: Path,
+    options: ExportOptions,
+) -> None:
+    final_path = str(path.expanduser())
+    if isinstance(options, CSVOptions):
+        relation.write_csv(
+            file_name=final_path,
+            sep=options.sep,
+            na_rep=options.nullstr,
+            header=options.header,
+            quotechar=options.quote,
+            escapechar=options.escape,
+            date_format=options.dateformat if options.dateformat else None,
+            timestamp_format=options.timestampformat
+            if options.timestampformat
+            else None,
+            quoting="ALL" if options.force_quote else None,
+            compression=options.compression,
+            encoding=options.encoding,
+        )
+    elif isinstance(options, ParquetOptions):
+        relation.write_parquet(file_name=final_path, compression=options.compression)
+    elif isinstance(options, JSONOptions):
+        compression = (
+            f", COMPRESSION {options.compression}"
+            if options.compression in ("gzip", "zstd", "uncompressed")
+            else ""
+        )
+        print("compression: ", compression)
+        date_format = f", DATEFORMAT {options.dateformat}" if options.dateformat else ""
+        ts_format = (
+            f", TIMESTAMPFORMAT {options.timestampformat}"
+            if options.timestampformat
+            else ""
+        )
+        connection.sql(
+            f"copy ({relation.sql_query()}) to '{final_path}' "
+            "(FORMAT JSON"
+            f"{', ARRAY TRUE' if options.array else ''}"
+            f"{compression}{date_format}{ts_format}"
+            ")"
+        )
 
 
 def get_catalog(conn: duckdb.DuckDBPyConnection) -> Catalog:

@@ -1,6 +1,5 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Tuple, Union
+from typing import Tuple
 
 from textual import events
 from textual.app import ComposeResult
@@ -10,7 +9,13 @@ from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual_textarea import PathInput
 
-from harlequin.components import ErrorModal
+from harlequin.components.error_modal import ErrorModal
+from harlequin.export_options import (
+    CSVOptions,
+    ExportOptions,
+    JSONOptions,
+    ParquetOptions,
+)
 
 
 class NoFocusLabel(Label, can_focus=False):
@@ -19,42 +24,6 @@ class NoFocusLabel(Label, can_focus=False):
 
 class NoFocusVerticalScroll(VerticalScroll, can_focus=False):
     pass
-
-
-@dataclass
-class CSVOptions:
-    # https://duckdb.org/docs/sql/statements/copy#csv-options
-    compression: Literal["gzip", "zstd", "none", "auto"] = "auto"
-    force_quote: bool = False
-    dateformat: str = ""
-    sep: str = ","
-    quote: str = '"'
-    escape: str = '"'
-    header: bool = False
-    nullstr: str = ""
-    timestampformat: str = ""
-    encoding: str = "UTF8"
-
-
-@dataclass
-class ParquetOptions:
-    # https://duckdb.org/docs/sql/statements/copy#parquet-options
-    compression: Literal["snappy", "gzip", "ztd"] = "snappy"
-    # not yet supported in python API
-    # row_group_size: int = 122880
-    # field_ids: Optional[Union[Literal["auto"], Dict[str, int]]] = None
-
-
-@dataclass
-class JSONOptions:
-    # https://duckdb.org/docs/sql/statements/copy#json-options
-    compression: Literal["gzip", "zstd", "uncompressed", "auto"] = "auto"
-    dateformat: str = ""
-    timestampformat: str = ""
-    array: bool = False
-
-
-ExportOptions = Union[CSVOptions, ParquetOptions, JSONOptions]
 
 
 class OptionsMenu(Widget, can_focus=False):

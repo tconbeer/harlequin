@@ -22,20 +22,17 @@ from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CatalogItem,
     CodeEditor,
-    CSVOptions,
     DataCatalog,
     EditorCollection,
     ErrorModal,
-    ExportOptions,
     ExportScreen,
     HelpScreen,
-    JSONOptions,
-    ParquetOptions,
     ResultsViewer,
     RunQueryBar,
 )
-from harlequin.duck_ops import connect, get_catalog
+from harlequin.duck_ops import connect, export_relation, get_catalog
 from harlequin.exception import HarlequinExit
+from harlequin.export_options import ExportOptions
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -44,7 +41,6 @@ class Harlequin(App, inherit_bindings=False):
     """
 
     CSS_PATH = "global.tcss"
-    MAX_RESULTS = 10_000
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -57,6 +53,8 @@ class Harlequin(App, inherit_bindings=False):
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
         Binding("ctrl+e", "export", "Export Data", show=False),
     ]
+
+    MAX_RESULTS = 10_000
 
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
@@ -114,23 +112,6 @@ class Harlequin(App, inherit_bindings=False):
                 )
         yield Footer()
 
-    async def on_mount(self) -> None:
-        self.data_catalog = self.query_one(DataCatalog)
-        self.editor_collection = self.query_one(EditorCollection)
-        self.editor = self.editor_collection.current_editor
-        self.results_viewer = self.query_one(ResultsViewer)
-        self.run_query_bar = self.query_one(RunQueryBar)
-        self.footer = self.query_one(Footer)
-
-        self.editor.focus()
-        self.run_query_bar.checkbox.value = False
-
-        worker = self.update_schema_data()
-        await worker.wait()
-
-    def _set_query_text(self) -> None:
-        self.query_text = self._validate_selection() or self.editor.current_query
-
     def push_screen(
         self,
         screen: Union[Screen[ScreenResultType], str],
@@ -146,13 +127,24 @@ class Harlequin(App, inherit_bindings=False):
             self.editor.text_input.blink_timer.resume()
         return new_screen
 
-    def on_editor_collection_editor_switched(
-        self, message: EditorCollection.EditorSwitched
-    ) -> None:
-        if message.active_editor is not None:
-            self.editor = message.active_editor
-        else:
-            self.editor = self.editor_collection.current_editor
+    async def on_mount(self) -> None:
+        self.data_catalog = self.query_one(DataCatalog)
+        self.editor_collection = self.query_one(EditorCollection)
+        self.editor = self.editor_collection.current_editor
+        self.results_viewer = self.query_one(ResultsViewer)
+        self.run_query_bar = self.query_one(RunQueryBar)
+        self.footer = self.query_one(Footer)
+
+        self.editor.focus()
+        self.run_query_bar.checkbox.value = False
+
+        worker = self._update_schema_data()
+        await worker.wait()
+
+    def on_button_pressed(self, message: Button.Pressed) -> None:
+        message.stop()
+        if message.control.id == "run_query":
+            self._set_query_text()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
         message.stop()
@@ -166,36 +158,16 @@ class Harlequin(App, inherit_bindings=False):
             self.editor.insert_text_at_selection(text=message.node.data.query_name)
             self.editor.focus()
 
-    def on_button_pressed(self, message: Button.Pressed) -> None:
-        message.stop()
-        if message.control.id == "run_query":
-            self._set_query_text()
+    def on_editor_collection_editor_switched(
+        self, message: EditorCollection.EditorSwitched
+    ) -> None:
+        if message.active_editor is not None:
+            self.editor = message.active_editor
+        else:
+            self.editor = self.editor_collection.current_editor
 
     def on_text_area_cursor_moved(self) -> None:
         self.selection_text = self._validate_selection()
-
-    def _validate_selection(self) -> str:
-        """
-        If the selection is valid query, return it. Otherwise
-        return the empty string.
-        """
-        selection = self.editor.selected_text
-        if selection:
-            escaped = selection.replace("'", "''")
-            try:
-                (parsed,) = self.connection.sql(  # type: ignore
-                    f"select json_serialize_sql('{escaped}')"
-                ).fetchone()
-            except Exception:
-                return ""
-            result = json.loads(parsed)
-            # DDL statements return an error of type "not implemented"
-            if result.get("error", True) and result.get("error_type", "") == "parser":
-                return ""
-            else:
-                return selection
-        else:
-            return ""
 
     def on_checkbox_changed(self, message: Checkbox.Changed) -> None:
         """
@@ -239,123 +211,6 @@ class Harlequin(App, inherit_bindings=False):
         message.stop()
         self.run_query_bar.set_responsive()
 
-    def action_export(self) -> None:
-        def export_data(screen_data: Tuple[Path, ExportOptions]) -> None:
-            assert self.relations, "Internal error! Could not export relation (None)"
-            active_table = self.results_viewer.get_visible_table()
-            if active_table is None or active_table.id is None:
-                return
-            relation = self.relations[active_table.id]
-            raw_path = screen_data[0]
-            options = screen_data[1]
-            path = str(raw_path.expanduser())
-            try:
-                if isinstance(options, CSVOptions):
-                    relation.write_csv(
-                        file_name=path,
-                        sep=options.sep,
-                        na_rep=options.nullstr,
-                        header=options.header,
-                        quotechar=options.quote,
-                        escapechar=options.escape,
-                        date_format=options.dateformat if options.dateformat else None,
-                        timestamp_format=options.timestampformat
-                        if options.timestampformat
-                        else None,
-                        quoting="ALL" if options.force_quote else None,
-                        compression=options.compression,
-                        encoding=options.encoding,
-                    )
-                elif isinstance(options, ParquetOptions):
-                    relation.write_parquet(
-                        file_name=path, compression=options.compression
-                    )
-                elif isinstance(options, JSONOptions):
-                    compression = (
-                        f", COMPRESSION {options.compression}"
-                        if options.compression in ("gzip", "zstd", "uncompressed")
-                        else ""
-                    )
-                    print("compression: ", compression)
-                    date_format = (
-                        f", DATEFORMAT {options.dateformat}"
-                        if options.dateformat
-                        else ""
-                    )
-                    ts_format = (
-                        f", TIMESTAMPFORMAT {options.timestampformat}"
-                        if options.timestampformat
-                        else ""
-                    )
-                    self.connection.sql(
-                        f"copy ({relation.sql_query()}) to '{path}' "
-                        "(FORMAT JSON"
-                        f"{', ARRAY TRUE' if options.array else ''}"
-                        f"{compression}{date_format}{ts_format}"
-                        ")"
-                    )
-            except (OSError, duckdb.InvalidInputException, duckdb.BinderException) as e:
-                self.app.push_screen(
-                    ErrorModal(
-                        title="Export Data Error",
-                        header=("Could not export data."),
-                        error=e,
-                    )
-                )
-
-        if not self.relations:
-            self.app.push_screen(
-                ErrorModal(
-                    title="Export Data Error",
-                    header=("Could not export data."),
-                    error=ValueError(
-                        "There is no data to export. Run the query first."
-                    ),
-                )
-            )
-        else:
-            self.app.push_screen(ExportScreen(id="export_screen"), export_data)
-
-    async def action_quit(self) -> None:
-        buffers = []
-        for i, editor in enumerate(self.editor_collection.all_editors):
-            if editor == self.editor_collection.current_editor:
-                focus_index = i
-            buffers.append(
-                BufferState(editor.cursor, editor.selection_anchor, editor.text)
-            )
-        write_cache(Cache(focus_index=focus_index, buffers=buffers))
-        await super().action_quit()
-
-    def action_focus_query_editor(self) -> None:
-        self.editor.focus()
-
-    def action_focus_results_viewer(self) -> None:
-        self.results_viewer.focus()
-
-    def action_focus_data_catalog(self) -> None:
-        if self.sidebar_hidden or self.data_catalog.disabled:
-            self.action_toggle_sidebar()
-        self.data_catalog.focus()
-
-    def action_toggle_sidebar(self) -> None:
-        """
-        sidebar_hidden and self.sidebar.disabled both hold important state.
-        The sidebar can be hidden with either ctrl+b or f10, and we need
-        to persist the state depending on how that happens
-        """
-        if self.sidebar_hidden is False and self.data_catalog.disabled is True:
-            # sidebar was hidden by f10; toggle should show it
-            self.data_catalog.disabled = False
-        else:
-            self.sidebar_hidden = not self.sidebar_hidden
-
-    def action_toggle_full_screen(self) -> None:
-        self.full_screen = not self.full_screen
-
-    def action_show_help_screen(self) -> None:
-        self.push_screen(HelpScreen(id="help_screen"))
-
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
         other_widgets = [self.run_query_bar, self.footer]
@@ -380,18 +235,6 @@ class Harlequin(App, inherit_bindings=False):
             for w in all_widgets:
                 w.disabled = False
             self.data_catalog.disabled = self.sidebar_hidden
-
-    def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
-        if sidebar_hidden:
-            if self.data_catalog.has_focus:
-                self.editor.focus()
-        self.data_catalog.disabled = sidebar_hidden
-
-    def watch_selection_text(self, selection_text: str) -> None:
-        if selection_text:
-            self.run_query_bar.button.label = "Run Selection"
-        else:
-            self.run_query_bar.button.label = "Run Query"
 
     async def watch_query_text(self, query_text: str) -> None:
         if query_text:
@@ -423,12 +266,12 @@ class Harlequin(App, inherit_bindings=False):
                     self.relations = relations
                     if len(relations) < len(query_text.split(";")):
                         # mixed select and DDL statements
-                        self.update_schema_data()
+                        self._update_schema_data()
                 elif bool(query_text.strip()):  # DDL/DML queries only
                     self.run_query_bar.set_responsive()
                     self.results_viewer.set_responsive()
                     self.results_viewer.show_table()
-                    self.update_schema_data()
+                    self._update_schema_data()
                 else:  # blank query
                     self.run_query_bar.set_responsive()
                     self.results_viewer.set_responsive(did_run=False)
@@ -442,34 +285,95 @@ class Harlequin(App, inherit_bindings=False):
         """
         # invalidate results so watch_data runs even if the results are the same
         self.results_viewer.clear_all_tables()
-        self.set_result_viewer_data(relations)
+        self._set_result_viewer_data(relations)
 
-    @work(
-        exclusive=True,
-        exit_on_error=True,
-        group="duck_query_runners",
-        description="fetching data from duckdb.",
-    )
-    async def set_result_viewer_data(
-        self, relations: Dict[str, duckdb.DuckDBPyRelation]
-    ) -> None:
-        data: Dict[str, List[Tuple]] = {}
-        for id_, rel in relations.items():
-            self.results_viewer.push_table(table_id=id_, relation=rel)
+    def watch_selection_text(self, selection_text: str) -> None:
+        if selection_text:
+            self.run_query_bar.button.label = "Run Selection"
+        else:
+            self.run_query_bar.button.label = "Run Query"
+
+    def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
+        if sidebar_hidden:
+            if self.data_catalog.has_focus:
+                self.editor.focus()
+        self.data_catalog.disabled = sidebar_hidden
+
+    def action_export(self) -> None:
+        def _export_data(screen_data: Tuple[Path, ExportOptions]) -> None:
+            assert self.relations, "Internal error! Could not export relation (None)"
+            active_table = self.results_viewer.get_visible_table()
+            if active_table is None or active_table.id is None:
+                return
+            relation = self.relations[active_table.id]
             try:
-                rel_data = rel.fetchall()
-            except duckdb.DataError as e:
-                self.push_screen(
+                export_relation(
+                    relation=relation,
+                    connection=self.connection,
+                    path=screen_data[0],
+                    options=screen_data[1],
+                )
+            except (OSError, duckdb.InvalidInputException, duckdb.BinderException) as e:
+                self.app.push_screen(
                     ErrorModal(
-                        title="DuckDB Error",
-                        header=("DuckDB raised an error when running your query:"),
+                        title="Export Data Error",
+                        header=("Could not export data."),
                         error=e,
                     )
                 )
-                self.results_viewer.show_table()
-            else:
-                data[id_] = rel_data
-        self.results_viewer.data = data
+
+        if not self.relations:
+            self.app.push_screen(
+                ErrorModal(
+                    title="Export Data Error",
+                    header=("Could not export data."),
+                    error=ValueError(
+                        "There is no data to export. Run the query first."
+                    ),
+                )
+            )
+        else:
+            self.app.push_screen(ExportScreen(id="export_screen"), _export_data)
+
+    def action_focus_data_catalog(self) -> None:
+        if self.sidebar_hidden or self.data_catalog.disabled:
+            self.action_toggle_sidebar()
+        self.data_catalog.focus()
+
+    def action_focus_query_editor(self) -> None:
+        self.editor.focus()
+
+    def action_focus_results_viewer(self) -> None:
+        self.results_viewer.focus()
+
+    async def action_quit(self) -> None:
+        buffers = []
+        for i, editor in enumerate(self.editor_collection.all_editors):
+            if editor == self.editor_collection.current_editor:
+                focus_index = i
+            buffers.append(
+                BufferState(editor.cursor, editor.selection_anchor, editor.text)
+            )
+        write_cache(Cache(focus_index=focus_index, buffers=buffers))
+        await super().action_quit()
+
+    def action_show_help_screen(self) -> None:
+        self.push_screen(HelpScreen(id="help_screen"))
+
+    def action_toggle_full_screen(self) -> None:
+        self.full_screen = not self.full_screen
+
+    def action_toggle_sidebar(self) -> None:
+        """
+        sidebar_hidden and self.sidebar.disabled both hold important state.
+        The sidebar can be hidden with either ctrl+b or f10, and we need
+        to persist the state depending on how that happens
+        """
+        if self.sidebar_hidden is False and self.data_catalog.disabled is True:
+            # sidebar was hidden by f10; toggle should show it
+            self.data_catalog.disabled = False
+        else:
+            self.sidebar_hidden = not self.sidebar_hidden
 
     @work(
         exclusive=True,
@@ -490,9 +394,62 @@ class Harlequin(App, inherit_bindings=False):
                 relations[table_id] = rel
         return relations
 
+    def _set_query_text(self) -> None:
+        self.query_text = self._validate_selection() or self.editor.current_query
+
+    @work(
+        exclusive=True,
+        exit_on_error=True,
+        group="duck_query_runners",
+        description="fetching data from duckdb.",
+    )
+    async def _set_result_viewer_data(
+        self, relations: Dict[str, duckdb.DuckDBPyRelation]
+    ) -> None:
+        data: Dict[str, List[Tuple]] = {}
+        for id_, rel in relations.items():
+            self.results_viewer.push_table(table_id=id_, relation=rel)
+            try:
+                rel_data = rel.fetchall()
+            except duckdb.DataError as e:
+                self.push_screen(
+                    ErrorModal(
+                        title="DuckDB Error",
+                        header=("DuckDB raised an error when running your query:"),
+                        error=e,
+                    )
+                )
+                self.results_viewer.show_table()
+            else:
+                data[id_] = rel_data
+        self.results_viewer.data = data
+
     @work(exclusive=True, group="duck_schema_updaters")
-    async def update_schema_data(self) -> None:
+    async def _update_schema_data(self) -> None:
         catalog = get_catalog(self.connection)
         worker = get_current_worker()
         if not worker.is_cancelled:
             self.data_catalog.update_tree(catalog)
+
+    def _validate_selection(self) -> str:
+        """
+        If the selection is valid query, return it. Otherwise
+        return the empty string.
+        """
+        selection = self.editor.selected_text
+        if selection:
+            escaped = selection.replace("'", "''")
+            try:
+                (parsed,) = self.connection.sql(  # type: ignore
+                    f"select json_serialize_sql('{escaped}')"
+                ).fetchone()
+            except Exception:
+                return ""
+            result = json.loads(parsed)
+            # DDL statements return an error of type "not implemented"
+            if result.get("error", True) and result.get("error_type", "") == "parser":
+                return ""
+            else:
+                return selection
+        else:
+            return ""
