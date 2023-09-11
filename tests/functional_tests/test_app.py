@@ -404,7 +404,6 @@ async def test_data_catalog(app_multi_db: Harlequin) -> None:
         await pilot.press("down")
         await pilot.press("enter")
         await pilot.pause()
-        app.save_screenshot(filename="debug.svg", path="./")
 
         col_node = catalog.get_node_at_line(catalog.cursor_line)
         assert col_node is not None
