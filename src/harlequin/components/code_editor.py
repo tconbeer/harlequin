@@ -1,8 +1,6 @@
 import re
 from typing import List, Union
 
-from harlequin.cache import BufferState, load_cache
-from harlequin.tui.components.error_modal import ErrorModal
 from rich.text import TextType
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
@@ -14,6 +12,9 @@ from textual_textarea import TextArea
 from textual_textarea.key_handlers import Cursor
 from textual_textarea.serde import serialize_lines
 from textual_textarea.textarea import TextInput
+
+from harlequin.cache import BufferState, load_cache
+from harlequin.components.error_modal import ErrorModal
 
 
 class EditorCollection(TabbedContent):

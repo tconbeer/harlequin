@@ -2,7 +2,6 @@ import asyncio
 from typing import Dict, Iterator, List, Tuple, Union
 
 import duckdb
-from harlequin.duck_ops import get_column_labels_for_relation
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -19,6 +18,8 @@ from textual.widgets import (
     Tabs,
 )
 from textual.worker import Worker, WorkerState
+
+from harlequin.duck_ops import get_column_labels_for_relation
 
 
 class ResultsTable(DataTable):

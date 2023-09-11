@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Tuple, Union
 
-from harlequin.tui.components import ErrorModal
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -10,6 +9,8 @@ from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual_textarea import PathInput
+
+from harlequin.components import ErrorModal
 
 
 class NoFocusLabel(Label, can_focus=False):

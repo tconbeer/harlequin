@@ -19,9 +19,7 @@ from textual.worker import WorkerFailed, get_current_worker
 
 from harlequin.cache import BufferState, Cache, write_cache
 from harlequin.colors import HarlequinColors
-from harlequin.duck_ops import connect, get_catalog
-from harlequin.exception import HarlequinExit
-from harlequin.tui.components import (
+from harlequin.components import (
     CatalogItem,
     CodeEditor,
     CSVOptions,
@@ -36,6 +34,8 @@ from harlequin.tui.components import (
     RunQueryBar,
     SchemaViewer,
 )
+from harlequin.duck_ops import connect, get_catalog
+from harlequin.exception import HarlequinExit
 
 
 class Harlequin(App, inherit_bindings=False):

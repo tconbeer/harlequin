@@ -2,13 +2,14 @@ from dataclasses import dataclass
 from typing import Generic, List, Set, Tuple, Union
 
 from duckdb import DuckDBPyConnection
-from harlequin.duck_ops import Catalog, get_column_label, get_relation_label
 from rich.text import TextType
 from textual.binding import Binding
 from textual.events import Click
 from textual.message import Message
 from textual.widgets import Tree
 from textual.widgets._tree import EventTreeDataType, TreeNode
+
+from harlequin.duck_ops import Catalog, get_column_label, get_relation_label
 
 
 @dataclass
