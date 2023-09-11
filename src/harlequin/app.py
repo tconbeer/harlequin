@@ -104,9 +104,7 @@ class Harlequin(App, inherit_bindings=False):
         """Create child widgets for the app."""
         with Horizontal():
             yield SchemaViewer(
-                "Data Catalog",
-                connection=self.connection,
-                type_color=self.app_colors.gray,
+                connection=self.connection, type_color=self.app_colors.gray
             )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)

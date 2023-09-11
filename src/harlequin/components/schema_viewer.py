@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Generic, List, Set, Tuple, Union
 
 from duckdb import DuckDBPyConnection
-from rich.text import TextType
 from textual.binding import Binding
 from textual.events import Click
 from textual.message import Message
@@ -19,11 +18,6 @@ class CatalogItem:
 
 
 class SchemaViewer(Tree[CatalogItem]):
-    class NodeSubmitted(Generic[EventTreeDataType], Message):
-        def __init__(self, node: TreeNode[EventTreeDataType]) -> None:
-            self.node: TreeNode[EventTreeDataType] = node
-            super().__init__()
-
     BINDINGS = [
         Binding(
             "ctrl+enter",
@@ -35,15 +29,15 @@ class SchemaViewer(Tree[CatalogItem]):
         Binding("ctrl+j", "submit", "Insert Name", show=False),
     ]
 
-    table_type_mapping = {
-        "BASE TABLE": "t",
-        "LOCAL TEMPORARY": "tmp",
-        "VIEW": "v",
-    }
+    BORDER_TITLE = "Data Catalog"
+
+    class NodeSubmitted(Generic[EventTreeDataType], Message):
+        def __init__(self, node: TreeNode[EventTreeDataType]) -> None:
+            self.node: TreeNode[EventTreeDataType] = node
+            super().__init__()
 
     def __init__(
         self,
-        label: TextType,
         connection: DuckDBPyConnection,
         type_color: str = "#888888",
         data: Union[CatalogItem, None] = None,
@@ -53,21 +47,14 @@ class SchemaViewer(Tree[CatalogItem]):
         disabled: bool = False,
     ) -> None:
         self.connection = connection
-        self.label = label
         self.type_color = type_color
         super().__init__(
-            label, data, name=name, id=id, classes=classes, disabled=disabled
+            "Root", data, name=name, id=id, classes=classes, disabled=disabled
         )
         self.double_click: Union[int, None] = None
 
-    def on_mount(self) -> None:
-        self.border_title = self.label
-        self.show_root = False
-        self.guide_depth = 3
-        self.root.expand()
-
     def update_tree(self, catalog: Catalog) -> None:
-        tree_state = self.get_node_states(self.root)
+        tree_state = self._get_node_states(self.root)
         expanded_nodes: Set[str] = set(tree_state[0])
         # todo: tree's select_node() not working
         # unless the tree is modified, the selection will stay
@@ -112,24 +99,10 @@ class SchemaViewer(Tree[CatalogItem]):
                                 data=CatalogItem(col_identifier, col_name),
                             )
 
-    @classmethod
-    def get_node_states(
-        cls, node: TreeNode[CatalogItem]
-    ) -> Tuple[List[str], Union[str, None]]:
-        expanded_nodes = []
-        selected_node = None
-        if node.is_expanded and node.data is not None:
-            expanded_nodes.append(node.data.qualified_identifier)
-        if node._selected and node.data is not None:
-            selected_node = node.data.qualified_identifier
-        for child in node.children:
-            expanded_children, selected_child = cls.get_node_states(child)
-            expanded_nodes.extend(expanded_children)
-            selected_node = selected_child or selected_node
-        return expanded_nodes, selected_node
-
-    def _clear_double_click(self) -> None:
-        self.double_click = None
+    def on_mount(self) -> None:
+        self.show_root = False
+        self.guide_depth = 3
+        self.root.expand()
 
     async def on_click(self, event: Click) -> None:
         """
@@ -161,3 +134,22 @@ class SchemaViewer(Tree[CatalogItem]):
             node = self.get_node_at_line(self.cursor_line)
             if node is not None:
                 self.post_message(self.NodeSubmitted(node=node))
+
+    def _clear_double_click(self) -> None:
+        self.double_click = None
+
+    @classmethod
+    def _get_node_states(
+        cls, node: TreeNode[CatalogItem]
+    ) -> Tuple[List[str], Union[str, None]]:
+        expanded_nodes = []
+        selected_node = None
+        if node.is_expanded and node.data is not None:
+            expanded_nodes.append(node.data.qualified_identifier)
+        if node._selected and node.data is not None:
+            selected_node = node.data.qualified_identifier
+        for child in node.children:
+            expanded_children, selected_child = cls._get_node_states(child)
+            expanded_nodes.extend(expanded_children)
+            selected_node = selected_child or selected_node
+        return expanded_nodes, selected_node
