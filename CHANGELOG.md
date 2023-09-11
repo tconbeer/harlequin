@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Double-click or press <kbd>ctrl+enter</kbd> on an item in the data catalog to insert the name in the query editor ([#194](https://github.com/tconbeer/harlequin/issues/194)).
+
 ### Bug Fixes and Minor Updates
 
 -   Data table column headers are now bold on terminals that support it ([#203](https://github.com/tconbeer/harlequin/issues/203)).

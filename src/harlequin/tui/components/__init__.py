@@ -11,7 +11,7 @@ from harlequin.tui.components.help_screen import HelpScreen
 from harlequin.tui.components.messages import CursorMoved, ScrollOne
 from harlequin.tui.components.results_viewer import ResultsViewer
 from harlequin.tui.components.run_query_bar import RunQueryBar
-from harlequin.tui.components.schema_viewer import SchemaViewer
+from harlequin.tui.components.schema_viewer import CatalogItem, SchemaViewer
 
 __all__ = [
     "CodeEditor",
@@ -26,6 +26,7 @@ __all__ = [
     "HelpScreen",
     "ResultsViewer",
     "RunQueryBar",
+    "CatalogItem",
     "SchemaViewer",
     "ScrollOne",
 ]
