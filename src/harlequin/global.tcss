@@ -124,7 +124,9 @@ RunQueryBar Input {
     background: $background;
 }
 
-RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQueryBar Input.non-responsive{
+RunQueryBar.non-responsive Checkbox, 
+RunQueryBar.non-responsive Button, 
+RunQueryBar.non-responsive Input {
     text-style: italic;
     background: $background;
 }
