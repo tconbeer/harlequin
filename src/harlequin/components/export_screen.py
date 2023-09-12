@@ -1,6 +1,7 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, Tuple
 
+import duckdb
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -10,12 +11,30 @@ from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual_textarea import PathInput
 
 from harlequin.components.error_modal import ErrorModal
+from harlequin.duck_ops import export_relation
 from harlequin.export_options import (
     CSVOptions,
     ExportOptions,
     JSONOptions,
     ParquetOptions,
 )
+
+
+def export_callback(
+    screen_data: Tuple[Path, ExportOptions],
+    relation: duckdb.DuckDBPyRelation,
+    connection: duckdb.DuckDBPyConnection,
+    error_callback: Callable[[Exception], None],
+) -> None:
+    try:
+        export_relation(
+            relation=relation,
+            connection=connection,
+            path=screen_data[0],
+            options=screen_data[1],
+        )
+    except (OSError, duckdb.Error) as e:
+        error_callback(e)
 
 
 class NoFocusLabel(Label, can_focus=False):

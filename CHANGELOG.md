@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 -   Data table column headers are now bold on terminals that support it ([#203](https://github.com/tconbeer/harlequin/issues/203)).
 -   Bumped TextArea; cursor now better maintains x-position and [other minor fixes](https://github.com/tconbeer/textual-textarea/releases/tag/v0.5.4).
 -   The query editor's cursor no longer blinks when a modal appears above it ([#196](https://github.com/tconbeer/harlequin/issues/196)).
+-   Harlequin now shows the results of successful queries in the Results Viewer if multiple queries are executed and one or more contain errors.
 
 ## [0.0.28] - 2023-09-07
 

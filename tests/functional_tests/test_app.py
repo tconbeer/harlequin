@@ -335,6 +335,8 @@ async def test_multiple_buffers(app: Harlequin) -> None:
         "select",  # errors when building relation
         "select 0::struct(id int)",  # errors when fetching data
         "select; select 0::struct(id int)",  # multiple errors
+        "select 1; select 0::struct(id int)",  # one error, mult queries
+        "select 0::struct(id int); select 1",  # one error, mult queries, err first
     ],
 )
 async def test_query_errors(app: Harlequin, bad_query: str) -> None:
@@ -347,6 +349,10 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
 
         await pilot.press("space")
         assert len(app.screen_stack) == 1
+
+        # data table and query bar should be responsive
+        assert "non-responsive" not in app.run_query_bar.classes
+        assert "non-responsive" not in app.results_viewer.classes
 
 
 @pytest.mark.asyncio

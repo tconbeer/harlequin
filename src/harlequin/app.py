@@ -1,4 +1,5 @@
 import json
+from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
 
@@ -29,10 +30,10 @@ from harlequin.components import (
     HelpScreen,
     ResultsViewer,
     RunQueryBar,
+    export_callback,
 )
-from harlequin.duck_ops import connect, export_relation, get_catalog
+from harlequin.duck_ops import connect, get_catalog
 from harlequin.exception import HarlequinExit
-from harlequin.export_options import ExportOptions
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -248,15 +249,13 @@ class Harlequin(App, inherit_bindings=False):
                 self.run_query_bar.set_responsive()
                 self.results_viewer.set_responsive()
                 self.results_viewer.show_table()
-                self.push_screen(
-                    ErrorModal(
-                        title="DuckDB Error",
-                        header=(
-                            "DuckDB raised an error when compiling "
-                            "or running your query:"
-                        ),
-                        error=e.error,
-                    )
+                self._push_error_modal(
+                    title="DuckDB Error",
+                    header=(
+                        "DuckDB raised an error when compiling "
+                        "or running your query:"
+                    ),
+                    error=e.error,
                 )
             else:
                 self.results_viewer.clear_all_tables()
@@ -300,40 +299,30 @@ class Harlequin(App, inherit_bindings=False):
         self.data_catalog.disabled = sidebar_hidden
 
     def action_export(self) -> None:
-        def _export_data(screen_data: Tuple[Path, ExportOptions]) -> None:
-            assert self.relations, "Internal error! Could not export relation (None)"
-            active_table = self.results_viewer.get_visible_table()
-            if active_table is None or active_table.id is None:
-                return
-            relation = self.relations[active_table.id]
-            try:
-                export_relation(
-                    relation=relation,
-                    connection=self.connection,
-                    path=screen_data[0],
-                    options=screen_data[1],
-                )
-            except (OSError, duckdb.InvalidInputException, duckdb.BinderException) as e:
-                self.app.push_screen(
-                    ErrorModal(
-                        title="Export Data Error",
-                        header=("Could not export data."),
-                        error=e,
-                    )
-                )
-
-        if not self.relations:
-            self.app.push_screen(
-                ErrorModal(
-                    title="Export Data Error",
-                    header=("Could not export data."),
-                    error=ValueError(
-                        "There is no data to export. Run the query first."
-                    ),
-                )
+        show_export_error = partial(
+            self._push_error_modal,
+            "Export Data Error",
+            "Could not export data.",
+        )
+        active_table = self.results_viewer.get_visible_table()
+        if (
+            not self.relations
+            or active_table is None
+            or active_table.id is None
+            or active_table.id not in self.relations
+        ):
+            show_export_error(
+                error=ValueError("There is no data to export. Run the query first.")
             )
-        else:
-            self.app.push_screen(ExportScreen(id="export_screen"), _export_data)
+            return
+        relation = self.relations[active_table.id]
+        callback = partial(
+            export_callback,
+            relation=relation,
+            connection=self.connection,
+            error_callback=show_export_error,
+        )
+        self.app.push_screen(ExportScreen(id="export_screen"), callback)
 
     def action_focus_data_catalog(self) -> None:
         if self.sidebar_hidden or self.data_catalog.disabled:
@@ -397,6 +386,15 @@ class Harlequin(App, inherit_bindings=False):
     def _set_query_text(self) -> None:
         self.query_text = self._validate_selection() or self.editor.current_query
 
+    def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
+        self.push_screen(
+            ErrorModal(
+                title=title,
+                header=header,
+                error=error,
+            )
+        )
+
     @work(
         exclusive=True,
         exit_on_error=True,
@@ -407,21 +405,27 @@ class Harlequin(App, inherit_bindings=False):
         self, relations: Dict[str, duckdb.DuckDBPyRelation]
     ) -> None:
         data: Dict[str, List[Tuple]] = {}
+        errors: List[BaseException] = []
         for id_, rel in relations.items():
-            self.results_viewer.push_table(table_id=id_, relation=rel)
             try:
                 rel_data = rel.fetchall()
             except duckdb.DataError as e:
-                self.push_screen(
-                    ErrorModal(
-                        title="DuckDB Error",
-                        header=("DuckDB raised an error when running your query:"),
-                        error=e,
-                    )
-                )
-                self.results_viewer.show_table()
+                errors.append(e)
+                # self.run_query_bar.set_responsive()
+                # self.results_viewer.set_responsive(did_run=False)
             else:
+                self.results_viewer.push_table(table_id=id_, relation=rel)
                 data[id_] = rel_data
+        if errors:
+            self._push_error_modal(
+                title="DuckDB Error",
+                header=("DuckDB raised an error when running your query:"),
+                error=errors[0],
+            )
+        if not data:
+            self.run_query_bar.set_responsive()
+            self.results_viewer.set_responsive(did_run=len(errors) == len(relations))
+        self.results_viewer.show_table()
         self.results_viewer.data = data
 
     @work(exclusive=True, group="duck_schema_updaters")
