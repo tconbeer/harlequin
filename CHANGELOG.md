@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2023-09-12
+
 ### Features
 
 -   Double-click or press <kbd>ctrl+enter</kbd> on an item in the data catalog to insert the name in the query editor ([#194](https://github.com/tconbeer/harlequin/issues/194)).
@@ -247,7 +249,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/0.0.28...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.0.0...HEAD
+
+[1.0.0]: https://github.com/tconbeer/harlequin/compare/0.0.28...1.0.0
 
 [0.0.28]: https://github.com/tconbeer/harlequin/compare/0.0.26...0.0.28
 
