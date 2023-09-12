@@ -343,6 +343,7 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
     async with app.run_test() as pilot:
         app.editor.text = bad_query
 
+        await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
         assert len(app.screen_stack) == 2
         assert isinstance(app.screen, ErrorModal)
