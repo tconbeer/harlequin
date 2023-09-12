@@ -50,6 +50,17 @@ Vertical:disabled {
     border: none;
 }
 
+Toast {
+    width: auto;
+    background: $background;
+    tint: white 0%;
+    color: $text;
+    border-right: none;
+    border-left: wide $primary;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
 /* DATA CATALOG */
 DataCatalog {
     height: 1fr;
@@ -236,8 +247,12 @@ ErrorModal {
     padding: 1 1 1 2;
 }
 
-#error_info {
+ClickableStatic {
     padding: 0 3 0 0;
+}
+
+ClickableStatic:hover {
+    color: $primary;
 }
 
 #error_footer {

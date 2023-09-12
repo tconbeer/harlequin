@@ -1,9 +1,22 @@
 from typing import Union
 
+import pyperclip
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
+
+
+class ClickableStatic(Static):
+    def on_click(self, message: events.Click) -> None:
+        message.stop()
+        try:
+            pyperclip.copy(str(self.renderable))
+        except pyperclip.PyperclipException:
+            pass
+        else:
+            self.app.notify("Error copied to clipboard.")
 
 
 class ErrorModal(ModalScreen):
@@ -26,12 +39,17 @@ class ErrorModal(ModalScreen):
             yield Static(self.header, id="error_header")
             with Vertical(id="error_inner"):
                 with VerticalScroll():
-                    yield Static(str(self.error), id="error_info")
-            yield Static("Press any key to continue.", id="error_footer")
+                    yield ClickableStatic(str(self.error), id="error_info")
+            yield Static(
+                "Press any key to continue. Click error to copy.", id="error_footer"
+            )
 
     def on_mount(self) -> None:
         container = self.query_one("#error_outer")
         container.border_title = self.title
 
     def on_key(self) -> None:
+        self.app.pop_screen()
+
+    def on_click(self, message: events.Click) -> None:
         self.app.pop_screen()
