@@ -14,7 +14,92 @@ from textual_textarea.serde import serialize_lines
 from textual_textarea.textarea import TextInput
 
 from harlequin.cache import BufferState, load_cache
-from harlequin.tui.components.error_modal import ErrorModal
+from harlequin.components.error_modal import ErrorModal
+
+
+class CodeEditor(TextArea):
+    BINDINGS = [
+        Binding(
+            "ctrl+enter",
+            "submit",
+            "Run Query",
+            key_display="CTRL+ENTER / CTRL+J",
+            show=True,
+        ),
+        Binding("ctrl+j", "submit", "Run Query", show=False),
+        Binding("f4", "format", "Format Query", show=True),
+    ]
+
+    class Submitted(Message, bubble=True):
+        """Posted when user runs the query.
+
+        Attributes:
+            lines: The lines of code being submitted.
+            cursor: The position of the cursor
+        """
+
+        def __init__(self, text: str) -> None:
+            super().__init__()
+            self.text = text
+
+    @property
+    def current_query(self) -> str:
+        semicolons = self._semicolons
+
+        if not semicolons:
+            return self.text
+
+        before = Cursor(0, 0)
+        after: Union[None, Cursor] = None
+        for c in semicolons:
+            if c <= self.cursor:
+                before = c
+            elif after is None and c > self.cursor:
+                after = c
+                break
+        else:
+            after = Cursor(
+                len(self.text_input.lines) - 1, len(self.text_input.lines[-1]) - 1
+            )
+        lines, first, last = self.text_input._get_selected_lines(before, after)
+        lines[-1] = lines[-1][: last.pos]
+        lines[0] = lines[0][first.pos :]
+        return serialize_lines(lines)
+
+    def on_mount(self) -> None:
+        self.post_message(EditorCollection.EditorSwitched(active_editor=self))
+
+    def on_unmount(self) -> None:
+        self.post_message(EditorCollection.EditorSwitched(active_editor=None))
+
+    async def action_submit(self) -> None:
+        self.post_message(self.Submitted(self.text))
+
+    def action_format(self) -> None:
+        text_input = self.query_one(TextInput)
+        old_cursor = text_input.cursor
+
+        try:
+            self.text = format_string(self.text, Mode())
+        except SqlfmtError as e:
+            self.app.push_screen(
+                ErrorModal(
+                    title="Formatting Error",
+                    header="There was an error while formatting your file:",
+                    error=e,
+                )
+            )
+        else:
+            text_input.move_cursor(old_cursor.pos, old_cursor.lno)
+            text_input.update(text_input._content)
+
+    @property
+    def _semicolons(self) -> List[Cursor]:
+        semicolons: List[Cursor] = []
+        for i, line in enumerate(self.text_input.lines):
+            for pos in [m.span()[1] for m in re.finditer(";", line)]:
+                semicolons.append(Cursor(i, pos))
+        return semicolons
 
 
 class EditorCollection(TabbedContent):
@@ -23,6 +108,13 @@ class EditorCollection(TabbedContent):
         Binding("ctrl+w", "close_buffer", "Close Tab", show=False),
         Binding("ctrl+k", "next_buffer", "Next Tab", show=False),
     ]
+
+    BORDER_TITLE = "Query Editor"
+
+    class EditorSwitched(Message):
+        def __init__(self, active_editor: Union[CodeEditor, None]) -> None:
+            self.active_editor = active_editor
+            super().__init__()
 
     def __init__(
         self,
@@ -47,13 +139,26 @@ class EditorCollection(TabbedContent):
         self.theme = theme
         self.counter = 0
 
-    class EditorSwitched(Message):
-        def __init__(self, active_editor: Union["CodeEditor", None]) -> None:
-            self.active_editor = active_editor
-            super().__init__()
+    @property
+    def current_editor(self) -> CodeEditor:
+        content = self.query_one(ContentSwitcher)
+        active_tab_id = self.active
+        if active_tab_id:
+            try:
+                tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
+                return tab_pane.query_one(CodeEditor)
+            except NoMatches:
+                pass
+        all_editors = content.query(CodeEditor)
+        return all_editors.first(CodeEditor)
+
+    @property
+    def all_editors(self) -> List[CodeEditor]:
+        content = self.query_one(ContentSwitcher)
+        all_editors = content.query(CodeEditor)
+        return list(all_editors)
 
     async def on_mount(self) -> None:
-        self.border_title = "Query Editor"
         self.add_class("hide-tabs")
         cache = load_cache()
         if cache is not None:
@@ -68,25 +173,6 @@ class EditorCollection(TabbedContent):
 
     def on_focus(self) -> None:
         self.current_editor.focus()
-
-    @property
-    def current_editor(self) -> "CodeEditor":
-        content = self.query_one(ContentSwitcher)
-        active_tab_id = self.active
-        if active_tab_id:
-            try:
-                tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
-                return tab_pane.query_one(CodeEditor)
-            except NoMatches:
-                pass
-        all_editors = content.query(CodeEditor)
-        return all_editors.first(CodeEditor)
-
-    @property
-    def all_editors(self) -> List["CodeEditor"]:
-        content = self.query_one(ContentSwitcher)
-        all_editors = content.query(CodeEditor)
-        return list(all_editors)
 
     def on_tabbed_content_tab_activated(
         self, message: TabbedContent.TabActivated
@@ -138,87 +224,3 @@ class EditorCollection(TabbedContent):
         self.active = lookup[active]  # type: ignore
         self.post_message(self.EditorSwitched(active_editor=None))
         self.current_editor.focus()
-
-
-class CodeEditor(TextArea):
-    BINDINGS = [
-        Binding(
-            "ctrl+enter",
-            "submit",
-            "Run Query",
-            key_display="CTRL+ENTER / CTRL+J",
-            show=True,
-        ),
-        Binding("ctrl+j", "submit", "Run Query", show=False),
-        Binding("f4", "format", "Format Query", show=True),
-    ]
-
-    class Submitted(Message, bubble=True):
-        """Posted when user runs the query.
-
-        Attributes:
-            lines: The lines of code being submitted.
-            cursor: The position of the cursor
-        """
-
-        def __init__(self, text: str) -> None:
-            super().__init__()
-            self.text = text
-
-    def on_mount(self) -> None:
-        self.post_message(EditorCollection.EditorSwitched(active_editor=self))
-
-    def on_unmount(self) -> None:
-        self.post_message(EditorCollection.EditorSwitched(active_editor=None))
-
-    async def action_submit(self) -> None:
-        self.post_message(self.Submitted(self.text))
-
-    def action_format(self) -> None:
-        text_input = self.query_one(TextInput)
-        old_cursor = text_input.cursor
-
-        try:
-            self.text = format_string(self.text, Mode())
-        except SqlfmtError as e:
-            self.app.push_screen(
-                ErrorModal(
-                    title="Formatting Error",
-                    header="There was an error while formatting your file:",
-                    error=e,
-                )
-            )
-        else:
-            text_input.move_cursor(old_cursor.pos, old_cursor.lno)
-            text_input.update(text_input._content)
-
-    @property
-    def _semicolons(self) -> List[Cursor]:
-        semicolons: List[Cursor] = []
-        for i, line in enumerate(self.text_input.lines):
-            for pos in [m.span()[1] for m in re.finditer(";", line)]:
-                semicolons.append(Cursor(i, pos))
-        return semicolons
-
-    @property
-    def current_query(self) -> str:
-        semicolons = self._semicolons
-        if semicolons:
-            before = Cursor(0, 0)
-            after: Union[None, Cursor] = None
-            for c in semicolons:
-                if c <= self.cursor:
-                    before = c
-                elif after is None and c > self.cursor:
-                    after = c
-                    break
-            else:
-                after = Cursor(
-                    len(self.text_input.lines) - 1, len(self.text_input.lines[-1]) - 1
-                )
-            lines, first, last = self.text_input._get_selected_lines(before, after)
-            lines[-1] = lines[-1][: last.pos]
-            lines[0] = lines[0][first.pos :]
-            return serialize_lines(lines)
-        else:
-            return self.text

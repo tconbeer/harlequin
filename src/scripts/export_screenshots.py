@@ -10,15 +10,15 @@ async def save_all_screenshots() -> None:
         app = Harlequin(["f1.db"], theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
             app.editor.text = "select *\nfrom drivers"
-            app.schema_viewer.root.expand()
-            for child in app.schema_viewer.root.children:
+            app.data_catalog.root.expand()
+            for child in app.data_catalog.root.children:
                 child.expand()
                 for grandchild in child.children:
                     grandchild.expand()
                     for great in grandchild.children:
                         if str(great.label).startswith("drivers"):
                             great.expand()
-            app.schema_viewer.cursor_line = 7
+            app.data_catalog.cursor_line = 7
             await pilot.press("ctrl+j")
             app.save_screenshot(filename=f"{theme}.svg", path="./static/themes/")
         app.exit()

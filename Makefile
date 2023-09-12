@@ -17,4 +17,4 @@ serve:
 
 .PHONY: screenshots
 screenshots:
-	python src/marketer/export_screenshots.py
+	python src/scripts/export_screenshots.py

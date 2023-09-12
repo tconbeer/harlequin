@@ -1,1 +1,1 @@
-from harlequin.tui.app import Harlequin as Harlequin
+from harlequin.app import Harlequin as Harlequin

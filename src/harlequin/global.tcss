@@ -5,17 +5,26 @@ $border-color-focus: $primary;
 $border-title-color-focus: $primary;
 
 /* ALL WIDGETS */
-SchemaViewer, EditorCollection, ResultsViewer {
+DataCatalog,
+EditorCollection,
+ResultsViewer {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
     background: $background;
 }
-SchemaViewer:focus, EditorCollection:focus-within, ResultsViewer:focus-within {
+
+DataCatalog:focus,
+EditorCollection:focus-within,
+ResultsViewer:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
 
-SchemaViewer, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
+DataCatalog,
+EditorCollection,
+ResultsTable,
+TextContainer,
+VerticalScroll {
     scrollbar-background: $background-lighten-1;
     scrollbar-background-hover: $background-lighten-1;
     scrollbar-background-active: $background-lighten-1;
@@ -26,26 +35,37 @@ SchemaViewer, EditorCollection, TextContainer, ResultsTable, VerticalScroll {
     scrollbar-color-active: $secondary;
 }
 
-SchemaViewer:disabled, EditorCollection:disabled, CodeEditor:disabled, ResultsTable:disabled, RunQueryBar:disabled, ContentSwitcher:disabled, Footer:disabled, Vertical:disabled, Container:disabled {
+CodeEditor:disabled,
+Container:disabled,
+ContentSwitcher:disabled,
+DataCatalog:disabled,
+EditorCollection:disabled,
+Footer:disabled,
+ResultsTable:disabled,
+RunQueryBar:disabled,
+Vertical:disabled {
     width: 0;
     height: 0;
     padding: 0 0;
     border: none;
 }
 
-/* SCHEMA VIEWER */
-SchemaViewer {
+/* DATA CATALOG */
+DataCatalog {
     height: 1fr;
     width: 1fr;
     padding: 0 1;
 }
-SchemaViewer .tree--guides {
+
+DataCatalog .tree--guides {
     color: $primary;
 }
-SchemaViewer .tree--guides-hover {
+
+DataCatalog .tree--guides-hover {
     color: $primary;
 }
-SchemaViewer .tree--guides-selected {
+
+DataCatalog .tree--guides-selected {
     color: $secondary;
 }
 
@@ -54,11 +74,12 @@ SchemaViewer .tree--guides-selected {
     width: 3fr;
 }
 
-
-EditorCollection, CodeEditor {
+CodeEditor,
+EditorCollection {
     height: 1fr;
     width: 100%;
 }
+
 /* RUN QUERY BAR */
 RunQueryBar {
     height: 1;
@@ -67,97 +88,123 @@ RunQueryBar {
     padding: 0 2 0 0;
     background: $background;
 }
+
 RunQueryBar Input {
     border: none;
     padding: 0;
     width: 6;
     background: $background;
 }
+
 RunQueryBar Input.-invalid {
     border: none;
     color: $error
 }
+
 Tooltip {
     border: round $border-color-focus;
     background: $background;
 }
+
 RunQueryBar Button {
     background: $primary;
     border: none;
     height: 1;
     margin: 0 0 0 4;
 }
+
 RunQueryBar Button:hover {
     background: $secondary;
 }
+
 RunQueryBar Button:focus {
     text-style: reverse;
 }
+
 RunQueryBar Checkbox {
     border: none;
     padding: 0;
     background: $background;
 }
+
 RunQueryBar Checkbox:focus > .toggle--label {
     text-style: none;
 }
+
 RunQueryBar Checkbox > .toggle--button {
     background: $panel
 }
+
 RunQueryBar Checkbox:hover {
     background: $background-lighten-1;
 }
+
 RunQueryBar Checkbox:hover > .toggle--button {
     background: $secondary;
 }
+
 RunQueryBar Checkbox.-on > .toggle--button {    
     color: $accent;
     background: $background-lighten-1
 }
+
 RunQueryBar Checkbox.-on:hover > .toggle--button {
     background: $secondary;
 }
-RunQueryBar Input:hover, RunQueryBar Input:focus {
+
+RunQueryBar Input:hover,
+RunQueryBar Input:focus {
     background: $background-lighten-1;
 }
+
 RunQueryBar Input {
     background: $background;
 }
 
-RunQueryBar Checkbox.non-responsive, RunQueryBar Button.non-responsive, RunQueryBar Input.non-responsive{
+RunQueryBar.non-responsive Checkbox, 
+RunQueryBar.non-responsive Button, 
+RunQueryBar.non-responsive Input {
     text-style: italic;
     background: $background;
 }
 
 /* RESULTS VIEWER */
 
-ContentSwitcher, TabPane {
+ContentSwitcher,
+TabPane {
     height: 1fr;
     width: 100%;
 }
+
 .hide-tabs Tabs {
     height: 0;
 }
+
 TabPane {
     padding: 0;
 }
+
 ResultsViewer.non-responsive {
     border: round $panel-lighten-1;
 }
+
 ResultsTable > .datatable--header {
     text-style: bold;
     background: $background;
     color: $primary;
 }
+
 ResultsTable > .datatable--cursor {
     background: $secondary;
     color: auto;
 }
+
 ResultsTable > .datatable--header-hover {
     text-style: bold;
     background: $background;
     color: $primary;
 }
+
 ResultsTable > .datatable--hover {
     color: $text;
     background: $boost;
@@ -168,6 +215,7 @@ ErrorModal {
     align: center middle;
     padding: 0;
 }
+
 #error_outer {
     border: round $error;
     background: $background;
@@ -204,6 +252,7 @@ HelpScreen {
     align: center middle;
     padding: 0;
 }
+
 #help_outer {
     border: round $border-color-focus;
     background: $background;
@@ -239,6 +288,7 @@ ExportScreen {
     align: center middle;
     padding: 0;
 }
+
 #export_outer {
     border: round $border-color-focus;
     background: $background;
@@ -326,7 +376,9 @@ ExportScreen Switch.-on > .switch--slider {
     border: tall transparent;
 }
 
-CSVOptionsMenu, ParquetOptionsMenu, JSONOptionsMenu {
+CSVOptionsMenu,
+ParquetOptionsMenu,
+JSONOptionsMenu {
     height: auto;
 }
 
@@ -342,14 +394,18 @@ ExportScreen Button {
     margin: 0 6;
     border: none;
 }
-ExportScreen Button:hover, #cancel:hover {
-    background: $secondary;
-}
+
 ExportScreen Button:focus {
     text-style: reverse;
 }
+
 #cancel{
     background: $panel;
+}
+
+ExportScreen Button:hover,
+#cancel:hover {
+    background: $secondary;
 }
 
 /* FOOTER */
@@ -359,6 +415,7 @@ Footer {
     dock: bottom;
     height: 1;
 }
+
 Footer > .footer--highlight {
     background: $boost;
     color: $secondary;

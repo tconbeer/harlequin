@@ -1,10 +1,8 @@
 # harlequin
 
-A Terminal-based SQL IDE for DuckDB.
+The DuckDB IDE for Your Terminal.
 
 ![harlequin TUI](static/themes/monokai.svg)
-
-(A Harlequin is also a [pretty duck](https://en.wikipedia.org/wiki/Harlequin_duck).)
 
 
 ## Installing Harlequin

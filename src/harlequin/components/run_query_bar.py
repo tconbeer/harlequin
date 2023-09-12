@@ -37,6 +37,12 @@ class RunQueryBar(Horizontal):
         )
         yield Button("Run Query", id="run_query")
 
+    def set_not_responsive(self) -> None:
+        self.add_class("non-responsive")
+
+    def set_responsive(self) -> None:
+        self.remove_class("non-responsive")
+
     def on_mount(self) -> None:
         self.checkbox = self.query_one(Checkbox)
         self.input = self.query_one(Input)
@@ -55,13 +61,3 @@ class RunQueryBar(Horizontal):
                 self.checkbox.value = True
             else:
                 self.checkbox.value = False
-
-    def set_not_responsive(self) -> None:
-        self.checkbox.add_class("non-responsive")
-        self.input.add_class("non-responsive")
-        self.button.add_class("non-responsive")
-
-    def set_responsive(self) -> None:
-        self.checkbox.remove_class("non-responsive")
-        self.input.remove_class("non-responsive")
-        self.button.remove_class("non-responsive")

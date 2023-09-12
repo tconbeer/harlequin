@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Tuple, Union
+from typing import Callable, Tuple
 
+import duckdb
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -10,7 +10,31 @@ from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual_textarea import PathInput
 
-from harlequin.tui.components import ErrorModal
+from harlequin.components.error_modal import ErrorModal
+from harlequin.duck_ops import export_relation
+from harlequin.export_options import (
+    CSVOptions,
+    ExportOptions,
+    JSONOptions,
+    ParquetOptions,
+)
+
+
+def export_callback(
+    screen_data: Tuple[Path, ExportOptions],
+    relation: duckdb.DuckDBPyRelation,
+    connection: duckdb.DuckDBPyConnection,
+    error_callback: Callable[[Exception], None],
+) -> None:
+    try:
+        export_relation(
+            relation=relation,
+            connection=connection,
+            path=screen_data[0],
+            options=screen_data[1],
+        )
+    except (OSError, duckdb.Error) as e:
+        error_callback(e)
 
 
 class NoFocusLabel(Label, can_focus=False):
@@ -19,42 +43,6 @@ class NoFocusLabel(Label, can_focus=False):
 
 class NoFocusVerticalScroll(VerticalScroll, can_focus=False):
     pass
-
-
-@dataclass
-class CSVOptions:
-    # https://duckdb.org/docs/sql/statements/copy#csv-options
-    compression: Literal["gzip", "zstd", "none", "auto"] = "auto"
-    force_quote: bool = False
-    dateformat: str = ""
-    sep: str = ","
-    quote: str = '"'
-    escape: str = '"'
-    header: bool = False
-    nullstr: str = ""
-    timestampformat: str = ""
-    encoding: str = "UTF8"
-
-
-@dataclass
-class ParquetOptions:
-    # https://duckdb.org/docs/sql/statements/copy#parquet-options
-    compression: Literal["snappy", "gzip", "ztd"] = "snappy"
-    # not yet supported in python API
-    # row_group_size: int = 122880
-    # field_ids: Optional[Union[Literal["auto"], Dict[str, int]]] = None
-
-
-@dataclass
-class JSONOptions:
-    # https://duckdb.org/docs/sql/statements/copy#json-options
-    compression: Literal["gzip", "zstd", "uncompressed", "auto"] = "auto"
-    dateformat: str = ""
-    timestampformat: str = ""
-    array: bool = False
-
-
-ExportOptions = Union[CSVOptions, ParquetOptions, JSONOptions]
 
 
 class OptionsMenu(Widget, can_focus=False):
@@ -106,6 +94,21 @@ class CSVOptionsMenu(OptionsMenu):
             yield NoFocusLabel("Encoding:", classes="input_label")
             yield Input(value="UTF8", id="encoding")
 
+    @property
+    def current_options(self) -> CSVOptions:
+        return CSVOptions(
+            header=self.header.value,
+            sep=self.sep.value,
+            compression=self.compression.value,  # type: ignore
+            force_quote=self.force_quote.value,
+            dateformat=self.dateformat.value,
+            timestampformat=self.timestampformat.value,
+            quote=self.quote.value,
+            escape=self.escape.value,
+            nullstr=self.nullstr.value,
+            encoding=self.encoding.value,
+        )
+
     def on_mount(self) -> None:
         self.header = self.query_one("#header", Switch)
         self.header.tooltip = "Switch on to include column name headers."
@@ -139,21 +142,6 @@ class CSVOptionsMenu(OptionsMenu):
         self.encoding = self.query_one("#encoding", Input)
         self.encoding.tooltip = "Only UTF8 is currently supported by DuckDB.s"
 
-    @property
-    def current_options(self) -> CSVOptions:
-        return CSVOptions(
-            header=self.header.value,
-            sep=self.sep.value,
-            compression=self.compression.value,  # type: ignore
-            force_quote=self.force_quote.value,
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-            quote=self.quote.value,
-            escape=self.escape.value,
-            nullstr=self.nullstr.value,
-            encoding=self.encoding.value,
-        )
-
 
 class ParquetOptionsMenu(OptionsMenu):
     def compose(self) -> ComposeResult:
@@ -177,12 +165,6 @@ class ParquetOptionsMenu(OptionsMenu):
         #     yield NoFocusLabel("Field IDs:", classes="input_label")
         #     yield Input(value='', id="field_ids")
 
-    def on_mount(self) -> None:
-        self.compression = self.query_one("#compression", Select)
-        # not yet supported in python API
-        # self.row_group_size = self.query_one("#row_group_size", Input)
-        # self.field_ids = self.query_one("#field_ids", Input)
-
     @property
     def current_options(self) -> ParquetOptions:
         return ParquetOptions(
@@ -191,6 +173,12 @@ class ParquetOptionsMenu(OptionsMenu):
             # row_group_size = int(self.row_group_size.value),
             # field_ids = self.field_ids.value,
         )
+
+    def on_mount(self) -> None:
+        self.compression = self.query_one("#compression", Select)
+        # not yet supported in python API
+        # self.row_group_size = self.query_one("#row_group_size", Input)
+        # self.field_ids = self.query_one("#field_ids", Input)
 
 
 class JSONOptionsMenu(OptionsMenu):
@@ -218,6 +206,15 @@ class JSONOptionsMenu(OptionsMenu):
             yield NoFocusLabel("Timestamp Format:", classes="input_label")
             yield Input(value="", placeholder="%c", id="timestampformat")
 
+    @property
+    def current_options(self) -> JSONOptions:
+        return JSONOptions(
+            array=self.array.value,
+            compression=self.compression.value,  # type: ignore
+            dateformat=self.dateformat.value,
+            timestampformat=self.timestampformat.value,
+        )
+
     def on_mount(self) -> None:
         self.array = self.query_one("#array", Switch)
         self.array.tooltip = (
@@ -237,24 +234,14 @@ class JSONOptionsMenu(OptionsMenu):
             "Specifies the date format to use when writing timestamps."
         )
 
-    @property
-    def current_options(self) -> JSONOptions:
-        return JSONOptions(
-            array=self.array.value,
-            compression=self.compression.value,  # type: ignore
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-        )
-
 
 class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
-    header_text = """
-        Export the results of your query to a CSV, Parquet, or JSON file.
-    """.split()
-
     def compose(self) -> ComposeResult:
         with Vertical(id="export_outer"):
-            yield Static(" ".join(self.header_text), id="export_header")
+            yield Static(
+                "Export the results of your query to a CSV, Parquet, or JSON file.",
+                id="export_header",
+            )
             yield PathInput(
                 placeholder=(
                     "/path/to/file  (tab autocompletes, enter exports, esc cancels)"
