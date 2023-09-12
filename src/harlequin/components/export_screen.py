@@ -24,6 +24,7 @@ def export_callback(
     screen_data: Tuple[Path, ExportOptions],
     relation: duckdb.DuckDBPyRelation,
     connection: duckdb.DuckDBPyConnection,
+    success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
     try:
@@ -33,6 +34,7 @@ def export_callback(
             path=screen_data[0],
             options=screen_data[1],
         )
+        success_callback()
     except (OSError, duckdb.Error) as e:
         error_callback(e)
 

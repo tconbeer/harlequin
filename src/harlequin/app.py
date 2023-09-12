@@ -270,6 +270,7 @@ class Harlequin(App, inherit_bindings=False):
                     self.run_query_bar.set_responsive()
                     self.results_viewer.set_responsive()
                     self.results_viewer.show_table()
+                    self.notify("DDL/DML executed successfully.")
                     self._update_schema_data()
                 else:  # blank query
                     self.run_query_bar.set_responsive()
@@ -316,10 +317,12 @@ class Harlequin(App, inherit_bindings=False):
             )
             return
         relation = self.relations[active_table.id]
+        notify = partial(self.notify, "Data exported successfully.")
         callback = partial(
             export_callback,
             relation=relation,
             connection=self.connection,
+            success_callback=notify,
             error_callback=show_export_error,
         )
         self.app.push_screen(ExportScreen(id="export_screen"), callback)
