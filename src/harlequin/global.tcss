@@ -147,7 +147,8 @@ RunQueryBar Checkbox > .toggle--button {
 }
 
 RunQueryBar Checkbox:hover {
-    background: $background-lighten-1;
+    # background: $background-lighten-1;
+    text-style: none;
 }
 
 RunQueryBar Checkbox:hover > .toggle--button {
