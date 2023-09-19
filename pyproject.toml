@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "harlequin"
-version = "0.0.28"
-description = "A terminal-based SQL IDE for DuckDB"
+version = "1.0.0"
+description = "The DuckDB IDE for Your Terminal."
 authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
 license = "MIT"
 homepage = "https://harlequin.sh"

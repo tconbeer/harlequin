@@ -1,8 +1,14 @@
-# harlequin
+# Harlequin
+
+[![PyPI](https://img.shields.io/pypi/v/harlequin)](https://pypi.org/project/harlequin/)
+[![Test](https://github.com/tconbeer/harlequin/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/tconbeer/harlequin/actions/workflows/test.yml)
+
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/harlequin)
+![Runs on Linux | MacOS | Windows](https://img.shields.io/badge/runs%20on-Linux%20%7C%20MacOS%20%7C%20Windows-blue)
 
 The DuckDB IDE for Your Terminal.
 
-![harlequin TUI](static/themes/monokai.svg)
+![Harlequin Demo Video](static/harlequin.gif)
 
 
 ## Installing Harlequin

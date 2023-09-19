@@ -1,5 +1,8 @@
 *.db
 *.db.wal
+*.csv
+*.json
+*.parquet
 !tests/data/*/*.db
 *.sql
 Pipfile
