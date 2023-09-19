@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Pasting text into Harlequin's text editor is now more performant and compatible with more terminals. ([#120](https://github.com/tconbeer/textual-textarea/issues/120), [#119](https://github.com/tconbeer/textual-textarea/issues/119)).
+
 ## [1.0.0] - 2023-09-12
 
 ### Features
