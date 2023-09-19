@@ -8,7 +8,7 @@
 
 The DuckDB IDE for Your Terminal.
 
-![harlequin TUI](static/themes/monokai.svg)
+![Harlequin Demo Video](static/harlequin.gif)
 
 
 ## Installing Harlequin
