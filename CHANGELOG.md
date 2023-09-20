@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Harlequin now displays notifications after completing successful queries ([#235](https://github.com/tconbeer/harlequin/issues/235)), saving the contents of a buffer ([#226](https://github.com/tconbeer/harlequin/issues/226)), and receiving an error from the system clipboard.
+
 ## [1.0.1] - 2023-09-21
 
 -   Pasting text into Harlequin's text editor is now more performant and compatible with more terminals. ([#120](https://github.com/tconbeer/textual-textarea/issues/120), [#119](https://github.com/tconbeer/textual-textarea/issues/119)).

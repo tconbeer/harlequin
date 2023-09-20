@@ -8,7 +8,7 @@ from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
-from textual_textarea import TextArea
+from textual_textarea import TextArea, TextAreaSaved
 from textual_textarea.key_handlers import Cursor
 from textual_textarea.serde import serialize_lines
 from textual_textarea.textarea import TextInput
@@ -68,9 +68,23 @@ class CodeEditor(TextArea):
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
+        self.has_shown_clipboard_error = False
 
     def on_unmount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=None))
+
+    def on_text_area_saved(self, message: TextAreaSaved) -> None:
+        self.app.notify(f"Editor contents saved to {message.path}")
+
+    def on_text_area_clipboard_error(self) -> None:
+        if not self.has_shown_clipboard_error:
+            self.app.notify(
+                "Could not access system clipboard. See "
+                "https://harlequin.sh/docs/troubleshooting#copy-paste",
+                severity="error",
+                timeout=10,
+            )
+            self.has_shown_clipboard_error = True
 
     async def action_submit(self) -> None:
         self.post_message(self.Submitted(self.text))
