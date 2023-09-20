@@ -20,6 +20,7 @@ jobs:
     runs-on: Windows-latest
     env:
       motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
+      motherduck_logging: 1
     steps:
       - name: Check out Repo
         uses: actions/checkout@v3
