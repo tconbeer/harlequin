@@ -27,7 +27,7 @@
 - ctrl+a: Select all, move the cursor to the end of the query.
 - ctrl+x: Cut selected text.
 - ctrl+c: Copy selected text.
-- ctrl+v, ctrl+u: Paste selected text.
+- ctrl+v, ctrl+u, shift+insert: Paste selected text.
 - ctrl+z: Undo.
 - ctrl+y: Redo.
 - ctrl+/, ctrl+_: Toggle comments on selected line(s).
