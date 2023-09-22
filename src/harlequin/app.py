@@ -1,4 +1,5 @@
 import json
+import time
 from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
@@ -81,6 +82,7 @@ class Harlequin(App, inherit_bindings=False):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
         self.limit = 500
+        self.query_timer: Union[float, None] = None
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
             self.connection = connect(
@@ -239,6 +241,7 @@ class Harlequin(App, inherit_bindings=False):
 
     async def watch_query_text(self, query_text: str) -> None:
         if query_text:
+            self.query_timer = time.monotonic()
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
@@ -261,16 +264,28 @@ class Harlequin(App, inherit_bindings=False):
                 self.results_viewer.clear_all_tables()
                 self.results_viewer.data = {}
                 relations = worker.result
+                number_of_queries = len(query_text.split(";"))
+                elapsed = time.monotonic() - self.query_timer
                 if relations:  # select query
                     self.relations = relations
-                    if len(relations) < len(query_text.split(";")):
+                    if len(relations) < number_of_queries:
                         # mixed select and DDL statements
+                        n = number_of_queries - len(relations)
+                        self.notify(
+                            f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
+                            f"executed successfully in {elapsed:.2f} seconds."
+                        )
                         self._update_schema_data()
                 elif bool(query_text.strip()):  # DDL/DML queries only
                     self.run_query_bar.set_responsive()
                     self.results_viewer.set_responsive()
                     self.results_viewer.show_table()
-                    self.notify("DDL/DML executed successfully.")
+                    self.notify(
+                        f"{number_of_queries} DDL/DML "
+                        f"{'query' if number_of_queries == 1 else 'queries'} "
+                        f"executed successfully in {elapsed:.2f} seconds."
+                    )
+                    self.query_timer = None
                     self._update_schema_data()
                 else:  # blank query
                     self.run_query_bar.set_responsive()
@@ -414,8 +429,6 @@ class Harlequin(App, inherit_bindings=False):
                 rel_data = rel.fetchall()
             except duckdb.DataError as e:
                 errors.append(e)
-                # self.run_query_bar.set_responsive()
-                # self.results_viewer.set_responsive(did_run=False)
             else:
                 self.results_viewer.push_table(table_id=id_, relation=rel)
                 data[id_] = rel_data
@@ -424,6 +437,12 @@ class Harlequin(App, inherit_bindings=False):
                 title="DuckDB Error",
                 header=("DuckDB raised an error when running your query:"),
                 error=errors[0],
+            )
+        elif self.query_timer is not None:
+            elapsed = time.monotonic() - self.query_timer
+            self.notify(
+                f"{len(relations)} {'query' if len(relations) == 1 else 'queries'} "
+                f"executed successfully in {elapsed:.2f} seconds."
             )
         if not data:
             self.run_query_bar.set_responsive()

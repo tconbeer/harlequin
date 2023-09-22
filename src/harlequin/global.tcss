@@ -61,6 +61,22 @@ Toast {
     margin: 0 0 1 0;
 }
 
+Toast.-information {
+    border-right: none;
+    border-left: wide $primary;
+}
+
+
+Toast.-warning {
+    border-right: none;
+    border-left: wide $secondary;
+}
+
+Toast.-error {
+    border-right: none;
+    border-left: wide $error;
+}
+
 /* DATA CATALOG */
 DataCatalog {
     height: 1fr;
