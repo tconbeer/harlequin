@@ -79,8 +79,8 @@ class CodeEditor(TextArea):
     def on_text_area_clipboard_error(self) -> None:
         if not self.has_shown_clipboard_error:
             self.app.notify(
-                "Could not access system clipboard. See "
-                "https://harlequin.sh/docs/troubleshooting#copy-paste",
+                "Could not access system clipboard.\n"
+                "See https://harlequin.sh/docs/troubleshooting#copying-and-pasting",
                 severity="error",
                 timeout=10,
             )
