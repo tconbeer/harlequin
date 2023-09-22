@@ -29,10 +29,10 @@ class ErrorModal(ModalScreen):
         id: Union[str, None] = None,  # noqa: A002
         classes: Union[str, None] = None,
     ) -> None:
+        super().__init__(name, id, classes)
         self.title = title
         self.header = header
         self.error = error
-        super().__init__(name, id, classes)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="error_outer"):
