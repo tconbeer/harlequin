@@ -3,11 +3,9 @@ from typing import Dict, Union
 from pygments.styles import get_style_by_name
 from pygments.token import Token
 from pygments.util import ClassNotFound
-from rich import print
-from rich.panel import Panel
 from textual.design import ColorSystem
 
-from harlequin.exception import HarlequinExit
+from harlequin.exception import HarlequinThemeError
 
 
 def extract_color(s: str) -> str:
@@ -103,21 +101,8 @@ class HarlequinColors:
     def from_theme(cls, theme: str) -> "HarlequinColors":
         try:
             style = get_style_by_name(theme)
-        except ClassNotFound:
-            print(
-                Panel.fit(
-                    (
-                        f"No theme found with the name {theme}.\n"
-                        "Theme must be the name of a Pygments Style. "
-                        "You can browse the supported styles here:\n"
-                        "https://pygments.org/styles/"
-                    ),
-                    title="Harlequin couldn't load your theme.",
-                    title_align="left",
-                    border_style="red",
-                )
-            )
-            raise HarlequinExit() from None
+        except ClassNotFound as e:
+            raise HarlequinThemeError(theme) from e
 
         background = style.background_color
         highlight = style.highlight_color

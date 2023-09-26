@@ -4,11 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
--   Harlequin now displays notifications after completing successful queries ([#235](https://github.com/tconbeer/harlequin/issues/235)), saving the contents of a buffer ([#226](https://github.com/tconbeer/harlequin/issues/226)), and receiving an error from the system clipboard.
+### Features
+
+-   Harlequin now executes an initialization script on start-up. By default, it executes the script found at `~/.duckdbrc`. To execute a different script, start Harlequin with the `--init-path` option:
+    ```bash
+    harlequin --init-path ./my-project-script.sql
+    ```
+    To start Harlequin without executing an initialization script, use the `--no-init` flag:
+    ```bash
+    harlequin --no-init
+    ```
+    **Note:** DuckDB initialization scripts can contain dot commands or SQL statements. If Harlequin encounters a dot command, it will attempt to rewrite it as a SQL statement, and then execute the rewritten statement. Otherwise, it will ignore the dot command. Currently, Harlequin can only rewrite `.open` commands.
+
+    ([#241](https://github.com/tconbeer/harlequin/issues/241) - thank you [@pdpark](https://github.com/pdpark)!)
+
+-   Harlequin now displays notifications after completing successful queries ([#235](https://github.com/tconbeer/harlequin/issues/235) - thank you [@natir](https://github.com/natir)!), saving the contents of a buffer ([#226](https://github.com/tconbeer/harlequin/issues/226)), and receiving an error from the system clipboard.
 
 ## [1.0.1] - 2023-09-21
 
--   Pasting text into Harlequin's text editor is now more performant and compatible with more terminals. ([#120](https://github.com/tconbeer/textual-textarea/issues/120), [#119](https://github.com/tconbeer/textual-textarea/issues/119)).
+### Bug Fixes
+
+-   Pasting text into Harlequin's text editor is now more performant and compatible with more terminals. ([#120](https://github.com/tconbeer/textual-textarea/issues/120) - thank you [@matsonj](https://github.com/matsonj), [#119](https://github.com/tconbeer/textual-textarea/issues/119)).
 
 ## [1.0.0] - 2023-09-12
 
@@ -19,7 +35,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes and Minor Updates
 
--   Data table column headers are now bold on terminals that support it ([#203](https://github.com/tconbeer/harlequin/issues/203)).
+-   Data table column headers are now bold on terminals and fonts that support it ([#203](https://github.com/tconbeer/harlequin/issues/203)).
 -   Bumped TextArea; cursor now better maintains x-position and [other minor fixes](https://github.com/tconbeer/textual-textarea/releases/tag/v0.5.4).
 -   The query editor's cursor no longer blinks when a modal appears above it ([#196](https://github.com/tconbeer/harlequin/issues/196)).
 -   Harlequin now shows the results of successful queries in the Results Viewer if multiple queries are executed and one or more contain errors.

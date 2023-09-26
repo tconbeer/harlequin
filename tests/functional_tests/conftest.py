@@ -5,6 +5,12 @@ import pytest
 from harlequin import Harlequin
 
 
+@pytest.fixture(autouse=True)
+def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    monkeypatch.setattr("harlequin.cache.user_cache_dir", lambda **_: tmp_path)
+    return tmp_path
+
+
 @pytest.fixture
 def tiny_db(tmp_path: Path, data_dir: Path) -> Path:
     """

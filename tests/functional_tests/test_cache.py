@@ -40,12 +40,6 @@ def cache(buffer_states: List[BufferState]) -> Cache:
     return Cache(focus_index=1, buffers=buffer_states)
 
 
-@pytest.fixture
-def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setattr("harlequin.cache.user_cache_dir", lambda **_: tmp_path)
-    return tmp_path
-
-
 def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
     assert mock_user_cache_dir.exists()
     assert len(list(mock_user_cache_dir.iterdir())) == 0
@@ -59,9 +53,7 @@ def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
 
 
 @pytest.mark.asyncio
-async def test_harlequin_loads_cache(
-    mock_user_cache_dir: Path, cache: Cache, app: Harlequin
-) -> None:
+async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
     write_cache(cache)
     async with app.run_test() as pilot:
         await pilot.pause()
