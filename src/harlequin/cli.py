@@ -1,12 +1,52 @@
-from typing import List, Union
+from pathlib import Path
+from typing import List, Tuple, Union
 
 import click
 
 from harlequin import Harlequin
+from harlequin.config import get_init_script
 
 
 @click.command()
 @click.version_option(package_name="harlequin")
+@click.argument(
+    "db_path",
+    nargs=-1,
+    type=click.Path(path_type=str),
+)
+@click.option(
+    "-t",
+    "--theme",
+    default="monokai",
+    show_default=True,
+    help=(
+        "Set the theme (colors) of the text editor. "
+        "Must be the name of a Pygments style; see "
+        "https://pygments.org/styles/"
+    ),
+)
+@click.option(
+    "-i",
+    "-init",
+    "--init-path",
+    default="~/.duckdbrc",
+    show_default=True,
+    type=click.Path(
+        exists=False,
+        file_okay=True,
+        dir_okay=False,
+        path_type=Path,
+    ),
+    help=(
+        "The path to an initialization script. On startup, Harlequin will execute "
+        "the commands in the script against the attached database."
+    ),
+)
+@click.option(
+    "--no-init",
+    is_flag=True,
+    help="Start Harlequin without executing the initialization script.",
+)
 @click.option(
     "-r",
     "-readonly",
@@ -43,17 +83,6 @@ from harlequin import Harlequin
     ),
 )
 @click.option(
-    "-t",
-    "--theme",
-    default="monokai",
-    help=(
-        "Set the theme (colors) of the text editor. "
-        "Must be the name of a Pygments style; see "
-        "https://pygments.org/styles/. Defaults to "
-        "monokai."
-    ),
-)
-@click.option(
     "--md_token",
     help=(
         "MotherDuck Token. Pass your MotherDuck service token in this option, or "
@@ -65,26 +94,25 @@ from harlequin import Harlequin
     is_flag=True,
     help="Run MotherDuck in SaaS mode (no local privileges).",
 )
-@click.argument(
-    "db_path",
-    nargs=-1,
-    type=click.Path(path_type=str),
-)
 def harlequin(
-    db_path: List[str],
+    db_path: Tuple[str],
+    theme: str,
+    init_path: Path,
+    no_init: bool,
     read_only: bool,
     allow_unsigned_extensions: bool,
     extension: List[str],
     force_install_extensions: bool,
     custom_extension_repo: Union[str, None],
-    theme: str,
     md_token: Union[str, None],
     md_saas: bool,
 ) -> None:
     if not db_path:
-        db_path = [":memory:"]
+        db_path = (":memory:",)
+
     tui = Harlequin(
         db_path=db_path,
+        init_script=get_init_script(init_path, no_init),
         read_only=read_only,
         extensions=extension,
         force_install_extensions=force_install_extensions,

@@ -3,10 +3,8 @@ from typing import List, Sequence, Tuple, Union
 
 import duckdb
 from duckdb.typing import DuckDBPyType
-from rich import print
-from rich.panel import Panel
 
-from harlequin.exception import HarlequinExit
+from harlequin.exception import HarlequinConnectionError
 from harlequin.export_options import (
     CSVOptions,
     ExportOptions,
@@ -65,8 +63,60 @@ COLUMN_TYPE_MAPPING = {
 UNKNOWN_TYPE = "?"
 
 
+def _split_script(script: str) -> List[str]:
+    """
+    DuckDB init scripts can contain SQL queries or dot commands. The SQL
+    queries may contain newlines, but the dot commands are newline-terminated.
+    This takes a raw script and returns a list of executable commands
+    """
+    lines = script.splitlines()
+    commands: List[str] = []
+    i = 0
+    for j, line in enumerate(lines):
+        if line.startswith("."):
+            commands.append("\n".join(lines[i:j]))
+            commands.append(line)
+            i = j + 1
+    commands.append("\n".join(lines[i:]))
+    return [command.strip() for command in commands if command]
+
+
+def _rewrite_dot_open(command: str) -> str:
+    """
+    Rewrites .open command into its SQL equivalent.
+    """
+    args = command.split()[1:]
+    if not args:
+        return "attach ':memory:'; use memory;"
+    else:
+        # --readonly is only supported option
+        if len(args) == 2 and args[0] == "--readonly":
+            option = " (READ_ONLY)"
+            db_path = Path(args[1])
+        else:
+            option = ""
+            db_path = Path(args[0])
+
+        return f"attach '{db_path}'{option} as {db_path.stem}; use {db_path.stem};"
+
+
+def _rewrite_init_command(command: str) -> str:
+    """
+    DuckDB init scripts can contain dot commands, which can only be executed
+    by the CLI, not the python API. Here, we rewrite some common ones into
+    SQL, and rewrite the others to be no-ops.
+    """
+    if not command.startswith("."):
+        return command
+    elif command.startswith(".open"):
+        return _rewrite_dot_open(command)
+    else:
+        return ""
+
+
 def connect(
     db_path: Sequence[Union[str, Path]],
+    init_script: Tuple[Path, str] = (Path(), ""),
     read_only: bool = False,
     allow_unsigned_extensions: bool = False,
     extensions: Union[List[str], None] = None,
@@ -89,17 +139,9 @@ def connect(
         for db in other_dbs:
             connection.execute(f"attach '{db}'{' (READ_ONLY)' if read_only else ''}")
     except (duckdb.CatalogException, duckdb.IOException) as e:
-        print(
-            Panel.fit(
-                str(e),
-                title="DuckDB couldn't connect to your database.",
-                title_align="left",
-                border_style="red",
-                subtitle="Try again?",
-                subtitle_align="right",
-            )
-        )
-        raise HarlequinExit() from None
+        raise HarlequinConnectionError(
+            str(e), title="DuckDB couldn't connect to your database."
+        ) from e
 
     if custom_extension_repo:
         connection.execute(
@@ -115,17 +157,21 @@ def connect(
                 )
                 connection.load_extension(extension=extension)
         except (duckdb.HTTPException, duckdb.IOException) as e:
-            print(
-                Panel.fit(
-                    str(e),
-                    title="DuckDB couldn't install or load your extension.",
-                    title_align="left",
-                    border_style="red",
-                    subtitle="Try again?",
-                    subtitle_align="right",
-                )
-            )
-            raise HarlequinExit() from None
+            raise HarlequinConnectionError(
+                str(e), title="DuckDB couldn't install or load your extension."
+            ) from e
+
+    if init_script:
+        try:
+            for command in _split_script(init_script[1]):
+                rewritten_command = _rewrite_init_command(command)
+                for cmd in rewritten_command.split(";"):
+                    connection.execute(cmd)
+        except duckdb.Error as e:
+            msg = f"Attempted to execute script at {init_script[0]}\n{e}"
+            raise HarlequinConnectionError(
+                msg, title="DuckDB could not execute your initialization script."
+            ) from e
 
     return connection
 

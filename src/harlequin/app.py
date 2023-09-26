@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
+from rich import print
+from rich.panel import Panel
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -34,7 +36,10 @@ from harlequin.components import (
     export_callback,
 )
 from harlequin.duck_ops import connect, get_catalog
-from harlequin.exception import HarlequinExit
+from harlequin.exception import (
+    HarlequinConnectionError,
+    HarlequinThemeError,
+)
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -67,12 +72,13 @@ class Harlequin(App, inherit_bindings=False):
     def __init__(
         self,
         db_path: Sequence[Union[str, Path]],
+        theme: str = "monokai",
+        init_script: Tuple[Path, str] = (Path(), ""),
         read_only: bool = False,
         allow_unsigned_extensions: bool = False,
         extensions: Union[List[str], None] = None,
         force_install_extensions: bool = False,
         custom_extension_repo: Union[str, None] = None,
-        theme: str = "monokai",
         md_token: Union[str, None] = None,
         md_saas: bool = False,
         driver_class: Union[Type[Driver], None] = None,
@@ -84,9 +90,9 @@ class Harlequin(App, inherit_bindings=False):
         self.limit = 500
         self.query_timer: Union[float, None] = None
         try:
-            self.app_colors = HarlequinColors.from_theme(theme)
             self.connection = connect(
                 db_path,
+                init_script=init_script,
                 read_only=read_only,
                 allow_unsigned_extensions=allow_unsigned_extensions,
                 extensions=extensions,
@@ -95,7 +101,41 @@ class Harlequin(App, inherit_bindings=False):
                 md_token=md_token,
                 md_saas=md_saas,
             )
-        except HarlequinExit:
+        except HarlequinConnectionError as e:
+            print(
+                Panel.fit(
+                    str(e),
+                    title=e.title
+                    if e.title
+                    else (
+                        "Harlequin encountered an error "
+                        "while connecting to the database."
+                    ),
+                    title_align="left",
+                    border_style="red",
+                )
+            )
+            self.exit()
+        else:
+            if init_script[1]:
+                self.notify(f"Executed commands from {init_script[0]}")
+
+        try:
+            self.app_colors = HarlequinColors.from_theme(theme)
+        except HarlequinThemeError as e:
+            print(
+                Panel.fit(
+                    (
+                        f"No theme found with the name {e}.\n"
+                        "Theme must be the name of a Pygments Style. "
+                        "You can browse the supported styles here:\n"
+                        "https://pygments.org/styles/"
+                    ),
+                    title="Harlequin couldn't load your theme.",
+                    title_align="left",
+                    border_style="red",
+                )
+            )
             self.exit()
         else:
             self.design = self.app_colors.design_system

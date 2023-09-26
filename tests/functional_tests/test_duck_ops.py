@@ -7,10 +7,12 @@ from harlequin.duck_ops import (
     _get_databases,
     _get_schemas,
     _get_tables,
+    _rewrite_init_command,
+    _split_script,
     connect,
     get_catalog,
 )
-from harlequin.exception import HarlequinExit
+from harlequin.exception import HarlequinConnectionError
 
 
 def test_connect(tiny_db: Path, small_db: Path, tmp_path: Path) -> None:
@@ -63,9 +65,9 @@ def test_connect_motherduck(tiny_db: Path) -> None:
 
 
 def test_cannot_connect(tiny_db: Path) -> None:
-    with pytest.raises(HarlequinExit):
+    with pytest.raises(HarlequinConnectionError):
         connect([Path(":memory:")], read_only=True)
-    with pytest.raises(HarlequinExit):
+    with pytest.raises(HarlequinConnectionError):
         connect([tiny_db, Path(":memory:")], read_only=True)
 
 
@@ -132,3 +134,22 @@ def test_get_catalog(tiny_db: Path, small_db: Path) -> None:
         ("tiny", [("main", [("foo", "BASE TABLE", [("foo_col", "INTEGER")])])]),
     ]
     assert get_catalog(conn) == expected
+
+
+def test_init_script(tiny_db: Path, tmp_path: Path) -> None:
+    script = (
+        f".bail on\nselect \n1;\n.bail off\n.open {tiny_db}\n"
+        "create table test_init as select 2;"
+    )
+    commands = _split_script(script)
+    assert len(commands) == 5
+    rewritten = [_rewrite_init_command(cmd) for cmd in commands]
+    assert rewritten[0] == ""
+    assert rewritten[1] == commands[1]
+    assert rewritten[2] == ""
+    assert rewritten[3].startswith(f"attach '{tiny_db}'")
+    assert rewritten[4] == commands[4]
+
+    conn = connect([":memory:"], init_script=(tmp_path, script))
+    rel = conn.sql("select * from test_init")
+    assert rel.fetchall() == [(2,)]
