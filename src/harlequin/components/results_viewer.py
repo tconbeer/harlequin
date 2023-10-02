@@ -1,25 +1,20 @@
-import asyncio
-from typing import Dict, Iterator, List, Tuple, Union
+from typing import Dict, List, Union
 
-import duckdb
-from textual import work
+import pyarrow as pa
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
-from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import (
     ContentSwitcher,
-    DataTable,
     LoadingIndicator,
     TabbedContent,
     TabPane,
     Tabs,
 )
-from textual.worker import Worker, WorkerState
-
-from harlequin.duck_ops import get_column_labels_for_relation
+from textual_fastdatatable import DataTable
 
 
 class ResultsTable(DataTable):
@@ -37,13 +32,10 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         Binding("k", "switch_tab(1)", "Next Tab", show=False),
     ]
 
-    data: reactive[Dict[str, List[Tuple]]] = reactive(dict)
+    data: reactive[Dict[str, pa.Table]] = reactive(dict)
 
     TABBED_ID = "tabs"
     LOADING_ID = "loading"
-
-    class Ready(Message):
-        pass
 
     def __init__(
         self,
@@ -91,20 +83,20 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             except NoMatches:
                 return None
 
-    def push_table(self, table_id: str, relation: duckdb.DuckDBPyRelation) -> None:
-        table = ResultsTable(id=table_id)
-        table.add_columns(
-            *get_column_labels_for_relation(
-                relation=relation, type_color=self.type_color
-            )
-        )
+    def push_table(
+        self,
+        table_id: str,
+        column_labels: Union[List[Union[str, Text]], None],
+        data: pa.Table,
+    ) -> None:
+        table = ResultsTable(id=table_id, column_labels=column_labels, data=data)
         n = self.tab_switcher.tab_count + 1
         if n > 1:
             self.remove_class("hide-tabs")
         pane = TabPane(f"Result {n}", table)
         self.tab_switcher.add_pane(pane)
 
-    async def set_not_responsive(self, data: Dict[str, List[Tuple]]) -> None:
+    async def set_not_responsive(self, data: Dict[str, pa.Table]) -> None:
         if len(data) > 1:
             self.border_title = f"Loading Data from {len(data):,} Queries."
         elif data:
@@ -115,7 +107,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
 
     def set_responsive(
         self,
-        data: Union[Dict[str, List[Tuple]], None] = None,
+        data: Union[Dict[str, pa.Table], None] = None,
         did_run: bool = True,
     ) -> None:
         if not did_run:
@@ -166,20 +158,6 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             self.border_title = f"Query Results {self._human_row_count(self.data[id_])}"
             maybe_table.focus()
 
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if (
-            event.worker.name == "load_data"
-            and event.worker.state == WorkerState.SUCCESS
-        ):
-            self.set_responsive(data=event.worker.result)
-            self.post_message(self.Ready())
-            self.focus()
-
-    async def watch_data(self, data: Dict[str, List[Tuple]]) -> None:
-        if data:
-            await self.set_not_responsive(data=data)
-            self._load_data(data=data)
-
     def action_switch_tab(self, offset: int) -> None:
         if not self.tab_switcher.active:
             return
@@ -199,35 +177,9 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if maybe_table is not None:
             maybe_table.focus()
 
-    def _human_row_count(self, data: List[Tuple]) -> str:
-        if (total_rows := len(data)) > self.MAX_RESULTS:
+    def _human_row_count(self, data: pa.Table) -> str:
+        total_rows = data.num_rows
+        if self.MAX_RESULTS > 0 and total_rows > self.MAX_RESULTS:
             return f"(Showing {self.MAX_RESULTS:,} of {total_rows:,} Records)"
         else:
             return f"({total_rows:,} Records)"
-
-    @work(
-        exclusive=True,
-        group="data_loaders",
-        name="load_data",
-        description="Loading data.",
-    )
-    async def _load_data(self, data: Dict[str, List[Tuple]]) -> Dict[str, List[Tuple]]:
-        for table_id, result in data.items():
-            table = self.tab_switcher.query_one(f"#{table_id}", ResultsTable)
-            for i, chunk in self._chunk(result[: self.MAX_RESULTS]):
-                table.add_rows(chunk)
-                self._increment_progress_bar()
-                await asyncio.sleep(0)
-                if i == 0:
-                    self.show_table()
-        return data
-
-    def _increment_progress_bar(self) -> None:
-        self.border_title = f"{self.border_title}."
-
-    @staticmethod
-    def _chunk(
-        data: List[Tuple], chunksize: int = 1000
-    ) -> Iterator[Tuple[int, List[Tuple]]]:
-        for i in range(len(data) // chunksize + 1):
-            yield i, data[i * chunksize : (i + 1) * chunksize]

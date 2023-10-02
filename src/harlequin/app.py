@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import duckdb
+import pyarrow as pa
 from rich import print
 from rich.panel import Panel
 from textual import work
@@ -35,7 +36,7 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
-from harlequin.duck_ops import connect, get_catalog
+from harlequin.duck_ops import connect, get_catalog, get_column_labels_for_relation
 from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinThemeError,
@@ -61,8 +62,6 @@ class Harlequin(App, inherit_bindings=False):
         Binding("ctrl+e", "export", "Export Data", show=False),
     ]
 
-    MAX_RESULTS = 10_000
-
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
     relations: reactive[Dict[str, duckdb.DuckDBPyRelation]] = reactive(dict)
@@ -74,6 +73,7 @@ class Harlequin(App, inherit_bindings=False):
         db_path: Sequence[Union[str, Path]],
         theme: str = "monokai",
         init_script: Tuple[Path, str] = (Path(), ""),
+        max_results: int = 100_000,
         read_only: bool = False,
         allow_unsigned_extensions: bool = False,
         extensions: Union[List[str], None] = None,
@@ -87,7 +87,8 @@ class Harlequin(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.theme = theme
-        self.limit = 500
+        self.max_results = max_results
+        self.limit = min(500, max_results) if max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
             self.connection = connect(
@@ -149,9 +150,9 @@ class Harlequin(App, inherit_bindings=False):
             )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
-                yield RunQueryBar(max_results=self.MAX_RESULTS)
+                yield RunQueryBar(max_results=self.max_results)
                 yield ResultsViewer(
-                    max_results=self.MAX_RESULTS, type_color=self.app_colors.gray
+                    max_results=self.max_results, type_color=self.app_colors.gray
                 )
         yield Footer()
 
@@ -249,10 +250,6 @@ class Harlequin(App, inherit_bindings=False):
                 and message.validation_result.is_valid
             ):
                 self._set_query_text()
-
-    def on_results_viewer_ready(self, message: ResultsViewer.Ready) -> None:
-        message.stop()
-        self.run_query_bar.set_responsive()
 
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
@@ -462,15 +459,21 @@ class Harlequin(App, inherit_bindings=False):
     async def _set_result_viewer_data(
         self, relations: Dict[str, duckdb.DuckDBPyRelation]
     ) -> None:
-        data: Dict[str, List[Tuple]] = {}
+        data: Dict[str, pa.Table] = {}
         errors: List[BaseException] = []
         for id_, rel in relations.items():
             try:
-                rel_data = rel.fetchall()
+                rel_data: pa.Table = rel.fetch_arrow_table()
             except duckdb.DataError as e:
                 errors.append(e)
             else:
-                self.results_viewer.push_table(table_id=id_, relation=rel)
+                self.results_viewer.push_table(
+                    table_id=id_,
+                    column_labels=get_column_labels_for_relation(rel),  # type: ignore
+                    data=rel_data.slice(0, self.max_results)
+                    if self.max_results > 0
+                    else rel_data,
+                )
                 data[id_] = rel_data
         if errors:
             self._push_error_modal(
@@ -484,11 +487,14 @@ class Harlequin(App, inherit_bindings=False):
                 f"{len(relations)} {'query' if len(relations) == 1 else 'queries'} "
                 f"executed successfully in {elapsed:.2f} seconds."
             )
-        if not data:
-            self.run_query_bar.set_responsive()
-            self.results_viewer.set_responsive(did_run=len(errors) == len(relations))
+        self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
         self.results_viewer.data = data
+        if not data:
+            self.results_viewer.set_responsive(did_run=len(errors) == len(relations))
+        else:
+            self.results_viewer.set_responsive(data=data, did_run=True)
+            self.results_viewer.focus()
 
     @work(exclusive=True, group="duck_schema_updaters")
     async def _update_schema_data(self) -> None:
