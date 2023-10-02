@@ -4,21 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2023-10-02
+
 ### Features
 
 -   Harlequin now executes an initialization script on start-up. By default, it executes the script found at `~/.duckdbrc`. To execute a different script, start Harlequin with the `--init-path` option:
+
     ```bash
     harlequin --init-path ./my-project-script.sql
     ```
+
     To start Harlequin without executing an initialization script, use the `--no-init` flag:
+
     ```bash
     harlequin --no-init
     ```
+
     **Note:** DuckDB initialization scripts can contain dot commands or SQL statements. If Harlequin encounters a dot command, it will attempt to rewrite it as a SQL statement, and then execute the rewritten statement. Otherwise, it will ignore the dot command. Currently, Harlequin can only rewrite `.open` commands.
 
     ([#241](https://github.com/tconbeer/harlequin/issues/241) - thank you [@pdpark](https://github.com/pdpark)!)
 
 -   Harlequin now displays notifications after completing successful queries ([#235](https://github.com/tconbeer/harlequin/issues/235) - thank you [@natir](https://github.com/natir)!), saving the contents of a buffer ([#226](https://github.com/tconbeer/harlequin/issues/226)), and receiving an error from the system clipboard.
+
 -   Harlequin now loads data from a completed query up to 1,000x faster by using a new DataTable widget ([#181](https://github.com/tconbeer/harlequin/issues/181)). By default, the Results Viewer is now limited to 100,000 records, instead of 10,000. This limit can be changed with the `--limit` option when starting Harlequin. This introduces a dependency on PyArrow >= 7.0.0.
 
 ## [1.0.1] - 2023-09-21
@@ -272,7 +279,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.0.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.1.0...HEAD
+
+[1.1.0]: https://github.com/tconbeer/harlequin/compare/1.0.1...1.1.0
 
 [1.0.1]: https://github.com/tconbeer/harlequin/compare/1.0.0...1.0.1
 
