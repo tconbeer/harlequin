@@ -1,6 +1,6 @@
-import shutil
 from pathlib import Path
 
+import duckdb
 import pytest
 from harlequin import Harlequin
 
@@ -14,21 +14,27 @@ def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path
 @pytest.fixture
 def tiny_db(tmp_path: Path, data_dir: Path) -> Path:
     """
-    Copies data/functional_tests/tiny.db to a
-    tmp dir and returns the path to the copy.
+    Creates a duckdb database file from the contents of
+    data_dir/functional_tests/tiny
     """
-    original = data_dir / "functional_tests" / "tiny.db"
-    return Path(shutil.copy(original, tmp_path))
+    path_to_data = data_dir / "functional_tests" / "tiny"
+    path_to_db = tmp_path / "tiny.db"
+    conn = duckdb.connect(str(path_to_db))
+    conn.execute(f"import database '{path_to_data}';")
+    return path_to_db
 
 
 @pytest.fixture
 def small_db(tmp_path: Path, data_dir: Path) -> Path:
     """
-    Copies data/functional_tests/tiny.db to a
-    tmp dir and returns the path to the copy.
+    Creates a duckdb database file from the contents of
+    data_dir/functional_tests/small
     """
-    original = data_dir / "functional_tests" / "small.db"
-    return Path(shutil.copy(original, tmp_path))
+    path_to_data = data_dir / "functional_tests" / "small"
+    path_to_db = tmp_path / "small.db"
+    conn = duckdb.connect(str(path_to_db))
+    conn.execute(f"import database '{path_to_data}';")
+    return path_to_db
 
 
 @pytest.fixture

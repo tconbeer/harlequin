@@ -29,9 +29,11 @@ class RunQueryBar(Horizontal):
             id="limit_input",
             validators=Integer(
                 minimum=0,
-                maximum=self.max_results,
+                maximum=self.max_results if self.max_results > 0 else None,
                 failure_description=(
                     f"Please enter a number between 0 and {self.max_results}."
+                    if self.max_results > 0
+                    else "Please enter a number greater than 0."
                 ),
             ),
         )

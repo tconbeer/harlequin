@@ -28,7 +28,9 @@ async def test_select_1(app: Harlequin) -> None:
         assert app.query_text == q
         assert app.relations
         assert len(app.results_viewer.data) == 1
-        assert app.results_viewer.data[next(iter(app.results_viewer.data))] == [(1,)]
+        assert app.results_viewer.data[
+            next(iter(app.results_viewer.data))
+        ].to_pylist() == [{"foo": 1}]
 
 
 @pytest.mark.asyncio
@@ -42,7 +44,9 @@ async def test_multiple_queries(app: Harlequin) -> None:
         await pilot.pause()
         assert app.query_text == "select 1;"
         assert len(app.results_viewer.data) == 1
-        assert app.results_viewer.data[next(iter(app.results_viewer.data))] == [(1,)]
+        assert app.results_viewer.data[
+            next(iter(app.results_viewer.data))
+        ].to_pylist() == [{"1": 1}]
         assert "hide-tabs" in app.results_viewer.classes
 
         app.editor.focus()
@@ -54,7 +58,7 @@ async def test_multiple_queries(app: Harlequin) -> None:
         assert len(app.results_viewer.data) == 2
         assert "hide-tabs" not in app.results_viewer.classes
         for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
-            assert v == [(i,)]
+            assert v.to_pylist() == [{str(i): i}]
             assert app.query_one(f"#{k}", ResultsTable)
         assert app.results_viewer.tab_switcher.active == "tab-1"
         await pilot.press("k")

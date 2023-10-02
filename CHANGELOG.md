@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
     ([#241](https://github.com/tconbeer/harlequin/issues/241) - thank you [@pdpark](https://github.com/pdpark)!)
 
 -   Harlequin now displays notifications after completing successful queries ([#235](https://github.com/tconbeer/harlequin/issues/235) - thank you [@natir](https://github.com/natir)!), saving the contents of a buffer ([#226](https://github.com/tconbeer/harlequin/issues/226)), and receiving an error from the system clipboard.
+-   Harlequin now loads data from a completed query up to 1,000x faster by using a new DataTable widget. By default, the Results Viewer is now limited to 100,000 records, instead of 10,000. This limit can be changed with the `--limit` option when starting Harlequin. This introduces a dependency on PyArrow >= 7.0.0.
 
 ## [1.0.1] - 2023-09-21
 

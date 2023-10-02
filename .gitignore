@@ -3,8 +3,12 @@
 *.csv
 *.json
 *.parquet
-!tests/data/*/*.db
 *.sql
+!tests/data/**/*.db
+!tests/data/**/*.csv
+!tests/data/**/*.json
+!tests/data/**/*.parquet
+!tests/data/**/*.sql
 Pipfile
 
 # Byte-compiled / optimized / DLL files

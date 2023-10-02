@@ -48,6 +48,16 @@ from harlequin.config import get_init_script
     help="Start Harlequin without executing the initialization script.",
 )
 @click.option(
+    "--limit",
+    "-l",
+    default=100_000,
+    type=click.IntRange(min=0),
+    help=(
+        "Set the maximum number of rows that can be loaded into Harlequin's Results "
+        "Viewer. Set to 0 for no limit. Default is 100,000"
+    ),
+)
+@click.option(
     "-r",
     "-readonly",
     "--read-only",
@@ -99,6 +109,7 @@ def harlequin(
     theme: str,
     init_path: Path,
     no_init: bool,
+    limit: int,
     read_only: bool,
     allow_unsigned_extensions: bool,
     extension: List[str],
@@ -113,6 +124,7 @@ def harlequin(
     tui = Harlequin(
         db_path=db_path,
         init_script=get_init_script(init_path, no_init),
+        max_results=limit,
         read_only=read_only,
         extensions=extension,
         force_install_extensions=force_install_extensions,

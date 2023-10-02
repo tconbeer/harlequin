@@ -51,6 +51,7 @@ def test_default(
     mock_harlequin.assert_called_once_with(
         db_path=(":memory:",),
         init_script=(DEFAULT_INIT_PATH, ""),
+        max_results=100_000,
         read_only=False,
         extensions=(),
         force_install_extensions=False,
@@ -120,3 +121,23 @@ def test_theme(
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["theme"] == "one-dark"
+
+
+@pytest.mark.parametrize(
+    "harlequin_args",
+    [
+        "--limit 10",
+        "-l 1000000",
+        ":memory: -l 10",
+        "foo.db --limit 5000000000",
+        "--limit 0",
+    ],
+)
+def test_limit(
+    mock_harlequin: MagicMock, harlequin_args: str, empty_init_script: MagicMock
+) -> None:
+    runner = CliRunner()
+    runner.invoke(harlequin, args=harlequin_args)
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["max_results"] != 100_000
