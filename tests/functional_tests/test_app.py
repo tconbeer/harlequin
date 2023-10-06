@@ -109,6 +109,7 @@ async def test_run_query_bar(
         app.editor.text = "select * from drivers"
         await pilot.click(bar.button.__class__)
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) > 500
         snap_results.append(app_snapshot(app, "No limit"))
 
@@ -117,6 +118,7 @@ async def test_run_query_bar(
         assert bar.checkbox.value is True
         await pilot.click(bar.button.__class__)
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 500
         snap_results.append(app_snapshot(app, "Limit 500"))
 
@@ -128,6 +130,8 @@ async def test_run_query_bar(
         assert app.limit == 500
         assert bar.checkbox.value is False
         assert bar.input.tooltip is not None
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(app_snapshot(app, "Invalid limit"))
 
         # type a valid limit
@@ -142,6 +146,7 @@ async def test_run_query_bar(
         # run the query with a smaller limit
         await pilot.click(bar.button.__class__)
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 100
         snap_results.append(app_snapshot(app, "Limit 100"))
 
@@ -365,6 +370,7 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+n")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == ""
@@ -373,6 +379,7 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+n")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == ""
@@ -381,6 +388,7 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+k")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
@@ -388,6 +396,7 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+k")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == "tab 2"
@@ -395,6 +404,7 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+w")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
@@ -402,12 +412,14 @@ async def test_multiple_buffers(
 
         await pilot.press("ctrl+k")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
         snap_results.append(app_snapshot(app, "Tab 1 of [1,3]"))
 
         await pilot.press("ctrl+k")
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
         snap_results.append(app_snapshot(app, "Tab 3 of [1,3]"))

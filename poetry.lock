@@ -1383,13 +1383,13 @@ textual = ">=0.38.0"
 
 [[package]]
 name = "textual-textarea"
-version = "0.7.2"
+version = "0.7.3"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.7.2-py3-none-any.whl", hash = "sha256:f82b5f3f717827b69360361f9a3826567fddf7a3ad801db8c66f243f0896adcf"},
-    {file = "textual_textarea-0.7.2.tar.gz", hash = "sha256:3b23ab9cfada7f30b60131df832e1ae9f48f5556b712a8178fad0c76147decec"},
+    {file = "textual_textarea-0.7.3-py3-none-any.whl", hash = "sha256:110d1afa61534b0dd2598876a5795e37d1c6f27e29ec6a385d639a34571429df"},
+    {file = "textual_textarea-0.7.3.tar.gz", hash = "sha256:105ae9c4f27f41af3ad10f4bcd88dc12e8cf6746ca3d5c8051db8ea2c846de9a"},
 ]
 
 [package.dependencies]
@@ -1740,4 +1740,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "8979c96ff8811b38aa5741d01abca15ee072e98bea5ae3881f39833656159b39"
+content-hash = "c78b052ba7afd408efd0d8174333acc0e9c7da5c41554ce498a483adfcc00834"
