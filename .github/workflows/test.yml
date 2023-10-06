@@ -36,7 +36,7 @@ jobs:
       - name: Install python dependencies
         run: poetry install --sync --no-interaction --only main,test
       - name: Run tests
-        run: poetry run pytest
+        run: poetry run pytest -m "not online"
 
   test:
     name: ${{ matrix.os }} - ${{ matrix.py }}
@@ -90,4 +90,4 @@ jobs:
       - name: Run tests
         run: |
           source .venv/bin/activate
-          pytest
+          pytest -m "not online"
