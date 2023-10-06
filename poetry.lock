@@ -1172,7 +1172,7 @@ textual = ">=0.28.0"
 type = "git"
 url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
 reference = "main"
-resolved_reference = "604d1b7d3a493f065bec9fab5f9e521f9d5c53d3"
+resolved_reference = "01dc8f3f949710f589bff648d32c868c08076d88"
 
 [[package]]
 name = "pyyaml"
