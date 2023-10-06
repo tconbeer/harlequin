@@ -97,7 +97,7 @@ async def test_run_query_bar(
 ) -> None:
     snap_results: List[bool] = []
     app = app_small_db
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         # initialization
         bar = app.run_query_bar
         assert bar.checkbox.value is False
@@ -298,7 +298,7 @@ async def test_toggle_full_screen(
 
 @pytest.mark.asyncio
 async def test_help_screen(app: Harlequin, app_snapshot: Callable[..., bool]) -> None:
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         assert len(app.screen_stack) == 1
 
         await pilot.press("f1")
@@ -324,7 +324,7 @@ async def test_export(
     app: Harlequin, tmp_path: Path, filename: str, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
         assert app.relations
@@ -336,10 +336,12 @@ async def test_export(
         assert isinstance(app.screen, ExportScreen)
         snap_results.append(app_snapshot(app, "Export Screen"))
 
+        app.screen.file_input.value = f"/tmp/foo-bar-static/{filename}"  # type: ignore
+        await pilot.pause()
+        snap_results.append(app_snapshot(app, "Export with Path"))
         export_path = tmp_path / filename
         app.screen.file_input.value = str(export_path)  # type: ignore
         await pilot.pause()
-        snap_results.append(app_snapshot(app, "Export with Path"))
         await pilot.press("enter")
 
         assert export_path.is_file()
@@ -354,7 +356,7 @@ async def test_multiple_buffers(
     app: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
@@ -378,29 +380,34 @@ async def test_multiple_buffers(
         snap_results.append(app_snapshot(app, "Tab 3 of 3"))
 
         await pilot.press("ctrl+k")
+        await pilot.pause()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
         snap_results.append(app_snapshot(app, "Tab 1 of 3"))
 
         await pilot.press("ctrl+k")
+        await pilot.pause()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == "tab 2"
         snap_results.append(app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
+        await pilot.pause()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
         snap_results.append(app_snapshot(app, "Tab 3 after deleting 2"))
 
         await pilot.press("ctrl+k")
+        await pilot.pause()
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
         snap_results.append(app_snapshot(app, "Tab 1 of [1,3]"))
 
         await pilot.press("ctrl+k")
+        await pilot.pause()
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
         snap_results.append(app_snapshot(app, "Tab 3 of [1,3]"))
@@ -423,7 +430,7 @@ async def test_query_errors(
     app: Harlequin, bad_query: str, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         app.editor.text = bad_query
 
         await pilot.press("ctrl+a")
@@ -449,7 +456,7 @@ async def test_data_catalog(
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_db
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 36)) as pilot:
         catalog = app.data_catalog
         assert not catalog.show_root
         snap_results.append(app_snapshot(app, "Initialization"))

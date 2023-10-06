@@ -1172,7 +1172,7 @@ textual = ">=0.28.0"
 type = "git"
 url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
 reference = "main"
-resolved_reference = "dc397c8daed8e62a6c2305c3f1f5218bea1f24d8"
+resolved_reference = "604d1b7d3a493f065bec9fab5f9e521f9d5c53d3"
 
 [[package]]
 name = "pyyaml"
@@ -1383,13 +1383,13 @@ textual = ">=0.38.0"
 
 [[package]]
 name = "textual-textarea"
-version = "0.7.1"
+version = "0.7.2"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.7.1-py3-none-any.whl", hash = "sha256:f9fa8bcc0ff7693d087ca4cf6502e082a6fc3dcdce87e9fb6010baf712a3a601"},
-    {file = "textual_textarea-0.7.1.tar.gz", hash = "sha256:05755a7995c96defc895b4b4c111691541acb087b6c5d29830c6918dd05edb7a"},
+    {file = "textual_textarea-0.7.2-py3-none-any.whl", hash = "sha256:f82b5f3f717827b69360361f9a3826567fddf7a3ad801db8c66f243f0896adcf"},
+    {file = "textual_textarea-0.7.2.tar.gz", hash = "sha256:3b23ab9cfada7f30b60131df832e1ae9f48f5556b712a8178fad0c76147decec"},
 ]
 
 [package.dependencies]
@@ -1740,4 +1740,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "536f70a13b272b56d53ee0b0682f3fd0e1d5c07712a013c642898c083973f7da"
+content-hash = "8979c96ff8811b38aa5741d01abca15ee072e98bea5ae3881f39833656159b39"
