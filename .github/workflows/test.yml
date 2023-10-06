@@ -36,7 +36,13 @@ jobs:
       - name: Install python dependencies
         run: poetry install --sync --no-interaction --only main,test
       - name: Run tests
-        run: poetry run pytest
+        run: poetry run pytest -m "not online"
+      - name: Store snapshot report on failure
+        uses: actions/upload-artifact@v3  
+        if: failure()
+        with:
+          name: Snapshot Report Windows 3.10
+          path: ./snapshot_report.html
 
   test:
     name: ${{ matrix.os }} - ${{ matrix.py }}
@@ -90,4 +96,11 @@ jobs:
       - name: Run tests
         run: |
           source .venv/bin/activate
-          pytest
+          pytest -m "not online"
+      - name: Store snapshot report on failure
+        uses: actions/upload-artifact@v3  
+        if: failure()
+        with:
+          name: Snapshot Report ${{ matrix.os }} ${{ matrix.py }}
+          path: ./snapshot_report.html
+

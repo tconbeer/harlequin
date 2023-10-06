@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Testing
+
+-   Harlequin now uses snapshot testing on screenshots to prevent regresssions ([#252](https://github.com/tconbeer/harlequin/issues/252)).
+-   Harlequin no longer installs extensions or connects to MotherDuck in CI, due to flaky failures around the time of DuckDB releases ([#262](https://github.com/tconbeer/harlequin/issues/262)).
+
 ## [1.1.0] - 2023-10-02
 
 ### Features
