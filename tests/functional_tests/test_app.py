@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Callable, List
 
 import pytest
 from harlequin import Harlequin
@@ -14,7 +15,7 @@ def no_use_buffer_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_select_1(app: Harlequin) -> None:
+async def test_select_1(app: Harlequin, app_snapshot: Callable[..., bool]) -> None:
     async with app.run_test() as pilot:
         assert app.title == "Harlequin"
         assert app.focused.__class__.__name__ == "TextInput"
@@ -31,10 +32,14 @@ async def test_select_1(app: Harlequin) -> None:
         assert app.results_viewer.data[
             next(iter(app.results_viewer.data))
         ].to_pylist() == [{"foo": 1}]
+        assert app_snapshot(app)
 
 
 @pytest.mark.asyncio
-async def test_multiple_queries(app: Harlequin) -> None:
+async def test_multiple_queries(
+    app: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         q = "select 1; select 2"
         app.editor.text = q
@@ -48,6 +53,7 @@ async def test_multiple_queries(app: Harlequin) -> None:
             next(iter(app.results_viewer.data))
         ].to_pylist() == [{"1": 1}]
         assert "hide-tabs" in app.results_viewer.classes
+        snap_results.append(app_snapshot(app, "One query"))
 
         app.editor.focus()
         await pilot.press("ctrl+a")
@@ -57,18 +63,23 @@ async def test_multiple_queries(app: Harlequin) -> None:
         assert app.query_text == "select 1; select 2"
         assert len(app.results_viewer.data) == 2
         assert "hide-tabs" not in app.results_viewer.classes
+        snap_results.append(app_snapshot(app, "Both queries"))
         for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
             assert v.to_pylist() == [{str(i): i}]
             assert app.query_one(f"#{k}", ResultsTable)
         assert app.results_viewer.tab_switcher.active == "tab-1"
         await pilot.press("k")
         assert app.results_viewer.tab_switcher.active == "tab-2"
+        snap_results.append(app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("k")
         assert app.results_viewer.tab_switcher.active == "tab-1"
+        snap_results.append(app_snapshot(app, "Both queries, tab 1"))
         await pilot.press("j")
         assert app.results_viewer.tab_switcher.active == "tab-2"
         await pilot.press("j")
         assert app.results_viewer.tab_switcher.active == "tab-1"
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
@@ -81,7 +92,10 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_query_bar(app_small_db: Harlequin) -> None:
+async def test_run_query_bar(
+    app_small_db: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     app = app_small_db
     async with app.run_test() as pilot:
         # initialization
@@ -96,6 +110,7 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) > 500
+        snap_results.append(app_snapshot(app, "No limit"))
 
         # apply a limit by clicking the limit checkbox
         await pilot.click(bar.checkbox.__class__)
@@ -103,6 +118,7 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 500
+        snap_results.append(app_snapshot(app, "Limit 500"))
 
         # type an invalid limit, checkbox should be unchecked
         # and a tooltip should appear on hover
@@ -112,6 +128,7 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         assert app.limit == 500
         assert bar.checkbox.value is False
         assert bar.input.tooltip is not None
+        snap_results.append(app_snapshot(app, "Invalid limit"))
 
         # type a valid limit
         await pilot.press("backspace")
@@ -126,35 +143,50 @@ async def test_run_query_bar(app_small_db: Harlequin) -> None:
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 100
+        snap_results.append(app_snapshot(app, "Limit 100"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
-async def test_toggle_sidebar(app: Harlequin) -> None:
+async def test_toggle_sidebar(
+    app: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         # initialization
         sidebar = app.data_catalog
         assert not sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value > 0
+        snap_results.append(app_snapshot(app, "Initialization"))
 
         await pilot.press("ctrl+b")
         assert sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value == 0
+        snap_results.append(app_snapshot(app, "Hidden"))
 
         await pilot.press("ctrl+b")
         assert not sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value > 0
+        snap_results.append(app_snapshot(app, "Unhidden"))
 
         await pilot.press("f9")
         assert sidebar.disabled
         assert sidebar.styles.width
         assert sidebar.styles.width.value == 0
+        snap_results.append(app_snapshot(app, "Hidden Again"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
-async def test_toggle_full_screen(app: Harlequin) -> None:
+async def test_toggle_full_screen(
+    app: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         # initialization; all visible
         app.editor.focus()
@@ -165,6 +197,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert not w.disabled
             assert w.styles.width
             assert w.styles.width.value > 0
+        snap_results.append(app_snapshot(app, "Initialization"))
 
         await pilot.press("f10")
         # only editor visible
@@ -177,6 +210,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert w.disabled
             assert w.styles.width
             assert w.styles.width.value == 0
+        snap_results.append(app_snapshot(app, "Editor Full Screen"))
 
         await pilot.press("ctrl+b")
         # editor and data catalog should be visible
@@ -185,6 +219,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert app.full_screen
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
+        snap_results.append(app_snapshot(app, "Editor Full Screen with Sidebar"))
 
         await pilot.press("f10")
         # all visible
@@ -192,6 +227,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert not w.disabled
             assert w.styles.width
             assert w.styles.width.value > 0
+        snap_results.append(
+            app_snapshot(app, "Exit Full Screen (sidebar already visible)")
+        )
 
         await pilot.press("ctrl+b")
         # data catalog hidden
@@ -199,6 +237,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert app.data_catalog.disabled
         assert not app.editor_collection.disabled
         assert not app.editor.disabled
+        snap_results.append(app_snapshot(app, "Sidebar hidden"))
 
         await pilot.press("f10")
         # only editor visible
@@ -206,6 +245,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert not app.editor.disabled
         assert app.data_catalog.disabled
         assert app.results_viewer.disabled
+        snap_results.append(
+            app_snapshot(app, "Editor Full Screen (sidebar already hidden)")
+        )
 
         await pilot.press("f10")
         # data catalog should still be hidden
@@ -214,6 +256,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert not app.run_query_bar.disabled
         assert app.data_catalog.disabled
         assert not app.results_viewer.disabled
+        snap_results.append(
+            app_snapshot(app, "Exit Full Screen (sidebar remains hidden)")
+        )
         app.editor.text = "select 1"
         await pilot.press("ctrl+j")
 
@@ -224,6 +269,7 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert app.run_query_bar.disabled
         assert app.data_catalog.disabled
         assert not app.results_viewer.disabled
+        snap_results.append(app_snapshot(app, "Results Viewer Full Screen"))
 
         await pilot.press("f9")
         # results viewer and data catalog should be visible
@@ -233,6 +279,9 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
         assert app.editor_collection.disabled
         assert app.run_query_bar.disabled
         assert not app.results_viewer.disabled
+        snap_results.append(
+            app_snapshot(app, "Results Viewer Full Screen with Sidebar")
+        )
 
         await pilot.press("f10")
         # all visible
@@ -242,16 +291,20 @@ async def test_toggle_full_screen(app: Harlequin) -> None:
             assert not w.disabled
             assert w.styles.width
             assert w.styles.width.value > 0
+        snap_results.append(app_snapshot(app, "Exit RV Full Screen (sidebar visible)"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
-async def test_help_screen(app: Harlequin) -> None:
+async def test_help_screen(app: Harlequin, app_snapshot: Callable[..., bool]) -> None:
     async with app.run_test() as pilot:
         assert len(app.screen_stack) == 1
 
         await pilot.press("f1")
         assert len(app.screen_stack) == 2
         assert app.screen.id == "help_screen"
+        assert app_snapshot(app, "Help Screen")
 
         await pilot.press("a")  # any key
         assert len(app.screen_stack) == 1
@@ -267,7 +320,10 @@ async def test_help_screen(app: Harlequin) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("filename", ["one.csv", "one.parquet", "one.json"])
-async def test_export(app: Harlequin, tmp_path: Path, filename: str) -> None:
+async def test_export(
+    app: Harlequin, tmp_path: Path, filename: str, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
@@ -278,21 +334,32 @@ async def test_export(app: Harlequin, tmp_path: Path, filename: str) -> None:
         assert len(app.screen_stack) == 2
         assert app.screen.id == "export_screen"
         assert isinstance(app.screen, ExportScreen)
+        snap_results.append(app_snapshot(app, "Export Screen"))
+
         export_path = tmp_path / filename
         app.screen.file_input.value = str(export_path)  # type: ignore
+        await pilot.pause()
+        snap_results.append(app_snapshot(app, "Export with Path"))
         await pilot.press("enter")
 
         assert export_path.is_file()
         assert len(app.screen_stack) == 1
+        snap_results.append(app_snapshot(app, "After Export"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
-async def test_multiple_buffers(app: Harlequin) -> None:
+async def test_multiple_buffers(
+    app: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
         app.editor.text = "tab 1"
+        snap_results.append(app_snapshot(app, "Tab 1 of 1 (No tabs)"))
 
         await pilot.press("ctrl+n")
         await pilot.pause()
@@ -300,6 +367,7 @@ async def test_multiple_buffers(app: Harlequin) -> None:
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == ""
         app.editor.text = "tab 2"
+        snap_results.append(app_snapshot(app, "Tab 2 of 2"))
 
         await pilot.press("ctrl+n")
         await pilot.pause()
@@ -307,29 +375,37 @@ async def test_multiple_buffers(app: Harlequin) -> None:
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == ""
         app.editor.text = "tab 3"
+        snap_results.append(app_snapshot(app, "Tab 3 of 3"))
 
         await pilot.press("ctrl+k")
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
+        snap_results.append(app_snapshot(app, "Tab 1 of 3"))
 
         await pilot.press("ctrl+k")
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == "tab 2"
+        snap_results.append(app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
+        snap_results.append(app_snapshot(app, "Tab 3 after deleting 2"))
 
         await pilot.press("ctrl+k")
         assert app.editor_collection.active == "tab-1"
         assert app.editor.text == "tab 1"
+        snap_results.append(app_snapshot(app, "Tab 1 of [1,3]"))
 
         await pilot.press("ctrl+k")
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == "tab 3"
+        snap_results.append(app_snapshot(app, "Tab 3 of [1,3]"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
@@ -343,7 +419,10 @@ async def test_multiple_buffers(app: Harlequin) -> None:
         "select 0::struct(id int); select 1",  # one error, mult queries, err first
     ],
 )
-async def test_query_errors(app: Harlequin, bad_query: str) -> None:
+async def test_query_errors(
+    app: Harlequin, bad_query: str, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     async with app.run_test() as pilot:
         app.editor.text = bad_query
 
@@ -351,6 +430,7 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
         await pilot.press("ctrl+j")
         assert len(app.screen_stack) == 2
         assert isinstance(app.screen, ErrorModal)
+        snap_results.append(app_snapshot(app, "Error visible"))
 
         await pilot.press("space")
         assert len(app.screen_stack) == 1
@@ -358,14 +438,21 @@ async def test_query_errors(app: Harlequin, bad_query: str) -> None:
         # data table and query bar should be responsive
         assert "non-responsive" not in app.run_query_bar.classes
         assert "non-responsive" not in app.results_viewer.classes
+        snap_results.append(app_snapshot(app, "After dismissing error"))
+
+        assert all(snap_results)
 
 
 @pytest.mark.asyncio
-async def test_data_catalog(app_multi_db: Harlequin) -> None:
+async def test_data_catalog(
+    app_multi_db: Harlequin, app_snapshot: Callable[..., bool]
+) -> None:
+    snap_results: List[bool] = []
     app = app_multi_db
     async with app.run_test() as pilot:
         catalog = app.data_catalog
         assert not catalog.show_root
+        snap_results.append(app_snapshot(app, "Initialization"))
 
         # this test app has two databases attached.
         dbs = catalog.root.children
@@ -390,6 +477,7 @@ async def test_data_catalog(app_multi_db: Harlequin) -> None:
         assert dbs[0].is_expanded is True
         assert dbs[1].is_expanded is False
         assert all(not node.is_expanded for node in dbs[0].children)
+        snap_results.append(app_snapshot(app, "small expanded"))
 
         # small's second schema is "main". click "main"
         schema_main = dbs[0].children[1]
@@ -397,6 +485,7 @@ async def test_data_catalog(app_multi_db: Harlequin) -> None:
         await pilot.pause()
         assert schema_main.is_expanded is True
         assert catalog.cursor_line == 2  # main is selected
+        snap_results.append(app_snapshot(app, "small.main expanded"))
 
         # ctrl+enter to insert into editor; editor gets focus
         await pilot.press("ctrl+j")
@@ -404,6 +493,7 @@ async def test_data_catalog(app_multi_db: Harlequin) -> None:
         assert schema_main.is_expanded is True
         assert app.editor.text == '"small"."main"'
         assert app.editor._has_focus_within
+        snap_results.append(app_snapshot(app, "Inserted small.main"))
 
         # use keys to navigate the tree into main.drivers
         await pilot.press("f6")
@@ -421,9 +511,13 @@ async def test_data_catalog(app_multi_db: Harlequin) -> None:
         assert col_node.data is not None
         assert col_node.data.qualified_identifier == '"small"."main"."drivers"."dob"'
         assert col_node.data.query_name == '"dob"'
+        snap_results.append(app_snapshot(app, "small.main.drivers.dob selected"))
 
         # reset the editor, then insert "dob"
         app.editor.text = ""
         await pilot.press("ctrl+j")
         await pilot.pause()
         assert app.editor.text == '"dob"'
+        snap_results.append(app_snapshot(app, "small.main.drivers.dob inserted"))
+
+        assert all(snap_results)

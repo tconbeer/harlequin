@@ -1,4 +1,4 @@
-*.db
+*.db*
 *.db.wal
 *.csv
 *.json
@@ -10,6 +10,7 @@
 !tests/data/**/*.parquet
 !tests/data/**/*.sql
 Pipfile
+snapshot_report.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

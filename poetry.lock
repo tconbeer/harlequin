@@ -333,16 +333,6 @@ files = [
 ]
 
 [[package]]
-name = "colored"
-version = "1.4.4"
-description = "Simple library for color and formatting to terminal"
-optional = false
-python-versions = "*"
-files = [
-    {file = "colored-1.4.4.tar.gz", hash = "sha256:04ff4d4dd514274fe3b99a21bb52fb96f2688c01e93fba7bef37221e7cb56ce0"},
-]
-
-[[package]]
 name = "distlib"
 version = "0.3.7"
 description = "Distribution utilities"
@@ -1167,11 +1157,9 @@ name = "pytest-textual-snapshot"
 version = "0.4.0"
 description = "Snapshot testing for Textual apps"
 optional = false
-python-versions = ">=3.6,<4.0"
-files = [
-    {file = "pytest_textual_snapshot-0.4.0-py3-none-any.whl", hash = "sha256:879cc5de29cdd31cfe1b6daeb1dc5e42682abebcf4f88e7e3375bd5200683fc0"},
-    {file = "pytest_textual_snapshot-0.4.0.tar.gz", hash = "sha256:63782e053928a925d88ff7359dd640f2900e23bc708b3007f8b388e65f2527cb"},
-]
+python-versions = "^3.8"
+files = []
+develop = false
 
 [package.dependencies]
 jinja2 = ">=3.0.0"
@@ -1179,6 +1167,12 @@ pytest = ">=7.0.0"
 rich = ">=12.0.0"
 syrupy = ">=3.0.0"
 textual = ">=0.28.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
+reference = "main"
+resolved_reference = "dc397c8daed8e62a6c2305c3f1f5218bea1f24d8"
 
 [[package]]
 name = "pyyaml"
@@ -1323,18 +1317,17 @@ sqlfmt-primer = ["gitpython (>=3.1.24,<4.0.0)"]
 
 [[package]]
 name = "syrupy"
-version = "3.0.6"
+version = "4.5.0"
 description = "Pytest Snapshot Test Utility"
 optional = false
-python-versions = ">=3.7,<4"
+python-versions = ">=3.8.1,<4"
 files = [
-    {file = "syrupy-3.0.6-py3-none-any.whl", hash = "sha256:9c18e22264026b34239bcc87ab7cc8d893eb17236ea7dae634217ea4f22a848d"},
-    {file = "syrupy-3.0.6.tar.gz", hash = "sha256:583aa5ca691305c27902c3e29a1ce9da50ff9ab5f184c54b1dc124a16e4a6cf4"},
+    {file = "syrupy-4.5.0-py3-none-any.whl", hash = "sha256:ea6a237ef374bacebbdb4049f73bf48e3dda76eabd4621a6d104d43077529de6"},
+    {file = "syrupy-4.5.0.tar.gz", hash = "sha256:6e01fccb4cd5ad37ce54e8c265cde068fa9c37b7a0946c603c328e8a38a7330d"},
 ]
 
 [package.dependencies]
-colored = ">=1.3.92,<2.0.0"
-pytest = ">=5.1.0,<8.0.0"
+pytest = ">=7.0.0,<8.0.0"
 
 [[package]]
 name = "textual"
@@ -1746,5 +1739,5 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.8"
-content-hash = "d0a9f7b7e8a4ccf16f983e3c1f7a2cd19ee9c417936fdfce372be5adb56ae9a6"
+python-versions = ">=3.8.1,<4.0.0"
+content-hash = "536f70a13b272b56d53ee0b0682f3fd0e1d5c07712a013c642898c083973f7da"
