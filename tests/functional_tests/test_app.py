@@ -60,6 +60,7 @@ async def test_multiple_queries(
         await pilot.press("ctrl+j")
         # should run both queries
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         assert app.query_text == "select 1; select 2"
         assert len(app.results_viewer.data) == 2
         assert "hide-tabs" not in app.results_viewer.classes
@@ -69,9 +70,11 @@ async def test_multiple_queries(
             assert app.query_one(f"#{k}", ResultsTable)
         assert app.results_viewer.tab_switcher.active == "tab-1"
         await pilot.press("k")
+        await pilot.wait_for_scheduled_animations()
         assert app.results_viewer.tab_switcher.active == "tab-2"
         snap_results.append(app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("k")
+        await pilot.wait_for_scheduled_animations()
         assert app.results_viewer.tab_switcher.active == "tab-1"
         snap_results.append(app_snapshot(app, "Both queries, tab 1"))
         await pilot.press("j")
@@ -403,7 +406,7 @@ async def test_multiple_buffers(
         snap_results.append(app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
-        await pilot.pause()
+        await pilot.pause(1)
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-3"
