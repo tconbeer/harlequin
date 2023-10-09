@@ -301,7 +301,7 @@ class Harlequin(App, inherit_bindings=False):
                 self.results_viewer.clear_all_tables()
                 self.results_viewer.data = {}
                 relations = worker.result
-                number_of_queries = len(query_text.split(";"))
+                number_of_queries = len(self._split_query_text(query_text))
                 elapsed = time.monotonic() - self.query_timer
                 if relations:  # select query
                     self.relations = relations
@@ -429,7 +429,7 @@ class Harlequin(App, inherit_bindings=False):
         self, query_text: str
     ) -> Dict[str, duckdb.DuckDBPyRelation]:
         relations: Dict[str, duckdb.DuckDBPyRelation] = {}
-        for q in query_text.split(";"):
+        for q in self._split_query_text(query_text):
             rel = self.connection.sql(q)
             if rel is not None:
                 if self.run_query_bar.checkbox.value:
@@ -440,6 +440,10 @@ class Harlequin(App, inherit_bindings=False):
 
     def _set_query_text(self) -> None:
         self.query_text = self._validate_selection() or self.editor.current_query
+
+    @staticmethod
+    def _split_query_text(query_text: str) -> List[str]:
+        return [q for q in query_text.split(";") if q.strip()]
 
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
         self.push_screen(
