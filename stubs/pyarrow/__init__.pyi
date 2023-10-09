@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Iterator, Literal, Mapping, Type, TypeVar
 
+from .compute import CastOptions
 from .types import DataType as DataType
 from .types import string as string
 
@@ -22,7 +23,7 @@ class _PandasConvertible:
         self: A,
         target_type: DataType | None = None,
         safe: bool = True,
-        options: Any | None = None,
+        options: CastOptions | None = None,
     ) -> A: ...
     def __getitem__(self, index: int) -> Scalar: ...
     def to_pylist(self) -> list[Any]: ...
@@ -30,6 +31,9 @@ class _PandasConvertible:
 
 class Array(_PandasConvertible): ...
 class ChunkedArray(_PandasConvertible): ...
+
+class StructArray(Array):
+    def flatten(self, memory_pool: MemoryPool | None = None) -> list[Array]: ...
 
 T = TypeVar("T", bound="_Tabular")
 
@@ -105,4 +109,7 @@ def nulls(
     size: int,
     type: DataType | None = None,  # noqa: A002
     memory_pool: MemoryPool | None = None,
+) -> Array: ...
+def concat_arrays(
+    arrays: Iterable[Array], memory_pool: MemoryPool | None = None
 ) -> Array: ...

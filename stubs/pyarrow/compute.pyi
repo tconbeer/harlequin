@@ -1,7 +1,22 @@
+from __future__ import annotations
+
 from . import MemoryPool, Scalar, _PandasConvertible
+from .types import DataType
 
 class Expression: ...
 class ScalarAggregateOptions: ...
+
+class CastOptions:
+    def __init__(
+        self,
+        target_type: DataType | None = None,
+        allow_int_overflow: bool | None = None,
+        allow_time_truncate: bool | None = None,
+        allow_time_overflow: bool | None = None,
+        allow_decimal_truncate: bool | None = None,
+        allow_float_truncate: bool | None = None,
+        allow_invalid_utf8: bool | None = None,
+    ) -> None: ...
 
 def max(  # noqa: A001
     array: _PandasConvertible,
