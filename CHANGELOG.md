@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Harlequin's query notifications no longer count whitespace-only queries ([#268](https://github.com/tconbeer/harlequin/issues/268)).
+
 ## [1.1.1] - 2023-10-09
 
 ### Bug Fixes
 
--   Harlequin no longer crashes if the data returned by DuckDB contains NoneType or complex (Struct, Map, List) columns ([#265](https://github.com/tconbeer/harlequin/issues/265)).
+-   Harlequin no longer crashes if the data returned by DuckDB contains NoneType or complex (Struct, Map, List) columns ([#265](https://github.com/tconbeer/harlequin/issues/265) - thank you [@sjdurfey](https://github.com/sjdurfey)!).
 
 ### Testing
 
