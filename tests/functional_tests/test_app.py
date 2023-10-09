@@ -36,6 +36,48 @@ async def test_select_1(app: Harlequin, app_snapshot: Callable[..., bool]) -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "select 1+1",
+        "select 'a' as foo",
+        "select null",
+        "select null as foo",
+        "SELECT {'x': 1, 'y': 2, 'z': 3}",  # struct
+        # also a struct:
+        "SELECT {'yes': 'duck', 'maybe': 'goose', 'huh': NULL, 'no': 'heron'}",
+        "SELECT {'key1': 'string', 'key2': 1, 'key3': 12.345}",  # struct
+        """SELECT {'birds':
+            {'yes': 'duck', 'maybe': 'goose', 'huh': NULL, 'no': 'heron'},
+        'aliens':
+            NULL,
+        'amphibians':
+            {'yes':'frog', 'maybe': 'salamander', 'huh': 'dragon', 'no':'toad'}
+        }""",  # struct
+        "select {'a': 5} union all select {'a': 6}",  # struct
+        "select map {'a': 5}",  # map
+        "select map {'a': 5} union all select map {'b': 6}",  # map
+        "SELECT map { 1: 42.001, 5: -32.1 }",  # map
+        "SELECT map { ['a', 'b']: [1.1, 2.2], ['c', 'd']: [3.3, 4.4] }",  # map
+        "SELECT [1, 2, 3]",  # list
+        "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
+        "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
+    ],
+)
+async def test_queries_do_not_crash(
+    app: Harlequin, query: str, app_snapshot: Callable[..., bool]
+) -> None:
+    async with app.run_test() as pilot:
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+
+        assert app.query_text == query
+        assert app.relations
+        assert app_snapshot(app)
+
+
+@pytest.mark.asyncio
 async def test_multiple_queries(
     app: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
@@ -440,6 +482,11 @@ async def test_multiple_buffers(
         "select; select 0::struct(id int)",  # multiple errors
         "select 1; select 0::struct(id int)",  # one error, mult queries
         "select 0::struct(id int); select 1",  # one error, mult queries, err first
+        """
+            CREATE TABLE tbl1(u UNION(num INT, str VARCHAR));
+            INSERT INTO tbl1 values (1) , ('two') , (union_value(str := 'three'));
+            SELECT u FROM tbl1;
+        """,  # arrow doesn't do union types.
     ],
 )
 async def test_query_errors(

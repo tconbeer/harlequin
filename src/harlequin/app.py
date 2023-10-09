@@ -464,7 +464,7 @@ class Harlequin(App, inherit_bindings=False):
         for id_, rel in relations.items():
             try:
                 rel_data: pa.Table = rel.fetch_arrow_table()
-            except duckdb.DataError as e:
+            except (duckdb.DataError, duckdb.InternalException) as e:
                 errors.append(e)
             else:
                 self.results_viewer.push_table(
