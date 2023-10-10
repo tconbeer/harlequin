@@ -3,6 +3,7 @@ from pathlib import Path
 import duckdb
 import pytest
 from harlequin import Harlequin
+from harlequin.adapter import DuckDBAdapter
 
 
 @pytest.fixture(autouse=True)
@@ -39,14 +40,14 @@ def small_db(tmp_path: Path, data_dir: Path) -> Path:
 
 @pytest.fixture
 def app() -> Harlequin:
-    return Harlequin([":memory:"])
+    return Harlequin(DuckDBAdapter([":memory:"]))
 
 
 @pytest.fixture
 def app_small_db(small_db: Path) -> Harlequin:
-    return Harlequin([str(small_db)])
+    return Harlequin(DuckDBAdapter([str(small_db)]))
 
 
 @pytest.fixture
 def app_multi_db(tiny_db: Path, small_db: Path) -> Harlequin:
-    return Harlequin([str(tiny_db), str(small_db)])
+    return Harlequin(DuckDBAdapter([str(tiny_db), str(small_db)]))

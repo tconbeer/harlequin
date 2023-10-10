@@ -4,8 +4,7 @@ import asyncio
 import json
 import time
 from functools import partial
-from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Dict, List, Optional, Type, Union
 
 import duckdb
 import pyarrow as pa
@@ -25,6 +24,7 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
+from harlequin.adapter import DuckDBAdapter
 from harlequin.cache import BufferState, Cache, write_cache
 from harlequin.catalog import CatalogItem
 from harlequin.colors import HarlequinColors
@@ -39,7 +39,7 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
-from harlequin.duck_ops import connect, get_catalog, get_column_labels_for_relation
+from harlequin.duck_ops import get_catalog, get_column_labels_for_relation
 from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinThemeError,
@@ -73,38 +73,22 @@ class Harlequin(App, inherit_bindings=False):
 
     def __init__(
         self,
-        db_path: Sequence[Union[str, Path]],
+        adapter: DuckDBAdapter,
         theme: str = "monokai",
-        init_script: Tuple[Path, str] = (Path(), ""),
         max_results: int = 100_000,
-        read_only: bool = False,
-        allow_unsigned_extensions: bool = False,
-        extensions: Union[List[str], None] = None,
-        force_install_extensions: bool = False,
-        custom_extension_repo: Union[str, None] = None,
-        md_token: Union[str, None] = None,
-        md_saas: bool = False,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
+        self.adapter = adapter
         self.theme = theme
         self.max_results = max_results
         self.limit = min(500, max_results) if max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
-            self.connection = connect(
-                db_path,
-                init_script=init_script,
-                read_only=read_only,
-                allow_unsigned_extensions=allow_unsigned_extensions,
-                extensions=extensions,
-                force_install_extensions=force_install_extensions,
-                custom_extension_repo=custom_extension_repo,
-                md_token=md_token,
-                md_saas=md_saas,
-            )
+            conn = self.adapter.connect()
+            self.connection = conn.conn
         except HarlequinConnectionError as e:
             print(
                 Panel.fit(
@@ -121,8 +105,9 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit()
         else:
-            if init_script[1]:
-                self.notify(f"Executed commands from {init_script[0]}")
+            # if init_script[1]:
+            #     self.notify(f"Executed commands from {init_script[0]}")
+            pass
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)

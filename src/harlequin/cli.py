@@ -4,7 +4,7 @@ from typing import List, Tuple, Union
 import click
 
 from harlequin import Harlequin
-from harlequin.config import get_init_script
+from harlequin.adapter import DuckDBAdapter
 
 
 @click.command()
@@ -118,20 +118,25 @@ def harlequin(
     md_token: Union[str, None],
     md_saas: bool,
 ) -> None:
+    adapter = DuckDBAdapter(
+        conn_str=db_path,
+        init_path=init_path,
+        no_init=no_init,
+        read_only=read_only,
+        allow_unsigned_extensions=allow_unsigned_extensions,
+        extension=extension,
+        force_install_extensions=force_install_extensions,
+        custom_extension_repo=custom_extension_repo,
+        md_token=md_token,
+        md_saas=md_saas,
+    )
+
     if not db_path:
         db_path = (":memory:",)
 
     tui = Harlequin(
-        db_path=db_path,
-        init_script=get_init_script(init_path, no_init),
+        adapter=adapter,
         max_results=limit,
-        read_only=read_only,
-        extensions=extension,
-        force_install_extensions=force_install_extensions,
-        custom_extension_repo=custom_extension_repo,
         theme=theme,
-        md_token=md_token,
-        md_saas=md_saas,
-        allow_unsigned_extensions=allow_unsigned_extensions,
     )
     tui.run()
