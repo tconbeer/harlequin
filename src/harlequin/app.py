@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from functools import partial
@@ -156,14 +157,19 @@ class Harlequin(App, inherit_bindings=False):
                 )
         yield Footer()
 
-    def push_screen(
+    def push_screen(  # type: ignore
         self,
         screen: Union[Screen[ScreenResultType], str],
         callback: Union[ScreenResultCallbackType[ScreenResultType], None] = None,
-    ) -> AwaitMount:
+        wait_for_dismiss: bool = False,
+    ) -> Union[AwaitMount, asyncio.Future[ScreenResultType]]:
         if self.editor._has_focus_within:
             self.editor.text_input.blink_timer.pause()
-        return super().push_screen(screen, callback=callback)
+        return super().push_screen(  # type: ignore
+            screen,
+            callback=callback,
+            wait_for_dismiss=wait_for_dismiss,
+        )
 
     def pop_screen(self) -> Screen[object]:
         new_screen = super().pop_screen()
