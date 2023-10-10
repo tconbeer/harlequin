@@ -529,7 +529,7 @@ async def test_data_catalog(
         assert len(dbs) == 2
 
         # the first db is called "small"
-        assert str(dbs[0].label) == "small"
+        assert str(dbs[0].label) == "small db"
         assert dbs[0].data is not None
         assert dbs[0].data.qualified_identifier == '"small"'
         assert dbs[0].data.query_name == '"small"'
@@ -539,7 +539,7 @@ async def test_data_catalog(
         assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
 
-        assert str(dbs[1].label) == "tiny"
+        assert str(dbs[1].label) == "tiny db"
         assert dbs[0].is_expanded is False
 
         # click on "small" and see it expand.

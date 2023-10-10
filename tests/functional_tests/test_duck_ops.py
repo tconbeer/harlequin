@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from harlequin.catalog import Catalog, CatalogItem
 from harlequin.duck_ops import (
     _get_columns,
     _get_databases,
@@ -104,35 +105,125 @@ def test_get_columns(small_db: Path) -> None:
 
 def test_get_catalog(tiny_db: Path, small_db: Path) -> None:
     conn = connect([tiny_db, small_db], read_only=True)
-    expected = [
-        (
-            "small",
-            [
-                ("empty", []),
-                (
-                    "main",
-                    [
-                        (
-                            "drivers",
-                            "BASE TABLE",
-                            [
-                                ("code", "VARCHAR"),
-                                ("dob", "DATE"),
-                                ("driverId", "BIGINT"),
-                                ("driverRef", "VARCHAR"),
-                                ("forename", "VARCHAR"),
-                                ("nationality", "VARCHAR"),
-                                ("number", "VARCHAR"),
-                                ("surname", "VARCHAR"),
-                                ("url", "VARCHAR"),
-                            ],
-                        )
-                    ],
-                ),
-            ],
-        ),
-        ("tiny", [("main", [("foo", "BASE TABLE", [("foo_col", "INTEGER")])])]),
-    ]
+    expected = Catalog(
+        items=[
+            CatalogItem(
+                qualified_identifier='"small"',
+                query_name='"small"',
+                label="small",
+                type_label="db",
+                children=[
+                    CatalogItem(
+                        qualified_identifier='"small"."empty"',
+                        query_name='"small"."empty"',
+                        label="empty",
+                        type_label="sch",
+                        children=[],
+                    ),
+                    CatalogItem(
+                        qualified_identifier='"small"."main"',
+                        query_name='"small"."main"',
+                        label="main",
+                        type_label="sch",
+                        children=[
+                            CatalogItem(
+                                qualified_identifier='"small"."main"."drivers"',
+                                query_name='"small"."main"."drivers"',
+                                label="drivers",
+                                type_label="t",
+                                children=[
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."code"',
+                                        query_name='"code"',
+                                        label="code",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."dob"',
+                                        query_name='"dob"',
+                                        label="dob",
+                                        type_label="d",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."driverId"',
+                                        query_name='"driverId"',
+                                        label="driverId",
+                                        type_label="##",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."driverRef"',
+                                        query_name='"driverRef"',
+                                        label="driverRef",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."forename"',
+                                        query_name='"forename"',
+                                        label="forename",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."nationality"',
+                                        query_name='"nationality"',
+                                        label="nationality",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."number"',
+                                        query_name='"number"',
+                                        label="number",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."surname"',
+                                        query_name='"surname"',
+                                        label="surname",
+                                        type_label="s",
+                                    ),
+                                    CatalogItem(
+                                        qualified_identifier='"small"."main"."drivers"."url"',
+                                        query_name='"url"',
+                                        label="url",
+                                        type_label="s",
+                                    ),
+                                ],
+                            )
+                        ],
+                    ),
+                ],
+            ),
+            CatalogItem(
+                qualified_identifier='"tiny"',
+                query_name='"tiny"',
+                label="tiny",
+                type_label="db",
+                children=[
+                    CatalogItem(
+                        qualified_identifier='"tiny"."main"',
+                        query_name='"tiny"."main"',
+                        label="main",
+                        type_label="sch",
+                        children=[
+                            CatalogItem(
+                                qualified_identifier='"tiny"."main"."foo"',
+                                query_name='"tiny"."main"."foo"',
+                                label="foo",
+                                type_label="t",
+                                children=[
+                                    CatalogItem(
+                                        qualified_identifier='"tiny"."main"."foo"."foo_col"',
+                                        query_name='"foo_col"',
+                                        label="foo_col",
+                                        type_label="#",
+                                    )
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        ]
+    )
     assert get_catalog(conn) == expected
 
 

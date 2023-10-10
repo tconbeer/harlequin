@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 -   Harlequin's query notifications no longer count whitespace-only queries ([#268](https://github.com/tconbeer/harlequin/issues/268)).
+-   Harlequin's DataCatalog now displays "db" next to database names and "sch" next to schema names. Empty databases and schemas no longer have an arrow to expand them.
 
 ## [1.1.1] - 2023-10-09
 

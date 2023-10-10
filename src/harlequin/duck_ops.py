@@ -4,6 +4,7 @@ from typing import List, Sequence, Tuple, Union
 import duckdb
 from duckdb.typing import DuckDBPyType
 
+from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError
 from harlequin.export_options import (
     CSVOptions,
@@ -11,12 +12,6 @@ from harlequin.export_options import (
     JSONOptions,
     ParquetOptions,
 )
-
-COLS = List[Tuple[str, str]]
-TABLES = List[Tuple[str, str, COLS]]
-SCHEMAS = List[Tuple[str, TABLES]]
-Catalog = List[Tuple[str, SCHEMAS]]
-
 
 RELATION_TYPE_MAPPING = {
     "BASE TABLE": "t",
@@ -224,45 +219,62 @@ def export_relation(
 
 
 def get_catalog(conn: duckdb.DuckDBPyConnection) -> Catalog:
-    data: Catalog = []
+    catalog_items: List[CatalogItem] = []
     databases = _get_databases(conn)
     for (database,) in databases:
+        database_identifier = f'"{database}"'
         schemas = _get_schemas(conn, database)
-        schemas_data: SCHEMAS = []
+        schema_items: List[CatalogItem] = []
         for (schema,) in schemas:
+            schema_identifier = f'{database_identifier}."{schema}"'
             tables = _get_tables(conn, database, schema)
-            tables_data: TABLES = []
+            table_items: List[CatalogItem] = []
             for table, kind in tables:
+                table_identifier = f'{schema_identifier}."{table}"'
                 columns = _get_columns(conn, database, schema, table)
-                tables_data.append((table, kind, columns))
-            schemas_data.append((schema, tables_data))
-        data.append((database, schemas_data))
-    return data
-
-
-def get_relation_label(
-    rel_name: str, rel_type: str, type_color: str = "#888888"
-) -> str:
-    short_type = _short_relation_type(rel_type)
-    return f"{rel_name} [{type_color}]{short_type}[/]"
-
-
-def get_column_label(
-    col_name: str,
-    col_type: Union[DuckDBPyType, str],
-    type_color: str = "#888888",
-) -> str:
-    short_type = _short_column_type(col_type)
-    return f"{col_name} [{type_color}]{short_type}[/]"
+                column_items = [
+                    CatalogItem(
+                        qualified_identifier=f'{table_identifier}."{col[0]}"',
+                        query_name=f'"{col[0]}"',
+                        label=col[0],
+                        type_label=_short_column_type(col[1]),
+                    )
+                    for col in columns
+                ]
+                table_items.append(
+                    CatalogItem(
+                        qualified_identifier=table_identifier,
+                        query_name=table_identifier,
+                        label=table,
+                        type_label=_short_relation_type(kind),
+                        children=column_items,
+                    )
+                )
+            schema_items.append(
+                CatalogItem(
+                    qualified_identifier=schema_identifier,
+                    query_name=schema_identifier,
+                    label=schema,
+                    type_label="sch",
+                    children=table_items,
+                )
+            )
+        catalog_items.append(
+            CatalogItem(
+                qualified_identifier=database_identifier,
+                query_name=database_identifier,
+                label=database,
+                type_label="db",
+                children=schema_items,
+            )
+        )
+    return Catalog(items=catalog_items)
 
 
 def get_column_labels_for_relation(
-    relation: duckdb.DuckDBPyRelation, type_color: str = "#888888"
-) -> List[str]:
-    return [
-        get_column_label(col_name=col_name, col_type=col_type, type_color=type_color)
-        for col_name, col_type in zip(relation.columns, relation.dtypes)
-    ]
+    relation: duckdb.DuckDBPyRelation,
+) -> List[Tuple[str, str]]:
+    return list(zip(relation.columns, map(_short_column_type, relation.dtypes)))
 
 
 def _get_databases(conn: duckdb.DuckDBPyConnection) -> List[Tuple[str]]:

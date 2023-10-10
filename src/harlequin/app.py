@@ -26,9 +26,9 @@ from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
 from harlequin.cache import BufferState, Cache, write_cache
+from harlequin.catalog import CatalogItem
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
-    CatalogItem,
     CodeEditor,
     DataCatalog,
     EditorCollection,
