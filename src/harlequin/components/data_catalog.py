@@ -1,6 +1,5 @@
 from typing import Generic, List, Set, Tuple, Union
 
-from duckdb import DuckDBPyConnection
 from textual.binding import Binding
 from textual.events import Click
 from textual.message import Message
@@ -31,7 +30,6 @@ class DataCatalog(Tree[CatalogItem]):
 
     def __init__(
         self,
-        connection: DuckDBPyConnection,
         type_color: str = "#888888",
         data: Union[CatalogItem, None] = None,
         name: Union[str, None] = None,
@@ -39,7 +37,6 @@ class DataCatalog(Tree[CatalogItem]):
         classes: Union[str, None] = None,
         disabled: bool = False,
     ) -> None:
-        self.connection = connection
         self.type_color = type_color
         super().__init__(
             "Root", data, name=name, id=id, classes=classes, disabled=disabled

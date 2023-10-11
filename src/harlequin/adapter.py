@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Final, Sequence
@@ -9,7 +10,8 @@ from duckdb.typing import DuckDBPyType
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.catalog import Catalog, CatalogItem
-from harlequin.exception import HarlequinConnectionError
+from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
+from harlequin.export_options import ExportOptions
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyOptions
 
 
@@ -68,14 +70,14 @@ class HarlequinConnection(ABC):
     def execute(self, query: str) -> HarlequinCursor | None:
         """
         Executes query and returns a cursor (for a select stmt) or None. Raises
-        HarlequinSqlError if the database raises an error in response to the query.
+        HarlequinQueryError if the database raises an error in response to the query.
 
         Args:
             query (str): The text of a single query to execute
 
         Returns: HarlequinCursor | None
 
-        Raises: HarlequinSqlError
+        Raises: HarlequinQueryError
         """
         pass
 
@@ -89,7 +91,7 @@ class HarlequinConnection(ABC):
         """
         pass
 
-    def copy(self, query: str, path: Path, options: HarlequinCopyOptions) -> None:
+    def copy(self, query: str, path: Path, options: ExportOptions) -> None:
         """
         Exports data returned by query to a file or directory at path, using
         options.
@@ -104,6 +106,13 @@ class HarlequinConnection(ABC):
         Raises:
             NotImplementedError if the adapter does not have copy functionality.
             HarlequinCopyError for all other exceptions during export.
+        """
+        raise NotImplementedError
+
+    def validate_sql(self, text: str) -> str:
+        """
+        Parses text as one or more queries; returns text if parsing does not result
+        in an error; otherwise returns the empty string ("").
         """
         raise NotImplementedError
 
@@ -153,11 +162,20 @@ class HarlequinDuckDBCursor(HarlequinCursor):
         )
 
     def set_limit(self, limit: int) -> HarlequinCursor:
-        self.relation = self.relation.limit(limit)
+        try:
+            self.relation = self.relation.limit(limit)
+        except duckdb.Error:
+            pass
         return self
 
     def fetchall(self) -> AutoBackendType:
-        return self.relation.fetch_arrow_table()  # type: ignore
+        try:
+            result = self.relation.fetch_arrow_table()
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error when running your query:"
+            ) from e
+        return result  # type: ignore
 
 
 class HarlequinDuckDBConnection(HarlequinConnection):
@@ -206,10 +224,17 @@ class HarlequinDuckDBConnection(HarlequinConnection):
     UNKNOWN_TYPE = "?"
 
     def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
-        self.conn = conn
+        self.conn: duckdb.DuckDBPyConnection = conn
 
     def execute(self, query: str) -> HarlequinDuckDBCursor | None:
-        rel = self.conn.sql(query)
+        try:
+            rel = self.conn.sql(query)
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title="DuckDB raised an error when compiling or running your query:",
+            ) from e
+
         if rel is not None:
             return HarlequinDuckDBCursor(conn=self, relation=rel)
         else:
@@ -266,6 +291,30 @@ class HarlequinDuckDBConnection(HarlequinConnection):
                 )
             )
         return Catalog(items=catalog_items)
+
+    def validate_sql(self, text: str) -> str:
+        """
+        Parses text as one or more queries; returns text if parsing does not result
+        in an error; otherwise returns the empty string ("").
+
+        Args:
+            text (str): The text to be validated
+
+        Returns: str, either the original text or the empty string.
+        """
+        escaped = text.replace("'", "''")
+        try:
+            (parsed,) = self.conn.sql(  # type: ignore
+                f"select json_serialize_sql('{escaped}')"
+            ).fetchone()
+        except HarlequinQueryError:
+            return ""
+        result = json.loads(parsed)
+        # DDL statements return an error of type "not implemented"
+        if result.get("error", True) and result.get("error_type", "") == "parser":
+            return ""
+        else:
+            return text
 
     def _get_databases(self) -> list[tuple[str]]:
         return self.conn.execute("pragma show_databases").fetchall()

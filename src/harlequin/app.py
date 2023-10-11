@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
 
-import duckdb
 import pyarrow as pa
 from rich import print
 from rich.panel import Panel
@@ -24,7 +22,7 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import WorkerFailed, get_current_worker
 
-from harlequin.adapter import DuckDBAdapter
+from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.cache import BufferState, Cache, write_cache
 from harlequin.catalog import CatalogItem
 from harlequin.colors import HarlequinColors
@@ -39,16 +37,16 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
-from harlequin.duck_ops import get_catalog, get_column_labels_for_relation
 from harlequin.exception import (
     HarlequinConnectionError,
+    HarlequinQueryError,
     HarlequinThemeError,
 )
 
 
 class Harlequin(App, inherit_bindings=False):
     """
-    A Textual App for a SQL client for DuckDB.
+    The SQL IDE for your Terminal.
     """
 
     CSS_PATH = "global.tcss"
@@ -67,13 +65,13 @@ class Harlequin(App, inherit_bindings=False):
 
     query_text: reactive[str] = reactive(str)
     selection_text: reactive[str] = reactive(str)
-    relations: reactive[Dict[str, duckdb.DuckDBPyRelation]] = reactive(dict)
+    cursors: reactive[Dict[str, HarlequinCursor]] = reactive(dict)
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
 
     def __init__(
         self,
-        adapter: DuckDBAdapter,
+        adapter: HarlequinAdapter,
         theme: str = "monokai",
         max_results: int = 100_000,
         driver_class: Union[Type[Driver], None] = None,
@@ -87,8 +85,7 @@ class Harlequin(App, inherit_bindings=False):
         self.limit = min(500, max_results) if max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
-            conn = self.adapter.connect()
-            self.connection = conn.conn
+            self.connection = self.adapter.connect()
         except HarlequinConnectionError as e:
             print(
                 Panel.fit(
@@ -133,9 +130,7 @@ class Harlequin(App, inherit_bindings=False):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Horizontal():
-            yield DataCatalog(
-                connection=self.connection, type_color=self.app_colors.gray
-            )
+            yield DataCatalog(type_color=self.app_colors.gray)
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
                 yield RunQueryBar(max_results=self.max_results)
@@ -276,31 +271,29 @@ class Harlequin(App, inherit_bindings=False):
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
             try:
-                worker = self._build_relation(query_text)
+                worker = self._build_cursors(query_text)
                 await worker.wait()
             except WorkerFailed as e:
                 self.run_query_bar.set_responsive()
                 self.results_viewer.set_responsive()
                 self.results_viewer.show_table()
+                header = getattr(e.error, "title", "Query Error")
                 self._push_error_modal(
-                    title="DuckDB Error",
-                    header=(
-                        "DuckDB raised an error when compiling "
-                        "or running your query:"
-                    ),
+                    title="Query Error",
+                    header=header,
                     error=e.error,
                 )
             else:
                 self.results_viewer.clear_all_tables()
                 self.results_viewer.data = {}
-                relations = worker.result
+                cursors = worker.result
                 number_of_queries = len(self._split_query_text(query_text))
                 elapsed = time.monotonic() - self.query_timer
-                if relations:  # select query
-                    self.relations = relations
-                    if len(relations) < number_of_queries:
+                if cursors:  # select query
+                    self.cursors = cursors
+                    if len(cursors) < number_of_queries:
                         # mixed select and DDL statements
-                        n = number_of_queries - len(relations)
+                        n = number_of_queries - len(cursors)
                         self.notify(
                             f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
                             f"executed successfully in {elapsed:.2f} seconds."
@@ -322,15 +315,13 @@ class Harlequin(App, inherit_bindings=False):
                     self.results_viewer.set_responsive(did_run=False)
                     self.results_viewer.show_table()
 
-    async def watch_relations(
-        self, relations: Dict[str, duckdb.DuckDBPyRelation]
-    ) -> None:
+    async def watch_cursors(self, cursors: Dict[str, HarlequinCursor]) -> None:
         """
         Only runs for select statements, except when first mounted.
         """
         # invalidate results so watch_data runs even if the results are the same
         self.results_viewer.clear_all_tables()
-        self._set_result_viewer_data(relations)
+        self._set_result_viewer_data(cursors)
 
     def watch_selection_text(self, selection_text: str) -> None:
         if selection_text:
@@ -350,22 +341,16 @@ class Harlequin(App, inherit_bindings=False):
             "Export Data Error",
             "Could not export data.",
         )
-        active_table = self.results_viewer.get_visible_table()
-        if (
-            not self.relations
-            or active_table is None
-            or active_table.id is None
-            or active_table.id not in self.relations
-        ):
+        queries = self._split_query_text(self.query_text)
+        if not queries or not queries[0]:
             show_export_error(
-                error=ValueError("There is no data to export. Run the query first.")
+                error=ValueError("You must type a query into the editor first.")
             )
             return
-        relation = self.relations[active_table.id]
         notify = partial(self.notify, "Data exported successfully.")
         callback = partial(
             export_callback,
-            relation=relation,
+            query_text=queries[0],
             connection=self.connection,
             success_callback=notify,
             error_callback=show_export_error,
@@ -415,21 +400,19 @@ class Harlequin(App, inherit_bindings=False):
     @work(
         exclusive=True,
         exit_on_error=False,
-        group="duck_query_runners",
-        description="Building relation.",
+        group="query_runners",
+        description="Building cursor.",
     )
-    async def _build_relation(
-        self, query_text: str
-    ) -> Dict[str, duckdb.DuckDBPyRelation]:
-        relations: Dict[str, duckdb.DuckDBPyRelation] = {}
+    async def _build_cursors(self, query_text: str) -> Dict[str, HarlequinCursor]:
+        cursors: Dict[str, HarlequinCursor] = {}
         for q in self._split_query_text(query_text):
-            rel = self.connection.sql(q)
-            if rel is not None:
+            cur = self.connection.execute(q)
+            if cur is not None:
                 if self.run_query_bar.checkbox.value:
-                    rel = rel.limit(self.limit)
-                table_id = f"t{hash(rel)}"
-                relations[table_id] = rel
-        return relations
+                    cur = cur.set_limit(self.limit)
+                table_id = f"t{hash(cur)}"
+                cursors[table_id] = cur
+        return cursors
 
     def _set_query_text(self) -> None:
         self.query_text = self._validate_selection() or self.editor.current_query
@@ -450,52 +433,57 @@ class Harlequin(App, inherit_bindings=False):
     @work(
         exclusive=True,
         exit_on_error=True,
-        group="duck_query_runners",
-        description="fetching data from duckdb.",
+        group="query_runners",
+        description="fetching data from adapter.",
     )
     async def _set_result_viewer_data(
-        self, relations: Dict[str, duckdb.DuckDBPyRelation]
+        self, cursors: Dict[str, HarlequinCursor]
     ) -> None:
         data: Dict[str, pa.Table] = {}
         errors: List[BaseException] = []
-        for id_, rel in relations.items():
+        for id_, cur in cursors.items():
             try:
-                rel_data: pa.Table = rel.fetch_arrow_table()
-            except (duckdb.DataError, duckdb.InternalException) as e:
+                cur_data = cur.fetchall()
+            except HarlequinQueryError as e:
                 errors.append(e)
             else:
                 self.results_viewer.push_table(
                     table_id=id_,
-                    column_labels=get_column_labels_for_relation(rel),  # type: ignore
-                    data=rel_data.slice(0, self.max_results)
+                    column_labels=cur.columns(),
+                    data=cur_data.slice(0, self.max_results)  # type: ignore
                     if self.max_results > 0
-                    else rel_data,
+                    else cur_data,
                 )
-                data[id_] = rel_data
+                data[id_] = cur_data  # type: ignore
         if errors:
+            header = getattr(
+                errors[0],
+                "title",
+                "The database raised an error when running your query:",
+            )
             self._push_error_modal(
-                title="DuckDB Error",
-                header=("DuckDB raised an error when running your query:"),
+                title="Query Error",
+                header=header,
                 error=errors[0],
             )
         elif self.query_timer is not None:
             elapsed = time.monotonic() - self.query_timer
             self.notify(
-                f"{len(relations)} {'query' if len(relations) == 1 else 'queries'} "
+                f"{len(cursors)} {'query' if len(cursors) == 1 else 'queries'} "
                 f"executed successfully in {elapsed:.2f} seconds."
             )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
         self.results_viewer.data = data
         if not data:
-            self.results_viewer.set_responsive(did_run=len(errors) == len(relations))
+            self.results_viewer.set_responsive(did_run=len(errors) == len(cursors))
         else:
             self.results_viewer.set_responsive(data=data, did_run=True)
             self.results_viewer.focus()
 
     @work(exclusive=True, group="duck_schema_updaters")
     async def _update_schema_data(self) -> None:
-        catalog = get_catalog(self.connection)
+        catalog = self.connection.get_catalog()
         worker = get_current_worker()
         if not worker.is_cancelled:
             self.data_catalog.update_tree(catalog)
@@ -507,18 +495,9 @@ class Harlequin(App, inherit_bindings=False):
         """
         selection = self.editor.selected_text
         if selection:
-            escaped = selection.replace("'", "''")
             try:
-                (parsed,) = self.connection.sql(  # type: ignore
-                    f"select json_serialize_sql('{escaped}')"
-                ).fetchone()
-            except Exception:
+                return self.connection.validate_sql(selection)
+            except NotImplementedError:
                 return ""
-            result = json.loads(parsed)
-            # DDL statements return an error of type "not implemented"
-            if result.get("error", True) and result.get("error_type", "") == "parser":
-                return ""
-            else:
-                return selection
         else:
             return ""

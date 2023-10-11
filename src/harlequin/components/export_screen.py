@@ -10,8 +10,8 @@ from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual_textarea import PathInput
 
+from harlequin.adapter import HarlequinConnection
 from harlequin.components.error_modal import ErrorModal
-from harlequin.duck_ops import export_relation
 from harlequin.export_options import (
     CSVOptions,
     ExportOptions,
@@ -22,15 +22,14 @@ from harlequin.export_options import (
 
 def export_callback(
     screen_data: Tuple[Path, ExportOptions],
-    relation: duckdb.DuckDBPyRelation,
-    connection: duckdb.DuckDBPyConnection,
+    connection: HarlequinConnection,
+    query: str,
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
     try:
-        export_relation(
-            relation=relation,
-            connection=connection,
+        connection.copy(
+            query=query,
             path=screen_data[0],
             options=screen_data[1],
         )
