@@ -140,10 +140,10 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 @pytest.mark.asyncio
 async def test_run_query_bar(
-    app_small_db: Harlequin, app_snapshot: Callable[..., bool]
+    app_small_duck: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    app = app_small_db
+    app = app_small_duck
     async with app.run_test(size=(120, 36)) as pilot:
         # initialization
         bar = app.run_query_bar
@@ -517,10 +517,10 @@ async def test_query_errors(
 
 @pytest.mark.asyncio
 async def test_data_catalog(
-    app_multi_db: Harlequin, app_snapshot: Callable[..., bool]
+    app_multi_duck: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    app = app_multi_db
+    app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
         catalog = app.data_catalog
         assert not catalog.show_root
