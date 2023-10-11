@@ -19,7 +19,7 @@ EXPOSE 1294
 # styling
 #COPY harlequin_tty2web.conf /root/.tty2web
 #COPY harlequin_bg.jpg /root/harlequin_bg.jpg
-CMD sh -c "tty2web --address 0.0.0.0 --port ${PORT:-1294} --permit-write --reconnect harlequin"
+CMD bash -c "COLORTERM=truecolor tty2web --address 0.0.0.0 --port ${PORT:-1294} --permit-write --reconnect harlequin"
 
 # other commands that can be used
 #CMD harlequin
