@@ -176,11 +176,11 @@ class Harlequin(App, inherit_bindings=False):
     def on_button_pressed(self, message: Button.Pressed) -> None:
         message.stop()
         if message.control.id == "run_query":
-            self._set_query_text()
+            self.query_text = self._get_query_text()
 
     def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
         message.stop()
-        self._set_query_text()
+        self.query_text = self._get_query_text()
 
     def on_data_catalog_node_submitted(
         self, message: DataCatalog.NodeSubmitted[CatalogItem]
@@ -237,7 +237,7 @@ class Harlequin(App, inherit_bindings=False):
                 and message.validation_result
                 and message.validation_result.is_valid
             ):
-                self._set_query_text()
+                self.query_text = self._get_query_text()
 
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
@@ -341,16 +341,19 @@ class Harlequin(App, inherit_bindings=False):
             "Export Data Error",
             "Could not export data.",
         )
-        queries = self._split_query_text(self.query_text)
+        queries = self._split_query_text(self._get_query_text())
         if not queries or not queries[0]:
             show_export_error(
-                error=ValueError("You must type a query into the editor first.")
+                error=ValueError(
+                    "You must type a query into the editor first, or move your "
+                    "cursor into an existing query."
+                )
             )
             return
         notify = partial(self.notify, "Data exported successfully.")
         callback = partial(
             export_callback,
-            query_text=queries[0],
+            query=queries[0],
             connection=self.connection,
             success_callback=notify,
             error_callback=show_export_error,
@@ -414,8 +417,12 @@ class Harlequin(App, inherit_bindings=False):
                 cursors[table_id] = cur
         return cursors
 
-    def _set_query_text(self) -> None:
-        self.query_text = self._validate_selection() or self.editor.current_query
+    def _get_query_text(self) -> str:
+        return (
+            self._validate_selection()
+            or self.editor.current_query
+            or self.editor.previous_query
+        )
 
     @staticmethod
     def _split_query_text(query_text: str) -> List[str]:

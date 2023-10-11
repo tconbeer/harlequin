@@ -10,8 +10,17 @@ from duckdb.typing import DuckDBPyType
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.catalog import Catalog, CatalogItem
-from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
-from harlequin.export_options import ExportOptions
+from harlequin.exception import (
+    HarlequinConnectionError,
+    HarlequinCopyError,
+    HarlequinQueryError,
+)
+from harlequin.export_options import (
+    CSVOptions,
+    ExportOptions,
+    JSONOptions,
+    ParquetOptions,
+)
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyOptions
 
 
@@ -225,6 +234,86 @@ class HarlequinDuckDBConnection(HarlequinConnection):
 
     def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
         self.conn: duckdb.DuckDBPyConnection = conn
+
+    def copy(self, query: str, path: Path, options: ExportOptions) -> None:
+        if not query:
+            raise HarlequinCopyError("Cannot export result of empty query.")
+        try:
+            cursor = self.execute(query)
+        except HarlequinQueryError as e:
+            raise HarlequinCopyError(msg=e.msg, title=e.title) from e
+        if cursor is None:
+            raise HarlequinCopyError("Cannot export result of a DDL/DML query.")
+        final_path = str(path.expanduser())
+        if isinstance(options, CSVOptions):
+            try:
+                cursor.relation.write_csv(
+                    file_name=final_path,
+                    sep=options.sep,
+                    na_rep=options.nullstr,
+                    header=options.header,
+                    quotechar=options.quote,
+                    escapechar=options.escape,
+                    date_format=options.dateformat if options.dateformat else None,
+                    timestamp_format=options.timestampformat
+                    if options.timestampformat
+                    else None,
+                    quoting="ALL" if options.force_quote else None,
+                    compression=options.compression,
+                    encoding=options.encoding,
+                )
+            except (duckdb.Error, OSError) as e:
+                raise HarlequinCopyError(
+                    str(e),
+                    title=(
+                        "DuckDB raised an error when writing your query "
+                        "to a CSV file."
+                    ),
+                ) from e
+        elif isinstance(options, ParquetOptions):
+            try:
+                cursor.relation.write_parquet(
+                    file_name=final_path, compression=options.compression
+                )
+            except (duckdb.Error, OSError) as e:
+                raise HarlequinCopyError(
+                    str(e),
+                    title=(
+                        "DuckDB raised an error when writing your query "
+                        "to a Parquet file."
+                    ),
+                ) from e
+        elif isinstance(options, JSONOptions):
+            compression = (
+                f", COMPRESSION {options.compression}"
+                if options.compression in ("gzip", "zstd", "uncompressed")
+                else ""
+            )
+            print("compression: ", compression)
+            date_format = (
+                f", DATEFORMAT {options.dateformat}" if options.dateformat else ""
+            )
+            ts_format = (
+                f", TIMESTAMPFORMAT {options.timestampformat}"
+                if options.timestampformat
+                else ""
+            )
+            try:
+                self.execute(
+                    f"copy ({query}) to '{final_path}' "
+                    "(FORMAT JSON"
+                    f"{', ARRAY TRUE' if options.array else ''}"
+                    f"{compression}{date_format}{ts_format}"
+                    ")"
+                )
+            except (HarlequinQueryError, OSError) as e:
+                raise HarlequinCopyError(
+                    str(e),
+                    title=(
+                        "DuckDB raised an error when writing your query "
+                        "to a JSON file."
+                    ),
+                ) from e
 
     def execute(self, query: str) -> HarlequinDuckDBCursor | None:
         try:

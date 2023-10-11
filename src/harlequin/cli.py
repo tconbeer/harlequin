@@ -131,9 +131,6 @@ def harlequin(
         md_saas=md_saas,
     )
 
-    if not db_path:
-        db_path = (":memory:",)
-
     tui = Harlequin(
         adapter=adapter,
         max_results=limit,

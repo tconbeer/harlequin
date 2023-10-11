@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Callable, Tuple
 
-import duckdb
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -12,6 +11,7 @@ from textual_textarea import PathInput
 
 from harlequin.adapter import HarlequinConnection
 from harlequin.components.error_modal import ErrorModal
+from harlequin.exception import HarlequinCopyError
 from harlequin.export_options import (
     CSVOptions,
     ExportOptions,
@@ -34,7 +34,7 @@ def export_callback(
             options=screen_data[1],
         )
         success_callback()
-    except (OSError, duckdb.Error) as e:
+    except (OSError, HarlequinCopyError) as e:
         error_callback(e)
 
 

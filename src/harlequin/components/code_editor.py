@@ -61,10 +61,25 @@ class CodeEditor(TextArea):
             after = Cursor(
                 len(self.text_input.lines) - 1, len(self.text_input.lines[-1]) - 1
             )
-        lines, first, last = self.text_input._get_selected_lines(before, after)
-        lines[-1] = lines[-1][: last.pos]
-        lines[0] = lines[0][first.pos :]
-        return serialize_lines(lines)
+        return self._get_text_between_cursors(before, after)
+
+    @property
+    def previous_query(self) -> str:
+        semicolons = self._semicolons
+
+        if not semicolons:
+            return self.text
+
+        first = Cursor(0, 0)
+        second = Cursor(0, 0)
+        for c in semicolons:
+            if c <= self.cursor:
+                first = second
+                second = c
+            elif c > self.cursor:
+                break
+
+        return self._get_text_between_cursors(first, second)
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
@@ -106,6 +121,12 @@ class CodeEditor(TextArea):
         else:
             text_input.move_cursor(old_cursor.pos, old_cursor.lno)
             text_input.update(text_input._content)
+
+    def _get_text_between_cursors(self, before: Cursor, after: Cursor) -> str:
+        lines, first, last = self.text_input._get_selected_lines(before, after)
+        lines[-1] = lines[-1][: last.pos]
+        lines[0] = lines[0][first.pos :]
+        return serialize_lines(lines).strip()
 
     @property
     def _semicolons(self) -> List[Cursor]:
