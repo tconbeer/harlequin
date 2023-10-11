@@ -85,7 +85,7 @@ class Harlequin(App, inherit_bindings=False):
         self.limit = min(500, max_results) if max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
-            self.connection = self.adapter.connect()
+            self.connection, msg = self.adapter.connect()
         except HarlequinConnectionError as e:
             print(
                 Panel.fit(
@@ -102,9 +102,8 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit()
         else:
-            # if init_script[1]:
-            #     self.notify(f"Executed commands from {init_script[0]}")
-            pass
+            if msg:
+                self.notify(msg)
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)

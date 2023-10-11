@@ -122,36 +122,54 @@ class HarlequinConnection(ABC):
         """
         Parses text as one or more queries; returns text if parsing does not result
         in an error; otherwise returns the empty string ("").
+
+        Args:
+            text (str): The text, which may compose one or more queries and partial
+                queries.
+
+        Returns: str, either the original text or the empty string ("")
+
+        Raises: NotImplementedError if the adapter does not provide this optional
+            functionality.
         """
         raise NotImplementedError
 
 
 class HarlequinAdapter(ABC):
+    """
+    A HarlequinAdapter is the main abstraction for a database backend for
+    Harlequin. It must declare its configuration setting the ADAPTER_OPTIONS
+    class variable. If the adapter supports copying (exporting
+    data to a file or directory), it also must declare COPY_OPTIONS.
+    """
+
     ADAPTER_OPTIONS: Final[list[HarlequinAdapterOption] | None] = None
     COPY_OPTIONS: Final[HarlequinCopyOptions | None] = None
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
-        """
-        A HarlequinAdapter is the main abstraction for a database backend for
-        Harlequin. It must declare its configuration setting the ADAPTER_OPTIONS
-        class variable. If the adapter supports copying (exporting
-        data to a file or directory), it also must declare COPY_OPTIONS.
-        """
         pass
 
     @abstractmethod
-    def connect(self) -> HarlequinConnection:
+    def connect(self) -> tuple[HarlequinConnection, str]:
         """
         Creates and returns an initialized connection to a database. Necessary config
         should be stored in the HarlequinAdapter instance when it is created.
 
-        Returns: HarlequinConnection
+        Returns: tuple[HarlequinConnection, str], where the str is a message that
+            will be passed to the user in a notification. If str is the empty string,
+            no notification will be presented to the user.
+
+        Raises: HarlequinConnectionError if a connection could not be established.
         """
         pass
 
     @property
     def implements_copy(self) -> bool:
+        """
+        True if the adapter's connection implements the copy() method. Adapter must
+        also provide options for customizing the Export dialog GUI.
+        """
         return self.COPY_OPTIONS is not None
 
 
@@ -382,15 +400,6 @@ class HarlequinDuckDBConnection(HarlequinConnection):
         return Catalog(items=catalog_items)
 
     def validate_sql(self, text: str) -> str:
-        """
-        Parses text as one or more queries; returns text if parsing does not result
-        in an error; otherwise returns the empty string ("").
-
-        Args:
-            text (str): The text to be validated
-
-        Returns: str, either the original text or the empty string.
-        """
         escaped = text.replace("'", "''")
         try:
             (parsed,) = self.conn.sql(  # type: ignore
@@ -490,7 +499,7 @@ class DuckDBAdapter(HarlequinAdapter):
         self.md_token = md_token
         self.md_saas = md_saas
 
-    def connect(self) -> HarlequinDuckDBConnection:
+    def connect(self) -> tuple[HarlequinDuckDBConnection, str]:
         primary_db, *other_dbs = self.conn_str
         token = f"?token={self.md_token}" if self.md_token else ""
         saas = "?saas_mode=true" if self.md_saas else ""
@@ -531,20 +540,27 @@ class DuckDBAdapter(HarlequinAdapter):
                     str(e), title="DuckDB couldn't install or load your extension."
                 ) from e
 
+        msg = ""
         if self.init_path is not None and not self.no_init:
             init_script = self._read_init_script(self.init_path)
             try:
+                count = 0
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command)
                     for cmd in rewritten_command.split(";"):
-                        connection.execute(cmd)
+                        if cmd.strip():
+                            connection.execute(cmd)
+                            count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {init_script[0]}\n{e}"
                 raise HarlequinConnectionError(
                     msg, title="DuckDB could not execute your initialization script."
                 ) from e
+            else:
+                if count > 0:
+                    msg = f"Executed {count} commands from {self.init_path}"
 
-        return HarlequinDuckDBConnection(conn=connection)
+        return HarlequinDuckDBConnection(conn=connection), msg
 
     @staticmethod
     def _read_init_script(init_path: Path) -> str:
