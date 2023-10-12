@@ -1,20 +1,12 @@
-from dataclasses import dataclass
 from typing import Generic, List, Set, Tuple, Union
 
-from duckdb import DuckDBPyConnection
 from textual.binding import Binding
 from textual.events import Click
 from textual.message import Message
 from textual.widgets import Tree
 from textual.widgets._tree import EventTreeDataType, TreeNode
 
-from harlequin.duck_ops import Catalog, get_column_label, get_relation_label
-
-
-@dataclass
-class CatalogItem:
-    qualified_identifier: str
-    query_name: str
+from harlequin.catalog import Catalog, CatalogItem
 
 
 class DataCatalog(Tree[CatalogItem]):
@@ -38,7 +30,6 @@ class DataCatalog(Tree[CatalogItem]):
 
     def __init__(
         self,
-        connection: DuckDBPyConnection,
         type_color: str = "#888888",
         data: Union[CatalogItem, None] = None,
         name: Union[str, None] = None,
@@ -46,7 +37,6 @@ class DataCatalog(Tree[CatalogItem]):
         classes: Union[str, None] = None,
         disabled: bool = False,
     ) -> None:
-        self.connection = connection
         self.type_color = type_color
         super().__init__(
             "Root", data, name=name, id=id, classes=classes, disabled=disabled
@@ -61,43 +51,8 @@ class DataCatalog(Tree[CatalogItem]):
         # in the same place
         # selected_node = tree_state[1]
         self.clear()
-        if catalog:
-            for database in catalog:
-                database_identifier = f'"{database[0]}"'
-                database_node = self.root.add(
-                    database[0],
-                    data=CatalogItem(database_identifier, database_identifier),
-                    expand=database_identifier in expanded_nodes,
-                )
-                for schema in database[1]:
-                    schema_identifier = f'{database_identifier}."{schema[0]}"'
-                    schema_node = database_node.add(
-                        schema[0],
-                        data=CatalogItem(schema_identifier, schema_identifier),
-                        expand=schema_identifier in expanded_nodes,
-                    )
-                    for table in schema[1]:
-                        table_identifier = f'{schema_identifier}."{table[0]}"'
-                        table_node = schema_node.add(
-                            label=get_relation_label(
-                                rel_name=table[0],
-                                rel_type=table[1],
-                                type_color=self.type_color,
-                            ),
-                            data=CatalogItem(table_identifier, table_identifier),
-                            expand=table_identifier in expanded_nodes,
-                        )
-                        for col in table[2]:
-                            col_name = f'"{col[0]}"'
-                            col_identifier = f"{table_identifier}.{col_name}"
-                            table_node.add_leaf(
-                                label=get_column_label(
-                                    col_name=col[0],
-                                    col_type=col[1],
-                                    type_color=self.type_color,
-                                ),
-                                data=CatalogItem(col_identifier, col_name),
-                            )
+        if catalog.items:
+            self._build_subtree(catalog.items, self.root, expanded_nodes)
 
     def on_mount(self) -> None:
         self.show_root = False
@@ -134,6 +89,28 @@ class DataCatalog(Tree[CatalogItem]):
             node = self.get_node_at_line(self.cursor_line)
             if node is not None:
                 self.post_message(self.NodeSubmitted(node=node))
+
+    def _build_item_label(self, label: str, type_label: str) -> str:
+        return f"{label} [{self.type_color}]{type_label}[/]" if type_label else label
+
+    def _build_subtree(
+        self,
+        items: List[CatalogItem],
+        parent: TreeNode[CatalogItem],
+        expanded_nodes: Set[str],
+    ) -> None:
+        for item in items:
+            if item.children:
+                new_node = parent.add(
+                    label=self._build_item_label(item.label, item.type_label),
+                    data=item,
+                    expand=item.qualified_identifier in expanded_nodes,
+                )
+                self._build_subtree(item.children, new_node, expanded_nodes)
+            else:
+                parent.add_leaf(
+                    label=self._build_item_label(item.label, item.type_label), data=item
+                )
 
     def _clear_double_click(self) -> None:
         self.double_click = None

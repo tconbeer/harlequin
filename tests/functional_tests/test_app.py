@@ -27,7 +27,7 @@ async def test_select_1(app: Harlequin, app_snapshot: Callable[..., bool]) -> No
 
         await pilot.pause()
         assert app.query_text == q
-        assert app.relations
+        assert app.cursors
         assert len(app.results_viewer.data) == 1
         assert app.results_viewer.data[
             next(iter(app.results_viewer.data))
@@ -62,6 +62,7 @@ async def test_select_1(app: Harlequin, app_snapshot: Callable[..., bool]) -> No
         "SELECT [1, 2, 3]",  # list
         "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
         "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
+        "",
     ],
 )
 async def test_queries_do_not_crash(
@@ -73,7 +74,8 @@ async def test_queries_do_not_crash(
         await pilot.pause()
 
         assert app.query_text == query
-        assert app.relations
+        if query:
+            assert app.cursors
         assert app_snapshot(app)
 
 
@@ -138,10 +140,10 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 @pytest.mark.asyncio
 async def test_run_query_bar(
-    app_small_db: Harlequin, app_snapshot: Callable[..., bool]
+    app_small_duck: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    app = app_small_db
+    app = app_small_duck
     async with app.run_test(size=(120, 36)) as pilot:
         # initialization
         bar = app.run_query_bar
@@ -377,7 +379,7 @@ async def test_export(
     async with app.run_test(size=(120, 36)) as pilot:
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
-        assert app.relations
+        assert app.cursors
         assert len(app.screen_stack) == 1
 
         await pilot.press("ctrl+e")
@@ -477,7 +479,7 @@ async def test_multiple_buffers(
 @pytest.mark.parametrize(
     "bad_query",
     [
-        "select",  # errors when building relation
+        "select",  # errors when building cursor
         "select 0::struct(id int)",  # errors when fetching data
         "select; select 0::struct(id int)",  # multiple errors
         "select 1; select 0::struct(id int)",  # one error, mult queries
@@ -515,10 +517,10 @@ async def test_query_errors(
 
 @pytest.mark.asyncio
 async def test_data_catalog(
-    app_multi_db: Harlequin, app_snapshot: Callable[..., bool]
+    app_multi_duck: Harlequin, app_snapshot: Callable[..., bool]
 ) -> None:
     snap_results: List[bool] = []
-    app = app_multi_db
+    app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
         catalog = app.data_catalog
         assert not catalog.show_root
@@ -529,7 +531,7 @@ async def test_data_catalog(
         assert len(dbs) == 2
 
         # the first db is called "small"
-        assert str(dbs[0].label) == "small"
+        assert str(dbs[0].label) == "small db"
         assert dbs[0].data is not None
         assert dbs[0].data.qualified_identifier == '"small"'
         assert dbs[0].data.query_name == '"small"'
@@ -539,7 +541,7 @@ async def test_data_catalog(
         assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
 
-        assert str(dbs[1].label) == "tiny"
+        assert str(dbs[1].label) == "tiny db"
         assert dbs[0].is_expanded is False
 
         # click on "small" and see it expand.

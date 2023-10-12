@@ -1,7 +1,6 @@
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 
 import pyarrow as pa
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
@@ -86,10 +85,18 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
     def push_table(
         self,
         table_id: str,
-        column_labels: Union[List[Union[str, Text]], None],
+        column_labels: List[Tuple[str, str]],
         data: pa.Table,
     ) -> None:
-        table = ResultsTable(id=table_id, column_labels=column_labels, data=data)
+        formatted_labels = [
+            self._format_column_label(col_name, col_type)
+            for col_name, col_type in column_labels
+        ]
+        table = ResultsTable(
+            id=table_id,
+            column_labels=formatted_labels,  # type: ignore
+            data=data,
+        )
         n = self.tab_switcher.tab_count + 1
         if n > 1:
             self.remove_class("hide-tabs")
@@ -183,3 +190,6 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             return f"(Showing {self.MAX_RESULTS:,} of {total_rows:,} Records)"
         else:
             return f"({total_rows:,} Records)"
+
+    def _format_column_label(self, col_name: str, col_type: str) -> str:
+        return f"{col_name} [{self.type_color}]{col_type}[/]"
