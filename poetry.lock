@@ -505,22 +505,6 @@ files = [
 ]
 
 [[package]]
-name = "harlequin-duckdb"
-version = "1.1.1"
-description = "The DuckDB plug-in for Harlequin"
-optional = false
-python-versions = ">=3.8.1,<4.0.0"
-files = []
-develop = true
-
-[package.dependencies]
-duckdb = ">=0.8.0"
-
-[package.source]
-type = "directory"
-url = "src/plugins/harlequin_duckdb"
-
-[[package]]
 name = "identify"
 version = "2.5.30"
 description = "File identification library for Python"
@@ -1631,4 +1615,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "e34d218d330b1a3a30c84c436536e994ef78e25fcec788a91db6681919326190"
+content-hash = "de0ec9632025eb005f6c9d5c9b32ccffa915c04d0ad0922e1fbfe1711c152cab"

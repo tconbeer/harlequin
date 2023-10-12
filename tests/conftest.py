@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from importlib.metadata import entry_points
+import sys
 from pathlib import Path
 
 import duckdb
 import pytest
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 
 @pytest.fixture
@@ -43,7 +48,7 @@ def small_duck(tmp_path: Path, data_dir: Path) -> Path:
 
 @pytest.fixture
 def duckdb_adapter() -> type[HarlequinAdapter]:
-    eps = entry_points(group="harlequin.adapter")  # type: ignore
+    eps = entry_points(group="harlequin.adapter")
     cls: type[HarlequinAdapter] = eps["duckdb"].load()  # type: ignore
     return cls
 

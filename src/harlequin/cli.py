@@ -1,10 +1,18 @@
-from importlib.metadata import entry_points
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 from typing import List, Tuple, Union
 
 import click
 
 from harlequin import Harlequin
+from harlequin.adapter import HarlequinAdapter
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 
 @click.command()
@@ -120,9 +128,9 @@ def harlequin(
     md_token: Union[str, None],
     md_saas: bool,
 ) -> None:
-    adapter_eps = entry_points(group="harlequin.adapter")  # type: ignore
+    adapter_eps = entry_points(group="harlequin.adapter")
     try:
-        adapter_cls = adapter_eps["duckdb"].load()  # type: ignore
+        adapter_cls: type[HarlequinAdapter] = adapter_eps["duckdb"].load()  # type: ignore
     except (KeyError, ImportError) as e:
         from rich import print
         from rich.panel import Panel
