@@ -25,10 +25,12 @@ duckdb = ">=0.8.0"
 shandy-sqlfmt = ">=0.19.0"
 platformdirs = "^3.10.0"
 pyperclip = "^1.8.2"
+harlequin-duckdb = { path = "src/plugins/harlequin_duckdb", develop = false }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.3.1"
 textual-dev = "^1.0.1"
+harlequin-duckdb = { path = "src/plugins/harlequin_duckdb", develop = true }
 
 [tool.poetry.group.static.dependencies]
 black = "^23.3.0"

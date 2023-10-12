@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "harlequin-duckdb"
+version = "1.1.1"
+description = "The DuckDB plug-in for Harlequin"
+authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
+license = "MIT"
+homepage = "https://harlequin.sh"
+repository = "https://github.com/tconbeer/harlequin"
+packages = [
+    { include = "harlequin_duckdb", from = "src" },
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = ">=3.8.1,<4.0.0"
+harlequin = ">=1.1.1"
+duckdb = ">=0.8.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.3.1"
+
+
+[tool.poetry.plugins."harlequin.adapter"]
+duckdb = "harlequin_duckdb.adapter:DuckDbAdapter"

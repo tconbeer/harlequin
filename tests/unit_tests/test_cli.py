@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 import pytest
 from click.testing import CliRunner
 from harlequin import Harlequin
-from harlequin.adapter import DuckDBAdapter
 from harlequin.cli import harlequin
+from harlequin_duckdb.adapter import DuckDbAdapter
 
 DEFAULT_INIT_PATH = Path("~/.duckdbrc")
 INIT_CONTENTS = "select 1;"
@@ -13,9 +13,13 @@ INIT_CONTENTS = "select 1;"
 
 @pytest.fixture()
 def mock_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    mock = MagicMock(spec=DuckDBAdapter)
-    monkeypatch.setattr("harlequin.cli.DuckDBAdapter", mock)
-    return mock
+    mock_adapter = MagicMock(spec=DuckDbAdapter)
+    mock_entrypoint = MagicMock()
+    mock_entrypoint.load.return_value = mock_adapter
+    mock_entry_points = MagicMock()
+    mock_entry_points.return_value = {"duckdb": mock_entrypoint}
+    monkeypatch.setattr("harlequin.cli.entry_points", mock_entry_points)
+    return mock_adapter
 
 
 @pytest.fixture()
