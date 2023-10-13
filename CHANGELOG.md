@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Refactoring
 
 -   Harlequin's DuckDB integration has been refactored into a more general-purpose database adapter interface ([#263](https://github.com/tconbeer/harlequin/issues/263)).
+-   Harlequin's DuckDB adapter is now loaded as a plug-in ([#279](https://github.com/tconbeer/harlequin/issues/279))
 
 ## [1.1.1] - 2023-10-09
 

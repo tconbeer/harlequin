@@ -1,10 +1,18 @@
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 from typing import List, Tuple, Union
 
 import click
 
 from harlequin import Harlequin
-from harlequin.adapter import DuckDBAdapter
+from harlequin.adapter import HarlequinAdapter
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 
 @click.command()
@@ -104,7 +112,9 @@ from harlequin.adapter import DuckDBAdapter
     is_flag=True,
     help="Run MotherDuck in SaaS mode (no local privileges).",
 )
+@click.pass_context
 def harlequin(
+    ctx: click.Context,
     db_path: Tuple[str],
     theme: str,
     init_path: Path,
@@ -118,18 +128,38 @@ def harlequin(
     md_token: Union[str, None],
     md_saas: bool,
 ) -> None:
-    adapter = DuckDBAdapter(
-        conn_str=db_path,
-        init_path=init_path,
-        no_init=no_init,
-        read_only=read_only,
-        allow_unsigned_extensions=allow_unsigned_extensions,
-        extension=extension,
-        force_install_extensions=force_install_extensions,
-        custom_extension_repo=custom_extension_repo,
-        md_token=md_token,
-        md_saas=md_saas,
-    )
+    adapter_eps = entry_points(group="harlequin.adapter")
+    try:
+        adapter_cls: type[HarlequinAdapter] = adapter_eps["duckdb"].load()  # type: ignore
+    except (KeyError, ImportError) as e:
+        from rich import print
+        from rich.panel import Panel
+
+        print(
+            Panel.fit(
+                (
+                    f"Harlequin could not load an adapter plug-in named {e}. "
+                    'Did you mean "duckdb"?'
+                ),
+                title="Error Loading Adapter Plug-in",
+                title_align="left",
+                border_style="red",
+            )
+        )
+        ctx.exit(1)
+    else:
+        adapter = adapter_cls(
+            conn_str=db_path,
+            init_path=init_path,
+            no_init=no_init,
+            read_only=read_only,
+            allow_unsigned_extensions=allow_unsigned_extensions,
+            extension=extension,
+            force_install_extensions=force_install_extensions,
+            custom_extension_repo=custom_extension_repo,
+            md_token=md_token,
+            md_saas=md_saas,
+        )
 
     tui = Harlequin(
         adapter=adapter,

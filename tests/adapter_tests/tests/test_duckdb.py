@@ -2,34 +2,34 @@ import sys
 from pathlib import Path
 
 import pytest
-from harlequin.adapter import DuckDBAdapter
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError
+from harlequin_duckdb.adapter import DuckDbAdapter
 
 
 def test_connect(tiny_duck: Path, small_duck: Path, tmp_path: Path) -> None:
     tiny = str(tiny_duck)
     small = str(small_duck)
-    assert DuckDBAdapter([], no_init=True).connect()
-    assert DuckDBAdapter([":memory:"], no_init=True).connect()
-    assert DuckDBAdapter([tiny], read_only=False, no_init=True).connect()
-    assert DuckDBAdapter([tiny], read_only=True, no_init=True).connect()
-    assert DuckDBAdapter(
+    assert DuckDbAdapter([], no_init=True).connect()
+    assert DuckDbAdapter([":memory:"], no_init=True).connect()
+    assert DuckDbAdapter([tiny], read_only=False, no_init=True).connect()
+    assert DuckDbAdapter([tiny], read_only=True, no_init=True).connect()
+    assert DuckDbAdapter(
         [tiny, str(Path(":memory:")), small], read_only=False, no_init=True
     ).connect()
-    assert DuckDBAdapter([tiny, small], read_only=True, no_init=True).connect()
-    assert DuckDBAdapter([str(tmp_path / "new.db")], no_init=True).connect()
-    assert DuckDBAdapter([], allow_unsigned_extensions=True, no_init=True).connect()
-    assert DuckDBAdapter([tiny], allow_unsigned_extensions=True, no_init=True).connect()
-    assert DuckDBAdapter([tiny, small], read_only=True, no_init=True).connect()
+    assert DuckDbAdapter([tiny, small], read_only=True, no_init=True).connect()
+    assert DuckDbAdapter([str(tmp_path / "new.db")], no_init=True).connect()
+    assert DuckDbAdapter([], allow_unsigned_extensions=True, no_init=True).connect()
+    assert DuckDbAdapter([tiny], allow_unsigned_extensions=True, no_init=True).connect()
+    assert DuckDbAdapter([tiny, small], read_only=True, no_init=True).connect()
 
 
 @pytest.mark.online
 def test_connect_extensions() -> None:
-    assert DuckDBAdapter([], extension=None, no_init=True).connect()
-    assert DuckDBAdapter([], extension=[], no_init=True).connect()
-    assert DuckDBAdapter([], extension=["spatial"], no_init=True).connect()
-    assert DuckDBAdapter(
+    assert DuckDbAdapter([], extension=None, no_init=True).connect()
+    assert DuckDbAdapter([], extension=[], no_init=True).connect()
+    assert DuckDbAdapter([], extension=["spatial"], no_init=True).connect()
+    assert DuckDbAdapter(
         [], allow_unsigned_extensions=True, extension=["spatial"], no_init=True
     ).connect()
 
@@ -42,7 +42,7 @@ def test_connect_extensions() -> None:
 def test_connect_prql() -> None:
     # Note: this may fail in the future if the extension doesn't support the latest
     # duckdb version.
-    assert DuckDBAdapter(
+    assert DuckDbAdapter(
         [],
         allow_unsigned_extensions=True,
         extension=["prql"],
@@ -57,38 +57,38 @@ def test_connect_prql() -> None:
 @pytest.mark.online
 def test_connect_motherduck(tiny_duck: Path) -> None:
     # note: set environment variable motherduck_token
-    assert DuckDBAdapter(["md:"], no_init=True)
-    assert DuckDBAdapter(["md:cloudf1"], md_saas=True, no_init=True)
-    assert DuckDBAdapter(["md:", str(tiny_duck)], no_init=True)
+    assert DuckDbAdapter(["md:"], no_init=True)
+    assert DuckDbAdapter(["md:cloudf1"], md_saas=True, no_init=True)
+    assert DuckDbAdapter(["md:", str(tiny_duck)], no_init=True)
 
 
 def test_cannot_connect(tiny_duck: Path) -> None:
     with pytest.raises(HarlequinConnectionError):
-        DuckDBAdapter([":memory:"], read_only=True, no_init=True).connect()
+        DuckDbAdapter([":memory:"], read_only=True, no_init=True).connect()
     with pytest.raises(HarlequinConnectionError):
-        DuckDBAdapter(
+        DuckDbAdapter(
             [str(tiny_duck), ":memory:"], read_only=True, no_init=True
         ).connect()
 
 
 def test_get_databases(tiny_duck: Path, small_duck: Path) -> None:
-    conn, _ = DuckDBAdapter([str(tiny_duck), str(small_duck)], no_init=True).connect()
+    conn, _ = DuckDbAdapter([str(tiny_duck), str(small_duck)], no_init=True).connect()
     assert conn._get_databases() == [("small",), ("tiny",)]
 
 
 def test_get_schemas(small_duck: Path) -> None:
-    conn, _ = DuckDBAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_schemas("small") == [("empty",), ("main",)]
 
 
 def test_get_tables(small_duck: Path) -> None:
-    conn, _ = DuckDBAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_tables("small", "empty") == []
     assert conn._get_tables("small", "main") == [("drivers", "BASE TABLE")]
 
 
 def test_get_columns(small_duck: Path) -> None:
-    conn, _ = DuckDBAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_columns("small", "main", "drivers") == [
         ("code", "VARCHAR"),
         ("dob", "DATE"),
@@ -103,7 +103,7 @@ def test_get_columns(small_duck: Path) -> None:
 
 
 def test_get_catalog(tiny_duck: Path, small_duck: Path) -> None:
-    conn, _ = DuckDBAdapter(
+    conn, _ = DuckDbAdapter(
         [str(tiny_duck), str(small_duck)], read_only=True, no_init=True
     ).connect()
     expected = Catalog(
@@ -233,9 +233,9 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
         f".bail on\nselect \n1;\n.bail off\n.open {tiny_duck}\n"
         "create table test_init as select 2;"
     )
-    commands = DuckDBAdapter._split_script(script)
+    commands = DuckDbAdapter._split_script(script)
     assert len(commands) == 5
-    rewritten = [DuckDBAdapter._rewrite_init_command(cmd) for cmd in commands]
+    rewritten = [DuckDbAdapter._rewrite_init_command(cmd) for cmd in commands]
     assert rewritten[0] == ""
     assert rewritten[1] == commands[1]
     assert rewritten[2] == ""
@@ -245,7 +245,7 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     with open(tmp_path / "myscript", "w") as f:
         f.write(script)
 
-    conn, _ = DuckDBAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
+    conn, _ = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
     cur = conn.execute("select * from test_init")
     assert cur
     assert cur.relation.fetchall() == [(2,)]
