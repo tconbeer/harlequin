@@ -43,7 +43,7 @@ pytest = "^7.3.1"
 pytest-asyncio = "^0.21.0"
 pytest-textual-snapshot = { git = "https://github.com/tconbeer/pytest-textual-snapshot.git", branch = "main" }
 # extension tests require earlier version of duckdb.
-duckdb = "==0.8.1"
+duckdb = "==0.9.1"
 
 [tool.poetry.scripts]
 harlequin = "harlequin.cli:harlequin"
