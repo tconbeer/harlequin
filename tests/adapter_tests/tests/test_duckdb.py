@@ -249,3 +249,8 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     cur = conn.execute("select * from test_init")
     assert cur
     assert cur.relation.fetchall() == [(2,)]
+
+
+def test_initialize_adapter_ignores_extra_kwargs() -> None:
+    adapter = DuckDbAdapter((":memory:",), foo="bar")
+    assert adapter

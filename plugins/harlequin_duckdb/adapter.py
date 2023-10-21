@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import duckdb
 from duckdb.typing import DuckDBPyType
@@ -20,6 +20,8 @@ from harlequin.export_options import (
     ParquetOptions,
 )
 from textual_fastdatatable.backend import AutoBackendType
+
+from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -324,6 +326,8 @@ class DuckDbConnection(HarlequinConnection):
 
 
 class DuckDbAdapter(HarlequinAdapter):
+    ADAPTER_OPTIONS = DUCKDB_OPTIONS
+
     def __init__(
         self,
         conn_str: Sequence[str],
@@ -336,6 +340,7 @@ class DuckDbAdapter(HarlequinAdapter):
         custom_extension_repo: str | None = None,
         md_token: str | None = None,
         md_saas: bool = False,
+        **_: Any,
     ) -> None:
         self.conn_str = conn_str if conn_str else (":memory:",)
         self.init_path = init_path
