@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2023-10-22
+
 ## [1.2.0-alpha.1] - 2023-10-22
 
 ### Bug Fixes
@@ -303,7 +305,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.2.0...HEAD
+
+[1.2.0]: https://github.com/tconbeer/harlequin/compare/1.2.0-alpha.1...1.2.0
 
 [1.2.0-alpha.1]: https://github.com/tconbeer/harlequin/compare/1.1.1...1.2.0-alpha.1
 
