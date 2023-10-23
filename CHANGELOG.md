@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Adds an `--adapter` CLI option (alias `-a`) for selecting an installed adapter plug-in.
+
+### Refactoring
+
+-   Harlequin's CLI now dynamically loads the available options from the installed adapters ([#276](https://github.com/tconbeer/harlequin/issues/276)).
+
 ## [1.2.0] - 2023-10-22
 
 ## [1.2.0-alpha.1] - 2023-10-22
