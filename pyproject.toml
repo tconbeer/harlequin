@@ -40,7 +40,7 @@ types-pygments = "^2.16.0.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"
-pytest-asyncio = "^0.21.0"
+pytest-asyncio = ">=0.21,<0.23"
 pytest-textual-snapshot = { git = "https://github.com/tconbeer/pytest-textual-snapshot.git", branch = "main" }
 # extension tests require earlier version of duckdb.
 duckdb = "==0.8.1"
