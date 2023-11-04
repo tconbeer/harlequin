@@ -1,27 +1,27 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Callable, Tuple
+from typing import Any, Callable, Dict, Sequence, Tuple
 
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import QueryError
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Input, Label, Select, Static, Switch
+from textual.widgets import Button, Input, Label, Select, Static
 from textual_textarea import PathInput
 
-from harlequin.adapter import HarlequinConnection
+from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.components.error_modal import ErrorModal
 from harlequin.exception import HarlequinCopyError
-from harlequin.export_options import (
-    CSVOptions,
-    ExportOptions,
-    JSONOptions,
-    ParquetOptions,
-)
+from harlequin.options import AbstractOption
+
+ExportOptions = Dict[str, Any]
 
 
 def export_callback(
-    screen_data: Tuple[Path, ExportOptions],
+    screen_data: Tuple[Path, str, ExportOptions],
     connection: HarlequinConnection,
     query: str,
     success_callback: Callable[[], None],
@@ -31,216 +31,83 @@ def export_callback(
         connection.copy(
             query=query,
             path=screen_data[0],
-            options=screen_data[1],
+            format_name=screen_data[1],
+            options=screen_data[2],
         )
         success_callback()
     except (OSError, HarlequinCopyError) as e:
         error_callback(e)
 
 
-class NoFocusLabel(Label, can_focus=False):
-    pass
-
-
 class NoFocusVerticalScroll(VerticalScroll, can_focus=False):
     pass
 
 
-class OptionsMenu(Widget, can_focus=False):
+class CopyOptionsMenu(Widget, can_focus=False):
+    def __init__(
+        self,
+        format_name: str,
+        options: Sequence[AbstractOption],
+        *children: Widget,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        super().__init__(
+            *children, name=name, id=id, classes=classes, disabled=disabled
+        )
+        self.format_name = format_name
+        self.options = options
+
+    def compose(self) -> ComposeResult:
+        for option in self.options:
+            with Horizontal(classes="option_row"):
+                yield from option.to_widgets()
+
+    def on_mount(self) -> None:
+        for option in self.options:
+            w = self._get_option_widget_by_name(option.name)
+            if w is not None:
+                w.tooltip = option.description
+
     @property
     def current_options(self) -> ExportOptions:
-        raise NotImplementedError()
+        return {
+            option.name: self._get_option_value_by_name(option.name)
+            for option in self.options
+        }
+
+    def _get_option_widget_by_name(self, name: str) -> Widget | None:
+        try:
+            return self.query_one(f"#{name}")
+        except QueryError:
+            return None
+
+    def _get_option_value_by_name(self, name: str) -> Any | None:
+        w = self._get_option_widget_by_name(name)
+        if w:
+            return getattr(w, "value", None)
+        else:
+            return None
 
 
-class CSVOptionsMenu(OptionsMenu):
+class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
+    def __init__(
+        self,
+        adapter: HarlequinAdapter,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name, id, classes)
+        self.adapter = adapter
+
     def compose(self) -> ComposeResult:
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Header:", classes="switch_label")
-            yield Switch(id="header")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Separator:", classes="input_label")
-            yield Input(value=",", id="sep")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Compression:", classes="select_label")
-            yield Select(
-                options=[
-                    ("Auto", "auto"),
-                    ("gzip", "gzip"),
-                    ("zstd", "zstd"),
-                    ("No compression", "none"),
-                ],
-                allow_blank=False,
-                value="auto",
-                id="compression",
-            )
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Force Quote:", classes="switch_label")
-            yield Switch(id="force_quote")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Date Format:", classes="input_label")
-            yield Input(value="", placeholder="%Y-%m-%d", id="dateformat")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Timestamp Format:", classes="input_label")
-            yield Input(value="", placeholder="%c", id="timestampformat")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Quote Char:", classes="input_label")
-            yield Input(value='"', id="quote")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Escape Char:", classes="input_label")
-            yield Input(value='"', id="escape")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Null String:", classes="input_label")
-            yield Input(value="", id="nullstr")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Encoding:", classes="input_label")
-            yield Input(value="UTF8", id="encoding")
-
-    @property
-    def current_options(self) -> CSVOptions:
-        return CSVOptions(
-            header=self.header.value,
-            sep=self.sep.value,
-            compression=self.compression.value,  # type: ignore
-            force_quote=self.force_quote.value,
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-            quote=self.quote.value,
-            escape=self.escape.value,
-            nullstr=self.nullstr.value,
-            encoding=self.encoding.value,
-        )
-
-    def on_mount(self) -> None:
-        self.header = self.query_one("#header", Switch)
-        self.header.tooltip = "Switch on to include column name headers."
-        self.sep = self.query_one("#sep", Input)
-        self.sep.tooltip = "The separator (or delimeter) between cols in each row."
-        self.compression = self.query_one("#compression", Select)
-        self.compression.tooltip = (
-            "The compression type for the file. By default this will be detected "
-            "automatically from the file extension (e.g. file.csv.gz will use gzip, "
-            "file.csv will use no compression)."
-        )
-        self.force_quote = self.query_one("#force_quote", Switch)
-        self.force_quote.tooltip = "Switch on to always quote all strings."
-        self.dateformat = self.query_one("#dateformat", Input)
-        self.dateformat.tooltip = "Specifies the date format to use when writing dates."
-        self.timestampformat = self.query_one("#timestampformat", Input)
-        self.timestampformat.tooltip = (
-            "Specifies the date format to use when writing timestamps."
-        )
-        self.quote = self.query_one("#quote", Input)
-        self.quote.tooltip = (
-            "The quoting character to be used when a data value is quoted."
-        )
-        self.escape = self.query_one("#escape", Input)
-        self.escape.tooltip = (
-            "The character that should appear before a character that matches the "
-            "quote value."
-        )
-        self.nullstr = self.query_one("#nullstr", Input)
-        self.nullstr.tooltip = "The string that is written to represent a NULL value."
-        self.encoding = self.query_one("#encoding", Input)
-        self.encoding.tooltip = "Only UTF8 is currently supported by DuckDB.s"
-
-
-class ParquetOptionsMenu(OptionsMenu):
-    def compose(self) -> ComposeResult:
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Compression:", classes="select_label")
-            yield Select(
-                options=[("Snappy", "snappy"), ("gzip", "gzip"), ("zstd", "zstd")],
-                allow_blank=False,
-                value="snappy",
-                id="compression",
-            )
-        # not yet supported in python API
-        # with Horizontal(classes="option_row"):
-        #     yield NoFocusLabel("Row Group Size:", classes="input_label")
-        #     yield Input(
-        #         value='122880',
-        #         validators=Integer(minimum=1),
-        #         id="row_group_size"
-        #     )
-        # with Horizontal(classes="option_row"):
-        #     yield NoFocusLabel("Field IDs:", classes="input_label")
-        #     yield Input(value='', id="field_ids")
-
-    @property
-    def current_options(self) -> ParquetOptions:
-        return ParquetOptions(
-            compression=self.compression.value,  # type: ignore
-            # not yet supported in python API
-            # row_group_size = int(self.row_group_size.value),
-            # field_ids = self.field_ids.value,
-        )
-
-    def on_mount(self) -> None:
-        self.compression = self.query_one("#compression", Select)
-        # not yet supported in python API
-        # self.row_group_size = self.query_one("#row_group_size", Input)
-        # self.field_ids = self.query_one("#field_ids", Input)
-
-
-class JSONOptionsMenu(OptionsMenu):
-    def compose(self) -> ComposeResult:
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Array:", classes="switch_label")
-            yield Switch(id="array")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Compression:", classes="select_label")
-            yield Select(
-                options=[
-                    ("Auto", "auto"),
-                    ("gzip", "gzip"),
-                    ("zstd", "zstd"),
-                    ("No compression", "uncompressed"),
-                ],
-                allow_blank=False,
-                value="auto",
-                id="compression",
-            )
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Date Format:", classes="input_label")
-            yield Input(value="", placeholder="%Y-%m-%d", id="dateformat")
-        with Horizontal(classes="option_row"):
-            yield NoFocusLabel("Timestamp Format:", classes="input_label")
-            yield Input(value="", placeholder="%c", id="timestampformat")
-
-    @property
-    def current_options(self) -> JSONOptions:
-        return JSONOptions(
-            array=self.array.value,
-            compression=self.compression.value,  # type: ignore
-            dateformat=self.dateformat.value,
-            timestampformat=self.timestampformat.value,
-        )
-
-    def on_mount(self) -> None:
-        self.array = self.query_one("#array", Switch)
-        self.array.tooltip = (
-            "Whether to write a JSON array. If true, a JSON array of records is "
-            "written, if false, newline-delimited JSON is written."
-        )
-        self.compression = self.query_one("#compression", Select)
-        self.compression.tooltip = (
-            "The compression type for the file. By default this will be detected "
-            "automatically from the file extension (e.g. file.json.gz will use gzip, "
-            "file.json will use no compression)."
-        )
-        self.dateformat = self.query_one("#dateformat", Input)
-        self.dateformat.tooltip = "Specifies the date format to use when writing dates."
-        self.timestampformat = self.query_one("#timestampformat", Input)
-        self.timestampformat.tooltip = (
-            "Specifies the date format to use when writing timestamps."
-        )
-
-
-class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
-    def compose(self) -> ComposeResult:
+        assert self.adapter.COPY_FORMATS is not None
         with Vertical(id="export_outer"):
             yield Static(
-                "Export the results of your query to a CSV, Parquet, or JSON file.",
+                "Export the results of your query to a file.",
                 id="export_header",
             )
             yield PathInput(
@@ -257,7 +124,10 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
             with Horizontal(classes="option_row"):
                 yield Label("Format:", classes="select_label")
                 yield Select(
-                    options=[("CSV", "csv"), ("Parquet", "parquet"), ("JSON", "json")],
+                    options=[
+                        (option.label, option.name)
+                        for option in self.adapter.COPY_FORMATS
+                    ],
                     id="format_select",
                 )
             yield NoFocusVerticalScroll(id="options_container")
@@ -271,7 +141,9 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
         self.format_select = self.query_one(Select)
         self.file_input = self.query_one("#path_input", Input)
         self.file_input_validation_label = self.query_one("#validation_label", Label)
-        self.options_container = self.query_one("#options_container", VerticalScroll)
+        self.options_container = self.query_one(
+            "#options_container", NoFocusVerticalScroll
+        )
         self.export_button = self.query_one("#export", Button)
         self.file_input.focus()
 
@@ -297,16 +169,9 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
                         " ".join(event.validation_result.failure_descriptions)
                     )
             old_format = self.format_select.value
-            try:
-                p = Path(event.value)
-                if p.suffix in (".parquet", ".pq"):
-                    self.format_select.value = "parquet"
-                elif p.suffix in (".csv", ".tsv"):
-                    self.format_select.value = "csv"
-                elif p.suffix in (".json", ".js", ".ndjson"):
-                    self.format_select.value = "json"
-            except ValueError:
-                pass
+            new_format = self._get_format_from_file_extension(event.value)
+            if new_format:
+                self.format_select.value = new_format
             if self.format_select.value != old_format:
                 self.post_message(
                     Select.Changed(self.format_select, value=self.format_select.value)
@@ -322,18 +187,22 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
     async def on_select_changed(self, event: Select.Changed) -> None:
         event.stop()
         if event.control.id == "format_select":
-            for t in [CSVOptionsMenu, ParquetOptionsMenu, JSONOptionsMenu]:
-                w = self.query(t)
-                if w:
-                    await w.remove()
-            if event.value == "csv":
-                await self.options_container.mount(CSVOptionsMenu())
-            elif event.value == "parquet":
-                await self.options_container.mount(ParquetOptionsMenu())
-            elif event.value == "json":
-                await self.options_container.mount(JSONOptionsMenu())
+            for child in self.options_container.children:
+                await child.remove()
+            try:
+                assert self.adapter.COPY_FORMATS is not None
+                [options] = [
+                    fmt.options
+                    for fmt in self.adapter.COPY_FORMATS
+                    if fmt.name == event.value
+                ]
+            except (ValueError, IndexError, AssertionError):
+                return
+            menu = CopyOptionsMenu(str(event.value), options)
+            await self.options_container.mount(menu)
 
     def _export(self) -> None:
+        assert self.adapter.COPY_FORMATS is not None
         path = Path(self.file_input.value)
         if path.is_dir():
             self.app.push_screen(
@@ -349,10 +218,30 @@ class ExportScreen(ModalScreen[Tuple[Path, ExportOptions]]):
                     title="Error Writing File",
                     header="Must select format",
                     error=OSError(
-                        "You must select a file format (CSV, Parquet, or JSON)"
+                        "You must select a file format "
+                        f"{[fmt.label for fmt in self.adapter.COPY_FORMATS]}"
                     ),
                 )
             )
         else:
-            options_menu = self.query_one(OptionsMenu)
-            self.dismiss((path, options_menu.current_options))
+            try:
+                options_menu = self.query_one(CopyOptionsMenu)
+            except QueryError:
+                return
+            else:
+                self.dismiss(
+                    (path, options_menu.format_name, options_menu.current_options)
+                )
+
+    def _get_format_from_file_extension(self, input_value: str) -> str | None:
+        assert self.adapter.COPY_FORMATS is not None
+        mapping = {
+            ext: fmt.name for fmt in self.adapter.COPY_FORMATS for ext in fmt.extensions
+        }
+        try:
+            p = Path(input_value)
+            format_name = mapping[p.suffix]
+        except (ValueError, KeyError):
+            return None
+        else:
+            return format_name

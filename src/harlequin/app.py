@@ -85,7 +85,7 @@ class Harlequin(App, inherit_bindings=False):
         self.limit = min(500, max_results) if max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
-            self.connection, msg = self.adapter.connect()
+            self.connection = self.adapter.connect()
         except HarlequinConnectionError as e:
             print(
                 Panel.fit(
@@ -102,8 +102,8 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit()
         else:
-            if msg:
-                self.notify(msg)
+            if self.connection.init_message:
+                self.notify(self.connection.init_message)
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
@@ -335,6 +335,16 @@ class Harlequin(App, inherit_bindings=False):
         self.data_catalog.disabled = sidebar_hidden
 
     def action_export(self) -> None:
+        if not self.adapter.implements_copy:
+            self._push_error_modal(
+                title="Not Implemented by Adapter",
+                header="Harlequin could not load the Export menu.",
+                error=NotImplementedError(
+                    "The current adapter has not implemented the export menu. "
+                    "Please write a COPY statement using the query editor."
+                ),
+            )
+            return
         show_export_error = partial(
             self._push_error_modal,
             "Export Data Error",
@@ -357,7 +367,9 @@ class Harlequin(App, inherit_bindings=False):
             success_callback=notify,
             error_callback=show_export_error,
         )
-        self.app.push_screen(ExportScreen(id="export_screen"), callback)
+        self.app.push_screen(
+            ExportScreen(adapter=self.adapter, id="export_screen"), callback
+        )
 
     def action_focus_data_catalog(self) -> None:
         if self.sidebar_hidden or self.data_catalog.disabled:

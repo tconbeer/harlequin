@@ -408,9 +408,7 @@ ExportScreen Switch.-on > .switch--slider {
     border: tall transparent;
 }
 
-CSVOptionsMenu,
-ParquetOptionsMenu,
-JSONOptionsMenu {
+CopyOptionsMenu {
     height: auto;
 }
 
