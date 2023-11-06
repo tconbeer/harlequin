@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2023-11-06
+
 ### Features
 
 -   Adds an `--adapter` CLI option (alias `-a`) for selecting an installed adapter plug-in.
@@ -325,7 +327,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.3.0...HEAD
+
+[1.3.0]: https://github.com/tconbeer/harlequin/compare/1.2.0...1.3.0
 
 [1.2.0]: https://github.com/tconbeer/harlequin/compare/1.2.0-alpha.1...1.2.0
 
