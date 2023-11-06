@@ -8,9 +8,17 @@ All notable changes to this project will be documented in this file.
 
 -   Adds an `--adapter` CLI option (alias `-a`) for selecting an installed adapter plug-in.
 
+### Adapter API Changes
+
+-   The function signature for HarlequinConnection.copy() has changed to add a `format_name` positional argument.
+-   The HarlequinAdapter.COPY_OPTIONS class variable has been renamed to HarlequinAdapter.COPY_FORMATS, and its
+    type has changed.
+-   The function signature for HarlequinAdapter.connect() has changed to return only a HarlequinConnection; HarlequinConnection now accepts an `init_message` kwarg that will be displayed to the user as a notification.
+
 ### Refactoring
 
 -   Harlequin's CLI now dynamically loads the available options from the installed adapters ([#276](https://github.com/tconbeer/harlequin/issues/276)).
+-   Harlequin now dynamically loads data export options from the selected adapter ([#275](https://github.com/tconbeer/harlequin/issues/275)).
 
 ## [1.2.0] - 2023-10-22
 

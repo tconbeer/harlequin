@@ -7,10 +7,7 @@ from typing import Any, Sequence
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.catalog import Catalog
-from harlequin.export_options import (
-    ExportOptions,
-)
-from harlequin.options import HarlequinAdapterOption, HarlequinCopyOption
+from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 
 
 class HarlequinCursor(ABC):
@@ -60,9 +57,19 @@ class HarlequinCursor(ABC):
 
 
 class HarlequinConnection(ABC):
+    """
+    A Connection is created by the Adapter, and represents the main interface into
+    the database.
+    """
+
     @abstractmethod
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
+    def __init__(self, *args: Any, init_message: str = "", **kwargs: Any) -> None:
+        """
+        Args:
+            init_message (str): If set, Harlequin will notify the user with the
+            message after the connection is created.
+        """
+        self.init_message = init_message
 
     @abstractmethod
     def execute(self, query: str) -> HarlequinCursor | None:
@@ -89,15 +96,17 @@ class HarlequinConnection(ABC):
         """
         pass
 
-    def copy(self, query: str, path: Path, options: ExportOptions) -> None:
+    def copy(
+        self, query: str, path: Path, format_name: str, options: dict[str, Any]
+    ) -> None:
         """
         Exports data returned by query to a file or directory at path, using
         options.
         Args:
             query (str): The text of the query (select stmt) to be executed.
             path (Path): The destination location for the file(s) to be written.
-            options (HarlequinCopyOptions): An instance of copy options specific to
-                this operation and adapter.
+            format_name (str): The name of the selected export format.
+            options (dict[str, Any]): A dict of format option names and values.
 
         Returns: None
 
@@ -131,16 +140,18 @@ class HarlequinAdapter(ABC):
 
     It must declare its configuration setting the ADAPTER_OPTIONS
     class variable. If the adapter supports copying (exporting
-    data to a file or directory), it also must declare COPY_OPTIONS.
+    data to a file or directory), it also must declare COPY_FORMATS.
 
-    Adapters are initialized with a conn_str, a tuple of strings, and
+    Adapters are initialized with a conn_str (a tuple of strings), and
     kwargs that represent CLI options. Adapters must be robust to receiving
     both subsets and supersets of their defined options as kwargs. They should
-    disregard any extra (unexpected) kwargs.
+    disregard any extra (unexpected) kwargs. They should not rely on the
+    option's default values, as those will not be passed by the CLI when
+    initializing the adapter.
     """
 
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = None
-    COPY_OPTIONS: list[HarlequinCopyOption] | None = None
+    COPY_FORMATS: list[HarlequinCopyFormat] | None = None
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
@@ -157,14 +168,12 @@ class HarlequinAdapter(ABC):
         pass
 
     @abstractmethod
-    def connect(self) -> tuple[HarlequinConnection, str]:
+    def connect(self) -> HarlequinConnection:
         """
         Creates and returns an initialized connection to a database. Necessary config
         should be stored in the HarlequinAdapter instance when it is created.
 
-        Returns: tuple[HarlequinConnection, str], where the str is a message that
-            will be passed to the user in a notification. If str is the empty string,
-            no notification will be presented to the user.
+        Returns: HarlequinConnection.
 
         Raises: HarlequinConnectionError if a connection could not be established.
         """
@@ -176,4 +185,4 @@ class HarlequinAdapter(ABC):
         True if the adapter's connection implements the copy() method. Adapter must
         also provide options for customizing the Export dialog GUI.
         """
-        return self.COPY_OPTIONS is not None
+        return self.COPY_FORMATS is not None

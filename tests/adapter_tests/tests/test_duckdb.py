@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from harlequin.catalog import Catalog, CatalogItem
@@ -72,23 +75,23 @@ def test_cannot_connect(tiny_duck: Path) -> None:
 
 
 def test_get_databases(tiny_duck: Path, small_duck: Path) -> None:
-    conn, _ = DuckDbAdapter([str(tiny_duck), str(small_duck)], no_init=True).connect()
+    conn = DuckDbAdapter([str(tiny_duck), str(small_duck)], no_init=True).connect()
     assert conn._get_databases() == [("small",), ("tiny",)]
 
 
 def test_get_schemas(small_duck: Path) -> None:
-    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_schemas("small") == [("empty",), ("main",)]
 
 
 def test_get_tables(small_duck: Path) -> None:
-    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_tables("small", "empty") == []
     assert conn._get_tables("small", "main") == [("drivers", "BASE TABLE")]
 
 
 def test_get_columns(small_duck: Path) -> None:
-    conn, _ = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
+    conn = DuckDbAdapter([str(small_duck)], read_only=True, no_init=True).connect()
     assert conn._get_columns("small", "main", "drivers") == [
         ("code", "VARCHAR"),
         ("dob", "DATE"),
@@ -103,7 +106,7 @@ def test_get_columns(small_duck: Path) -> None:
 
 
 def test_get_catalog(tiny_duck: Path, small_duck: Path) -> None:
-    conn, _ = DuckDbAdapter(
+    conn = DuckDbAdapter(
         [str(tiny_duck), str(small_duck)], read_only=True, no_init=True
     ).connect()
     expected = Catalog(
@@ -245,7 +248,7 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     with open(tmp_path / "myscript", "w") as f:
         f.write(script)
 
-    conn, _ = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
+    conn = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
     cur = conn.execute("select * from test_init")
     assert cur
     assert cur.relation.fetchall() == [(2,)]
@@ -254,3 +257,43 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
+
+
+@pytest.mark.parametrize(
+    "format_name,options",
+    [
+        ("csv", {}),
+        ("parquet", {}),
+        ("json", {}),
+        (
+            "csv",
+            {
+                "header": True,
+                "sep": "|",
+                "compression": "gzip",
+                "quoting": True,
+                "date_format": "%Y-%m",
+                "timestamp_format": "%c",
+                "quotechar": "'",
+                "escapechar": "'",
+                "na_rep": "N/A",
+                "encoding": "UTF8",
+            },
+        ),
+        ("parquet", {"compression": "zstd"}),
+        (
+            "json",
+            {
+                "array": True,
+                "compression": "gzip",
+                "date_format": "%Y-%m",
+                "timestamp_format": "%c",
+            },
+        ),
+    ],
+)
+def test_copy(format_name: str, options: dict[str, Any], tmp_path: Path) -> None:
+    conn = DuckDbAdapter((":memory:",)).connect()
+    p = tmp_path / f"one.{format_name}"
+    conn.copy(query="select 1", path=p, format_name=format_name, options=options)
+    assert p.is_file()

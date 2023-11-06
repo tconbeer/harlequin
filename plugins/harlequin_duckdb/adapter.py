@@ -13,15 +13,10 @@ from harlequin.exception import (
     HarlequinCopyError,
     HarlequinQueryError,
 )
-from harlequin.export_options import (
-    CSVOptions,
-    ExportOptions,
-    JSONOptions,
-    ParquetOptions,
-)
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
+from harlequin_duckdb.copy_formats import DUCKDB_COPY_FORMATS
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -101,10 +96,13 @@ class DuckDbConnection(HarlequinConnection):
 
     UNKNOWN_TYPE = "?"
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
+    def __init__(self, conn: duckdb.DuckDBPyConnection, init_message: str = "") -> None:
         self.conn: duckdb.DuckDBPyConnection = conn
+        self.init_message = init_message
 
-    def copy(self, query: str, path: Path, options: ExportOptions) -> None:
+    def copy(
+        self, query: str, path: Path, format_name: str, options: dict[str, Any]
+    ) -> None:
         if not query:
             raise HarlequinCopyError("Cannot export result of empty query.")
         try:
@@ -114,23 +112,12 @@ class DuckDbConnection(HarlequinConnection):
         if cursor is None:
             raise HarlequinCopyError("Cannot export result of a DDL/DML query.")
         final_path = str(path.expanduser())
-        if isinstance(options, CSVOptions):
+        kwargs = {k: v for k, v in options.items() if v}
+        if format_name == "csv":
+            if kwargs.get("quoting"):
+                kwargs["quoting"] = "ALL"
             try:
-                cursor.relation.write_csv(
-                    file_name=final_path,
-                    sep=options.sep,
-                    na_rep=options.nullstr,
-                    header=options.header,
-                    quotechar=options.quote,
-                    escapechar=options.escape,
-                    date_format=options.dateformat if options.dateformat else None,
-                    timestamp_format=options.timestampformat
-                    if options.timestampformat
-                    else None,
-                    quoting="ALL" if options.force_quote else None,
-                    compression=options.compression,
-                    encoding=options.encoding,
-                )
+                cursor.relation.write_csv(file_name=final_path, **kwargs)
             except (duckdb.Error, OSError) as e:
                 raise HarlequinCopyError(
                     str(e),
@@ -139,10 +126,10 @@ class DuckDbConnection(HarlequinConnection):
                         "to a CSV file."
                     ),
                 ) from e
-        elif isinstance(options, ParquetOptions):
+        elif format_name == "parquet":
             try:
                 cursor.relation.write_parquet(
-                    file_name=final_path, compression=options.compression
+                    file_name=final_path, compression=kwargs.get("compression")
                 )
             except (duckdb.Error, OSError) as e:
                 raise HarlequinCopyError(
@@ -152,27 +139,24 @@ class DuckDbConnection(HarlequinConnection):
                         "to a Parquet file."
                     ),
                 ) from e
-        elif isinstance(options, JSONOptions):
-            compression = (
-                f", COMPRESSION {options.compression}"
-                if options.compression in ("gzip", "zstd", "uncompressed")
+        elif format_name == "json":
+            array = f"{', ARRAY TRUE' if kwargs.get('array') else ''}"
+            compression = f", COMPRESSION {kwargs.get('compression')}"
+            date_format = (
+                f", DATEFORMAT '{kwargs.get('''date_format''')}'"
+                if kwargs.get("date_format")
                 else ""
             )
-            print("compression: ", compression)
-            date_format = (
-                f", DATEFORMAT {options.dateformat}" if options.dateformat else ""
-            )
             ts_format = (
-                f", TIMESTAMPFORMAT {options.timestampformat}"
-                if options.timestampformat
+                f", TIMESTAMPFORMAT '{kwargs.get('''options.timestamp_format''')}'"
+                if kwargs.get("options.timestamp_format")
                 else ""
             )
             try:
                 self.execute(
                     f"copy ({query}) to '{final_path}' "
                     "(FORMAT JSON"
-                    f"{', ARRAY TRUE' if options.array else ''}"
-                    f"{compression}{date_format}{ts_format}"
+                    f"{array}{compression}{date_format}{ts_format}"
                     ")"
                 )
             except (HarlequinQueryError, OSError) as e:
@@ -327,6 +311,7 @@ class DuckDbConnection(HarlequinConnection):
 
 class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
+    COPY_FORMATS = DUCKDB_COPY_FORMATS
 
     def __init__(
         self,
@@ -343,7 +328,7 @@ class DuckDbAdapter(HarlequinAdapter):
         **_: Any,
     ) -> None:
         self.conn_str = conn_str if conn_str else (":memory:",)
-        self.init_path = init_path
+        self.init_path = init_path or Path.home() / ".duckdbrc"
         self.no_init = no_init
         self.read_only = read_only
         self.allow_unsigned_extensions = allow_unsigned_extensions
@@ -353,7 +338,7 @@ class DuckDbAdapter(HarlequinAdapter):
         self.md_token = md_token
         self.md_saas = md_saas
 
-    def connect(self) -> tuple[DuckDbConnection, str]:
+    def connect(self) -> DuckDbConnection:
         primary_db, *other_dbs = self.conn_str
         token = f"?token={self.md_token}" if self.md_token else ""
         saas = "?saas_mode=true" if self.md_saas else ""
@@ -412,9 +397,12 @@ class DuckDbAdapter(HarlequinAdapter):
                 ) from e
             else:
                 if count > 0:
-                    msg = f"Executed {count} commands from {self.init_path}"
+                    msg = (
+                        f"Executed {count} {'command' if count == 1 else 'commands'} "
+                        f"from {self.init_path}"
+                    )
 
-        return DuckDbConnection(conn=connection), msg
+        return DuckDbConnection(conn=connection, init_message=msg)
 
     @staticmethod
     def _read_init_script(init_path: Path) -> str:
