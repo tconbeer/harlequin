@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 -   Adds an `--adapter` CLI option (alias `-a`) for selecting an installed adapter plug-in.
 
+### Bug Fixes
+
+-   Fixes a crash that could happen when a query returned no records ([#300](https://github.com/tconbeer/textual-fastdatatable/issues/19)).
+
 ### Adapter API Changes
 
 -   The function signature for HarlequinConnection.copy() has changed to add a `format_name` positional argument.

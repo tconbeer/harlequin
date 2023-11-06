@@ -63,6 +63,7 @@ async def test_select_1(app: Harlequin, app_snapshot: Callable[..., bool]) -> No
         "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
         "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
         "",
+        "select 1 where false",
     ],
 )
 async def test_queries_do_not_crash(
