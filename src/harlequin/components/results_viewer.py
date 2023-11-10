@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Union
 
 import pyarrow as pa
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
@@ -193,4 +194,4 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             return f"({total_rows:,} Records)"
 
     def _format_column_label(self, col_name: str, col_type: str) -> str:
-        return f"{col_name} [{self.type_color}]{col_type}[/]"
+        return f"{escape(col_name)} [{self.type_color}]{escape(col_type)}[/]"
