@@ -11,7 +11,7 @@ assignees: ''
 A clear and concise description of what the bug is.
 
 **To Reproduce**
-Steps to reproduce the behavior. If this is a formatting issue, include the input code here.
+Steps to reproduce the behavior.
 
 **Expected behavior**
 A clear and concise description of what you expected to happen.
