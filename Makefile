@@ -1,8 +1,8 @@
 .PHONY: check
 check:
 	black .
-	pytest -m "not online"
 	ruff . --fix
+	pytest -m "not online"
 	mypy
 
 .PHONY: lint
