@@ -465,7 +465,7 @@ class Harlequin(App, inherit_bindings=False):
             except HarlequinQueryError as e:
                 errors.append(e)
             else:
-                self.results_viewer.push_table(
+                await self.results_viewer.push_table(
                     table_id=id_,
                     column_labels=cur.columns(),
                     data=cur_data.slice(0, self.max_results)  # type: ignore

@@ -227,7 +227,7 @@ class EditorCollection(TabbedContent):
             editor,
             id=new_tab_id,
         )
-        await self.add_pane(pane)
+        await self.add_pane(pane)  # type: ignore
         if state is not None:
             editor.text = state.text
             editor.cursor = state.cursor
