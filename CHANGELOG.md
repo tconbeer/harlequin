@@ -7,7 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 -   When running multiple queries, Harlequin now activates the results tab for the last query, instead of the first one.
--   Queries that return duplicate column names are now displayed correctly in the Results Viewer ([textual-fastdatatable/#26](https://github.com/tconbeer/textual-fastdatatable/issues/26)).
+-   Queries that return duplicate column names are now displayed correctly in the Results Viewer ([tconbeer/textual-fastdatatable#26](https://github.com/tconbeer/textual-fastdatatable/issues/26)).
+-   List types returned by DuckDB no longer display as `?`, but instead as `[#]`, `[s]`, etc. ([#315](https://github.com/tconbeer/harlequin/issues/315)).
+-   Map types returned by DuckDB now display as `{m}`, to differentiate them from structs (`{}`).
 
 ## [1.3.0] - 2023-11-06
 
@@ -17,7 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
--   Fixes a crash that could happen when a query returned no records ([textual-fastdatatable/#19](https://github.com/tconbeer/textual-fastdatatable/issues/19)).
+-   Fixes a crash that could happen when a query returned no records ([tconbeer/textual-fastdatatable#19](https://github.com/tconbeer/textual-fastdatatable/issues/19)).
 
 ### Adapter API Changes
 

@@ -89,9 +89,8 @@ class DuckDbConnection(HarlequinConnection):
         # these types don't have python classes
         "DECIMAL": "#.#",
         "REAL": "#.#",
-        "LIST": "[]",
         "STRUCT": "{}",
-        "MAP": "{}",
+        "MAP": "{m}",
     }
 
     UNKNOWN_TYPE = "?"
@@ -304,9 +303,12 @@ class DuckDbConnection(HarlequinConnection):
         to check class members. So we just convert to a string and split
         complex types on their first paren to match our dictionary.
         """
-        return cls.COLUMN_TYPE_MAPPING.get(
-            str(native_type).split("(")[0], cls.UNKNOWN_TYPE
-        )
+        base_type = str(native_type).split("(")[0].split("[")[0]
+        short_base_type = cls.COLUMN_TYPE_MAPPING.get(base_type, cls.UNKNOWN_TYPE)
+        if str(native_type).endswith("[]"):
+            return f"[{short_base_type}]"
+        else:
+            return short_base_type
 
 
 class DuckDbAdapter(HarlequinAdapter):
