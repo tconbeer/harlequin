@@ -82,7 +82,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             except NoMatches:
                 return None
 
-    def push_table(
+    async def push_table(
         self,
         table_id: str,
         column_labels: List[Tuple[str, str]],
@@ -101,7 +101,8 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if n > 1:
             self.remove_class("hide-tabs")
         pane = TabPane(f"Result {n}", table)
-        self.tab_switcher.add_pane(pane)
+        await self.tab_switcher.add_pane(pane)
+        self.tab_switcher.active = f"tab-{n}"
 
     async def set_not_responsive(self, data: Dict[str, pa.Table]) -> None:
         if len(data) > 1:

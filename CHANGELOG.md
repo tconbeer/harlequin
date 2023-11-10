@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   When running multiple queries, Harlequin now activates the results tab for the last query, instead of the first one.
+
 ## [1.3.0] - 2023-11-06
 
 ### Features

@@ -113,19 +113,19 @@ async def test_multiple_queries(
         for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
             assert v.to_pylist() == [{str(i): i}]
             assert app.query_one(f"#{k}", ResultsTable)
-        assert app.results_viewer.tab_switcher.active == "tab-1"
-        await pilot.press("k")
-        await pilot.wait_for_scheduled_animations()
         assert app.results_viewer.tab_switcher.active == "tab-2"
-        snap_results.append(app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
         assert app.results_viewer.tab_switcher.active == "tab-1"
         snap_results.append(app_snapshot(app, "Both queries, tab 1"))
-        await pilot.press("j")
+        await pilot.press("k")
+        await pilot.wait_for_scheduled_animations()
         assert app.results_viewer.tab_switcher.active == "tab-2"
+        snap_results.append(app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("j")
         assert app.results_viewer.tab_switcher.active == "tab-1"
+        await pilot.press("j")
+        assert app.results_viewer.tab_switcher.active == "tab-2"
 
         assert all(snap_results)
 
