@@ -602,3 +602,18 @@ async def test_data_catalog(
         snap_results.append(await app_snapshot(app, "small.main.drivers.dob inserted"))
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_dupe_column_names(
+    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+) -> None:
+    query = "select 1 as a, 1 as a, 2 as a, 2 as a"
+    async with app.run_test() as pilot:
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+
+        assert app.query_text == query
+        assert app.cursors
+        assert await app_snapshot(app)
