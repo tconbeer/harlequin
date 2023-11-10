@@ -101,7 +101,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if n > 1:
             self.remove_class("hide-tabs")
         pane = TabPane(f"Result {n}", table)
-        await self.tab_switcher.add_pane(pane)
+        await self.tab_switcher.add_pane(pane)  # type: ignore
         self.tab_switcher.active = f"tab-{n}"
 
     async def set_not_responsive(self, data: Dict[str, pa.Table]) -> None:
