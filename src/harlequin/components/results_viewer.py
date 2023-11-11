@@ -1,11 +1,9 @@
-from typing import Dict, List, Tuple, Union
+from typing import List, Tuple, Union
 
-import pyarrow as pa
 from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
-from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import (
     ContentSwitcher,
@@ -15,6 +13,7 @@ from textual.widgets import (
     Tabs,
 )
 from textual_fastdatatable import DataTable
+from textual_fastdatatable.backend import AutoBackendType
 
 
 class ResultsTable(DataTable):
@@ -31,8 +30,6 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
         Binding("k", "switch_tab(1)", "Next Tab", show=False),
     ]
-
-    data: reactive[Dict[str, pa.Table]] = reactive(dict)
 
     TABBED_ID = "tabs"
     LOADING_ID = "loading"
@@ -56,7 +53,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             disabled=disabled,
             initial=initial,
         )
-        self.MAX_RESULTS = max_results
+        self.max_results = max_results
         self.type_color = type_color
 
     def compose(self) -> ComposeResult:
@@ -87,7 +84,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         self,
         table_id: str,
         column_labels: List[Tuple[str, str]],
-        data: pa.Table,
+        data: AutoBackendType,
     ) -> None:
         formatted_labels = [
             self._format_column_label(col_name, col_type)
@@ -97,6 +94,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             id=table_id,
             column_labels=formatted_labels,  # type: ignore
             data=data,
+            max_rows=self.max_results,
         )
         n = self.tab_switcher.tab_count + 1
         if n > 1:
@@ -105,34 +103,28 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         await self.tab_switcher.add_pane(pane)  # type: ignore
         self.tab_switcher.active = f"tab-{n}"
 
-    async def set_not_responsive(self, data: Dict[str, pa.Table]) -> None:
-        if len(data) > 1:
-            self.border_title = f"Loading Data from {len(data):,} Queries."
-        elif data:
-            self.border_title = (
-                f"Loading Data {self._human_row_count(next(iter(data.values())))}."
-            )
+    async def set_not_responsive(self) -> None:
+        self.border_title = "Loading Data"
         self.add_class("non-responsive")
 
     def set_responsive(
         self,
-        data: Union[Dict[str, pa.Table], None] = None,
         did_run: bool = True,
     ) -> None:
         if not did_run:
             self.border_title = "Query Results"
-        elif data is None:
-            self.border_title = "Query Returned No Records"
         else:
             table = self.get_visible_table()
             if table is not None:
-                id_ = table.id
-                assert id_ is not None
-                self.border_title = f"Query Results {self._human_row_count(data[id_])}"
+                rows = table.source_row_count
+                if rows > 0:
+                    self.border_title = (
+                        f"Query Results {self._human_row_count(table.source_row_count)}"
+                    )
+                else:
+                    self.border_title = "Query Returned No Records"
             else:
-                self.border_title = (
-                    f"Query Results {self._human_row_count(next(iter(data.values())))}"
-                )
+                self.border_title = "Query Results"
         self.remove_class("non-responsive")
 
     def show_loading(self) -> None:
@@ -161,10 +153,10 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if self.border_title and str(self.border_title).startswith("Loading"):
             return
         maybe_table = self.get_visible_table()
-        if maybe_table is not None and self.data:
-            id_ = maybe_table.id
-            assert id_ is not None
-            self.border_title = f"Query Results {self._human_row_count(self.data[id_])}"
+        if maybe_table is not None:
+            self.border_title = (
+                f"Query Results {self._human_row_count(maybe_table.source_row_count)}"
+            )
             maybe_table.focus()
 
     def action_switch_tab(self, offset: int) -> None:
@@ -186,10 +178,9 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         if maybe_table is not None:
             maybe_table.focus()
 
-    def _human_row_count(self, data: pa.Table) -> str:
-        total_rows = data.num_rows
-        if self.MAX_RESULTS > 0 and total_rows > self.MAX_RESULTS:
-            return f"(Showing {self.MAX_RESULTS:,} of {total_rows:,} Records)"
+    def _human_row_count(self, total_rows: int) -> str:
+        if self.max_results > 0 and total_rows > self.max_results:
+            return f"(Showing {self.max_results:,} of {total_rows:,} Records)"
         else:
             return f"({total_rows:,} Records)"
 

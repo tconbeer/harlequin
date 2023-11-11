@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 -   Queries that return duplicate column names are now displayed correctly in the Results Viewer ([tconbeer/textual-fastdatatable#26](https://github.com/tconbeer/textual-fastdatatable/issues/26)).
 -   List types returned by DuckDB no longer display as `?`, but instead as `[#]`, `[s]`, etc. ([#315](https://github.com/tconbeer/harlequin/issues/315)).
 -   Map types returned by DuckDB now display as `{m}`, to differentiate them from structs (`{}`).
+-   The Results Viewer no longer displays "Query Returned No Records" before the first query is executed.
+-   The data returned by HarlequinCursor.fetchall() no longer needs to be a PyArrow Table ([#281](https://github.com/tconbeer/harlequin/issues/281)).
 
 ## [1.3.0] - 2023-11-06
 

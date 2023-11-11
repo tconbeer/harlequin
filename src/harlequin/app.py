@@ -5,7 +5,6 @@ import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
 
-import pyarrow as pa
 from rich import print
 from rich.panel import Panel
 from textual import work
@@ -284,7 +283,6 @@ class Harlequin(App, inherit_bindings=False):
                 )
             else:
                 self.results_viewer.clear_all_tables()
-                self.results_viewer.data = {}
                 cursors = worker.result
                 number_of_queries = len(self._split_query_text(query_text))
                 elapsed = time.monotonic() - self.query_timer
@@ -457,7 +455,6 @@ class Harlequin(App, inherit_bindings=False):
     async def _set_result_viewer_data(
         self, cursors: Dict[str, HarlequinCursor]
     ) -> None:
-        data: Dict[str, pa.Table] = {}
         errors: List[BaseException] = []
         for id_, cur in cursors.items():
             try:
@@ -468,11 +465,8 @@ class Harlequin(App, inherit_bindings=False):
                 await self.results_viewer.push_table(
                     table_id=id_,
                     column_labels=cur.columns(),
-                    data=cur_data.slice(0, self.max_results)  # type: ignore
-                    if self.max_results > 0
-                    else cur_data,
+                    data=cur_data,
                 )
-                data[id_] = cur_data  # type: ignore
         if errors:
             header = getattr(
                 errors[0],
@@ -492,14 +486,13 @@ class Harlequin(App, inherit_bindings=False):
             )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
-        self.results_viewer.data = data
-        if not data:
-            self.results_viewer.set_responsive(did_run=len(errors) == len(cursors))
+        if len(errors) == len(cursors):
+            self.results_viewer.set_responsive(did_run=False)
         else:
-            self.results_viewer.set_responsive(data=data, did_run=True)
+            self.results_viewer.set_responsive(did_run=True)
             self.results_viewer.focus()
 
-    @work(exclusive=True, group="duck_schema_updaters")
+    @work(exclusive=True, group="schema_updaters")
     async def _update_schema_data(self) -> None:
         catalog = self.connection.get_catalog()
         worker = get_current_worker()

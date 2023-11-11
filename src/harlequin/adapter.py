@@ -45,7 +45,8 @@ class HarlequinCursor(ABC):
     def fetchall(self) -> AutoBackendType:
         """
         Returns data from the cursor's result set. Can return any type supported
-        by textual-fastdatatable.
+        by textual-fastdatatable. If set_limit is called prior to fetchall,
+        this method only returns the limited number of records.
 
         Returns:
             pyarrow.Table |

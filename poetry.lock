@@ -1374,13 +1374,13 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.2.1"
+version = "0.3.0"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_fastdatatable-0.2.1-py3-none-any.whl", hash = "sha256:40416bae8897ca1d26e48d32076f44a12e250de98973601e70aae60da376ec62"},
-    {file = "textual_fastdatatable-0.2.1.tar.gz", hash = "sha256:d66581d0d9f6b5dccf364a405e6e5cb733e1cacddc612b4f61dee06d1aac7b5e"},
+    {file = "textual_fastdatatable-0.3.0-py3-none-any.whl", hash = "sha256:b4a35b8ea93d9669642814969c39524e2c3bee157259337fce76746828d1ddee"},
+    {file = "textual_fastdatatable-0.3.0.tar.gz", hash = "sha256:07b9f815c34f2541953efba9978c1cd559152fd260a3b7e7562d3e4bae585c6b"},
 ]
 
 [package.dependencies]
@@ -1620,4 +1620,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "8975d970e9e2668a8fc77edd564eba02edf531995572511515278b6251199261"
+content-hash = "2296f42fa1cf13776d94f6a82aa25576d549b86ad36c223b29b048961683f4e3"
