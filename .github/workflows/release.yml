@@ -40,7 +40,7 @@ jobs:
         with:
           version: ${{ github.event.inputs.newVersion }}
       - name: Commit Changes
-        uses: stefanzweifel/git-auto-commit-action@v4
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Bumps version to ${{ github.event.inputs.newVersion }}
       - name: Create pull request into main
