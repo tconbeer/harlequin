@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.1] - 2023-11-13
+
 ### Bug Fixes
 
 -   When running multiple queries, Harlequin now activates the results tab for the last query, instead of the first one.
@@ -336,7 +338,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.3.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.3.1...HEAD
+
+[1.3.1]: https://github.com/tconbeer/harlequin/compare/1.3.0...1.3.1
 
 [1.3.0]: https://github.com/tconbeer/harlequin/compare/1.2.0...1.3.0
 
