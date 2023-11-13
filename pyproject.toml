@@ -19,7 +19,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0.0"
 textual = "==0.41.0"
-textual-fastdatatable = "==0.2.1"
+textual-fastdatatable = "==0.3.0"
 textual-textarea = "==0.7.3"
 click = "^8.1.3"
 duckdb = ">=0.8.0"

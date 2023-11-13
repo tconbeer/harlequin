@@ -4,7 +4,6 @@ from typing import Awaitable, Callable, List
 import pytest
 from harlequin import Harlequin
 from harlequin.components import ErrorModal, ExportScreen
-from harlequin.components.results_viewer import ResultsTable
 from textual.geometry import Offset
 
 
@@ -30,10 +29,9 @@ async def test_select_1(
         await pilot.pause()
         assert app.query_text == q
         assert app.cursors
-        assert len(app.results_viewer.data) == 1
-        assert app.results_viewer.data[
-            next(iter(app.results_viewer.data))
-        ].to_pylist() == [{"foo": 1}]
+        table = app.results_viewer.get_visible_table()
+        assert table
+        assert table.source_row_count == table.row_count == 1
         assert await app_snapshot(app)
 
 
@@ -95,10 +93,9 @@ async def test_multiple_queries(
         # should only run one query
         await pilot.pause()
         assert app.query_text == "select 1;"
-        assert len(app.results_viewer.data) == 1
-        assert app.results_viewer.data[
-            next(iter(app.results_viewer.data))
-        ].to_pylist() == [{"1": 1}]
+        table = app.results_viewer.get_visible_table()
+        assert table
+        assert table.row_count == table.source_row_count == 1
         assert "hide-tabs" in app.results_viewer.classes
         snap_results.append(await app_snapshot(app, "One query"))
 
@@ -109,12 +106,9 @@ async def test_multiple_queries(
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.query_text == "select 1; select 2"
-        assert len(app.results_viewer.data) == 2
+        assert app.results_viewer.tab_switcher.tab_count == 2
         assert "hide-tabs" not in app.results_viewer.classes
         snap_results.append(await app_snapshot(app, "Both queries"))
-        for i, (k, v) in enumerate(app.results_viewer.data.items(), start=1):
-            assert v.to_pylist() == [{str(i): i}]
-            assert app.query_one(f"#{k}", ResultsTable)
         assert app.results_viewer.tab_switcher.active == "tab-2"
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
@@ -160,7 +154,9 @@ async def test_run_query_bar(
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
-        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) > 500
+        table = app.results_viewer.get_visible_table()
+        assert table
+        assert table.row_count == table.source_row_count == 857
         snap_results.append(await app_snapshot(app, "No limit"))
 
         # apply a limit by clicking the limit checkbox
@@ -169,7 +165,9 @@ async def test_run_query_bar(
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
-        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 500
+        table = app.results_viewer.get_visible_table()
+        assert table
+        assert table.row_count == table.source_row_count == 500
         snap_results.append(await app_snapshot(app, "Limit 500"))
 
         # type an invalid limit, checkbox should be unchecked
@@ -197,7 +195,9 @@ async def test_run_query_bar(
         await pilot.click(bar.button.__class__)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
-        assert len(app.results_viewer.data[next(iter(app.results_viewer.data))]) == 100
+        table = app.results_viewer.get_visible_table()
+        assert table
+        assert table.row_count == table.source_row_count == 100
         snap_results.append(await app_snapshot(app, "Limit 100"))
 
         assert all(snap_results)
