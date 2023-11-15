@@ -138,4 +138,5 @@ def test_bad_adapter_opt(
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
     assert res.exit_code == 2
-    assert "Error: Invalid value for '-a' / '--adapter'" in res.stdout
+    key_words = ["Error", "Invalid", "-a", "-adapter", "duckdb"]
+    assert all([w in res.stdout for w in key_words])

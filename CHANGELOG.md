@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   Harlequin now ships with an experimental SQLite adapter and can be used to query any SQLite database (including an in-memory database). You can select the adapter by starting Harlequin with `harlequin -a sqlite` (for an in-memory session) or `harlequin -a sqlite my.db`.
+-   `harlequin --help` is all-new, with a glow-up provided by [`rich-click`](https://github.com/ewels/rich-click). Options for each adapter are separated into their own panels.
 
 ### Refactoring
 

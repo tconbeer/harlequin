@@ -21,6 +21,7 @@ repos:
           - textual-fastdatatable>=0.4.0
           - pytest
           - types-pygments
+          - rich-click>=1.7.1
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"
