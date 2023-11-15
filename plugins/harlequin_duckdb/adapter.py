@@ -41,7 +41,7 @@ class DuckDbCursor(HarlequinCursor):
             pass
         return self
 
-    def fetchall(self) -> AutoBackendType:
+    def fetchall(self) -> AutoBackendType | None:
         try:
             result = self.relation.fetch_arrow_table()
         except duckdb.Error as e:

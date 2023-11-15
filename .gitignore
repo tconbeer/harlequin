@@ -4,6 +4,7 @@
 *.json
 *.parquet
 *.sql
+*.sqlite
 !tests/data/**/*.db
 !tests/data/**/*.csv
 !tests/data/**/*.json

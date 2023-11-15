@@ -15,8 +15,9 @@ def no_use_buffer_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_select_1(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
+    app = app_all_adapters
     async with app.run_test() as pilot:
         assert app.title == "Harlequin"
         assert app.focused.__class__.__name__ == "TextInput"
@@ -43,6 +44,31 @@ async def test_select_1(
         "select 'a' as foo",
         "select null",
         "select null as foo",
+        "",
+        "select 1 where false",
+    ],
+)
+async def test_queries_do_not_crash_all_adapters(
+    app_all_adapters: Harlequin,
+    query: str,
+    app_snapshot: Callable[..., Awaitable[bool]],
+) -> None:
+    app = app_all_adapters
+    async with app.run_test() as pilot:
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+
+        assert app.query_text == query
+        if query:
+            assert app.cursors
+        assert await app_snapshot(app)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
         "SELECT {'x': 1, 'y': 2, 'z': 3}",  # struct
         # also a struct:
         "SELECT {'yes': 'duck', 'maybe': 'goose', 'huh': NULL, 'no': 'heron'}",
@@ -62,8 +88,6 @@ async def test_select_1(
         "SELECT [1, 2, 3]",  # list
         "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
         "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
-        "",
-        "select 1 where false",
     ],
 )
 async def test_queries_do_not_crash(
@@ -82,8 +106,9 @@ async def test_queries_do_not_crash(
 
 @pytest.mark.asyncio
 async def test_multiple_queries(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
+    app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         q = "select 1; select 2"
@@ -137,10 +162,10 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 @pytest.mark.asyncio
 async def test_run_query_bar(
-    app_small_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters_small_db: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
     snap_results: List[bool] = []
-    app = app_small_duck
+    app = app_all_adapters_small_db
     async with app.run_test(size=(120, 36)) as pilot:
         # initialization
         bar = app.run_query_bar
@@ -423,6 +448,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
         app.editor.text = "tab 1"
+        await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 1 of 1 (No tabs)"))
 
         await pilot.press("ctrl+n")
@@ -432,6 +458,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == ""
         app.editor.text = "tab 2"
+        await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 2 of 2"))
 
         await pilot.press("ctrl+n")
@@ -441,6 +468,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == ""
         app.editor.text = "tab 3"
+        await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 3 of 3"))
 
         await pilot.press("ctrl+k")
@@ -502,8 +530,11 @@ async def test_multiple_buffers(
     ],
 )
 async def test_query_errors(
-    app: Harlequin, bad_query: str, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    bad_query: str,
+    app_snapshot: Callable[..., Awaitable[bool]],
 ) -> None:
+    app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         app.editor.text = bad_query
@@ -607,8 +638,9 @@ async def test_data_catalog(
 
 @pytest.mark.asyncio
 async def test_dupe_column_names(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
+    app = app_all_adapters
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
     async with app.run_test() as pilot:
         app.editor.text = query

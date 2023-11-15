@@ -465,7 +465,7 @@ class Harlequin(App, inherit_bindings=False):
                 await self.results_viewer.push_table(
                     table_id=id_,
                     column_labels=cur.columns(),
-                    data=cur_data,
+                    data=cur_data,  # type: ignore
                 )
         if errors:
             header = getattr(
@@ -509,6 +509,6 @@ class Harlequin(App, inherit_bindings=False):
             try:
                 return self.connection.validate_sql(selection)
             except NotImplementedError:
-                return ""
+                return selection
         else:
             return ""

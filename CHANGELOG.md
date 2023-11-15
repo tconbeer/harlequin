@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   Harlequin now ships with an SQLite adapter and can be used to query any SQLite database (including an in-memory database). You can select the adapter by starting Harlequin with `harlequin -a sqlite` (for an in-memory session) or `harlequin -a sqlite my.db`.
+
 ## [1.3.1] - 2023-11-13
 
 ### Bug Fixes
