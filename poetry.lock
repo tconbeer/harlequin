@@ -1257,6 +1257,25 @@ typing-extensions = {version = ">=4.0.0,<5.0", markers = "python_version < \"3.9
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
+name = "rich-click"
+version = "1.7.1"
+description = "Format click help output nicely with rich"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "rich-click-1.7.1.tar.gz", hash = "sha256:660c8ea345343f47c5de88f62afa34a19d9f4c7accdd9c6e39dc17eece6affcd"},
+    {file = "rich_click-1.7.1-py3-none-any.whl", hash = "sha256:c37d19af85c86b9a256c18e9d23637ae89478300ec8dc5e220c6ca213675f2f9"},
+]
+
+[package.dependencies]
+click = ">=7"
+rich = ">=10.7.0"
+typing-extensions = "*"
+
+[package.extras]
+dev = ["flake8", "flake8-docstrings", "mypy", "packaging", "pre-commit", "pytest", "pytest-cov", "types-setuptools"]
+
+[[package]]
 name = "ruff"
 version = "0.1.5"
 description = "An extremely fast Python linter and code formatter, written in Rust."
@@ -1374,13 +1393,13 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.3.0"
+version = "0.4.0"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_fastdatatable-0.3.0-py3-none-any.whl", hash = "sha256:b4a35b8ea93d9669642814969c39524e2c3bee157259337fce76746828d1ddee"},
-    {file = "textual_fastdatatable-0.3.0.tar.gz", hash = "sha256:07b9f815c34f2541953efba9978c1cd559152fd260a3b7e7562d3e4bae585c6b"},
+    {file = "textual_fastdatatable-0.4.0-py3-none-any.whl", hash = "sha256:8c2c1f31366bfd4214eec1fb64942a2c8009e6ffb174cb75685d68b4c31bf627"},
+    {file = "textual_fastdatatable-0.4.0.tar.gz", hash = "sha256:7259a4a9c2830441f627e6bf8a1de22198cc1eb209fac11132be5043062abaaf"},
 ]
 
 [package.dependencies]
@@ -1620,4 +1639,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "2296f42fa1cf13776d94f6a82aa25576d549b86ad36c223b29b048961683f4e3"
+content-hash = "0128fa80bd978535f16678ace4be23bc314562ef2a037ebcceb3bef36b887303"

@@ -90,6 +90,7 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             self._format_column_label(col_name, col_type)
             for col_name, col_type in column_labels
         ]
+        self.app.log(f"LABELS: {formatted_labels}")
         table = ResultsTable(
             id=table_id,
             column_labels=formatted_labels,  # type: ignore

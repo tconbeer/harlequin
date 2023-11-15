@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Harlequin now ships with an experimental SQLite adapter and can be used to query any SQLite database (including an in-memory database). You can select the adapter by starting Harlequin with `harlequin -a sqlite` (for an in-memory session) or `harlequin -a sqlite my.db`.
+-   `harlequin --help` is all-new, with a glow-up provided by [`rich-click`](https://github.com/ewels/rich-click). Options for each adapter are separated into their own panels.
+-   `harlequin --version` now shows the versions of installed database adapters ([#317](https://github.com/tconbeer/harlequin/issues/317)).
+
+### Refactoring
+
+-   The code for the DuckDB adapter has been moved from `/plugins/harlequin_duckdb` to `/src/harlequin_duckdb`.
+
 ## [1.3.1] - 2023-11-13
 
 ### Bug Fixes

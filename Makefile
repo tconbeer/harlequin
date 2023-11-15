@@ -15,6 +15,10 @@ lint:
 serve:
 	textual run --dev -c harlequin f1.db
 
+.PHONY: sqlite
+sqlite:
+	textual run --dev -c harlequin -a sqlite
+
 marketing: $(wildcard static/themes/*.svg) static/harlequin.gif
 
 static/themes/%.svg: pyproject.toml

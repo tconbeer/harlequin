@@ -42,17 +42,19 @@ class HarlequinCursor(ABC):
         pass
 
     @abstractmethod
-    def fetchall(self) -> AutoBackendType:
+    def fetchall(self) -> AutoBackendType | None:
         """
         Returns data from the cursor's result set. Can return any type supported
         by textual-fastdatatable. If set_limit is called prior to fetchall,
-        this method only returns the limited number of records.
+        this method only returns the limited number of records. If the query returns
+        no rows, fetchall should return None.
 
         Returns:
             pyarrow.Table |
             pyarrow.Record Batch |
             Sequence[Iterable[Any]] |
-            Mapping[str, Sequence[Any]]
+            Mapping[str, Sequence[Any]] |
+            None
         """
         pass
 

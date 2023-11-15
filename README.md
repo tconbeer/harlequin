@@ -6,7 +6,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/harlequin)
 ![Runs on Linux | MacOS | Windows](https://img.shields.io/badge/runs%20on-Linux%20%7C%20MacOS%20%7C%20Windows-blue)
 
-The DuckDB IDE for Your Terminal.
+The SQL IDE for Your Terminal.
 
 ![Harlequin Demo Video](static/harlequin.gif)
 
