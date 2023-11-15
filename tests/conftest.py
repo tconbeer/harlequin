@@ -138,7 +138,7 @@ def _create_sqlite_db_from_data_dir(data_dir: Path, db_path: Path) -> None:
         conn.execute(q)
     for p in data_dir.iterdir():
         if p.is_file() and p.suffix == ".csv":
-            with p.open("r") as f:
+            with p.open("r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 for row in reader:
                     quoted = [
