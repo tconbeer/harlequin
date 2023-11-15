@@ -9,9 +9,9 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 
 if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points
+    from importlib_metadata import entry_points, version
 else:
-    from importlib.metadata import entry_points
+    from importlib.metadata import entry_points, version
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -59,6 +59,29 @@ click.rich_click.OPTION_GROUPS = {
 }
 
 
+def _version_option() -> str:
+    """
+    Build the string printed by harlequin --version
+    """
+    harlequin_version = version("harlequin")
+    adapter_eps = entry_points(group="harlequin.adapter")
+    adapter_versions: dict[str, str] = {}
+    for ep in adapter_eps:
+        adapter_versions.update({ep.name: ep.dist.version})
+
+    adapter_output = "\n".join(
+        [f"  - {name}, version {version}" for name, version in adapter_versions.items()]
+    )
+
+    output = (
+        f"harlequin, version {harlequin_version}\n\n"
+        "Installed Adapters:\n"
+        f"{adapter_output}"
+    )
+
+    return output
+
+
 def build_cli() -> click.Command:
     """
     Loads installed adapters and constructs a click Command that includes options
@@ -79,7 +102,7 @@ def build_cli() -> click.Command:
             )
 
     @click.command()
-    @click.version_option(package_name="harlequin")
+    @click.version_option(package_name="harlequin", message=_version_option())
     @click.argument(
         "conn_str",
         nargs=-1,
