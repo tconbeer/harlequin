@@ -9,8 +9,8 @@ repository = "https://github.com/tconbeer/harlequin"
 readme = "README.md"
 packages = [
     { include = "harlequin", from = "src" },
-    { include = "harlequin_duckdb", from = "plugins" },
-    { include = "harlequin_sqlite", from = "plugins" },
+    { include = "harlequin_duckdb", from = "src" },
+    { include = "harlequin_sqlite", from = "src" },
 ]
 
 [build-system]
@@ -60,8 +60,7 @@ target-version = "py38"
 [tool.mypy]
 python_version = "3.8"
 files = [
-    "plugins/**/*.py",
-    "src/harlequin/**/*.py",
+    "src/**/*.py",
     "tests/**/*.py",
 ]
 mypy_path = "src:stubs"

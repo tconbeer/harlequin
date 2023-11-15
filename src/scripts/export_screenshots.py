@@ -1,6 +1,7 @@
 import asyncio
 
 from harlequin import Harlequin
+from harlequin_duckdb import DuckDbAdapter
 from pygments.styles import get_all_styles
 
 TEXT = """
@@ -20,9 +21,10 @@ order by avg_standing asc
 
 
 async def save_all_screenshots() -> None:
+    adapter = DuckDbAdapter(("f1.db",), no_init=True)
     for theme in get_all_styles():
         print(f"Screenshotting {theme}")
-        app = Harlequin(["f1.db"], theme=theme)
+        app = Harlequin(adapter=adapter, theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
             app.editor.text = TEXT
             app.editor.selection_anchor = (9, 0)  # type: ignore
