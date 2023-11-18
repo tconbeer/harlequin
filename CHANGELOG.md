@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Refactoring
 
 -   The code for the DuckDB adapter has been moved from `/plugins/harlequin_duckdb` to `/src/harlequin_duckdb`.
+-   The unused `export_options.py` module has been removed ([#327](https://github.com/tconbeer/harlequin/issues/327)).
 
 ## [1.3.1] - 2023-11-13
 
