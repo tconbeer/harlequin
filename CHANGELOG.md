@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.0] - 2023-11-18
+
 ### Features
 
 -   Harlequin now ships with an experimental SQLite adapter and can be used to query any SQLite database (including an in-memory database). You can select the adapter by starting Harlequin with `harlequin -a sqlite` (for an in-memory session) or `harlequin -a sqlite my.db`.
@@ -349,7 +351,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.3.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.4.0...HEAD
+
+[1.4.0]: https://github.com/tconbeer/harlequin/compare/1.3.1...1.4.0
 
 [1.3.1]: https://github.com/tconbeer/harlequin/compare/1.3.0...1.3.1
 
