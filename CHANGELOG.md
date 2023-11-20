@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Adds a `py.typed` file to the `harlequin` package.
+
 ## [1.4.0] - 2023-11-18
 
 ### Features
