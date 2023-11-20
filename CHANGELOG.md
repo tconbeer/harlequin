@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.1] - 2023-11-20
+
 ### Bug Fixes
 
 -   Adds a `py.typed` file to the `harlequin` package.
@@ -355,7 +357,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.4.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.4.1...HEAD
+
+[1.4.1]: https://github.com/tconbeer/harlequin/compare/1.4.0...1.4.1
 
 [1.4.0]: https://github.com/tconbeer/harlequin/compare/1.3.1...1.4.0
 
