@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The Postgres adapter is now installable as an extra; use `pip install harlequin[postgres]`.
+
 ## [1.4.1] - 2023-11-20
 
 ### Bug Fixes
