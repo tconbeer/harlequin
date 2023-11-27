@@ -234,9 +234,10 @@ class DuckDbConnection(HarlequinConnection):
         return Catalog(items=catalog_items)
 
     def validate_sql(self, text: str) -> str:
+        cur = self.conn.cursor()
         escaped = text.replace("'", "''")
         try:
-            (parsed,) = self.conn.sql(  # type: ignore
+            (parsed,) = cur.sql(  # type: ignore
                 f"select json_serialize_sql('{escaped}')"
             ).fetchone()
         except HarlequinQueryError:
@@ -249,10 +250,12 @@ class DuckDbConnection(HarlequinConnection):
             return text
 
     def _get_databases(self) -> list[tuple[str]]:
-        return self.conn.execute("pragma show_databases").fetchall()
+        cur = self.conn.cursor()
+        return cur.execute("pragma show_databases").fetchall()
 
     def _get_schemas(self, database: str) -> list[tuple[str]]:
-        schemas = self.conn.execute(
+        cur = self.conn.cursor()
+        schemas = cur.execute(
             "select schema_name "
             "from information_schema.schemata "
             "where "
@@ -264,7 +267,8 @@ class DuckDbConnection(HarlequinConnection):
         return schemas
 
     def _get_tables(self, database: str, schema: str) -> list[tuple[str, str]]:
-        tables = self.conn.execute(
+        cur = self.conn.cursor()
+        tables = cur.execute(
             "select table_name, table_type "
             "from information_schema.tables "
             "where "
@@ -278,7 +282,8 @@ class DuckDbConnection(HarlequinConnection):
     def _get_columns(
         self, database: str, schema: str, table: str
     ) -> list[tuple[str, str]]:
-        columns = self.conn.execute(
+        cur = self.conn.cursor()
+        columns = cur.execute(
             "select column_name, data_type "
             "from information_schema.columns "
             "where "
