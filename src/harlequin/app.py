@@ -14,12 +14,13 @@ from textual.containers import Horizontal, Vertical
 from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
+from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
-from textual.worker import Worker, WorkerFailed, WorkerState
+from textual.worker import Worker, WorkerState
 
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.cache import BufferState, Cache, write_cache
@@ -41,6 +42,26 @@ from harlequin.exception import (
     HarlequinQueryError,
     HarlequinThemeError,
 )
+
+
+class QueriesExecuted(Message):
+    def __init__(self, query_text: str, cursors: Dict[str, HarlequinCursor]) -> None:
+        self.query_text = query_text
+        self.cursors = cursors
+        super().__init__()
+
+
+class ResultsFetched(Message):
+    def __init__(
+        self,
+        cursors: Dict[str, HarlequinCursor],
+        errors: List[BaseException],
+        elapsed: Union[float, None],
+    ) -> None:
+        self.cursors = cursors
+        self.errors = errors
+        self.elapsed = elapsed
+        super().__init__()
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -255,9 +276,80 @@ class Harlequin(App, inherit_bindings=False):
                 header="Could not update data catalog",
                 error=message.worker.error,
             )
+        elif (
+            message.worker.name == "_build_cursors" and message.worker.error is not None
+        ):
+            self.run_query_bar.set_responsive()
+            self.results_viewer.set_responsive()
+            self.results_viewer.show_table()
+            header = getattr(message.worker.error, "title", "Query Error")
+            self._push_error_modal(
+                title="Query Error",
+                header=header,
+                error=message.worker.error,
+            )
 
     def on_new_catalog(self, message: NewCatalog) -> None:
         self.data_catalog.update_tree(message.catalog)
+
+    def on_queries_executed(self, message: QueriesExecuted) -> None:
+        self.results_viewer.clear_all_tables()
+        cursors = message.cursors
+        number_of_queries = len(self._split_query_text(message.query_text))
+        elapsed = (
+            time.monotonic() - self.query_timer if self.query_timer is not None else 0.0
+        )
+        if cursors:  # select query
+            self.cursors = cursors
+            if len(cursors) < number_of_queries:
+                # mixed select and DDL statements
+                n = number_of_queries - len(cursors)
+                self.notify(
+                    f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
+                    f"executed successfully in {elapsed:.2f} seconds."
+                )
+                self.update_schema_data()
+        elif bool(message.query_text.strip()):  # DDL/DML queries only
+            self.run_query_bar.set_responsive()
+            self.results_viewer.set_responsive()
+            self.results_viewer.show_table()
+            self.notify(
+                f"{number_of_queries} DDL/DML "
+                f"{'query' if number_of_queries == 1 else 'queries'} "
+                f"executed successfully in {elapsed:.2f} seconds."
+            )
+            self.query_timer = None
+            self.update_schema_data()
+        else:  # blank query
+            self.run_query_bar.set_responsive()
+            self.results_viewer.set_responsive(did_run=False)
+            self.results_viewer.show_table()
+
+    def on_results_fetched(self, message: ResultsFetched) -> None:
+        if message.errors:
+            header = getattr(
+                message.errors[0],
+                "title",
+                "The database raised an error when running your query:",
+            )
+            self._push_error_modal(
+                title="Query Error",
+                header=header,
+                error=message.errors[0],
+            )
+        elif message.elapsed is not None:
+            self.notify(
+                f"{len(message.cursors)} "
+                f"{'query' if len(message.cursors) == 1 else 'queries'} "
+                f"executed successfully in {message.elapsed:.2f} seconds."
+            )
+        self.run_query_bar.set_responsive()
+        self.results_viewer.show_table()
+        if len(message.errors) == len(message.cursors):
+            self.results_viewer.set_responsive(did_run=False)
+        else:
+            self.results_viewer.set_responsive(did_run=True)
+            self.results_viewer.focus()
 
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
@@ -290,49 +382,7 @@ class Harlequin(App, inherit_bindings=False):
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
-            try:
-                worker = self._build_cursors(query_text)
-                await worker.wait()
-            except WorkerFailed as e:
-                self.run_query_bar.set_responsive()
-                self.results_viewer.set_responsive()
-                self.results_viewer.show_table()
-                header = getattr(e.error, "title", "Query Error")
-                self._push_error_modal(
-                    title="Query Error",
-                    header=header,
-                    error=e.error,
-                )
-            else:
-                self.results_viewer.clear_all_tables()
-                cursors = worker.result
-                number_of_queries = len(self._split_query_text(query_text))
-                elapsed = time.monotonic() - self.query_timer
-                if cursors:  # select query
-                    self.cursors = cursors
-                    if len(cursors) < number_of_queries:
-                        # mixed select and DDL statements
-                        n = number_of_queries - len(cursors)
-                        self.notify(
-                            f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
-                            f"executed successfully in {elapsed:.2f} seconds."
-                        )
-                        self.update_schema_data()
-                elif bool(query_text.strip()):  # DDL/DML queries only
-                    self.run_query_bar.set_responsive()
-                    self.results_viewer.set_responsive()
-                    self.results_viewer.show_table()
-                    self.notify(
-                        f"{number_of_queries} DDL/DML "
-                        f"{'query' if number_of_queries == 1 else 'queries'} "
-                        f"executed successfully in {elapsed:.2f} seconds."
-                    )
-                    self.query_timer = None
-                    self.update_schema_data()
-                else:  # blank query
-                    self.run_query_bar.set_responsive()
-                    self.results_viewer.set_responsive(did_run=False)
-                    self.results_viewer.show_table()
+            self._build_cursors(query_text)
 
     async def watch_cursors(self, cursors: Dict[str, HarlequinCursor]) -> None:
         """
@@ -432,13 +482,13 @@ class Harlequin(App, inherit_bindings=False):
             self.sidebar_hidden = not self.sidebar_hidden
 
     @work(
-        # thread=True,
+        thread=True,
         exclusive=True,
         exit_on_error=False,
         group="query_runners",
         description="Building cursor.",
     )
-    async def _build_cursors(self, query_text: str) -> Dict[str, HarlequinCursor]:
+    def _build_cursors(self, query_text: str) -> None:
         cursors: Dict[str, HarlequinCursor] = {}
         for q in self._split_query_text(query_text):
             cur = self.connection.execute(q)
@@ -447,7 +497,7 @@ class Harlequin(App, inherit_bindings=False):
                     cur = cur.set_limit(self.limit)
                 table_id = f"t{hash(cur)}"
                 cursors[table_id] = cur
-        return cursors
+        self.post_message(QueriesExecuted(query_text=query_text, cursors=cursors))
 
     def _get_query_text(self) -> str:
         return (
@@ -470,15 +520,13 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     @work(
-        # thread=True,
+        thread=True,
         exclusive=True,
         exit_on_error=True,
         group="query_runners",
         description="fetching data from adapter.",
     )
-    async def _set_result_viewer_data(
-        self, cursors: Dict[str, HarlequinCursor]
-    ) -> None:
+    def _set_result_viewer_data(self, cursors: Dict[str, HarlequinCursor]) -> None:
         errors: List[BaseException] = []
         for id_, cur in cursors.items():
             try:
@@ -486,35 +534,20 @@ class Harlequin(App, inherit_bindings=False):
             except HarlequinQueryError as e:
                 errors.append(e)
             else:
-                await self.results_viewer.push_table(
+                self.call_from_thread(
+                    self.results_viewer.push_table,  # type: ignore
                     table_id=id_,
                     column_labels=cur.columns(),
-                    data=cur_data,  # type: ignore
+                    data=cur_data,
                 )
-        if errors:
-            header = getattr(
-                errors[0],
-                "title",
-                "The database raised an error when running your query:",
-            )
-            self._push_error_modal(
-                title="Query Error",
-                header=header,
-                error=errors[0],
-            )
-        elif self.query_timer is not None:
-            elapsed = time.monotonic() - self.query_timer
-            self.notify(
-                f"{len(cursors)} {'query' if len(cursors) == 1 else 'queries'} "
-                f"executed successfully in {elapsed:.2f} seconds."
-            )
-        self.run_query_bar.set_responsive()
-        self.results_viewer.show_table()
-        if len(errors) == len(cursors):
-            self.results_viewer.set_responsive(did_run=False)
-        else:
-            self.results_viewer.set_responsive(did_run=True)
-            self.results_viewer.focus()
+        elapsed = (
+            time.monotonic() - self.query_timer
+            if self.query_timer is not None
+            else None
+        )
+        self.post_message(
+            ResultsFetched(cursors=cursors, errors=errors, elapsed=elapsed)
+        )
 
     def update_schema_data(self) -> None:
         self._post_updated_catalog()
