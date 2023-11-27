@@ -193,7 +193,6 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         detect_types: str = "0",
         isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"]
         | None = "DEFERRED",
-        check_same_thread: bool = True,
         cached_statements: str = "128",
         **_: Any,
     ) -> None:
@@ -203,7 +202,6 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         self.timeout = timeout
         self.detect_types = detect_types
         self.isolation_level = isolation_level
-        self.check_same_thread = check_same_thread
         self.cached_statements = cached_statements
 
     def connect(self) -> HarlequinSqliteConnection:
@@ -250,8 +248,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 timeout=float(self.timeout),
                 detect_types=int(self.detect_types),
                 isolation_level=self.isolation_level,
-                check_same_thread=self.check_same_thread,
                 cached_statements=int(self.cached_statements),
+                check_same_thread=False,
                 uri=True,
             )
         except Exception as e:

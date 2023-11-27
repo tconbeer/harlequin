@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List
 
+from textual.message import Message
+
 
 @dataclass
 class CatalogItem:
@@ -41,3 +43,9 @@ class Catalog:
     """
 
     items: List[CatalogItem]
+
+
+class NewCatalog(Message):
+    def __init__(self, catalog: Catalog) -> None:
+        self.catalog = catalog
+        super().__init__()

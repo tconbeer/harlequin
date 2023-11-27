@@ -4,9 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+-   The SQLite adapter no longer provides a `check-same-thread` option; the established connection sets this value to False to enable Harlequin features.
+
 ### Features
 
 -   The Postgres adapter is now installable as an extra; use `pip install harlequin[postgres]`.
+
+### Bug Fixes
+
+-   Harlequin no longer becomes unresponsive when loading a large data catalog or executing long-running queries ([#236](https://github.com/tconbeer/harlequin/issues/236), [#332](https://github.com/tconbeer/harlequin/issues/332), [#331](https://github.com/tconbeer/harlequin/issues/331)).
 
 ## [1.4.1] - 2023-11-20
 
