@@ -55,6 +55,8 @@ async def test_queries_do_not_crash_all_adapters(
 ) -> None:
     app = app_all_adapters
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
         await pilot.pause()
@@ -94,6 +96,8 @@ async def test_queries_do_not_crash(
     app: Harlequin, query: str, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
         await pilot.pause()
@@ -111,6 +115,8 @@ async def test_multiple_queries(
     app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         q = "select 1; select 2"
         app.editor.text = q
         await pilot.press("ctrl+j")
@@ -167,6 +173,8 @@ async def test_run_query_bar(
     snap_results: List[bool] = []
     app = app_all_adapters_small_db
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         # initialization
         bar = app.run_query_bar
         assert bar.checkbox.value is False
@@ -234,6 +242,8 @@ async def test_toggle_sidebar(
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         # initialization
         sidebar = app.data_catalog
         assert not sidebar.disabled
@@ -268,6 +278,8 @@ async def test_toggle_full_screen(
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         # initialization; all visible
         app.editor.focus()
         assert app.full_screen is False
@@ -383,6 +395,8 @@ async def test_help_screen(
     app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert len(app.screen_stack) == 1
 
         await pilot.press("f1")
@@ -412,6 +426,8 @@ async def test_export(
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
         assert app.cursors
@@ -444,6 +460,8 @@ async def test_multiple_buffers(
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
@@ -537,6 +555,8 @@ async def test_query_errors(
     app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         app.editor.text = bad_query
 
         await pilot.press("ctrl+a")
@@ -563,6 +583,8 @@ async def test_data_catalog(
     snap_results: List[bool] = []
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         catalog = app.data_catalog
         assert not catalog.show_root
         snap_results.append(await app_snapshot(app, "Initialization"))
@@ -643,6 +665,8 @@ async def test_dupe_column_names(
     app = app_all_adapters
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
         await pilot.pause()

@@ -92,16 +92,6 @@ isolation_level = SelectOption(
     default="DEFERRED",
 )
 
-check_same_thread = FlagOption(
-    name="check-same-thread",
-    description=(
-        "If True (default), ProgrammingError will be raised if the database connection "
-        "is used by a thread other than the one that created it. If False, the "
-        "connection may be accessed in multiple threads; write operations may need to "
-        "be serialized by the user to avoid data corruption. See threadsafety for more "
-        "information."
-    ),
-)
 
 cached_statements = TextOption(
     name="cached-statements",
@@ -118,6 +108,5 @@ SQLITE_OPTIONS = [
     timeout,
     detect_types,
     isolation_level,
-    check_same_thread,
     cached_statements,
 ]
