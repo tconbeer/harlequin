@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 -   Harlequin no longer becomes unresponsive when loading a large data catalog or executing long-running queries ([#236](https://github.com/tconbeer/harlequin/issues/236), [#332](https://github.com/tconbeer/harlequin/issues/332), [#331](https://github.com/tconbeer/harlequin/issues/331)).
+-   Fixes a flaky test that was causing intermittent CI failures.
 
 ## [1.4.1] - 2023-11-20
 
