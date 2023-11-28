@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.0] - 2023-11-28
+
 ### Breaking Changes
 
 -   The SQLite adapter no longer provides a `check-same-thread` option; the established connection sets this value to False to enable Harlequin features.
@@ -370,7 +372,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.4.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.5.0...HEAD
+
+[1.5.0]: https://github.com/tconbeer/harlequin/compare/1.4.1...1.5.0
 
 [1.4.1]: https://github.com/tconbeer/harlequin/compare/1.4.0...1.4.1
 
