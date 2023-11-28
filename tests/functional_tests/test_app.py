@@ -466,6 +466,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
         app.editor.text = "tab 1"
+        await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 1 of 1 (No tabs)"))
 
@@ -476,6 +477,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text == ""
         app.editor.text = "tab 2"
+        await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 2 of 2"))
 
@@ -486,6 +488,7 @@ async def test_multiple_buffers(
         assert app.editor_collection.active == "tab-3"
         assert app.editor.text == ""
         app.editor.text = "tab 3"
+        await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 3 of 3"))
 
