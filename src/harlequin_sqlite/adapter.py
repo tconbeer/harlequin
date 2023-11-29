@@ -8,7 +8,11 @@ from urllib.parse import unquote, urlparse
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.catalog import Catalog, CatalogItem
-from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
+from harlequin.exception import (
+    HarlequinConfigError,
+    HarlequinConnectionError,
+    HarlequinQueryError,
+)
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from textual_fastdatatable.backend import AutoBackendType
 
@@ -189,20 +193,26 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         conn_str: Sequence[str],
         read_only: bool = False,
         connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
-        timeout: str = "5.0",
-        detect_types: str = "0",
+        timeout: str | float = 5.0,
+        detect_types: str | int = 0,
         isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"]
         | None = "DEFERRED",
-        cached_statements: str = "128",
+        cached_statements: str | int = 128,
         **_: Any,
     ) -> None:
-        self.conn_str = conn_str if conn_str else (":memory:",)
-        self.read_only = read_only
-        self.connection_mode = connection_mode
-        self.timeout = timeout
-        self.detect_types = detect_types
-        self.isolation_level = isolation_level
-        self.cached_statements = cached_statements
+        try:
+            self.conn_str = conn_str if conn_str else (":memory:",)
+            self.read_only = bool(read_only)
+            self.connection_mode = connection_mode
+            self.timeout = float(timeout)
+            self.detect_types = int(detect_types)
+            self.isolation_level = isolation_level
+            self.cached_statements = int(cached_statements)
+        except (ValueError, TypeError) as e:
+            raise HarlequinConfigError(
+                msg=f"SQLite adapter received bad config value: {e}",
+                title="Harlequin could not initialize the selected adapter.",
+            ) from e
 
     def connect(self) -> HarlequinSqliteConnection:
         if (
@@ -245,10 +255,10 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         try:
             conn = sqlite3.connect(
                 database=primary_db,
-                timeout=float(self.timeout),
-                detect_types=int(self.detect_types),
+                timeout=self.timeout,
+                detect_types=self.detect_types,
                 isolation_level=self.isolation_level,
-                cached_statements=int(self.cached_statements),
+                cached_statements=self.cached_statements,
                 check_same_thread=False,
                 uri=True,
             )

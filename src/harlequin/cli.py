@@ -10,6 +10,7 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.config import get_config_for_profile
 from harlequin.exception import HarlequinConfigError, pretty_print_error
+from harlequin.plugins import load_plugins
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points, version
@@ -105,17 +106,7 @@ def build_cli() -> click.Command:
 
     Returns: click.Command
     """
-    adapter_eps = entry_points(group="harlequin.adapter")
-    adapters: dict[str, type[HarlequinAdapter]] = {}
-
-    for ep in adapter_eps:
-        try:
-            adapters.update({ep.name: ep.load()})
-        except ImportError as e:
-            print(
-                f"Harlequin could not load the installed plug-in named {ep.name}."
-                f"\n\n{e}"
-            )
+    adapters = load_plugins()
 
     @click.command()
     @click.version_option(package_name="harlequin", message=_version_option())
@@ -224,7 +215,11 @@ def build_cli() -> click.Command:
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]  # type: ignore
-        adapter_instance = adapter_cls(conn_str=conn_str, **config)
+        try:
+            adapter_instance = adapter_cls(conn_str=conn_str, **config)
+        except HarlequinConfigError as e:
+            pretty_print_error(e)
+            ctx.exit(2)
 
         tui = Harlequin(
             adapter=adapter_instance,

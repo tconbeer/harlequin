@@ -36,6 +36,7 @@ from harlequin.components import (
     export_callback,
 )
 from harlequin.exception import (
+    HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinQueryError,
     HarlequinThemeError,
@@ -92,7 +93,7 @@ class Harlequin(App, inherit_bindings=False):
         self,
         adapter: HarlequinAdapter,
         theme: str = "monokai",
-        max_results: int = 100_000,
+        max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -100,8 +101,17 @@ class Harlequin(App, inherit_bindings=False):
         super().__init__(driver_class, css_path, watch_css)
         self.adapter = adapter
         self.theme = theme
-        self.max_results = max_results
-        self.limit = min(500, max_results) if max_results > 0 else 500
+        try:
+            self.max_results = int(max_results)
+        except ValueError:
+            pretty_print_error(
+                HarlequinConfigError(
+                    f"Limit value of {max_results} is not a valid integer."
+                )
+            )
+            self.exit()
+            raise
+        self.limit = min(500, self.max_results) if self.max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
             self.connection = self.adapter.connect()

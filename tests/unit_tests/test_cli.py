@@ -18,7 +18,7 @@ def mock_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock_entrypoint.load.return_value = mock_adapter
     mock_entry_points = MagicMock()
     mock_entry_points.return_value = [mock_entrypoint]
-    monkeypatch.setattr("harlequin.cli.entry_points", mock_entry_points)
+    monkeypatch.setattr("harlequin.plugins.entry_points", mock_entry_points)
     return mock_adapter
 
 
