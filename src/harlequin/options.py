@@ -10,12 +10,28 @@ import questionary
 from textual.validation import ValidationResult, Validator
 from textual.widget import Widget
 
+from harlequin.colors import GREEN, PURPLE, YELLOW
 from harlequin.copy_widgets import (
     Input,
     NoFocusLabel,
     PathInput,
     Select,
     Switch,
+)
+
+HARLEQUIN_STYLE = questionary.Style(
+    [
+        ("qmark", f"fg:{GREEN} bold"),
+        ("question", "bold"),
+        ("answer", f"fg:{YELLOW} bold"),
+        ("pointer", f"fg:{YELLOW} bold"),
+        ("highlighted", f"fg:{YELLOW} bold"),
+        ("selected", f"fg:{YELLOW} noreverse bold"),
+        ("separator", f"fg:{PURPLE}"),
+        ("instruction", "fg:#858585 italic"),
+        ("text", ""),
+        ("disabled", "fg:#858585 italic"),
+    ]
 )
 
 
@@ -184,6 +200,7 @@ class TextOption(AbstractOption):
             if safe_existing_value is not None
             else self.default or "",
             validate=_q_validator,
+            style=HARLEQUIN_STYLE,
         )
 
 
@@ -230,6 +247,7 @@ class ListOption(AbstractOption):
             message=self.name,
             instruction="Separate items by a space.",
             default=safe_existing_value if safe_existing_value is not None else "",
+            style=HARLEQUIN_STYLE,
         )
 
 
@@ -335,6 +353,7 @@ class PathOption(AbstractOption):
             else self.default or "",
             only_directories=not self.file_okay,
             validate=_path_validator,
+            style=HARLEQUIN_STYLE,
         )
 
 
@@ -403,6 +422,7 @@ class SelectOption(AbstractOption):
             default=safe_existing_value
             if safe_existing_value is not None
             else self.default,
+            style=HARLEQUIN_STYLE,
         )
 
     def _flat_choices(self) -> list[str]:
@@ -438,6 +458,7 @@ class FlagOption(AbstractOption):
         return questionary.confirm(
             message=self.name,
             default=safe_existing_value if safe_existing_value is not None else False,
+            style=HARLEQUIN_STYLE,
         )
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import questionary
-from harlequin.options import ListOption
+from harlequin.options import HARLEQUIN_STYLE, ListOption
 from harlequin.plugins import load_plugins
 from pygments.styles import get_all_styles
 from tomlkit.exceptions import TOMLKitError
@@ -23,6 +23,7 @@ def _wizard() -> None:
     raw_path: str = questionary.path(
         "What config file do you want to create or update?",
         default=".harlequin.toml",
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
     path = Path(raw_path)
     is_pyproject = path.stem == "pyproject"
@@ -55,10 +56,12 @@ def _wizard() -> None:
         profile_name = questionary.select(
             message="Which profile would you like to update?",
             choices=[NEW_PROFILE_SENTINEL, *profiles.keys()],
+            style=HARLEQUIN_STYLE,
         ).unsafe_ask()
     if profile_name == NEW_PROFILE_SENTINEL:
         profile_name = questionary.text(
-            message="What would you like to name your profile?"
+            message="What would you like to name your profile?",
+            style=HARLEQUIN_STYLE,
         ).unsafe_ask()
 
     selected_profile = profiles.get(profile_name, {})
@@ -68,18 +71,21 @@ def _wizard() -> None:
         message="Which adapter should this profile use?",
         choices=sorted(adapters.keys()),
         default=selected_profile.get("adapter", "duckdb"),
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
 
     conn_str = questionary.text(
         message="What connection string(s) should this profile use?",
         instruction="Separate items by a space.",
         default=" ".join(selected_profile.get("conn_str", [])),
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
 
     theme = questionary.select(
         message="What theme should this profile use?",
         choices=list(get_all_styles()),
         default=selected_profile.get("theme", "monokai"),
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
 
     limit = int(
@@ -87,6 +93,7 @@ def _wizard() -> None:
             message="How many rows should the data table show?",
             validate=_validate_int,
             default=str(selected_profile.get("limit", 100000)),
+            style=HARLEQUIN_STYLE,
         ).unsafe_ask()
     )
 
@@ -102,6 +109,7 @@ def _wizard() -> None:
     which = questionary.checkbox(
         message="Which of the following adapter options would you like to set?",
         choices=adapter_option_choices,
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
 
     adapter_options = {}
@@ -127,6 +135,7 @@ def _wizard() -> None:
             *possible_names,
         ],
         default=config.get("default_profile", None),
+        style=HARLEQUIN_STYLE,
     ).unsafe_ask()
 
     if default_profile == NO_DEFAULT_SENTINEL:

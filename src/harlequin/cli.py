@@ -8,6 +8,7 @@ import rich_click as click
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.colors import GREEN, PINK, PURPLE, YELLOW
 from harlequin.config import get_config_for_profile
 from harlequin.exception import HarlequinConfigError, pretty_print_error
 from harlequin.plugins import load_plugins
@@ -24,10 +25,6 @@ DEFAULT_THEME = "monokai"
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
-GREEN = "#45FFCA"
-YELLOW = "#FEFFAC"
-PINK = "#FFB6D9"
-PURPLE = "#D67BFF"
 
 # general
 click.rich_click.USE_RICH_MARKUP = True

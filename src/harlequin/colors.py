@@ -7,6 +7,11 @@ from textual.design import ColorSystem
 
 from harlequin.exception import HarlequinThemeError
 
+GREEN = "#45FFCA"
+YELLOW = "#FEFFAC"
+PINK = "#FFB6D9"
+PURPLE = "#D67BFF"
+
 
 def extract_color(s: str) -> str:
     for part in s.split(" "):
