@@ -5,8 +5,6 @@ import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
 
-from rich import print
-from rich.panel import Panel
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -41,6 +39,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinQueryError,
     HarlequinThemeError,
+    pretty_print_error,
 )
 
 
@@ -107,19 +106,7 @@ class Harlequin(App, inherit_bindings=False):
         try:
             self.connection = self.adapter.connect()
         except HarlequinConnectionError as e:
-            print(
-                Panel.fit(
-                    str(e),
-                    title=e.title
-                    if e.title
-                    else (
-                        "Harlequin encountered an error "
-                        "while connecting to the database."
-                    ),
-                    title_align="left",
-                    border_style="red",
-                )
-            )
+            pretty_print_error(e)
             self.exit()
         else:
             if self.connection.init_message:
@@ -128,19 +115,7 @@ class Harlequin(App, inherit_bindings=False):
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
         except HarlequinThemeError as e:
-            print(
-                Panel.fit(
-                    (
-                        f"No theme found with the name {e}.\n"
-                        "Theme must be the name of a Pygments Style. "
-                        "You can browse the supported styles here:\n"
-                        "https://pygments.org/styles/"
-                    ),
-                    title="Harlequin couldn't load your theme.",
-                    title_align="left",
-                    border_style="red",
-                )
-            )
+            pretty_print_error(e)
             self.exit()
         else:
             self.design = self.app_colors.design_system

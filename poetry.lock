@@ -1644,4 +1644,4 @@ postgres = ["harlequin-postgres"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "0e6d8b017ebf41b2bb628c8ce9c2f07a3eba477c5e56b6c25d67904a10fcdb3e"
+content-hash = "75528291110d299bfe2b088129355eabcfebd46bd2edaf38255c44ee8d373f93"

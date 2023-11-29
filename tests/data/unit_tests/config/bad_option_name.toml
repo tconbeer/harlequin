@@ -1,0 +1,2 @@
+[profiles.my-duckdb-profile]
+read-only = true

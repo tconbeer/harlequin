@@ -1,0 +1,25 @@
+[tool.harlequin]
+default_profile = "my-duckdb-profile"
+
+[tool.harlequin.profiles.my-duckdb-profile]
+theme = "monokai"
+limit = 200_000
+adapter = "duckdb"
+conn_str = ["my-database.db"]
+read_only = false
+allow_unsigned_extensions = false
+extension = ["httpfs", "spatial"]
+force_install_extensions = false
+md_saas = false
+init_path = "~/.duckdbrc"
+
+[tool.harlequin.profiles.local-postgres]
+theme = "fruity"
+limit = 10_000
+adapter = "postgres"
+host = "localhost"
+user = "postgres"
+password = "secretadminpassword"
+database = "postgres"
+port = 5432
+init_path = "~/.psqlrc"

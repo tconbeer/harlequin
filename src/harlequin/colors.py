@@ -102,7 +102,15 @@ class HarlequinColors:
         try:
             style = get_style_by_name(theme)
         except ClassNotFound as e:
-            raise HarlequinThemeError(theme) from e
+            raise HarlequinThemeError(
+                (
+                    f"No theme found with the name {theme}.\n"
+                    "Theme must be the name of a Pygments Style. "
+                    "You can browse the supported styles here:\n"
+                    "https://pygments.org/styles/"
+                ),
+                title="Harlequin couldn't load your theme.",
+            ) from e
 
         background = style.background_color
         highlight = style.highlight_color
