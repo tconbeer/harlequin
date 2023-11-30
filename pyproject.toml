@@ -78,6 +78,7 @@ select = ["A", "B", "E", "F", "I"]
 target-version = "py38"
 
 [tool.mypy]
+python_version = "3.8"
 files = [
     "src/**/*.py",
     "tests/**/*.py",
