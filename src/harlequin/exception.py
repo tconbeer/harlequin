@@ -29,6 +29,10 @@ class HarlequinConfigError(HarlequinError):
     pass
 
 
+class HarlequinWizardError(HarlequinError):
+    pass
+
+
 def pretty_print_error(error: HarlequinError) -> None:
     from rich import print
     from rich.panel import Panel

@@ -70,6 +70,9 @@ postgres = ["harlequin-postgres"]
 duckdb = "harlequin_duckdb:DuckDbAdapter"
 sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 
+[tool.poetry.plugins."pygments.styles"]
+harlequin = "harlequin.colors:HarlequinPygmentsStyle"
+
 [tool.ruff]
 select = ["A", "B", "E", "F", "I"]
 target-version = "py38"
