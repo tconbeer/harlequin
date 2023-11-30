@@ -248,7 +248,7 @@ def test_config_path(
 ) -> None:
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / filename
-    res = runner.invoke(build_cli(), args=f"--config-path {config_path}")
+    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -267,7 +267,7 @@ def test_bad_config_exits(
 ) -> None:
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / "default_no_exist.toml"
-    res = runner.invoke(build_cli(), args=f"--config-path {config_path}")
+    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 2
     key_words = ["default_profile", "foo"]
     assert all([w in res.stdout for w in key_words])
