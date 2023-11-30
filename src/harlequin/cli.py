@@ -10,6 +10,7 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import GREEN, PINK, PURPLE, YELLOW
 from harlequin.config import get_config_for_profile
+from harlequin.config_wizard import wizard
 from harlequin.exception import HarlequinConfigError, pretty_print_error
 from harlequin.plugins import load_plugins
 
@@ -65,6 +66,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--adapter",
                 "--theme",
                 "--limit",
+                "--config",
                 "--version",
                 "--help",
             ],
@@ -94,6 +96,13 @@ def _version_option() -> str:
     )
 
     return output
+
+
+def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    wizard()
+    ctx.exit(0)
 
 
 def build_cli() -> click.Command:
@@ -169,6 +178,17 @@ def build_cli() -> click.Command:
             "The name of an installed database adapter plug-in "
             "to use to connect to the database at CONN_STR."
         ),
+    )
+    @click.option(
+        "--config",
+        help=(
+            "Run the configuration wizard to create or update a Harlequin "
+            "config file."
+        ),
+        is_flag=True,
+        callback=_config_wizard_callback,
+        expose_value=True,
+        is_eager=True,
     )
     @click.pass_context
     def inner_cli(

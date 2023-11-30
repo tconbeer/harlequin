@@ -62,7 +62,6 @@ duckdb = "==0.8.1"
 
 [tool.poetry.scripts]
 harlequin = "harlequin.cli:harlequin"
-harlequin_config = "harlequin_config.cli:wizard"
 
 [tool.poetry.extras]
 postgres = ["harlequin-postgres"]

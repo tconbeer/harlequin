@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import questionary
-from harlequin.options import HARLEQUIN_STYLE, ListOption
-from harlequin.plugins import load_plugins
 from pygments.styles import get_all_styles
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.toml_document import TOMLDocument
 from tomlkit.toml_file import TOMLFile
+
+from harlequin.options import HARLEQUIN_STYLE, ListOption
+from harlequin.plugins import load_plugins
 
 
 def wizard() -> None:
