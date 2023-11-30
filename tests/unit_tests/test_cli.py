@@ -5,6 +5,7 @@ import pytest
 from click.testing import CliRunner
 from harlequin import Harlequin
 from harlequin.cli import build_cli
+from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 
 
@@ -17,7 +18,7 @@ def mock_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock_entrypoint.load.return_value = mock_adapter
     mock_entry_points = MagicMock()
     mock_entry_points.return_value = [mock_entrypoint]
-    monkeypatch.setattr("harlequin.cli.entry_points", mock_entry_points)
+    monkeypatch.setattr("harlequin.plugins.entry_points", mock_entry_points)
     return mock_adapter
 
 
@@ -28,9 +29,25 @@ def mock_harlequin(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return mock
 
 
+@pytest.fixture()
+def mock_empty_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("harlequin.cli.get_config_for_profile", lambda **_: dict())
+    return None
+
+
+@pytest.fixture()
+def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
+    config: Config = {"profiles": {"test-profile": {"theme": "fruity"}}}
+    monkeypatch.setattr("harlequin.config.load_config", lambda *_: config)
+    return config
+
+
 @pytest.mark.parametrize("harlequin_args", ["", ":memory:"])
 def test_default(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -49,7 +66,10 @@ def test_default(
     "harlequin_args", ["--init-path foo", ":memory: -i foo", "-init foo"]
 )
 def test_custom_init_script(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -61,7 +81,10 @@ def test_custom_init_script(
 
 @pytest.mark.parametrize("harlequin_args", ["--no-init", ":memory: --no-init"])
 def test_no_init_script(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -75,7 +98,10 @@ def test_no_init_script(
     "harlequin_args", ["--theme one-dark", ":memory: -t one-dark", "foo.db -t one-dark"]
 )
 def test_theme(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -96,7 +122,10 @@ def test_theme(
     ],
 )
 def test_limit(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -115,7 +144,10 @@ def test_limit(
     ],
 )
 def test_adapter_opt(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
@@ -133,10 +165,109 @@ def test_adapter_opt(
     ],
 )
 def test_bad_adapter_opt(
-    mock_harlequin: MagicMock, mock_adapter: MagicMock, harlequin_args: str
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
     assert res.exit_code == 2
     key_words = ["Error", "Invalid", "-a", "-adapter", "duckdb"]
+    assert all([w in res.stdout for w in key_words])
+
+
+@pytest.mark.parametrize(
+    "harlequin_args",
+    [
+        "--profile test-profile",
+        "-P test-profile",
+    ],
+)
+def test_profile_opt(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_load_config: Config,
+) -> None:
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=harlequin_args)
+    assert res.exit_code == 0
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["theme"] == "fruity"
+
+
+@pytest.mark.parametrize(
+    "harlequin_args",
+    [
+        "--profile test-profile -t zenburn",
+        "-P test-profile --theme zenburn",
+    ],
+)
+def test_profile_override(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_load_config: Config,
+) -> None:
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=harlequin_args)
+    assert res.exit_code == 0
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["theme"] == "zenburn"
+
+
+@pytest.mark.parametrize(
+    "harlequin_args",
+    [
+        "--profile foo",
+        "-P bar",
+    ],
+)
+def test_bad_profile_opt(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_load_config: Config,
+) -> None:
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=harlequin_args)
+    assert res.exit_code == 2
+    key_words = ["profile", "config"]
+    assert all([w in res.stdout for w in key_words])
+
+
+@pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
+def test_config_path(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    data_dir: Path,
+    filename: str,
+) -> None:
+    runner = CliRunner()
+    config_path = data_dir / "unit_tests" / "config" / filename
+    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    assert res.exit_code == 0
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    # should use default profile of my-duckdb-profile
+    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+    mock_adapter.assert_called_once()
+    assert mock_adapter.call_args.kwargs["conn_str"] == ["my-database.db"]
+    assert mock_adapter.call_args.kwargs["read_only"] is False
+    assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
+
+
+def test_bad_config_exits(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    data_dir: Path,
+) -> None:
+    runner = CliRunner()
+    config_path = data_dir / "unit_tests" / "config" / "default_no_exist.toml"
+    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    assert res.exit_code == 2
+    key_words = ["default_profile", "foo"]
     assert all([w in res.stdout for w in key_words])

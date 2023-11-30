@@ -5,8 +5,6 @@ import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
 
-from rich import print
-from rich.panel import Panel
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -38,9 +36,11 @@ from harlequin.components import (
     export_callback,
 )
 from harlequin.exception import (
+    HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinQueryError,
     HarlequinThemeError,
+    pretty_print_error,
 )
 
 
@@ -93,7 +93,7 @@ class Harlequin(App, inherit_bindings=False):
         self,
         adapter: HarlequinAdapter,
         theme: str = "monokai",
-        max_results: int = 100_000,
+        max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -101,26 +101,24 @@ class Harlequin(App, inherit_bindings=False):
         super().__init__(driver_class, css_path, watch_css)
         self.adapter = adapter
         self.theme = theme
-        self.max_results = max_results
-        self.limit = min(500, max_results) if max_results > 0 else 500
+        try:
+            self.max_results = int(max_results)
+        except ValueError:
+            pretty_print_error(
+                HarlequinConfigError(
+                    f"limit={max_results!r} was set by config file but is not "
+                    "a valid integer."
+                )
+            )
+            self.exit(return_code=2)
+        else:
+            self.limit = min(500, self.max_results) if self.max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
             self.connection = self.adapter.connect()
         except HarlequinConnectionError as e:
-            print(
-                Panel.fit(
-                    str(e),
-                    title=e.title
-                    if e.title
-                    else (
-                        "Harlequin encountered an error "
-                        "while connecting to the database."
-                    ),
-                    title_align="left",
-                    border_style="red",
-                )
-            )
-            self.exit()
+            pretty_print_error(e)
+            self.exit(return_code=2)
         else:
             if self.connection.init_message:
                 self.notify(self.connection.init_message)
@@ -128,20 +126,8 @@ class Harlequin(App, inherit_bindings=False):
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
         except HarlequinThemeError as e:
-            print(
-                Panel.fit(
-                    (
-                        f"No theme found with the name {e}.\n"
-                        "Theme must be the name of a Pygments Style. "
-                        "You can browse the supported styles here:\n"
-                        "https://pygments.org/styles/"
-                    ),
-                    title="Harlequin couldn't load your theme.",
-                    title_align="left",
-                    border_style="red",
-                )
-            )
-            self.exit()
+            pretty_print_error(e)
+            self.exit(return_code=2)
         else:
             self.design = self.app_colors.design_system
             self.stylesheet = Stylesheet(variables=self.get_css_variables())

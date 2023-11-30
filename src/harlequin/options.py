@@ -3,12 +3,14 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Generator, Sequence
+from typing import Any, Callable, Generator, Iterable, Sequence
 
 import click
+import questionary
 from textual.validation import ValidationResult, Validator
 from textual.widget import Widget
 
+from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
 from harlequin.copy_widgets import (
     Input,
     NoFocusLabel,
@@ -91,6 +93,10 @@ class AbstractOption(ABC):
     def to_widgets(self) -> Generator[Widget, None, None]:
         pass
 
+    @abstractmethod
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        pass
+
 
 class TextOption(AbstractOption):
     """
@@ -157,6 +163,31 @@ class TextOption(AbstractOption):
             validators=[_CustomValidator(self.validator)],
         )
 
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        def _q_validator(raw: str) -> bool | str | None:
+            if self.validator is not None:
+                result = self.validator(raw)
+                if result[0]:
+                    return True
+                else:
+                    return result[1]
+            else:
+                return True
+
+        try:
+            safe_existing_value = str(existing_value)
+        except (ValueError, TypeError):
+            safe_existing_value = None
+
+        return questionary.text(
+            message=self.name,
+            default=safe_existing_value
+            if safe_existing_value is not None
+            else self.default or "",
+            validate=_q_validator,
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        )
+
 
 class ListOption(AbstractOption):
     def __init__(
@@ -188,6 +219,21 @@ class ListOption(AbstractOption):
 
     def to_widgets(self) -> Generator[Widget, None, None]:
         raise NotImplementedError("No widget for ListOption.")
+
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        if isinstance(existing_value, str):
+            safe_existing_value = existing_value
+        elif isinstance(existing_value, Iterable):
+            safe_existing_value = " ".join(existing_value)
+        else:
+            safe_existing_value = None
+
+        return questionary.text(
+            message=self.name,
+            instruction="Separate items by a space.",
+            default=safe_existing_value if safe_existing_value is not None else "",
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        )
 
 
 class PathOption(AbstractOption):
@@ -263,6 +309,38 @@ class PathOption(AbstractOption):
             tab_advances_focus=True,
         )
 
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        def _path_validator(raw_path: str) -> bool | str:
+            try:
+                p = Path(raw_path)
+            except ValueError as e:
+                return f"Not a valid path! {e}"
+            if self.exists and not p.exists():
+                return f"No file exists at {p}"
+
+            if not self.file_okay and p.is_file():
+                return f"{p} is a file, expected a directory."
+
+            if not self.dir_okay and p.is_dir():
+                return f"{p} is a directory, expected a file."
+
+            return True
+
+        try:
+            safe_existing_value = str(existing_value)
+        except (ValueError, TypeError):
+            safe_existing_value = None
+
+        return questionary.path(
+            message=self.name,
+            default=safe_existing_value
+            if safe_existing_value is not None
+            else self.default or "",
+            only_directories=not self.file_okay,
+            validate=_path_validator,
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        )
+
 
 class SelectOption(AbstractOption):
     def __init__(
@@ -292,17 +370,11 @@ class SelectOption(AbstractOption):
         """
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
-        choices: list[str] = []
-        for choice in self.choices:
-            if isinstance(choice, str):
-                choices.append(choice)
-            else:
-                choices.append(choice[0])
         return click.option(
             f"--{self.name}",
             *self.short_decls,
             help=self.description,
-            type=click.Choice(choices=choices, case_sensitive=False),
+            type=click.Choice(choices=self._flat_choices(), case_sensitive=False),
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
@@ -320,6 +392,33 @@ class SelectOption(AbstractOption):
             allow_blank=False,
         )
 
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        try:
+            safe_existing_value = str(existing_value)
+        except (ValueError, TypeError):
+            safe_existing_value = None
+
+        if safe_existing_value not in self._flat_choices():
+            safe_existing_value = None
+
+        return questionary.select(
+            message=self.name,
+            choices=self._flat_choices(),
+            default=safe_existing_value
+            if safe_existing_value is not None
+            else self.default,
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        )
+
+    def _flat_choices(self) -> list[str]:
+        choices: list[str] = []
+        for choice in self.choices:
+            if isinstance(choice, str):
+                choices.append(choice)
+            else:
+                choices.append(choice[0])
+        return choices
+
 
 class FlagOption(AbstractOption):
     """
@@ -334,6 +433,18 @@ class FlagOption(AbstractOption):
     def to_widgets(self) -> Generator[Widget, None, None]:
         yield NoFocusLabel(f"{self.label}:", classes="switch_label")
         yield Switch(id=self.name)
+
+    def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        try:
+            safe_existing_value = bool(existing_value)
+        except (ValueError, TypeError):
+            safe_existing_value = None
+
+        return questionary.confirm(
+            message=self.name,
+            default=safe_existing_value if safe_existing_value is not None else False,
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        )
 
 
 HarlequinAdapterOption = AbstractOption

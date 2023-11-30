@@ -9,6 +9,7 @@ from duckdb.typing import DuckDBPyType
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
+    HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinCopyError,
     HarlequinQueryError,
@@ -323,10 +324,10 @@ class DuckDbAdapter(HarlequinAdapter):
     def __init__(
         self,
         conn_str: Sequence[str],
-        init_path: Path | None = None,
-        no_init: bool = False,
-        read_only: bool = False,
-        allow_unsigned_extensions: bool = False,
+        init_path: Path | str | None = None,
+        no_init: bool | str = False,
+        read_only: bool | str = False,
+        allow_unsigned_extensions: bool | str = False,
         extension: list[str] | None = None,
         force_install_extensions: bool = False,
         custom_extension_repo: str | None = None,
@@ -334,16 +335,26 @@ class DuckDbAdapter(HarlequinAdapter):
         md_saas: bool = False,
         **_: Any,
     ) -> None:
-        self.conn_str = conn_str if conn_str else (":memory:",)
-        self.init_path = init_path or Path.home() / ".duckdbrc"
-        self.no_init = no_init
-        self.read_only = read_only
-        self.allow_unsigned_extensions = allow_unsigned_extensions
-        self.extensions = extension if extension is not None else []
-        self.force_install_extensions = force_install_extensions
-        self.custom_extension_repo = custom_extension_repo
-        self.md_token = md_token
-        self.md_saas = md_saas
+        try:
+            self.conn_str = conn_str if conn_str else (":memory:",)
+            self.init_path = (
+                Path(init_path).resolve()
+                if init_path is not None
+                else Path.home() / ".duckdbrc"
+            )
+            self.no_init = bool(no_init)
+            self.read_only = bool(read_only)
+            self.allow_unsigned_extensions = bool(allow_unsigned_extensions)
+            self.extensions = extension if extension is not None else []
+            self.force_install_extensions = force_install_extensions
+            self.custom_extension_repo = custom_extension_repo
+            self.md_token = md_token
+            self.md_saas = md_saas
+        except (ValueError, TypeError) as e:
+            raise HarlequinConfigError(
+                msg=f"DuckDB adapter received bad config value: {e}",
+                title="Harlequin could not initialize the selected adapter.",
+            ) from e
 
     def connect(self) -> DuckDbConnection:
         primary_db, *other_dbs = self.conn_str

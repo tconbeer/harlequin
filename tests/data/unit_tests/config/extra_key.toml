@@ -1,0 +1,5 @@
+default_profile = "my-duckdb-profile"
+foo = "bar"
+
+[profiles.my-duckdb-profile]
+conn_str = ["my-database.db"]

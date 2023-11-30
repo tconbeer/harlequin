@@ -166,7 +166,10 @@ class HarlequinAdapter(ABC):
             - **options (Any): Options received from the command line, config file,
                 or env variables. Adapters should be robust to receiving both subsets
                 and supersets of their declared options. They should disregard any
-                extra (unexpected) kwargs.
+                extra (unexpected) kwargs. Adapters should check the types of options,
+                as they may not be cast to the correct types.
+
+        Raises: HarlequinConfigError if a received option is the wrong value or type.
         """
         pass
 

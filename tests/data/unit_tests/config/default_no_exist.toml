@@ -1,0 +1,5 @@
+default_profile = "foo"
+
+[profiles.my-duckdb-profile]
+limit = 200_000
+conn_str = ["my-database.db"]

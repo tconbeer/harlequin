@@ -10,18 +10,18 @@ concurrency:
 
 jobs:
   static:
-    name: Static Analysis - 3.11
+    name: Static Analysis - 3.8
     runs-on: ubuntu-latest
     steps:
       - name: Check out Repo
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Set up Python 3.11
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         id: setup-python
         with:
-          python-version: "3.11"
+          python-version: "3.8"
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:

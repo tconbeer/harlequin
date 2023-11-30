@@ -1,11 +1,74 @@
 from typing import Dict, Union
 
+from pygments.style import Style as PygmentsStyle
 from pygments.styles import get_style_by_name
-from pygments.token import Token
+from pygments.token import (
+    Comment,
+    Error,
+    Keyword,
+    Literal,
+    Name,
+    Number,
+    Operator,
+    Punctuation,
+    String,
+    Token,
+)
 from pygments.util import ClassNotFound
+from questionary import Style as QuestionaryStyle
 from textual.design import ColorSystem
 
 from harlequin.exception import HarlequinThemeError
+
+GREEN = "#45FFCA"
+YELLOW = "#FEFFAC"
+PINK = "#FFB6D9"
+PURPLE = "#D67BFF"
+GRAY = "#777777"
+DARK_GRAY = "#333333"
+BLACK = "#0C0C0C"
+WHITE = "#DDDDDD"
+
+
+class HarlequinPygmentsStyle(PygmentsStyle):
+    styles = {
+        Token: WHITE,
+        Comment: f"{GRAY} italic",
+        Keyword: f"{YELLOW} bold",
+        Keyword.Type: f"{YELLOW} nobold",
+        Keyword.Constant: f"{PINK} bold",
+        Name: WHITE,
+        Name.Builtin: YELLOW,
+        Name.Constant: YELLOW,
+        Name.Quoted: f"{WHITE} bold",
+        Name.Variable: f"{WHITE} bold",
+        String: PINK,
+        String.Symbol: f"{WHITE} bold",
+        String.Name: f"{WHITE} bold",
+        Operator: GREEN,
+        Punctuation: PURPLE,
+        Number: f"{PINK} bold",
+        Literal: PINK,
+        Error: PINK,
+    }
+    background_color = BLACK
+    highlight_color = DARK_GRAY
+
+
+HARLEQUIN_QUESTIONARY_STYLE = QuestionaryStyle(
+    [
+        ("qmark", f"fg:{GREEN} bold"),
+        ("question", "bold"),
+        ("answer", f"fg:{YELLOW} bold"),
+        ("pointer", f"fg:{YELLOW} bold"),
+        ("highlighted", f"fg:{YELLOW} bold"),
+        ("selected", f"fg:{YELLOW} noreverse bold"),
+        ("separator", f"fg:{PURPLE}"),
+        ("instruction", "fg:#858585 italic"),
+        ("text", ""),
+        ("disabled", "fg:#858585 italic"),
+    ]
+)
 
 
 def extract_color(s: str) -> str:
@@ -102,7 +165,15 @@ class HarlequinColors:
         try:
             style = get_style_by_name(theme)
         except ClassNotFound as e:
-            raise HarlequinThemeError(theme) from e
+            raise HarlequinThemeError(
+                (
+                    f"No theme found with the name {theme}.\n"
+                    "Theme must be the name of a Pygments Style. "
+                    "You can browse the supported styles here:\n"
+                    "https://pygments.org/styles/"
+                ),
+                title="Harlequin couldn't load your theme.",
+            ) from e
 
         background = style.background_color
         highlight = style.highlight_color

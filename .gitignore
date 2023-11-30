@@ -12,6 +12,7 @@
 !tests/data/**/*.sql
 Pipfile
 snapshot_report.html
+.harlequin.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
