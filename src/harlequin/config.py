@@ -6,10 +6,10 @@ from typing import Dict, List, Union
 
 from harlequin.exception import HarlequinConfigError
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
+if sys.version_info < (3, 11):
     import tomli as tomllib
+else:
+    import tomllib
 
 CONFIG_FILENAMES = ("pyproject.toml", ".harlequin.toml")  # order matters!
 SEARCH_DIRS = (Path.home(), Path.cwd())
