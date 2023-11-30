@@ -25,7 +25,7 @@ class RunQueryBar(Horizontal):
     def compose(self) -> ComposeResult:
         yield Checkbox("Limit ", id="limit_checkbox")
         yield Input(
-            "500",
+            str(min(500, self.max_results)),
             id="limit_input",
             validators=Integer(
                 minimum=0,

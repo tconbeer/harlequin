@@ -106,18 +106,19 @@ class Harlequin(App, inherit_bindings=False):
         except ValueError:
             pretty_print_error(
                 HarlequinConfigError(
-                    f"Limit value of {max_results} is not a valid integer."
+                    f"limit={max_results!r} was set by config file but is not "
+                    "a valid integer."
                 )
             )
-            self.exit()
-            raise
-        self.limit = min(500, self.max_results) if self.max_results > 0 else 500
+            self.exit(return_code=2)
+        else:
+            self.limit = min(500, self.max_results) if self.max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
             self.connection = self.adapter.connect()
         except HarlequinConnectionError as e:
             pretty_print_error(e)
-            self.exit()
+            self.exit(return_code=2)
         else:
             if self.connection.init_message:
                 self.notify(self.connection.init_message)
@@ -126,7 +127,7 @@ class Harlequin(App, inherit_bindings=False):
             self.app_colors = HarlequinColors.from_theme(theme)
         except HarlequinThemeError as e:
             pretty_print_error(e)
-            self.exit()
+            self.exit(return_code=2)
         else:
             self.design = self.app_colors.design_system
             self.stylesheet = Stylesheet(variables=self.get_css_variables())
