@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.0] - 2023-12-07
+
 ### Features
 
 -   Harlequin can now be configured using a TOML file. The config file can both specify options for Harlequin (like the theme and row limit) and also for installed adapters (like the host, username, and password for a database connection). The config file can define multiple "profiles" (sets of configuration), and you can select the profile to use when starting Harlequin with the `--profile` option (alias `-P`). By default, Harlequin searches the current directory and home directories for files called either `.harlequin.toml` or `pyproject.toml`, and merges the config it finds in them. You can specify a different path using the `--config-path` option. Values loaded from config files can be overridden by passing CLI options ([#206](https://github.com/tconbeer/harlequin/issues/206)).
@@ -378,7 +380,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.5.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.6.0...HEAD
+
+[1.6.0]: https://github.com/tconbeer/harlequin/compare/1.5.0...1.6.0
 
 [1.5.0]: https://github.com/tconbeer/harlequin/compare/1.4.1...1.5.0
 
