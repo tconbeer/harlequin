@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Harlequin now uses a new TextArea widget for its code editor. This improves performance for long queries, adds line numbers in a gutter, and changes the underlying engine for syntax highlighting from Pygments to Tree Sitter ([tconbeer/textual-textarea#123](https://github.com/tconbeer/textual-textarea/issues/123)).
+-   In the Query Editor: double-click to select a word, triple-click to select a line, and quadruple-click to select the entire query ([tconbeer/textual-textarea#111](https://github.com/tconbeer/textual-textarea/issues/111), [tconbeer/textual-textarea#112](https://github.com/tconbeer/textual-textarea/issues/112)).
+
+### Bug Fixes
+
+-   Fixes a bug that was causing an empty line to appear at the bottom of the Query Editor pane.
+
 ## [1.6.0] - 2023-12-07
 
 ### Features

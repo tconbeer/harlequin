@@ -151,7 +151,7 @@ class Harlequin(App, inherit_bindings=False):
         wait_for_dismiss: bool = False,
     ) -> Union[AwaitMount, asyncio.Future[ScreenResultType]]:
         if self.editor._has_focus_within:
-            self.editor.text_input.blink_timer.pause()
+            self.editor.text_input._pause_blink(visible=True)
         return super().push_screen(  # type: ignore
             screen,
             callback=callback,
@@ -161,7 +161,7 @@ class Harlequin(App, inherit_bindings=False):
     def pop_screen(self) -> Screen[object]:
         new_screen = super().pop_screen()
         if len(self.screen_stack) == 1 and self.editor._has_focus_within:
-            self.editor.text_input.blink_timer.resume()
+            self.editor.text_input._restart_blink()
         return new_screen
 
     async def on_mount(self) -> None:
@@ -202,7 +202,7 @@ class Harlequin(App, inherit_bindings=False):
         else:
             self.editor = self.editor_collection.current_editor
 
-    def on_text_area_cursor_moved(self) -> None:
+    def on_text_area_selection_changed(self) -> None:
         self.selection_text = self._validate_selection()
 
     def on_checkbox_changed(self, message: Checkbox.Changed) -> None:

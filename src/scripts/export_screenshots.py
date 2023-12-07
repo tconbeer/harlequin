@@ -15,7 +15,6 @@ from driver_standings
 join drivers on driver_standings.driverid = drivers.driverid
 join races on driver_standings.raceid = races.raceid
 group by 1, 2, 3
-having avg_standing <= 20
 order by avg_standing asc
 """.strip()
 
@@ -27,10 +26,13 @@ async def save_all_screenshots() -> None:
         app = Harlequin(adapter=adapter, theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
             app.editor.text = TEXT
-            app.editor.selection_anchor = (9, 0)  # type: ignore
             app.editor.cursor = (9, 16)  # type: ignore
+            app.editor.selection_anchor = (9, 0)  # type: ignore
+            await app.workers.wait_for_complete()
+            await pilot.pause()
             app.data_catalog.root.expand()
             for child in app.data_catalog.root.children:
+                print("here!")
                 child.expand()
                 for grandchild in child.children:
                     grandchild.expand()

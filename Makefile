@@ -21,7 +21,7 @@ sqlite:
 
 marketing: $(wildcard static/themes/*.svg) static/harlequin.gif
 
-static/themes/%.svg: pyproject.toml
+static/themes/%.svg: pyproject.toml src/scripts/export_screenshots.py
 	python src/scripts/export_screenshots.py
 
 static/harlequin.gif: static/harlequin.mp4

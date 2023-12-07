@@ -10,8 +10,6 @@ from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual_textarea import TextArea, TextAreaSaved
 from textual_textarea.key_handlers import Cursor
-from textual_textarea.serde import serialize_lines
-from textual_textarea.textarea import TextInput
 
 from harlequin.cache import BufferState, load_cache
 from harlequin.components.error_modal import ErrorModal
@@ -58,10 +56,11 @@ class CodeEditor(TextArea):
                 after = c
                 break
         else:
-            after = Cursor(
-                len(self.text_input.lines) - 1, len(self.text_input.lines[-1]) - 1
-            )
-        return self._get_text_between_cursors(before, after)
+            lno = self.text_input.document.line_count - 1
+            after = Cursor(lno, len(self.text_input.document.get_line(lno)))
+        return self.text_input.get_text_range(
+            start=(before[0], before[1]), end=(after[0], after[1])
+        )
 
     @property
     def previous_query(self) -> str:
@@ -79,7 +78,9 @@ class CodeEditor(TextArea):
             elif c > self.cursor:
                 break
 
-        return self._get_text_between_cursors(first, second)
+        return self.text_input.get_text_range(
+            start=(first[0], first[1]), end=(second[0], second[1])
+        )
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
@@ -105,8 +106,7 @@ class CodeEditor(TextArea):
         self.post_message(self.Submitted(self.text))
 
     def action_format(self) -> None:
-        text_input = self.query_one(TextInput)
-        old_cursor = text_input.cursor
+        old_selection = self.text_input.selection
 
         try:
             self.text = format_string(self.text, Mode())
@@ -119,19 +119,17 @@ class CodeEditor(TextArea):
                 )
             )
         else:
-            text_input.move_cursor(old_cursor.pos, old_cursor.lno)
-            text_input.update(text_input._content)
+            self.text_input.selection = old_selection
 
     def _get_text_between_cursors(self, before: Cursor, after: Cursor) -> str:
-        lines, first, last = self.text_input._get_selected_lines(before, after)
-        lines[-1] = lines[-1][: last.pos]
-        lines[0] = lines[0][first.pos :]
-        return serialize_lines(lines).strip()
+        return self.text_input.get_text_range(
+            start=(before[0], before[1]), end=(after[0], after[1])
+        )
 
     @property
     def _semicolons(self) -> List[Cursor]:
         semicolons: List[Cursor] = []
-        for i, line in enumerate(self.text_input.lines):
+        for i, line in enumerate(self.text.splitlines()):
             for pos in [m.span()[1] for m in re.finditer(";", line)]:
                 semicolons.append(Cursor(i, pos))
         return semicolons
