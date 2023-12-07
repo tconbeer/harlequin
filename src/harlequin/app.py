@@ -92,7 +92,7 @@ class Harlequin(App, inherit_bindings=False):
     def __init__(
         self,
         adapter: HarlequinAdapter,
-        theme: str = "monokai",
+        theme: str = "harlequin",
         max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,

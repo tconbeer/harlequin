@@ -22,7 +22,7 @@ else:
 # configure defaults
 DEFAULT_ADAPTER = "duckdb"
 DEFAULT_LIMIT = 100_000
-DEFAULT_THEME = "monokai"
+DEFAULT_THEME = "harlequin"
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"

@@ -64,7 +64,7 @@ def _wizard() -> None:
     theme = questionary.select(
         message="What theme should this profile use?",
         choices=list(get_all_styles()),
-        default=selected_profile.get("theme", "monokai"),
+        default=selected_profile.get("theme", "harlequin"),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 

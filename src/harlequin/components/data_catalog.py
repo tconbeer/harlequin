@@ -60,13 +60,6 @@ class DataCatalog(Tree[CatalogItem]):
         self.root.expand()
 
     async def on_click(self, event: Click) -> None:
-        """
-        For whatver reason, it doesn't seem possible to override the super class's
-        _on_click event. Instead, here we just handle the parts relevant
-        to double clicking, and to prevent nodes from collapsing after double-clicking,
-        we collapse them, since the _on_click event will go after this and toggle
-        their state.
-        """
         meta = event.style.meta
         click_line: Union[int, None] = meta.get("line", None)
         if (
@@ -74,10 +67,11 @@ class DataCatalog(Tree[CatalogItem]):
             and click_line is not None
             and self.double_click == click_line
         ):
+            event.prevent_default()
             node = self.get_node_at_line(click_line)
             if node is not None:
                 self.post_message(self.NodeSubmitted(node=node))
-                node.collapse()
+                node.expand()
         else:
             self.double_click = click_line
             self.set_timer(

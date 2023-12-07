@@ -158,7 +158,7 @@ class EditorCollection(TabbedContent):
         classes: Union[str, None] = None,
         disabled: bool = False,
         language: str = "sql",
-        theme: str = "monokai",
+        theme: str = "harlequin",
     ):
         super().__init__(
             *titles,
