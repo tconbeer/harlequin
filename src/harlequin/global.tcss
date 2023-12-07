@@ -24,11 +24,7 @@ ResultsViewer:focus-within {
     border-title-color: $border-title-color-focus;
 }
 
-DataCatalog,
-EditorCollection,
-ResultsTable,
-TextContainer,
-VerticalScroll {
+* {
     scrollbar-background: $background-lighten-1;
     scrollbar-background-hover: $background-lighten-1;
     scrollbar-background-active: $background-lighten-1;
@@ -342,10 +338,13 @@ ExportScreen {
 }
 
 #validation_label {
-    height: 1;
     color: $error;
     text-style: italic;
     margin: 0 0 0 3;
+}
+
+ExportScreen #validation_label {
+    height: 1;
 }
 
 ExportScreen .option_row {

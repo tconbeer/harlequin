@@ -58,7 +58,7 @@ def test_default(
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
         max_results=100_000,
-        theme="monokai",
+        theme="harlequin",
     )
 
 

@@ -25,7 +25,7 @@ YELLOW = "#FEFFAC"
 PINK = "#FFB6D9"
 PURPLE = "#D67BFF"
 GRAY = "#777777"
-DARK_GRAY = "#333333"
+DARK_GRAY = "#555555"
 BLACK = "#0C0C0C"
 WHITE = "#DDDDDD"
 
@@ -38,15 +38,16 @@ class HarlequinPygmentsStyle(PygmentsStyle):
         Keyword.Type: f"{YELLOW} nobold",
         Keyword.Constant: f"{PINK} bold",
         Name: WHITE,
-        Name.Builtin: YELLOW,
-        Name.Constant: YELLOW,
+        Name.Builtin: f"{PINK} bold",
+        Name.Constant: f"{PINK} bold",
+        Name.Function: GREEN,
         Name.Quoted: f"{WHITE} bold",
-        Name.Variable: f"{WHITE} bold",
+        Name.Variable: f"{WHITE}",
         String: PINK,
         String.Symbol: f"{WHITE} bold",
         String.Name: f"{WHITE} bold",
         Operator: GREEN,
-        Punctuation: PURPLE,
+        Punctuation: GREEN,
         Number: f"{PINK} bold",
         Literal: PINK,
         Error: PINK,
