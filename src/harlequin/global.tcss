@@ -107,6 +107,18 @@ EditorCollection {
     width: 100%;
 }
 
+CompletionList {
+    background: $background-lighten-2 ;
+}
+CompletionList:focus {
+    border: none;
+}
+CompletionList > .option-list--option-highlighted {
+    color: $text;
+    background: $secondary;
+    text-style: bold;
+}
+
 /* RUN QUERY BAR */
 RunQueryBar {
     height: 1;

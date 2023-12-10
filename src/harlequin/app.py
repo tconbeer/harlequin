@@ -21,8 +21,9 @@ from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerState
 
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
+from harlequin.autocomplete import completer_factory
 from harlequin.cache import BufferState, Cache, write_cache
-from harlequin.catalog import CatalogItem, NewCatalog
+from harlequin.catalog import Catalog, CatalogItem, NewCatalog
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CodeEditor,
@@ -254,7 +255,7 @@ class Harlequin(App, inherit_bindings=False):
 
     def _on_worker_error(self, message: Worker.StateChanged) -> None:
         if (
-            message.worker.name == "_post_updated_catalog"
+            message.worker.name == "update_schema_data"
             and message.worker.error is not None
         ):
             self._push_error_modal(
@@ -277,6 +278,7 @@ class Harlequin(App, inherit_bindings=False):
 
     def on_new_catalog(self, message: NewCatalog) -> None:
         self.data_catalog.update_tree(message.catalog)
+        self.update_completers(message.catalog)
 
     def on_queries_executed(self, message: QueriesExecuted) -> None:
         self.results_viewer.clear_all_tables()
@@ -535,11 +537,26 @@ class Harlequin(App, inherit_bindings=False):
             ResultsFetched(cursors=cursors, errors=errors, elapsed=elapsed)
         )
 
-    def update_schema_data(self) -> None:
-        self._post_updated_catalog()
+    @work(thread=True, exclusive=True, exit_on_error=True, group="completer_builders")
+    def update_completers(self, catalog: Catalog) -> None:
+        if (
+            self.editor_collection.word_completer is not None
+            and self.editor_collection.member_completer is not None
+        ):
+            self.editor_collection.word_completer.update_catalog(catalog=catalog)
+            self.editor_collection.member_completer.update_catalog(catalog=catalog)
+        else:
+            extra_completions = self.connection.get_completions()
+            word_completer, member_completer = completer_factory(
+                catalog=catalog,
+                extra_completions=extra_completions,
+                type_color=self.app_colors.gray,
+            )
+            self.editor_collection.word_completer = word_completer
+            self.editor_collection.member_completer = member_completer
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
-    def _post_updated_catalog(self) -> None:
+    def update_schema_data(self) -> None:
         catalog = self.connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
 

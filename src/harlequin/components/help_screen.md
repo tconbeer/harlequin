@@ -35,6 +35,13 @@
 - shift+tab: Dedent the selected line(s) to the next tab stop.
 - shift+delete: Delete the current line.
 
+#### Using Autocomplete
+
+*With the autocomplete list open:*
+- up,down,PgUp,PgDn: Select a different item in the list.
+- tab,enter: Place the current selection in the Query Editor.
+- escape: Dismiss the autocomplete list.
+
 #### Moving the Cursor
 
 - up,down,left,right: Move the cursor one position.

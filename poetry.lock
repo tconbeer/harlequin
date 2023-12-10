@@ -406,13 +406,13 @@ psycopg2-binary = ">=2.9.9,<3.0.0"
 
 [[package]]
 name = "identify"
-version = "2.5.32"
+version = "2.5.33"
 description = "File identification library for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "identify-2.5.32-py2.py3-none-any.whl", hash = "sha256:0b7656ef6cba81664b783352c73f8c24b39cf82f926f78f4550eda928e5e0545"},
-    {file = "identify-2.5.32.tar.gz", hash = "sha256:5d9979348ec1a21c768ae07e0a652924538e8bce67313a73cb0f681cf08ba407"},
+    {file = "identify-2.5.33-py2.py3-none-any.whl", hash = "sha256:d40ce5fcd762817627670da8a7d8d8e65f24342d14539c59488dc603bf662e34"},
+    {file = "identify-2.5.33.tar.gz", hash = "sha256:161558f9fe4559e1557e1bff323e8631f6a0e4837f7497767c1782832f16b62d"},
 ]
 
 [package.extras]
@@ -1427,15 +1427,17 @@ name = "textual-textarea"
 version = "0.8.0"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
-python-versions = ">=3.8,<4.0"
-files = [
-    {file = "textual_textarea-0.8.0-py3-none-any.whl", hash = "sha256:00fd934cae3ccd2710f12aa1b4edbca89559bd1ffe72bd077b29b82a89e29708"},
-    {file = "textual_textarea-0.8.0.tar.gz", hash = "sha256:7aa9834b5a6defb38eefbff7ffd4234d2a457e7a9d26cfadcbcd504db6c6a6c4"},
-]
+python-versions = "^3.8"
+files = []
+develop = true
 
 [package.dependencies]
-pyperclip = ">=1.8.2,<2.0.0"
-textual = {version = ">=0.41.0,<1.0.0", extras = ["syntax"]}
+pyperclip = "^1.8.2"
+textual = {version = ">=0.41.0, <1.0.0", extras = ["syntax"]}
+
+[package.source]
+type = "directory"
+url = "../textual-textarea"
 
 [[package]]
 name = "tomli"
@@ -1854,4 +1856,4 @@ postgres = ["harlequin-postgres"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "4f89cb395c99691bda8660b7f30b28370b5727213fe9c8e0e33636559c4a7be9"
+content-hash = "b325cf7eba4ba3673cd390eb9e3bf234a85f12a029c8b1cd7775a64db8e4b7ae"

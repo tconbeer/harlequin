@@ -6,12 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+-   AUTOCOMPLETE! Harlequin's query editor will now offer completions in a drop-down for SQL keywords, functions, and database objects (like tables, views, columns). With the autocomplete list open, use <kbd>up</kbd>, <kbd>down</kbd>, <kbd>PgUp</kbd>, <kbd>PgDn</kbd>, to select an option and <kbd>enter</kbd> or <kbd>Tab</kbd> to insert it into the editor.
 -   Harlequin now uses a new TextArea widget for its code editor. This improves performance for long queries, adds line numbers in a gutter, and changes the underlying engine for syntax highlighting from Pygments to Tree Sitter ([tconbeer/textual-textarea#123](https://github.com/tconbeer/textual-textarea/issues/123)).
 -   In the Query Editor: double-click to select a word, triple-click to select a line, and quadruple-click to select the entire query ([tconbeer/textual-textarea#111](https://github.com/tconbeer/textual-textarea/issues/111), [tconbeer/textual-textarea#112](https://github.com/tconbeer/textual-textarea/issues/112)).
 
 ### Changes
 
 -   Changes the default theme to `harlequin`.
+
+### Adapter API Changes
+
+-   Many key types are now exported from the main `harlequin` package: `HarlequinAdapter`, `HarlequinConnection`, `HarlequinCursor`, `HarlequinAdapterOption`, `HarlequinCopyFormat`, `HarlequinCompletion`.
+-   `HarlequinConnection`s may now (optionally) define a `get_completions()` method, which should return a list of `HarlequinCompletion` instances; each returned completion will be available to users in the autocompletion list.
 
 ### Bug Fixes
 
