@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.0] - 2023-12-13
+
 ### Features
 
 -   AUTOCOMPLETE! Harlequin's query editor will now offer completions in a drop-down for SQL keywords, functions, and database objects (like tables, views, columns). With the autocomplete list open, use <kbd>up</kbd>, <kbd>down</kbd>, <kbd>PgUp</kbd>, <kbd>PgDn</kbd>, to select an option and <kbd>enter</kbd> or <kbd>Tab</kbd> to insert it into the editor.
@@ -399,7 +401,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.6.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.0...HEAD
+
+[1.7.0]: https://github.com/tconbeer/harlequin/compare/1.6.0...1.7.0
 
 [1.6.0]: https://github.com/tconbeer/harlequin/compare/1.5.0...1.6.0
 
