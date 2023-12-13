@@ -7,6 +7,7 @@ from typing import Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
+from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
     HarlequinConfigError,
@@ -17,6 +18,7 @@ from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
+from harlequin_sqlite.completions import get_completion_data
 
 
 class HarlequinSqliteCursor(HarlequinCursor):
@@ -111,6 +113,9 @@ class HarlequinSqliteConnection(HarlequinConnection):
                 )
             )
         return Catalog(items=catalog_items)
+
+    def get_completions(self) -> list[HarlequinCompletion]:
+        return get_completion_data(self.conn)
 
     def _get_databases(self) -> list[str]:
         objects: list[tuple[str, str, str]] = self.conn.execute(

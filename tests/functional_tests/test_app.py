@@ -677,3 +677,74 @@ async def test_dupe_column_names(
         assert app.query_text == query
         assert app.cursors
         assert await app_snapshot(app)
+
+
+@pytest.mark.asyncio
+async def test_word_autocomplete(
+    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+) -> None:
+    app = app_all_adapters
+    snap_results: List[bool] = []
+    async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        await pilot.press("s")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "s"))
+
+        await pilot.press("e")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "se"))
+
+        await pilot.press("l")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "sel"))
+
+        await pilot.press("backspace")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "se again"))
+
+        await pilot.press("l")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "submitted"))
+
+        assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_member_autocomplete(
+    app_small_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+) -> None:
+    app = app_small_duck
+    snap_results: List[bool] = []
+    async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        app.editor.text = '"drivers"'
+        app.editor.cursor = (0, 9)  # type: ignore
+
+        await pilot.press("full_stop")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "driver members"))
+
+        await pilot.press("quotation_mark")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "with quote"))
+
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "submitted"))
+
+        assert all(snap_results)

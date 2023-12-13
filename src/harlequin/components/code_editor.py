@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from typing import List, Union
 
@@ -11,6 +13,7 @@ from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual_textarea import TextArea, TextAreaSaved
 from textual_textarea.key_handlers import Cursor
 
+from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.cache import BufferState, load_cache
 from harlequin.components.error_modal import ErrorModal
 
@@ -171,6 +174,8 @@ class EditorCollection(TabbedContent):
         self.language = language
         self.theme = theme
         self.counter = 0
+        self._word_completer: WordCompleter | None = None
+        self._member_completer: MemberCompleter | None = None
 
     @property
     def current_editor(self) -> CodeEditor:
@@ -190,6 +195,24 @@ class EditorCollection(TabbedContent):
         content = self.query_one(ContentSwitcher)
         all_editors = content.query(CodeEditor)
         return list(all_editors)
+
+    @property
+    def member_completer(self) -> MemberCompleter | None:
+        return self._member_completer
+
+    @member_completer.setter
+    def member_completer(self, new_completer: MemberCompleter) -> None:
+        self._member_completer = new_completer
+        self.current_editor.member_completer = new_completer
+
+    @property
+    def word_completer(self) -> WordCompleter | None:
+        return self._word_completer
+
+    @word_completer.setter
+    def word_completer(self, new_completer: WordCompleter) -> None:
+        self._word_completer = new_completer
+        self.current_editor.word_completer = new_completer
 
     async def on_mount(self) -> None:
         self.add_class("hide-tabs")
@@ -212,13 +235,19 @@ class EditorCollection(TabbedContent):
     ) -> None:
         message.stop()
         self.post_message(self.EditorSwitched(active_editor=None))
+        self.current_editor.word_completer = self.word_completer
+        self.current_editor.member_completer = self.member_completer
         self.current_editor.focus()
 
     async def action_new_buffer(self, state: Union[BufferState, None] = None) -> None:
         self.counter += 1
         new_tab_id = f"tab-{self.counter}"
         editor = CodeEditor(
-            id=f"buffer-{self.counter}", language=self.language, theme=self.theme
+            id=f"buffer-{self.counter}",
+            language=self.language,
+            theme=self.theme,
+            word_completer=self.word_completer,
+            member_completer=self.member_completer,
         )
         pane = TabPane(
             f"Tab {self.counter}",

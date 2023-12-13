@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from textual_fastdatatable.backend import AutoBackendType
 
+from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 
@@ -98,6 +99,19 @@ class HarlequinConnection(ABC):
         Returns: Catalog
         """
         pass
+
+    def get_completions(self) -> list[HarlequinCompletion]:
+        """
+        Returns a list of extra completions to make available to the Query Editor's
+        autocomplete. These could be dialect-specific functions, keywords, etc.
+        Harlequin ships with a basic list of common ANSI-SQL keywords and functions.
+
+        It is not necessary to provide completions for Catalog items, since Harlequin
+        will create those from the Catalog.
+
+        Returns: list[HarlequinCompletion]
+        """
+        return []
 
     def copy(
         self, query: str, path: Path, format_name: str, options: dict[str, Any]

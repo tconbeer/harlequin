@@ -1,3 +1,4 @@
 *.svg filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.gif filter=lfs diff=lfs merge=lfs -text
+harlequin.svg !filter !diff !merge text

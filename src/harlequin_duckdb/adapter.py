@@ -7,6 +7,7 @@ from typing import Any, Sequence
 import duckdb
 from duckdb.typing import DuckDBPyType
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
+from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
     HarlequinConfigError,
@@ -17,6 +18,7 @@ from harlequin.exception import (
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
+from harlequin_duckdb.completions import get_completion_data
 from harlequin_duckdb.copy_formats import DUCKDB_COPY_FORMATS
 
 
@@ -233,6 +235,19 @@ class DuckDbConnection(HarlequinConnection):
                 )
             )
         return Catalog(items=catalog_items)
+
+    def get_completions(self) -> list[HarlequinCompletion]:
+        cur = self.conn.cursor()
+        return [
+            HarlequinCompletion(
+                label=label,
+                type_label=type_label,
+                value=label,
+                priority=priority,
+                context=context,
+            )
+            for label, type_label, priority, context in get_completion_data(cur)
+        ]
 
     def validate_sql(self, text: str) -> str:
         cur = self.conn.cursor()
