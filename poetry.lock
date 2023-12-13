@@ -1428,13 +1428,13 @@ textual = ">=0.41.0"
 
 [[package]]
 name = "textual-textarea"
-version = "0.9.0"
+version = "0.9.2"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.9.0-py3-none-any.whl", hash = "sha256:a57ae2476955065b3e9b9625eb5022c067e00f75b62b6797692bb0fb6216c94e"},
-    {file = "textual_textarea-0.9.0.tar.gz", hash = "sha256:4554f02e0d811a191bd77e5f123eab7a97e838e73e5d8f67067222feaf96a211"},
+    {file = "textual_textarea-0.9.2-py3-none-any.whl", hash = "sha256:e71215b5b15f49fab6ac9d288a433c27eb2150309634d18ebf0c3228b29a90bf"},
+    {file = "textual_textarea-0.9.2.tar.gz", hash = "sha256:1c53fb73467ca630e965726524aa4604e6dc5f5966104e7f8f8fd3be963c4bff"},
 ]
 
 [package.dependencies]
@@ -1858,4 +1858,4 @@ postgres = ["harlequin-postgres"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "beb3f4752a471b6ddbc0ff02826ccf3ca97449743a67aeaf46bc5df14d206fa9"
+content-hash = "e543af453bffd8a12e7d66b37403094f7071dd84c6a03912a91a0d59c6233111"
