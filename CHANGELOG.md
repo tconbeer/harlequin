@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Fixes a crash when using `harlequin-postgres` and executing a select statement that returns zero records.
+
 ## [1.7.0] - 2023-12-13
 
 ### Features
