@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The MySQL adapter is now installable as an extra; use `pip install harlequin[mysql]`.
+
 ## [1.7.1] - 2023-12-14
 
 ### Bug Fixes

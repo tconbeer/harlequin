@@ -394,18 +394,33 @@ files = [
 ]
 
 [[package]]
+name = "harlequin-mysql"
+version = "0.1.0"
+description = "A Harlequin adapter for MySQL."
+optional = true
+python-versions = ">=3.8.1,<4.0"
+files = [
+    {file = "harlequin_mysql-0.1.0-py3-none-any.whl", hash = "sha256:7cebd2a1dc7333c9a9c55d69b48fad0c9f8aa776caca0fb3ff80020ef55904f6"},
+    {file = "harlequin_mysql-0.1.0.tar.gz", hash = "sha256:1e2238919cf90fb6acf802bd0774abc7e09ddddb12ffee780db00ffa3e6fe27c"},
+]
+
+[package.dependencies]
+harlequin = ">=1.7,<2.0"
+mysql-connector-python = ">=8.2.0,<9.0.0"
+
+[[package]]
 name = "harlequin-postgres"
-version = "0.1.3"
+version = "0.2.1"
 description = "A Harlequin adapter for Postgres."
 optional = false
 python-versions = ">=3.8.1,<4.0"
 files = [
-    {file = "harlequin_postgres-0.1.3-py3-none-any.whl", hash = "sha256:db7ab7f7304a18dce91e41ced87cc8d56a46f9c20aadaefd2306eb27f6e2edd0"},
-    {file = "harlequin_postgres-0.1.3.tar.gz", hash = "sha256:a5060b7311a09a12efd5b66f7c3c787ebb8149ee7839625de2dfe931877b1ca1"},
+    {file = "harlequin_postgres-0.2.1-py3-none-any.whl", hash = "sha256:4d5fc285c15aaf747cf45f841a423b5ea293021440fc52c823218bf7fe2ecc2d"},
+    {file = "harlequin_postgres-0.2.1.tar.gz", hash = "sha256:4ac47f3d401628c929579bd8d9a8a766967aecad3d83d64d8c83e857eaac2e0f"},
 ]
 
 [package.dependencies]
-harlequin = ">=1.4,<2.0"
+harlequin = ">=1.7,<2.0"
 psycopg2-binary = ">=2.9.9,<3.0.0"
 
 [[package]]
@@ -832,6 +847,50 @@ files = [
 ]
 
 [[package]]
+name = "mysql-connector-python"
+version = "8.2.0"
+description = "MySQL driver written in Python"
+optional = true
+python-versions = ">=3.8"
+files = [
+    {file = "mysql-connector-python-8.2.0.tar.gz", hash = "sha256:884eba07b4c97edf552a03f5fdca145e0ab4afc3d8677cca20276effca1bea54"},
+    {file = "mysql_connector_python-8.2.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:37ca26d7b10580b836f038d42f21ba9e6c88542868d50f55defdbd2dc8e0c0e6"},
+    {file = "mysql_connector_python-8.2.0-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:9d598cc854d1b61eabad7cbf003cfe59970aae80384f5ff18a5cc3fba7becdcc"},
+    {file = "mysql_connector_python-8.2.0-cp310-cp310-manylinux_2_17_aarch64.whl", hash = "sha256:4828a08b738174cacb0985df01120e0a2f0ba534c9d2f67d6613b0930a0fe3cd"},
+    {file = "mysql_connector_python-8.2.0-cp310-cp310-manylinux_2_17_x86_64.whl", hash = "sha256:4b2de9dd56de4874c30364023b59991399222cf73ec744da590cf9eef2623c26"},
+    {file = "mysql_connector_python-8.2.0-cp310-cp310-win_amd64.whl", hash = "sha256:858490bb450b6ae45f415d2205d65a12e84e3445c7b9736e1d1552b685bf237a"},
+    {file = "mysql_connector_python-8.2.0-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:5d1e1399a9feb45fc8caca6168ff35d31a8124693f24391153764bccc61d15ad"},
+    {file = "mysql_connector_python-8.2.0-cp311-cp311-macosx_12_0_x86_64.whl", hash = "sha256:a0308455462d4078baf516255662a46611eb12fc8d83d40dea38df3032d2566d"},
+    {file = "mysql_connector_python-8.2.0-cp311-cp311-manylinux_2_17_aarch64.whl", hash = "sha256:539300944c36566e91d131e106dbf0a90cde697ba88247a820f5af9caea2e5c2"},
+    {file = "mysql_connector_python-8.2.0-cp311-cp311-manylinux_2_17_x86_64.whl", hash = "sha256:66d755b94f547d6fcdee9f2256805a4534103363e35d185d3800bfc5274e1f4f"},
+    {file = "mysql_connector_python-8.2.0-cp311-cp311-win_amd64.whl", hash = "sha256:877076f2d71d268fb1b334c85a20ef1d42096ceb6580b25229be4510ebf5a0c5"},
+    {file = "mysql_connector_python-8.2.0-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:b3f64b1fd2de2e8ed5c9ddd388efce8c6804a8633e18dbb45563a6ae61fbc45b"},
+    {file = "mysql_connector_python-8.2.0-cp312-cp312-macosx_12_0_x86_64.whl", hash = "sha256:e9eacdc3fa5f61276c1549ca7c471a6fde576692881a70dcbac8258314015347"},
+    {file = "mysql_connector_python-8.2.0-cp312-cp312-manylinux_2_17_aarch64.whl", hash = "sha256:230a34df2f3c4f36acf426361914b8552f129538a5e2256d489dca2b39f2f031"},
+    {file = "mysql_connector_python-8.2.0-cp312-cp312-manylinux_2_17_x86_64.whl", hash = "sha256:26e19a4469276870ccc0a04db30c534519f0f774a5949370ff0dc03e7cfc071c"},
+    {file = "mysql_connector_python-8.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:e0b8af0d8c56619875dee4168b1bf77e17a4c1c5e1df935623d264729df70227"},
+    {file = "mysql_connector_python-8.2.0-cp38-cp38-macosx_12_0_x86_64.whl", hash = "sha256:81ac2e409b604bcf2ae6e18bc477f8f6e509ea5004c8dba291afe3d2591f0a3f"},
+    {file = "mysql_connector_python-8.2.0-cp38-cp38-manylinux_2_17_aarch64.whl", hash = "sha256:98606e893bc2343ccc9254f248e4bd5bae18cb03bf4931f3b1657900cd647718"},
+    {file = "mysql_connector_python-8.2.0-cp38-cp38-manylinux_2_17_x86_64.whl", hash = "sha256:e33677bcf6c2bdee7f25f3b38da7a204ab761e3b6763cbb2a413a5300c151059"},
+    {file = "mysql_connector_python-8.2.0-cp38-cp38-win_amd64.whl", hash = "sha256:55a58e57824b03f31befdd460b1dd173a05605bfac25278cd9845f3927c94399"},
+    {file = "mysql_connector_python-8.2.0-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:86e30370b6c38a9aaeae042eade5eea95000f6eb93b3802a8a215750a29a48c1"},
+    {file = "mysql_connector_python-8.2.0-cp39-cp39-macosx_12_0_x86_64.whl", hash = "sha256:6ac2c0d9c0248df8a62a736ae9024e1934acdbdf9ce3b2ab57b2a99c1da5f028"},
+    {file = "mysql_connector_python-8.2.0-cp39-cp39-manylinux_2_17_aarch64.whl", hash = "sha256:8c3ed071e19981e8e4ae64c1e3ded050571637a8d519669c03be5e1029c04ef7"},
+    {file = "mysql_connector_python-8.2.0-cp39-cp39-manylinux_2_17_x86_64.whl", hash = "sha256:717472cab0c4d5000cf60797be4d453b60d9ec98ec446c1e3c399fdd43941cb9"},
+    {file = "mysql_connector_python-8.2.0-cp39-cp39-win_amd64.whl", hash = "sha256:df033ca9c76f3a7c3500baea109127bc872c79431e9de691ffce4c2878af2828"},
+    {file = "mysql_connector_python-8.2.0-py2.py3-none-any.whl", hash = "sha256:59d4ea8253edbca7cbd1ac25ed524fcf5d8e34ee7ef5fb1be9e3026852b88126"},
+]
+
+[package.dependencies]
+protobuf = ">=4.21.1,<=4.21.12"
+
+[package.extras]
+compression = ["lz4 (>=2.1.6,<=4.3.2)", "zstandard (>=0.12.0,<=0.19.0)"]
+dns-srv = ["dnspython (>=1.16.0,<=2.3.0)"]
+gssapi = ["gssapi (>=1.6.9,<=1.8.2)"]
+opentelemetry = ["Deprecated (>=1.2.6)", "typing-extensions (>=3.7.4)", "zipp (>=0.5)"]
+
+[[package]]
 name = "nodeenv"
 version = "1.8.0"
 description = "Node.js virtual environment builder"
@@ -965,6 +1024,29 @@ files = [
 
 [package.dependencies]
 wcwidth = "*"
+
+[[package]]
+name = "protobuf"
+version = "4.21.12"
+description = ""
+optional = true
+python-versions = ">=3.7"
+files = [
+    {file = "protobuf-4.21.12-cp310-abi3-win32.whl", hash = "sha256:b135410244ebe777db80298297a97fbb4c862c881b4403b71bac9d4107d61fd1"},
+    {file = "protobuf-4.21.12-cp310-abi3-win_amd64.whl", hash = "sha256:89f9149e4a0169cddfc44c74f230d7743002e3aa0b9472d8c28f0388102fc4c2"},
+    {file = "protobuf-4.21.12-cp37-abi3-macosx_10_9_universal2.whl", hash = "sha256:299ea899484ee6f44604deb71f424234f654606b983cb496ea2a53e3c63ab791"},
+    {file = "protobuf-4.21.12-cp37-abi3-manylinux2014_aarch64.whl", hash = "sha256:d1736130bce8cf131ac7957fa26880ca19227d4ad68b4888b3be0dea1f95df97"},
+    {file = "protobuf-4.21.12-cp37-abi3-manylinux2014_x86_64.whl", hash = "sha256:78a28c9fa223998472886c77042e9b9afb6fe4242bd2a2a5aced88e3f4422aa7"},
+    {file = "protobuf-4.21.12-cp37-cp37m-win32.whl", hash = "sha256:3d164928ff0727d97022957c2b849250ca0e64777ee31efd7d6de2e07c494717"},
+    {file = "protobuf-4.21.12-cp37-cp37m-win_amd64.whl", hash = "sha256:f45460f9ee70a0ec1b6694c6e4e348ad2019275680bd68a1d9314b8c7e01e574"},
+    {file = "protobuf-4.21.12-cp38-cp38-win32.whl", hash = "sha256:6ab80df09e3208f742c98443b6166bcb70d65f52cfeb67357d52032ea1ae9bec"},
+    {file = "protobuf-4.21.12-cp38-cp38-win_amd64.whl", hash = "sha256:1f22ac0ca65bb70a876060d96d914dae09ac98d114294f77584b0d2644fa9c30"},
+    {file = "protobuf-4.21.12-cp39-cp39-win32.whl", hash = "sha256:27f4d15021da6d2b706ddc3860fac0a5ddaba34ab679dc182b60a8bb4e1121cc"},
+    {file = "protobuf-4.21.12-cp39-cp39-win_amd64.whl", hash = "sha256:237216c3326d46808a9f7c26fd1bd4b20015fb6867dc5d263a493ef9a539293b"},
+    {file = "protobuf-4.21.12-py2.py3-none-any.whl", hash = "sha256:a53fd3f03e578553623272dc46ac2f189de23862e68565e83dde203d41b76fc5"},
+    {file = "protobuf-4.21.12-py3-none-any.whl", hash = "sha256:b98d0148f84e3a3c569e19f52103ca1feacdac0d2df8d6533cf983d1fda28462"},
+    {file = "protobuf-4.21.12.tar.gz", hash = "sha256:7cd532c4566d0e6feafecc1059d04c7915aec8e182d1cf7adee8b24ef1e2e6ab"},
+]
 
 [[package]]
 name = "psycopg2-binary"
@@ -1853,9 +1935,10 @@ docs = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.link
 testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "pytest (>=6)", "pytest-black (>=0.3.7)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-ignore-flaky", "pytest-mypy (>=0.9.1)", "pytest-ruff"]
 
 [extras]
+mysql = ["harlequin-mysql"]
 postgres = ["harlequin-postgres"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "f2e414af481ed2cffd90dbc2b272f7028a98b02d37d92e1fda16f2bdaa96d8f6"
+content-hash = "e264a5e1a7f0006b950ab449cf779a9d0d79e84e1276aba0046aaac69d2a7ea0"
