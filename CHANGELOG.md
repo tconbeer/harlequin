@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.1] - 2023-12-14
+
 ### Bug Fixes
 
 -   Fixes a crash when using `harlequin-postgres` and executing a select statement that returns zero records.
@@ -405,7 +407,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.1...HEAD
+
+[1.7.1]: https://github.com/tconbeer/harlequin/compare/1.7.0...1.7.1
 
 [1.7.0]: https://github.com/tconbeer/harlequin/compare/1.6.0...1.7.0
 
