@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.2] - 2023-12-14
+
 ### Features
 
 -   The MySQL adapter is now installable as an extra; use `pip install harlequin[mysql]`.
@@ -411,7 +413,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.2...HEAD
+
+[1.7.2]: https://github.com/tconbeer/harlequin/compare/1.7.1...1.7.2
 
 [1.7.1]: https://github.com/tconbeer/harlequin/compare/1.7.0...1.7.1
 
