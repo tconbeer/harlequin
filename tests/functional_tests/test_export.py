@@ -20,6 +20,8 @@ async def test_export(
         await pilot.pause()
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert app.cursors
         assert len(app.screen_stack) == 1
 
@@ -36,6 +38,8 @@ async def test_export(
         app.screen.file_input.value = str(export_path)  # type: ignore
         await pilot.pause()
         await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
 
         assert export_path.is_file()
         assert len(app.screen_stack) == 1

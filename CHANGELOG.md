@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
--   test_app.py has been refactored into many files.
+-   tests/functional_tests/test_app.py has been refactored into many smaller files.
 
 ## [1.7.3] - 2023-12-15
 

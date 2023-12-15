@@ -180,6 +180,8 @@ async def test_query_errors(
 
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert len(app.screen_stack) == 2
         assert isinstance(app.screen, ErrorModal)
         snap_results.append(await app_snapshot(app, "Error visible"))
