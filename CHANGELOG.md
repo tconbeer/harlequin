@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Fixes an issue where completions were truncated improperly in the autocomplete menu.
+
+### Testing
+
+-   Prevents limit input cursor blink when running tests in headless mode, for less flaky tests.
+
 ## [1.7.2] - 2023-12-14
 
 ### Features
