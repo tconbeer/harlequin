@@ -49,6 +49,8 @@ class RunQueryBar(Horizontal):
         self.checkbox = self.query_one(Checkbox)
         self.input = self.query_one(Input)
         self.button = self.query_one(Button)
+        if self.app.is_headless:
+            self.input.cursor_blink = False
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """
