@@ -630,7 +630,7 @@ async def test_data_catalog(
         await pilot.pause()
         assert schema_main.is_expanded is True
         assert app.editor.text == '"small"."main"'
-        assert app.editor._has_focus_within
+        assert not catalog.has_focus
         snap_results.append(await app_snapshot(app, "Inserted small.main"))
 
         # use keys to navigate the tree into main.drivers
