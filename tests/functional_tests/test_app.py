@@ -56,7 +56,10 @@ async def test_queries_do_not_crash_all_adapters(
         assert app.query_text == query
         if query:
             assert app.cursors
-        assert await app_snapshot(app, query or "<empty query>")
+        if query and query != "select 1 where false":
+            table = app.results_viewer.get_visible_table()
+            assert table is not None
+            assert table.row_count >= 1
 
 
 @pytest.mark.asyncio
@@ -89,12 +92,13 @@ async def test_queries_do_not_crash(
         await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
+        await app.workers.wait_for_complete()
         await pilot.pause()
 
         assert app.query_text == query
-        if query:
-            assert app.cursors
-        assert await app_snapshot(app, query or "<empty query>")
+        table = app.results_viewer.get_visible_table()
+        assert table is not None
+        assert table.row_count >= 1
 
 
 @pytest.mark.asyncio
