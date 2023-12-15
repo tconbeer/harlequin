@@ -21,7 +21,7 @@ build-backend = "poetry.core.masonry.api"
 python = ">=3.8.1,<4.0.0"
 
 # textual and component libraries
-textual = "==0.41.0"
+textual = "==0.45.1"
 textual-fastdatatable = "==0.4.1"
 textual-textarea = "==0.9.3"
 
