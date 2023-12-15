@@ -40,6 +40,7 @@ def cache(buffer_states: List[BufferState]) -> Cache:
     return Cache(focus_index=1, buffers=buffer_states)
 
 
+@pytest.mark.use_cache
 def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
     assert mock_user_cache_dir.exists()
     assert len(list(mock_user_cache_dir.iterdir())) == 0
@@ -52,6 +53,7 @@ def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
     assert loaded_cache == cache
 
 
+@pytest.mark.use_cache
 @pytest.mark.asyncio
 async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
     write_cache(cache)
@@ -63,6 +65,7 @@ async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
         ]
 
 
+@pytest.mark.use_cache
 @pytest.mark.asyncio
 async def test_harlequin_writes_cache(
     mock_user_cache_dir: Path, app: Harlequin

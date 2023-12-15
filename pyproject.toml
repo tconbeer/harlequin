@@ -113,4 +113,5 @@ strict_equality = true
 [tool.pytest.ini_options]
 markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
+    "use_cache: override the autouse fixture the disables the buffer cache"
 ]
