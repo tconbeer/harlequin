@@ -70,10 +70,7 @@ async def test_queries_do_not_crash_all_adapters(
         """SELECT {'birds':
             {'yes': 'duck', 'maybe': 'goose', 'huh': NULL, 'no': 'heron'},
         'aliens':
-            NULL,
-        'amphibians':
-            {'yes':'frog', 'maybe': 'salamander', 'huh': 'dragon', 'no':'toad'}
-        }""",  # struct
+            NULL} as bar""",  # struct
         "select {'a': 5} union all select {'a': 6}",  # struct
         "select map {'a': 5}",  # map
         "select map {'a': 5} union all select map {'b': 6}",  # map

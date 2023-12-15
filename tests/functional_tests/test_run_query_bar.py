@@ -23,6 +23,7 @@ async def test_run_query_bar(
         # dataset has 857 records
         app.editor.text = "select * from drivers"
         await pilot.click(bar.button.__class__)
+        await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
@@ -34,6 +35,7 @@ async def test_run_query_bar(
         await pilot.click(bar.checkbox.__class__)
         assert bar.checkbox.value is True
         await pilot.click(bar.button.__class__)
+        await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
@@ -64,6 +66,7 @@ async def test_run_query_bar(
 
         # run the query with a smaller limit
         await pilot.click(bar.button.__class__)
+        await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
