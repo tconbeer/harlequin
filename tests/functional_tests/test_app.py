@@ -144,24 +144,24 @@ async def test_multiple_queries(
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.query_text == "select 1; select 2"
-        assert app.results_viewer.tab_switcher.tab_count == 2
+        assert app.results_viewer.tab_count == 2
         assert "hide-tabs" not in app.results_viewer.classes
         await app.workers.wait_for_complete()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Both queries"))
-        assert app.results_viewer.tab_switcher.active == "tab-2"
+        assert app.results_viewer.active == "tab-2"
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
-        assert app.results_viewer.tab_switcher.active == "tab-1"
+        assert app.results_viewer.active == "tab-1"
         snap_results.append(await app_snapshot(app, "Both queries, tab 1"))
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
-        assert app.results_viewer.tab_switcher.active == "tab-2"
+        assert app.results_viewer.active == "tab-2"
         snap_results.append(await app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("j")
-        assert app.results_viewer.tab_switcher.active == "tab-1"
+        assert app.results_viewer.active == "tab-1"
         await pilot.press("j")
-        assert app.results_viewer.tab_switcher.active == "tab-2"
+        assert app.results_viewer.active == "tab-2"
 
         assert all(snap_results)
 

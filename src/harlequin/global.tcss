@@ -37,10 +37,10 @@ ResultsViewer:focus-within {
 
 CodeEditor:disabled,
 Container:disabled,
-ContentSwitcher:disabled,
 DataCatalog:disabled,
 EditorCollection:disabled,
 Footer:disabled,
+ResultsViewer:disabled,
 ResultsTable:disabled,
 RunQueryBar:disabled,
 Vertical:disabled {
@@ -210,7 +210,7 @@ RunQueryBar.non-responsive Input {
 
 /* RESULTS VIEWER */
 
-ContentSwitcher,
+TabbedContent,
 TabPane {
     height: 1fr;
     width: 100%;

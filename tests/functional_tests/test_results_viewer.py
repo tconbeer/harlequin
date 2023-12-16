@@ -15,8 +15,11 @@ async def test_dupe_column_names(
         await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
+        await app.workers.wait_for_complete()
         await pilot.pause()
 
         assert app.query_text == query
         assert app.cursors
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert await app_snapshot(app, "dupe columns")
