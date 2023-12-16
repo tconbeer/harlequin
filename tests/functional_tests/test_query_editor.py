@@ -1,5 +1,6 @@
-from typing import Awaitable, Callable, List
 import sys
+from typing import Awaitable, Callable, List
+
 import pytest
 from harlequin import Harlequin
 
@@ -92,7 +93,10 @@ async def test_multiple_buffers(
 
         assert all(snap_results)
 
-@pytest.mark.skipif(sys.platform=="win32", reason="Initial snapshot very flaky on windows.")
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Initial snapshot very flaky on windows."
+)
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
@@ -146,7 +150,9 @@ async def test_word_autocomplete(
         assert all(snap_results)
 
 
-@pytest.mark.skipif(sys.platform=="win32", reason="Initial snapshot very flaky on windows.")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Initial snapshot very flaky on windows."
+)
 @pytest.mark.asyncio
 async def test_member_autocomplete(
     app_small_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]

@@ -20,6 +20,7 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable.backend import AutoBackendType
+
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.cache import BufferState, Cache, write_cache
@@ -318,9 +319,9 @@ class Harlequin(App, inherit_bindings=False):
     async def on_results_fetched(self, message: ResultsFetched) -> None:
         for id_, (cols, data) in message.data.items():
             await self.results_viewer.push_table(
-                table_id = id_,
+                table_id=id_,
                 column_labels=cols,
-                data=data
+                data=data,  # type: ignore
             )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
