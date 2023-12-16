@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Fixes an issue on Windows where pressing shift or control would hide the member autocomplete menu.
 
 ### Testing
 
