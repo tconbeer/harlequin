@@ -6,7 +6,6 @@ from harlequin import Harlequin
 from harlequin.components import ExportScreen
 
 
-@pytest.mark.flaky
 @pytest.mark.asyncio
 @pytest.mark.parametrize("filename", ["one.csv", "one.parquet", "one.json"])
 async def test_export(
@@ -23,10 +22,11 @@ async def test_export(
         await pilot.press("ctrl+j")  # run query
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert app.cursors
-        assert len(app.screen_stack) == 1
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
 
         await pilot.press("ctrl+e")
         await pilot.pause()

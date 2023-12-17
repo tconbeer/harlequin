@@ -1,8 +1,12 @@
-from typing import Awaitable, Callable, List
+from __future__ import annotations
+
+from typing import Awaitable, Callable
 
 import pytest
 from harlequin import Harlequin
+from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
+from textual.message import Message
 
 
 @pytest.mark.asyncio
@@ -10,7 +14,8 @@ async def test_select_1(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
     app = app_all_adapters
-    async with app.run_test() as pilot:
+    messages: list[Message] = []
+    async with app.run_test(message_hook=messages.append) as pilot:
         assert app.title == "Harlequin"
         assert app.focused.__class__.__name__ == "TextInput"
 
@@ -20,12 +25,23 @@ async def test_select_1(
         await pilot.press("ctrl+j")  # alias for ctrl+enter
 
         await pilot.pause()
-        assert app.query_text == q
-        await pilot.pause()
+        [query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == q
         await app.workers.wait_for_complete()
-        assert app.cursors
         await pilot.pause()
+        [query_executed_message] = [
+            m for m in messages if isinstance(m, QueriesExecuted)
+        ]
+        assert query_executed_message.query_count == 1
+        assert query_executed_message.cursors
         await app.workers.wait_for_complete()
+        await pilot.pause()
+        [results_fetched_message] = [
+            m for m in messages if isinstance(m, ResultsFetched)
+        ]
+        assert results_fetched_message.errors == []
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.source_row_count == table.row_count == 1
@@ -50,18 +66,25 @@ async def test_queries_do_not_crash_all_adapters(
     app_snapshot: Callable[..., Awaitable[bool]],
 ) -> None:
     app = app_all_adapters
-    async with app.run_test() as pilot:
+    messages: list[Message] = []
+    async with app.run_test(message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
         await pilot.pause()
 
-        assert app.query_text == query
         if query:
-            await pilot.pause()
+            [query_submitted_message] = [
+                m for m in messages if isinstance(m, QuerySubmitted)
+            ]
+            assert query_submitted_message.query_text == query
             await app.workers.wait_for_complete()
-            assert app.cursors
+            await pilot.pause()
+            [query_executed_message] = [
+                m for m in messages if isinstance(m, QueriesExecuted)
+            ]
+            assert query_executed_message.cursors
         if query and query != "select 1 where false":
             await pilot.pause()
             await app.workers.wait_for_complete()
@@ -102,10 +125,10 @@ async def test_queries_do_not_crash(
         await pilot.press("ctrl+j")
         await app.workers.wait_for_complete()
         await pilot.pause()
-
-        assert app.query_text == query
+        await app.workers.wait_for_complete()
         await pilot.pause()
         await app.workers.wait_for_complete()
+        await pilot.pause()
         table = app.results_viewer.get_visible_table()
         assert table is not None
         assert table.row_count >= 1
@@ -116,8 +139,9 @@ async def test_multiple_queries(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
 ) -> None:
     app = app_all_adapters
-    snap_results: List[bool] = []
-    async with app.run_test() as pilot:
+    snap_results: list[bool] = []
+    messages: list[Message] = []
+    async with app.run_test(message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
         q = "select 1; select 2"
@@ -127,7 +151,10 @@ async def test_multiple_queries(
         # should only run one query
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert app.query_text == "select 1;"
+        [query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == "select 1;"
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.row_count == table.source_row_count == 1
@@ -143,7 +170,10 @@ async def test_multiple_queries(
         await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
-        assert app.query_text == "select 1; select 2"
+        [_, query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == "select 1; select 2"
         assert app.results_viewer.tab_count == 2
         assert "hide-tabs" not in app.results_viewer.classes
         await app.workers.wait_for_complete()
@@ -188,7 +218,7 @@ async def test_query_errors(
     app_snapshot: Callable[..., Awaitable[bool]],
 ) -> None:
     app = app_all_adapters
-    snap_results: List[bool] = []
+    snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()

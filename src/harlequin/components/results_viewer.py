@@ -41,6 +41,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
 
     def on_mount(self) -> None:
         self.query_one(Tabs).can_focus = False
+        self.add_class("hide-tabs")
 
     def clear_all_tables(self) -> None:
         self.clear_panes()
@@ -91,14 +92,15 @@ class ResultsViewer(TabbedContent, can_focus=True):
         # doesn't consistently cause a new layout calc.
         table.refresh(repaint=True, layout=True)
 
-    async def set_not_responsive(self) -> None:
-        self.border_title = "Loading Data"
+    def show_loading(self) -> None:
+        self.border_title = "Running Query"
         self.add_class("non-responsive")
+        self.loading = True
+        self.clear_all_tables()
 
-    def set_responsive(
-        self,
-        did_run: bool = True,
-    ) -> None:
+    def show_table(self, did_run: bool = True) -> None:
+        self.loading = False
+        self.remove_class("non-responsive")
         if not did_run:
             self.border_title = "Query Results"
         else:
@@ -113,15 +115,6 @@ class ResultsViewer(TabbedContent, can_focus=True):
                     self.border_title = "Query Returned No Records"
             else:
                 self.border_title = "Query Results"
-        self.remove_class("non-responsive")
-
-    def show_loading(self) -> None:
-        self.loading = True
-        self.border_title = "Running Query"
-        self.add_class("non-responsive")
-
-    def show_table(self) -> None:
-        self.loading = False
 
     def on_focus(self) -> None:
         self._focus_on_visible_table()
@@ -130,9 +123,6 @@ class ResultsViewer(TabbedContent, can_focus=True):
         self, message: TabbedContent.TabActivated
     ) -> None:
         message.stop()
-        # Don't update the border if we're still loading the table.
-        if self.border_title and str(self.border_title).startswith("Loading"):
-            return
         maybe_table = self.get_visible_table()
         if maybe_table is not None:
             self.border_title = (
