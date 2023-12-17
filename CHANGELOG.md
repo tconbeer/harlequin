@@ -7,10 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 -   Fixes an issue on Windows where pressing shift or control would hide the member autocomplete menu.
+-   Fixes flaky query execution behavior on some platforms.
 
 ### Testing
 
 -   tests/functional_tests/test_app.py has been refactored into many smaller files.
+-   Fixes an issue with cache tests where the user's main harlequin cache was used instead of a mocked cache location.
 
 ## [1.7.3] - 2023-12-15
 
