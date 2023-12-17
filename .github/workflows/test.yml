@@ -36,7 +36,7 @@ jobs:
       - name: Install python dependencies
         run: poetry install --sync --no-interaction --only main,test
       - name: Run tests
-        run: poetry run pytest -m "not online" -m "not flaky"
+        run: poetry run pytest -m "not online" -m "not flaky_windows"
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v3  
         if: failure()
