@@ -428,6 +428,7 @@ class Harlequin(App, inherit_bindings=False):
         self.results_viewer.focus()
 
     async def action_quit(self) -> None:
+        self.log("quitting nicely.")
         buffers = []
         for i, editor in enumerate(self.editor_collection.all_editors):
             if editor == self.editor_collection.current_editor:
