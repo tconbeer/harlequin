@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
@@ -19,6 +20,7 @@ from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
+from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
@@ -260,7 +262,19 @@ class Harlequin(App, inherit_bindings=False):
                 )
             )
 
-    # @on(DataTable.CellHighlighted)
+    @on(DataTable.SelectionCopied)
+    def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
+        message.stop()
+        # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
+        text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
+        self.editor.text_input.clipboard = text
+        if self.editor.use_system_clipboard:
+            try:
+                self.editor.text_input.system_copy(text)
+            except Exception:
+                self.notify("Error copying data to system clipboard.", severity="error")
+            else:
+                self.notify("Selected data copied to clipboard.")
 
     @on(Worker.StateChanged)
     def handle_worker_error(self, message: Worker.StateChanged) -> None:
