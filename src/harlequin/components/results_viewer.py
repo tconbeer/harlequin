@@ -1,13 +1,10 @@
 from typing import List, Tuple, Union
 
 from rich.markup import escape
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
-from textual.widget import Widget
 from textual.widgets import (
     ContentSwitcher,
-    LoadingIndicator,
     TabbedContent,
     TabPane,
     Tabs,
@@ -25,59 +22,47 @@ class ResultsTable(DataTable):
     """
 
 
-class ResultsViewer(ContentSwitcher, can_focus=True):
+class ResultsViewer(TabbedContent, can_focus=True):
     BINDINGS = [
         Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
         Binding("k", "switch_tab(1)", "Next Tab", show=False),
     ]
 
-    TABBED_ID = "tabs"
-    LOADING_ID = "loading"
+    BORDER_TITLE = "Query Results"
 
     def __init__(
         self,
-        *children: Widget,
-        name: Union[str, None] = None,
-        id: Union[str, None] = None,  # noqa A002
-        classes: Union[str, None] = None,
-        disabled: bool = False,
-        initial: Union[str, None] = None,
         max_results: int = 10_000,
         type_color: str = "#888888",
     ) -> None:
-        super().__init__(
-            *children,
-            name=name,
-            id=id,
-            classes=classes,
-            disabled=disabled,
-            initial=initial,
-        )
+        super().__init__()
         self.max_results = max_results
         self.type_color = type_color
 
-    def compose(self) -> ComposeResult:
-        yield TabbedContent(id=self.TABBED_ID)
-        yield LoadingIndicator(id=self.LOADING_ID)
+    def on_mount(self) -> None:
+        self.query_one(Tabs).can_focus = False
 
     def clear_all_tables(self) -> None:
-        self.tab_switcher.clear_panes()
+        self.clear_panes()
         self.add_class("hide-tabs")
 
     def get_visible_table(self) -> Union[ResultsTable, None]:
-        content = self.tab_switcher.query_one(ContentSwitcher)
-        active_tab_id = self.tab_switcher.active
+        content = self.query_one(ContentSwitcher)
+        active_tab_id = self.active
+        self.log("ACTIVE TAB ID:", active_tab_id)
         if active_tab_id:
             try:
                 tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
                 return tab_pane.query_one(ResultsTable)
             except NoMatches:
+                self.log("NO MATCHES FOR ACTIVE TAB ID:", active_tab_id)
                 return None
         else:
             tables = content.query(ResultsTable)
             try:
                 return tables.first(ResultsTable)
             except NoMatches:
+                self.log("NO TABLES FOUND")
                 return None
 
     async def push_table(
@@ -90,19 +75,21 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             self._format_column_label(col_name, col_type)
             for col_name, col_type in column_labels
         ]
-        self.app.log(f"LABELS: {formatted_labels}")
         table = ResultsTable(
             id=table_id,
             column_labels=formatted_labels,  # type: ignore
             data=data,
             max_rows=self.max_results,
         )
-        n = self.tab_switcher.tab_count + 1
+        n = self.tab_count + 1
         if n > 1:
             self.remove_class("hide-tabs")
         pane = TabPane(f"Result {n}", table)
-        await self.tab_switcher.add_pane(pane)  # type: ignore
-        self.tab_switcher.active = f"tab-{n}"
+        await self.add_pane(pane)  # type: ignore
+        self.active = f"tab-{n}"
+        # need to manually refresh the table, since activating the tab
+        # doesn't consistently cause a new layout calc.
+        table.refresh(repaint=True, layout=True)
 
     async def set_not_responsive(self) -> None:
         self.border_title = "Loading Data"
@@ -129,19 +116,12 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
         self.remove_class("non-responsive")
 
     def show_loading(self) -> None:
-        self.current = self.LOADING_ID
+        self.loading = True
         self.border_title = "Running Query"
         self.add_class("non-responsive")
 
     def show_table(self) -> None:
-        self.current = self.TABBED_ID
-
-    def on_mount(self) -> None:
-        self.border_title = "Query Results"
-        self.current = self.TABBED_ID
-        self.tab_switcher = self.query_one(TabbedContent)
-        self.loading_spinner = self.query_one(LoadingIndicator)
-        self.query_one(Tabs).can_focus = False
+        self.loading = False
 
     def on_focus(self) -> None:
         self._focus_on_visible_table()
@@ -161,17 +141,17 @@ class ResultsViewer(ContentSwitcher, can_focus=True):
             maybe_table.focus()
 
     def action_switch_tab(self, offset: int) -> None:
-        if not self.tab_switcher.active:
+        if not self.active:
             return
-        tab_number = int(self.tab_switcher.active.split("-")[1])
+        tab_number = int(self.active.split("-")[1])
         unsafe_tab_number = tab_number + offset
         if unsafe_tab_number < 1:
-            new_tab_number = self.tab_switcher.tab_count
-        elif unsafe_tab_number > self.tab_switcher.tab_count:
+            new_tab_number = self.tab_count
+        elif unsafe_tab_number > self.tab_count:
             new_tab_number = 1
         else:
             new_tab_number = unsafe_tab_number
-        self.tab_switcher.active = f"tab-{new_tab_number}"
+        self.active = f"tab-{new_tab_number}"
         self._focus_on_visible_table()
 
     def _focus_on_visible_table(self) -> None:

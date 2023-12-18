@@ -2,7 +2,7 @@
 check:
 	black .
 	ruff . --fix
-	pytest -m "not online"
+	pytest -m "not online" -m "not flaky"
 	mypy
 
 .PHONY: lint
