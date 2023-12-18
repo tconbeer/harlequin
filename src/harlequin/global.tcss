@@ -143,6 +143,7 @@ RunQueryBar Input.-invalid {
 Tooltip {
     border: round $border-color-focus;
     background: $background;
+    padding: 0 1;
 }
 
 RunQueryBar Button {

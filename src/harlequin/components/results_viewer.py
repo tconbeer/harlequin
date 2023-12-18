@@ -42,6 +42,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
     def on_mount(self) -> None:
         self.query_one(Tabs).can_focus = False
         self.add_class("hide-tabs")
+        self.max_col_width = self._get_max_col_width()
 
     def clear_all_tables(self) -> None:
         self.clear_panes()
@@ -81,6 +82,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
             column_labels=formatted_labels,  # type: ignore
             data=data,
             max_rows=self.max_results,
+            cursor_type="range",
+            max_column_content_width=self.max_col_width,
         )
         n = self.tab_count + 1
         if n > 1:
@@ -118,6 +121,10 @@ class ResultsViewer(TabbedContent, can_focus=True):
 
     def on_focus(self) -> None:
         self._focus_on_visible_table()
+
+    def on_resize(self) -> None:
+        # only impacts new tables pushed after the resize
+        self.max_col_width = self._get_max_col_width()
 
     def on_tabbed_content_tab_activated(
         self, message: TabbedContent.TabActivated
@@ -157,3 +164,9 @@ class ResultsViewer(TabbedContent, can_focus=True):
 
     def _format_column_label(self, col_name: str, col_type: str) -> str:
         return f"{escape(col_name)} [{self.type_color}]{escape(col_type)}[/]"
+
+    def _get_max_col_width(self) -> int:
+        SMALLEST_MAX_WIDTH = 20
+        CELL_X_PADDING = 2
+        parent_size = getattr(self.parent, "container_size", self.screen.container_size)
+        return max(SMALLEST_MAX_WIDTH, parent_size.width // 2 - CELL_X_PADDING)
