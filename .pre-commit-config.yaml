@@ -18,7 +18,7 @@ repos:
           - shandy-sqlfmt[jinjafmt]
           - textual>=0.41.0
           - textual-textarea>=0.9.0
-          - textual-fastdatatable>=0.4.0
+          - textual-fastdatatable>=0.5.0
           - pytest
           - types-pygments
           - rich-click>=1.7.1

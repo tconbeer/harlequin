@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Very long values in the data table are now truncated, with an elipsis (`…`). The full value is shown in a tooltip when hovering over a truncated value.
+
 ### Bug Fixes
 
 -   Fixes an issue on Windows where pressing shift or control would hide the member autocomplete menu.

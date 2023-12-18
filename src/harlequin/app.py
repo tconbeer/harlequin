@@ -260,6 +260,8 @@ class Harlequin(App, inherit_bindings=False):
                 )
             )
 
+    # @on(DataTable.CellHighlighted)
+
     @on(Worker.StateChanged)
     def handle_worker_error(self, message: Worker.StateChanged) -> None:
         if message.state == WorkerState.ERROR:
