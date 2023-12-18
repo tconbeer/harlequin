@@ -6,11 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
--   Very long values in the data table are now truncated, with an elipsis (`…`). The full value is shown in a tooltip when hovering over a truncated value.
+-   Select a range of cells in the Results Viewer by clicking and dragging or by holding <kbd>shift</kbd> while moving the cursor with the keyboard.
+-   Copy selected cells from the Results Viewer by pressing <kbd>ctrl+c</kbd>.
+-   Very long values in the Results Viewer are now truncated, with an elipsis (`…`). The full value is shown in a tooltip when hovering over a truncated value. (The full value will also be copied to the clipboard).
+-   The BigQuery adapter is now installable as an extra; use `pip install harlequin[bigquery]`.
 
 ### Bug Fixes
 
--   Fixes an issue on Windows where pressing shift or control would hide the member autocomplete menu.
+-   Fixes an issue on Windows where pressing <kbd>shift</kbd> or <kbd>ctrl</kbd> would hide the member autocomplete menu.
 -   Fixes flaky query execution behavior on some platforms.
 
 ### Testing

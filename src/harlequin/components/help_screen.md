@@ -60,10 +60,13 @@
 
 ### Results Viewer Bindings
 
+- ctrl+c: Copy selected data to the clipboard.
+
 #### Switching Tabs
 
 - j: Switch to the previous tab.
 - k: Switch to the next tab.
+
 #### Moving the Cursor
 
 - up,down,left,right: Move the cursor one cell.
@@ -71,6 +74,7 @@
 - end: Move the cursor to the bottom of the current column.
 - PgUp: Move the cursor up one screen.
 - PgDn: Move the cursor down one screen.
+- shift+[any]: Select range while moving the cursor.
 
 
 ### Data Catalog Bindings
