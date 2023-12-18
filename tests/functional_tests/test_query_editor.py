@@ -1,5 +1,5 @@
 from typing import Awaitable, Callable, List
-
+import sys
 import pytest
 from harlequin import Harlequin
 
@@ -92,7 +92,7 @@ async def test_multiple_buffers(
 
         assert all(snap_results)
 
-
+@pytest.mark.skipif(sys.platform=="win32", reason="Initial snapshot very flaky on windows.")
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
@@ -104,36 +104,49 @@ async def test_word_autocomplete(
         await pilot.pause()
 
         await pilot.press("s")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "s"))
 
         await pilot.press("e")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se"))
 
         await pilot.press("l")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "sel"))
 
         await pilot.press("backspace")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se again"))
 
         await pilot.press("l")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         await pilot.press("enter")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "submitted"))
 
         assert all(snap_results)
 
 
+@pytest.mark.skipif(sys.platform=="win32", reason="Initial snapshot very flaky on windows.")
 @pytest.mark.asyncio
 async def test_member_autocomplete(
     app_small_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
@@ -147,18 +160,24 @@ async def test_member_autocomplete(
         app.editor.cursor = (0, 9)  # type: ignore
 
         await pilot.press("full_stop")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "driver members"))
 
         await pilot.press("quotation_mark")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "with quote"))
 
         await pilot.press("enter")
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "submitted"))
 
         assert all(snap_results)

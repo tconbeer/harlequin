@@ -19,7 +19,7 @@ from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Checkbox, Footer, Input
 from textual.worker import Worker, WorkerState
-
+from textual_fastdatatable.backend import AutoBackendType
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.cache import BufferState, Cache, write_cache
@@ -56,10 +56,12 @@ class ResultsFetched(Message):
     def __init__(
         self,
         cursors: Dict[str, HarlequinCursor],
+        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]],
         errors: List[BaseException],
         elapsed: Union[float, None],
     ) -> None:
         self.cursors = cursors
+        self.data = data
         self.errors = errors
         self.elapsed = elapsed
         super().__init__()
@@ -313,7 +315,15 @@ class Harlequin(App, inherit_bindings=False):
             self.results_viewer.set_responsive(did_run=False)
             self.results_viewer.show_table()
 
-    def on_results_fetched(self, message: ResultsFetched) -> None:
+    async def on_results_fetched(self, message: ResultsFetched) -> None:
+        for id_, (cols, data) in message.data.items():
+            await self.results_viewer.push_table(
+                table_id = id_,
+                column_labels=cols,
+                data=data
+            )
+        self.run_query_bar.set_responsive()
+        self.results_viewer.show_table()
         if message.errors:
             header = getattr(
                 message.errors[0],
@@ -331,8 +341,6 @@ class Harlequin(App, inherit_bindings=False):
                 f"{'query' if len(message.cursors) == 1 else 'queries'} "
                 f"executed successfully in {message.elapsed:.2f} seconds."
             )
-        self.run_query_bar.set_responsive()
-        self.results_viewer.show_table()
         if len(message.errors) == len(message.cursors):
             self.results_viewer.set_responsive(did_run=False)
         else:
@@ -516,25 +524,21 @@ class Harlequin(App, inherit_bindings=False):
     )
     def _set_result_viewer_data(self, cursors: Dict[str, HarlequinCursor]) -> None:
         errors: List[BaseException] = []
+        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]] = {}
         for id_, cur in cursors.items():
             try:
                 cur_data = cur.fetchall()
             except HarlequinQueryError as e:
                 errors.append(e)
             else:
-                self.call_from_thread(
-                    self.results_viewer.push_table,  # type: ignore
-                    table_id=id_,
-                    column_labels=cur.columns(),
-                    data=cur_data,
-                )
+                data[id_] = (cur.columns(), cur_data)
         elapsed = (
             time.monotonic() - self.query_timer
             if self.query_timer is not None
             else None
         )
         self.post_message(
-            ResultsFetched(cursors=cursors, errors=errors, elapsed=elapsed)
+            ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
         )
 
     @work(thread=True, exclusive=True, exit_on_error=True, group="completer_builders")

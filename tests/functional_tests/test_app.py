@@ -21,7 +21,11 @@ async def test_select_1(
 
         await pilot.pause()
         assert app.query_text == q
+        await pilot.pause()
+        await app.workers.wait_for_complete()
         assert app.cursors
+        await pilot.pause()
+        await app.workers.wait_for_complete()
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.source_row_count == table.row_count == 1
@@ -55,8 +59,12 @@ async def test_queries_do_not_crash_all_adapters(
 
         assert app.query_text == query
         if query:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
             assert app.cursors
         if query and query != "select 1 where false":
+            await pilot.pause()
+            await app.workers.wait_for_complete()
             table = app.results_viewer.get_visible_table()
             assert table is not None
             assert table.row_count >= 1
@@ -96,6 +104,8 @@ async def test_queries_do_not_crash(
         await pilot.pause()
 
         assert app.query_text == query
+        await pilot.pause()
+        await app.workers.wait_for_complete()
         table = app.results_viewer.get_visible_table()
         assert table is not None
         assert table.row_count >= 1
