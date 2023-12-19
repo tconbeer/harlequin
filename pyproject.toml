@@ -114,5 +114,5 @@ strict_equality = true
 markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
     "use_cache: override the autouse fixture the disables the buffer cache",
-    "flaky: likely to fail for no reason."
+    "flaky_windows: likely to fail for no reason on windows."
 ]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Union
 
 from textual.app import ComposeResult
@@ -39,12 +41,6 @@ class RunQueryBar(Horizontal):
         )
         yield Button("Run Query", id="run_query")
 
-    def set_not_responsive(self) -> None:
-        self.add_class("non-responsive")
-
-    def set_responsive(self) -> None:
-        self.remove_class("non-responsive")
-
     def on_mount(self) -> None:
         self.checkbox = self.query_one(Checkbox)
         self.input = self.query_one(Input)
@@ -65,3 +61,18 @@ class RunQueryBar(Horizontal):
                 self.checkbox.value = True
             else:
                 self.checkbox.value = False
+
+    @property
+    def limit_value(self) -> int | None:
+        if not self.checkbox.value or not self.input.is_valid:
+            return None
+        try:
+            return int(self.input.value)
+        except ValueError:
+            return None
+
+    def set_not_responsive(self) -> None:
+        self.add_class("non-responsive")
+
+    def set_responsive(self) -> None:
+        self.remove_class("non-responsive")

@@ -5,7 +5,7 @@ import time
 from functools import partial
 from typing import Dict, List, Optional, Type, Union
 
-from textual import work
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -17,7 +17,7 @@ from textual.reactive import reactive
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
-from textual.widgets import Button, Checkbox, Footer, Input
+from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable.backend import AutoBackendType
 
@@ -46,11 +46,22 @@ from harlequin.exception import (
 )
 
 
-class QueriesExecuted(Message):
-    def __init__(self, query_text: str, cursors: Dict[str, HarlequinCursor]) -> None:
-        self.query_text = query_text
-        self.cursors = cursors
+class QuerySubmitted(Message):
+    def __init__(self, query_text: str, limit: int | None) -> None:
         super().__init__()
+        self.query_text = query_text.strip()
+        self.limit = limit
+        self.submitted_at = time.monotonic()
+
+
+class QueriesExecuted(Message):
+    def __init__(
+        self, query_count: int, cursors: Dict[str, HarlequinCursor], submitted_at: float
+    ) -> None:
+        super().__init__()
+        self.query_count = query_count
+        self.cursors = cursors
+        self.submitted_at = submitted_at
 
 
 class ResultsFetched(Message):
@@ -59,13 +70,13 @@ class ResultsFetched(Message):
         cursors: Dict[str, HarlequinCursor],
         data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]],
         errors: List[BaseException],
-        elapsed: Union[float, None],
+        elapsed: float,
     ) -> None:
+        super().__init__()
         self.cursors = cursors
         self.data = data
         self.errors = errors
         self.elapsed = elapsed
-        super().__init__()
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -87,9 +98,6 @@ class Harlequin(App, inherit_bindings=False):
         Binding("ctrl+e", "export", "Export Data", show=False),
     ]
 
-    query_text: reactive[str] = reactive(str)
-    selection_text: reactive[str] = reactive(str)
-    cursors: reactive[Dict[str, HarlequinCursor]] = reactive(dict)
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
 
@@ -115,8 +123,6 @@ class Harlequin(App, inherit_bindings=False):
                 )
             )
             self.exit(return_code=2)
-        else:
-            self.limit = min(500, self.max_results) if self.max_results > 0 else 500
         self.query_timer: Union[float, None] = None
         try:
             self.connection = self.adapter.connect()
@@ -181,16 +187,27 @@ class Harlequin(App, inherit_bindings=False):
 
         self.update_schema_data()
 
-    def on_button_pressed(self, message: Button.Pressed) -> None:
+    @on(Button.Pressed, "#run_query")
+    def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
         message.stop()
-        if message.control.id == "run_query":
-            self.query_text = self._get_query_text()
+        self.post_message(
+            QuerySubmitted(
+                query_text=self._get_query_text(),
+                limit=self.run_query_bar.limit_value,
+            )
+        )
 
-    def on_code_editor_submitted(self, message: CodeEditor.Submitted) -> None:
+    @on(CodeEditor.Submitted)
+    def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
         message.stop()
-        self.query_text = self._get_query_text()
+        self.post_message(
+            QuerySubmitted(
+                query_text=self._get_query_text(), limit=self.run_query_bar.limit_value
+            )
+        )
 
-    def on_data_catalog_node_submitted(
+    @on(DataCatalog.NodeSubmitted)
+    def insert_node_into_editor(
         self, message: DataCatalog.NodeSubmitted[CatalogItem]
     ) -> None:
         message.stop()
@@ -198,7 +215,8 @@ class Harlequin(App, inherit_bindings=False):
             self.editor.insert_text_at_selection(text=message.node.data.query_name)
             self.editor.focus()
 
-    def on_editor_collection_editor_switched(
+    @on(EditorCollection.EditorSwitched)
+    def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched
     ) -> None:
         if message.active_editor is not None:
@@ -207,56 +225,47 @@ class Harlequin(App, inherit_bindings=False):
             self.editor = self.editor_collection.current_editor
 
     def on_text_area_selection_changed(self) -> None:
-        self.selection_text = self._validate_selection()
+        if self._validate_selection():
+            self.run_query_bar.button.label = "Run Selection"
+        else:
+            self.run_query_bar.button.label = "Run Query"
 
-    def on_checkbox_changed(self, message: Checkbox.Changed) -> None:
-        """
-        invalidate the last query so we re-run the query with the limit
-        """
-        if message.checkbox.id == "limit_checkbox":
-            message.stop()
-            self.query_text = ""
+    @on(Input.Changed, "#limit_input")
+    def update_limit_tooltip(self, message: Input.Changed) -> None:
+        message.stop()
+        if (
+            message.input.value
+            and message.validation_result
+            and message.validation_result.is_valid
+        ):
+            message.input.tooltip = None
+        elif message.validation_result:
+            failures = "\n".join(message.validation_result.failure_descriptions)
+            message.input.tooltip = (
+                f"[{self.app_colors.error}]Validation Error:[/]\n{failures}"
+            )
 
-    def on_input_changed(self, message: Input.Changed) -> None:
-        """
-        invalidate the last query so we re-run the query with the limit
-        """
-        if message.input.id == "limit_input":
-            message.stop()
-            if (
-                message.input.value
-                and message.validation_result
-                and message.validation_result.is_valid
-            ):
-                self.query_text = ""
-                self.limit = int(message.input.value)
-                message.input.tooltip = None
-            elif message.validation_result:
-                failures = "\n".join(message.validation_result.failure_descriptions)
-                message.input.tooltip = (
-                    f"[{self.app_colors.error}]Validation Error:[/]\n{failures}"
+    @on(Input.Submitted, "#limit_input")
+    def submit_query_if_limit_valid(self, message: Input.Submitted) -> None:
+        message.stop()
+        if (
+            message.input.value
+            and message.validation_result
+            and message.validation_result.is_valid
+        ):
+            self.post_message(
+                QuerySubmitted(
+                    query_text=self._get_query_text(),
+                    limit=self.run_query_bar.limit_value,
                 )
+            )
 
-    def on_input_submitted(self, message: Input.Submitted) -> None:
-        if message.input.id == "limit_input":
-            message.stop()
-            if (
-                message.input.value
-                and message.validation_result
-                and message.validation_result.is_valid
-            ):
-                self.query_text = self._get_query_text()
+    @on(Worker.StateChanged)
+    def handle_worker_error(self, message: Worker.StateChanged) -> None:
+        if message.state == WorkerState.ERROR:
+            self._handle_worker_error(message)
 
-    def on_worker_state_changed(self, message: Worker.StateChanged) -> None:
-        if message.state == WorkerState.CANCELLED:
-            self._on_worker_cancelled(message)
-        elif message.state == WorkerState.ERROR:
-            self._on_worker_error(message)
-
-    def _on_worker_cancelled(self, message: Worker.StateChanged) -> None:
-        pass
-
-    def _on_worker_error(self, message: Worker.StateChanged) -> None:
+    def _handle_worker_error(self, message: Worker.StateChanged) -> None:
         if (
             message.worker.name == "update_schema_data"
             and message.worker.error is not None
@@ -267,10 +276,9 @@ class Harlequin(App, inherit_bindings=False):
                 error=message.worker.error,
             )
         elif (
-            message.worker.name == "_build_cursors" and message.worker.error is not None
+            message.worker.name == "_execute_query" and message.worker.error is not None
         ):
             self.run_query_bar.set_responsive()
-            self.results_viewer.set_responsive()
             self.results_viewer.show_table()
             header = getattr(message.worker.error, "title", "Query Error")
             self._push_error_modal(
@@ -279,52 +287,35 @@ class Harlequin(App, inherit_bindings=False):
                 error=message.worker.error,
             )
 
-    def on_new_catalog(self, message: NewCatalog) -> None:
+    @on(NewCatalog)
+    def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.data_catalog.update_tree(message.catalog)
         self.update_completers(message.catalog)
 
-    def on_queries_executed(self, message: QueriesExecuted) -> None:
-        self.results_viewer.clear_all_tables()
-        cursors = message.cursors
-        number_of_queries = len(self._split_query_text(message.query_text))
-        elapsed = (
-            time.monotonic() - self.query_timer if self.query_timer is not None else 0.0
-        )
-        if cursors:  # select query
-            self.cursors = cursors
-            if len(cursors) < number_of_queries:
-                # mixed select and DDL statements
-                n = number_of_queries - len(cursors)
-                self.notify(
-                    f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
-                    f"executed successfully in {elapsed:.2f} seconds."
-                )
-                self.update_schema_data()
-        elif bool(message.query_text.strip()):  # DDL/DML queries only
+    @on(QueriesExecuted)
+    def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
+        if message.cursors:  # select query
+            self._fetch_data(message.cursors, message.submitted_at)
+        else:
             self.run_query_bar.set_responsive()
-            self.results_viewer.set_responsive()
-            self.results_viewer.show_table()
+            self.results_viewer.show_table(did_run=message.query_count > 0)
+        if (n := message.query_count - len(message.cursors)) > 0:
+            # at least one DDL statement
+            elapsed = time.monotonic() - message.submitted_at
             self.notify(
-                f"{number_of_queries} DDL/DML "
-                f"{'query' if number_of_queries == 1 else 'queries'} "
+                f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
                 f"executed successfully in {elapsed:.2f} seconds."
             )
-            self.query_timer = None
             self.update_schema_data()
-        else:  # blank query
-            self.run_query_bar.set_responsive()
-            self.results_viewer.set_responsive(did_run=False)
-            self.results_viewer.show_table()
 
-    async def on_results_fetched(self, message: ResultsFetched) -> None:
+    @on(ResultsFetched)
+    async def load_tables(self, message: ResultsFetched) -> None:
         for id_, (cols, data) in message.data.items():
             await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
                 data=data,  # type: ignore
             )
-        self.run_query_bar.set_responsive()
-        self.results_viewer.show_table()
         if message.errors:
             header = getattr(
                 message.errors[0],
@@ -336,16 +327,17 @@ class Harlequin(App, inherit_bindings=False):
                 header=header,
                 error=message.errors[0],
             )
-        elif message.elapsed is not None:
+        else:
             self.notify(
                 f"{len(message.cursors)} "
                 f"{'query' if len(message.cursors) == 1 else 'queries'} "
                 f"executed successfully in {message.elapsed:.2f} seconds."
             )
+        self.run_query_bar.set_responsive()
         if len(message.errors) == len(message.cursors):
-            self.results_viewer.set_responsive(did_run=False)
+            self.results_viewer.show_table(did_run=False)
         else:
-            self.results_viewer.set_responsive(did_run=True)
+            self.results_viewer.show_table(did_run=True)
             self.results_viewer.focus()
 
     def watch_full_screen(self, full_screen: bool) -> None:
@@ -373,27 +365,13 @@ class Harlequin(App, inherit_bindings=False):
                 w.disabled = False
             self.data_catalog.disabled = self.sidebar_hidden
 
-    async def watch_query_text(self, query_text: str) -> None:
-        if query_text:
-            self.query_timer = time.monotonic()
+    @on(QuerySubmitted)
+    def execute_query(self, message: QuerySubmitted) -> None:
+        if message.query_text:
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
-            self._build_cursors(query_text)
-
-    async def watch_cursors(self, cursors: Dict[str, HarlequinCursor]) -> None:
-        """
-        Only runs for select statements, except when first mounted.
-        """
-        # invalidate results so watch_data runs even if the results are the same
-        self.results_viewer.clear_all_tables()
-        self._set_result_viewer_data(cursors)
-
-    def watch_selection_text(self, selection_text: str) -> None:
-        if selection_text:
-            self.run_query_bar.button.label = "Run Selection"
-        else:
-            self.run_query_bar.button.label = "Run Query"
+            self._execute_query(message)
 
     def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
         if sidebar_hidden:
@@ -450,6 +428,7 @@ class Harlequin(App, inherit_bindings=False):
         self.results_viewer.focus()
 
     async def action_quit(self) -> None:
+        self.log("quitting nicely.")
         buffers = []
         for i, editor in enumerate(self.editor_collection.all_editors):
             if editor == self.editor_collection.current_editor:
@@ -483,18 +462,25 @@ class Harlequin(App, inherit_bindings=False):
         exclusive=True,
         exit_on_error=False,
         group="query_runners",
-        description="Building cursor.",
+        description="Executing queries.",
     )
-    def _build_cursors(self, query_text: str) -> None:
+    def _execute_query(self, message: QuerySubmitted) -> None:
         cursors: Dict[str, HarlequinCursor] = {}
-        for q in self._split_query_text(query_text):
+        queries = self._split_query_text(message.query_text)
+        for q in queries:
             cur = self.connection.execute(q)
             if cur is not None:
-                if self.run_query_bar.checkbox.value:
-                    cur = cur.set_limit(self.limit)
+                if message.limit is not None:
+                    cur = cur.set_limit(message.limit)
                 table_id = f"t{hash(cur)}"
                 cursors[table_id] = cur
-        self.post_message(QueriesExecuted(query_text=query_text, cursors=cursors))
+        self.post_message(
+            QueriesExecuted(
+                query_count=len(queries),
+                cursors=cursors,
+                submitted_at=message.submitted_at,
+            )
+        )
 
     def _get_query_text(self) -> str:
         return (
@@ -523,7 +509,9 @@ class Harlequin(App, inherit_bindings=False):
         group="query_runners",
         description="fetching data from adapter.",
     )
-    def _set_result_viewer_data(self, cursors: Dict[str, HarlequinCursor]) -> None:
+    def _fetch_data(
+        self, cursors: Dict[str, HarlequinCursor], submitted_at: float
+    ) -> None:
         errors: List[BaseException] = []
         data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]] = {}
         for id_, cur in cursors.items():
@@ -533,11 +521,7 @@ class Harlequin(App, inherit_bindings=False):
                 errors.append(e)
             else:
                 data[id_] = (cur.columns(), cur_data)
-        elapsed = (
-            time.monotonic() - self.query_timer
-            if self.query_timer is not None
-            else None
-        )
+        elapsed = time.monotonic() - submitted_at
         self.post_message(
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
         )
