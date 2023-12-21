@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.0] - 2023-12-21
+
 ### Features
 
 -   Select a range of cells in the Results Viewer by clicking and dragging or by holding <kbd>shift</kbd> while moving the cursor with the keyboard.
@@ -440,7 +442,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.7.3...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.8.0...HEAD
+
+[1.8.0]: https://github.com/tconbeer/harlequin/compare/1.7.3...1.8.0
 
 [1.7.3]: https://github.com/tconbeer/harlequin/compare/1.7.2...1.7.3
 
