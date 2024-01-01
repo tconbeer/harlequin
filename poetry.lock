@@ -928,13 +928,13 @@ psycopg2-binary = ">=2.9.9,<3.0.0"
 
 [[package]]
 name = "harlequin-trino"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Harlequin adapter for Trino."
 optional = true
 python-versions = ">=3.8.1,<4.0"
 files = [
-    {file = "harlequin_trino-0.1.0-py3-none-any.whl", hash = "sha256:2743e97e379ddca79227b31239da1dfdbbeab21fb6721afc3f7fcb5421b7b6f1"},
-    {file = "harlequin_trino-0.1.0.tar.gz", hash = "sha256:0813bcd8982c6d205d80f261f09420d00aafbda2abf9476e5fecf09c230ba9bd"},
+    {file = "harlequin_trino-0.1.1-py3-none-any.whl", hash = "sha256:fb1861621ed1c02d2519f863e7c104a1396333260ae01b5cc41955bae2a12901"},
+    {file = "harlequin_trino-0.1.1.tar.gz", hash = "sha256:cf7bee7a441629c948925cdb79a0a1493bd633ccea9aef00b4e5d12d30271fa5"},
 ]
 
 [package.dependencies]
