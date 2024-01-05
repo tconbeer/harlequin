@@ -1965,13 +1965,13 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rich-click"
-version = "1.7.2"
+version = "1.7.3"
 description = "Format click help output nicely with rich"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "rich-click-1.7.2.tar.gz", hash = "sha256:22f93439a3d65f4a04e07cd584f4d01d132d96899766af92ed287618156abbe2"},
-    {file = "rich_click-1.7.2-py3-none-any.whl", hash = "sha256:a42bcdcb8696c4ca7a3b1a39e1aba3d2cb64ad00690b4c022fdcb2cbccebc3fc"},
+    {file = "rich-click-1.7.3.tar.gz", hash = "sha256:bced1594c497dc007ab49508ff198bb437c576d01291c13a61658999066481f4"},
+    {file = "rich_click-1.7.3-py3-none-any.whl", hash = "sha256:bc4163d4e2a3361e21c4d72d300eca6eb8896dfc978667923cb1d4937b8769a3"},
 ]
 
 [package.dependencies]
@@ -2126,17 +2126,18 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.5.0"
+version = "0.6.1"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_fastdatatable-0.5.0-py3-none-any.whl", hash = "sha256:1541e2fbc2f4a50f9e29b3a0b8b0487df850c898a03f50c8b0f97e25af4555f3"},
-    {file = "textual_fastdatatable-0.5.0.tar.gz", hash = "sha256:b80ec43b53081204f21889200b0306c470d2d3210d91676cf0859f152a9df19f"},
+    {file = "textual_fastdatatable-0.6.1-py3-none-any.whl", hash = "sha256:7c8fa8451d4c2af99197053acf34f5e8e5ec278313da00b1a5cf301b4bbc44c2"},
+    {file = "textual_fastdatatable-0.6.1.tar.gz", hash = "sha256:46e20e16c5937e9aa8cddce93c2a69324b9bb48e226e0cfac167e76a437837fe"},
 ]
 
 [package.dependencies]
 pyarrow = ">=7.0.0"
+pytz = {version = ">=2023,<2024", markers = "python_full_version < \"3.9.0\""}
 textual = ">=0.41.0"
 
 [[package]]
@@ -2654,4 +2655,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "a04c7bdc396fb865775ef11e6a92e6762336b52369eedf1ed74544bdb3ee6c54"
+content-hash = "90ebdf867342e39ab7d4b3ed4c48f81e06f63676c4b0b9f87d5d2bcae6eb9517"
