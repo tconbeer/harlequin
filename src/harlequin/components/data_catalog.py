@@ -93,6 +93,7 @@ class DataCatalog(Tree[CatalogItem]):
         parent: TreeNode[CatalogItem],
         expanded_nodes: Set[str],
     ) -> None:
+        items.sort(key=lambda x: x.label)
         for item in items:
             if item.children:
                 new_node = parent.add(
