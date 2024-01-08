@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Improves keyboard navigation of the Results Viewer by adding key bindings, including <kbd>ctrl+right/left/up/down/home/end</kbd>, <kbd>tab</kbd>, and <kbd>ctrl+a</kbd>.
+-   The Trino adapter is now installable as an extra; use `pip install harlequin[trino]`.
+-   Harlequin will automatically download a missing timezone database on Windows. Prevent this behavior with `--no-download-tzdata`.
+
+### Bug Fixes
+
+-   Fixes a crash when selecting data from a timestamptz field ([#382](https://github.com/tconbeer/harlequin/issues/382)) (or another field with an invalid Arrow data type).
+
 ## [1.8.0] - 2023-12-21
 
 ### Features

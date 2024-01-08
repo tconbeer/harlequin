@@ -113,6 +113,7 @@ async def test_queries_do_not_crash_all_adapters(
         "SELECT [1, 2, 3]",  # list
         "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
         "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
+        "set timezone = 'America/New_York'; select '2024-01-01'::timestamptz;",
     ],
 )
 async def test_queries_do_not_crash(
@@ -122,6 +123,7 @@ async def test_queries_do_not_crash(
         await app.workers.wait_for_complete()
         await pilot.pause()
         app.editor.text = query
+        await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
         await app.workers.wait_for_complete()
         await pilot.pause()

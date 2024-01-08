@@ -70,8 +70,14 @@
 #### Moving the Cursor
 
 - up,down,left,right: Move the cursor one cell.
-- home: Move the cursor to the top of the current column.
-- end: Move the cursor to the bottom of the current column.
+- tab: Move the cursor to the next cell in the table.
+- shift+tab: Move the cursor to the previous cell in the table.
+- home, ctrl+up: Move the cursor to the top of the current column.
+- end, ctrl+down: Move the cursor to the bottom of the current column.
+- ctrl+left: Move the cursor to the start of the current row.
+- ctrl+right: Move the cursor to the end of the current row.
+- ctrl+home: Move the cursor to the start of the table.
+- ctrl+end: Move the cursor to the end of the table.
 - PgUp: Move the cursor up one screen.
 - PgDn: Move the cursor down one screen.
 - shift+[any]: Select range while moving the cursor.

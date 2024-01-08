@@ -9,11 +9,18 @@ import duckdb
 import pytest
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.windows_timezone import check_and_install_tzdata
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points
 else:
     from importlib.metadata import entry_points
+
+
+@pytest.fixture(scope="session", autouse=True)
+def install_tzdata() -> None:
+    if sys.platform == "win32":
+        check_and_install_tzdata()
 
 
 @pytest.fixture

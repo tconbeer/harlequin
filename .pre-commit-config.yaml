@@ -24,6 +24,7 @@ repos:
           - rich-click>=1.7.1
           - questionary
           - tomlkit
+          - pandas-stubs
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"

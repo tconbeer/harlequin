@@ -11,8 +11,13 @@ from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import GREEN, PINK, PURPLE, YELLOW
 from harlequin.config import get_config_for_profile
 from harlequin.config_wizard import wizard
-from harlequin.exception import HarlequinConfigError, pretty_print_error
+from harlequin.exception import (
+    HarlequinConfigError,
+    HarlequinTzDataError,
+    pretty_print_error,
+)
 from harlequin.plugins import load_plugins
+from harlequin.windows_timezone import check_and_install_tzdata
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points, version
@@ -67,6 +72,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--theme",
                 "--limit",
                 "--config",
+                "--no-download-tzdata",
                 "--version",
                 "--help",
             ],
@@ -190,6 +196,14 @@ def build_cli() -> click.Command:
         expose_value=True,
         is_eager=True,
     )
+    @click.option(
+        "--no-download-tzdata",
+        help=(
+            "(Windows Only) Prevent Harlequin from downloading an IANA timezone "
+            "database, even if one is missing. May cause undesired behavior."
+        ),
+        is_flag=True,
+    )
     @click.pass_context
     def inner_cli(
         ctx: click.Context,
@@ -225,6 +239,14 @@ def build_cli() -> click.Command:
 
         # merge the config and the cli options
         config.update(kwargs)
+
+        # detect and install (if necessary) a tzdatabase on Windows
+        if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
+            try:
+                check_and_install_tzdata()
+            except HarlequinTzDataError as e:
+                pretty_print_error(e)
+                ctx.exit(2)
 
         # load and instantiate the adapter
         adapter = config.pop("adapter", DEFAULT_ADAPTER)
