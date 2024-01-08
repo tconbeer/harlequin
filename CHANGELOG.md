@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.0] - 2024-01-08
+
 ### Features
 
 -   Improves keyboard navigation of the Results Viewer by adding key bindings, including <kbd>ctrl+right/left/up/down/home/end</kbd>, <kbd>tab</kbd>, and <kbd>ctrl+a</kbd>.
@@ -452,7 +454,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.8.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.0...HEAD
+
+[1.9.0]: https://github.com/tconbeer/harlequin/compare/1.8.0...1.9.0
 
 [1.8.0]: https://github.com/tconbeer/harlequin/compare/1.7.3...1.8.0
 
