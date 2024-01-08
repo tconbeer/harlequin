@@ -16,10 +16,12 @@ if sys.version_info < (3, 10):
 else:
     from importlib.metadata import entry_points
 
+
 @pytest.fixture(scope="session", autouse=True)
 def install_tzdata() -> None:
     if sys.platform == "win32":
         check_and_install_tzdata()
+
 
 @pytest.fixture
 def data_dir() -> Path:
