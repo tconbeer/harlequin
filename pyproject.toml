@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "harlequin"
-version = "1.8.0"
+version = "1.9.0"
 description = "The SQL IDE for Your Terminal."
 authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
 license = "MIT"
