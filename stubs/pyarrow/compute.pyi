@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from . import MemoryPool, Scalar, _PandasConvertible
-from .types import DataType
+from datetime import datetime
+from typing import Any, Callable, Literal
+
+from . import DataType, MemoryPool, Scalar, _PandasConvertible
 
 class Expression: ...
 class ScalarAggregateOptions: ...
@@ -29,4 +31,25 @@ def max(  # noqa: A001
 ) -> Scalar: ...
 def utf8_length(
     strings: _PandasConvertible, /, *, memory_pool: MemoryPool | None = None
+) -> _PandasConvertible: ...
+def register_scalar_function(
+    func: Callable,
+    function_name: str,
+    function_doc: dict[Literal["summary", "description"], str],
+    in_types: dict[str, DataType],
+    out_type: DataType,
+    func_registry: Any | None = None,
+) -> None: ...
+def call_function(
+    function_name: str, target: list[_PandasConvertible]
+) -> _PandasConvertible: ...
+def assume_timezone(
+    timestamps: _PandasConvertible | Scalar | datetime,
+    /,
+    timezone: str,
+    *,
+    ambiguous: Literal["raise", "earliest", "latest"] = "raise",
+    nonexistent: Literal["raise", "earliest", "latest"] = "raise",
+    options: Any | None = None,
+    memory_pool: MemoryPool | None = None,
 ) -> _PandasConvertible: ...

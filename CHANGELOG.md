@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 -   Improves keyboard navigation of the Results Viewer by adding key bindings, including <kbd>ctrl+right/left/up/down/home/end</kbd>, <kbd>tab</kbd>, and <kbd>ctrl+a</kbd>.
 -   The Trino adapter is now installable as an extra; use `pip install harlequin[trino]`.
+-   Harlequin will automatically download a missing timezone database on Windows. Prevent this behavior with `--no-download-tzdata`.
 
 ### Bug Fixes
 
