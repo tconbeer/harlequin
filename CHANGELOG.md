@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.1] - 2024-01-09
+
 ### Bug Fixes
 
 -   Improves compatibility for adapter return types to accept a sequence of any iterable ([tconbeer/textual-fastdatatable#68](https://github.com/tconbeer/textual-fastdatatable/pull/68)).
@@ -458,7 +460,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.1...HEAD
+
+[1.9.1]: https://github.com/tconbeer/harlequin/compare/1.9.0...1.9.1
 
 [1.9.0]: https://github.com/tconbeer/harlequin/compare/1.8.0...1.9.0
 
