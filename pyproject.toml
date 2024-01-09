@@ -22,7 +22,7 @@ python = ">=3.8.1,<4.0.0"
 
 # textual and component libraries
 textual = "==0.46.0"
-textual-fastdatatable = "==0.6.2"
+textual-fastdatatable = "==0.6.3"
 textual-textarea = "==0.9.5"
 
 # click
@@ -55,7 +55,7 @@ black = "^23.3.0"
 ruff = ">=0.0.285"
 mypy = "^1.2.0"
 types-pygments = "^2.16.0.0"
-pandas-stubs = "^1"
+pandas-stubs = "^2"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"

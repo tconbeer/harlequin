@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Improves compatibility for adapter return types to accept a sequence of any iterable ([tconbeer/textual-fastdatatable#68](https://github.com/tconbeer/textual-fastdatatable/pull/68)).
+
 ## [1.9.0] - 2024-01-08
 
 ### Features
