@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.9.2] - 2024-01-10
 
+### Features
+
+-   The ODBC adapter is now installable as an extra; use `pip install harlequin[odbc]`.
+
 ## [1.9.1] - 2024-01-09
 
 ### Bug Fixes
