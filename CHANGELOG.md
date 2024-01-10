@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.2] - 2024-01-10
+
 ## [1.9.1] - 2024-01-09
 
 ### Bug Fixes
@@ -460,7 +462,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.1...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.2...HEAD
+
+[1.9.2]: https://github.com/tconbeer/harlequin/compare/1.9.1...1.9.2
 
 [1.9.1]: https://github.com/tconbeer/harlequin/compare/1.9.0...1.9.1
 
