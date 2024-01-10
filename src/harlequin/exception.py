@@ -1,3 +1,6 @@
+from rich.panel import Panel
+
+
 class HarlequinExit(Exception):
     pass
 
@@ -39,13 +42,14 @@ class HarlequinTzDataError(HarlequinError):
 
 def pretty_print_error(error: HarlequinError) -> None:
     from rich import print
-    from rich.panel import Panel
 
-    print(
-        Panel.fit(
-            str(error),
-            title=error.title if error.title else ("Harlequin encountered an error."),
-            title_align="left",
-            border_style="red",
-        )
+    print(pretty_error_message(error))
+
+
+def pretty_error_message(error: HarlequinError) -> Panel:
+    return Panel.fit(
+        str(error),
+        title=error.title if error.title else ("Harlequin encountered an error."),
+        title_align="left",
+        border_style="red",
     )

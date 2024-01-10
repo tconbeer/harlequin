@@ -77,6 +77,10 @@ Toast.-error {
     border-left: wide $error;
 }
 
+Toast .toast--title {
+    color: $primary;
+}
+
 /* DATA CATALOG */
 DataCatalog {
     height: 1fr;

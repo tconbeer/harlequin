@@ -901,7 +901,7 @@ harlequin = ">=1.7,<2.0"
 name = "harlequin-mysql"
 version = "0.1.1"
 description = "A Harlequin adapter for MySQL."
-optional = true
+optional = false
 python-versions = ">=3.8.1,<4.0"
 files = [
     {file = "harlequin_mysql-0.1.1-py3-none-any.whl", hash = "sha256:e5d62caebee8e53f5222af8482e8cab355a7ca91c9fb8361b7e5f289776391ca"},
@@ -1384,7 +1384,7 @@ files = [
 name = "mysql-connector-python"
 version = "8.2.0"
 description = "MySQL driver written in Python"
-optional = true
+optional = false
 python-versions = ">=3.8"
 files = [
     {file = "mysql-connector-python-8.2.0.tar.gz", hash = "sha256:884eba07b4c97edf552a03f5fdca145e0ab4afc3d8677cca20276effca1bea54"},
@@ -1595,7 +1595,7 @@ testing = ["google-api-core[grpc] (>=1.31.5)"]
 name = "protobuf"
 version = "4.21.12"
 description = ""
-optional = true
+optional = false
 python-versions = ">=3.7"
 files = [
     {file = "protobuf-4.21.12-cp310-abi3-win32.whl", hash = "sha256:b135410244ebe777db80298297a97fbb4c862c881b4403b71bac9d4107d61fd1"},
@@ -2738,4 +2738,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "7b58066d2d2785345a0064bdd3d9e48caabf4c85aeabc73599b7932e1ac9d40c"
+content-hash = "9e417b2fb3cf8280655ca779a66747064600ee831eb38b7184a9bf988e80ed0f"

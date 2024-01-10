@@ -23,6 +23,7 @@ from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
 
+from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.cache import BufferState, Cache, write_cache
@@ -42,10 +43,18 @@ from harlequin.components import (
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
+    HarlequinError,
     HarlequinQueryError,
     HarlequinThemeError,
+    pretty_error_message,
     pretty_print_error,
 )
+
+
+class DatabaseConnected(Message):
+    def __init__(self, connection: HarlequinConnection) -> None:
+        super().__init__()
+        self.connection = connection
 
 
 class QuerySubmitted(Message):
@@ -126,14 +135,7 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit(return_code=2)
         self.query_timer: Union[float, None] = None
-        try:
-            self.connection = self.adapter.connect()
-        except HarlequinConnectionError as e:
-            pretty_print_error(e)
-            self.exit(return_code=2)
-        else:
-            if self.connection.init_message:
-                self.notify(self.connection.init_message)
+        self.connection: HarlequinConnection | None = None
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
@@ -150,9 +152,12 @@ class Harlequin(App, inherit_bindings=False):
             yield DataCatalog(type_color=self.app_colors.gray)
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
-                yield RunQueryBar(max_results=self.max_results)
+                yield RunQueryBar(
+                    max_results=self.max_results, classes="non-responsive"
+                )
                 yield ResultsViewer(
-                    max_results=self.max_results, type_color=self.app_colors.gray
+                    max_results=self.max_results,
+                    type_color=self.app_colors.gray,
                 )
         yield Footer()
 
@@ -186,8 +191,9 @@ class Harlequin(App, inherit_bindings=False):
 
         self.editor.focus()
         self.run_query_bar.checkbox.value = False
+        self.data_catalog.loading = True
 
-        self.update_schema_data()
+        self._connect()
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -207,6 +213,17 @@ class Harlequin(App, inherit_bindings=False):
                 query_text=self._get_query_text(), limit=self.run_query_bar.limit_value
             )
         )
+
+    @on(DatabaseConnected)
+    def initialize_app(self, message: DatabaseConnected) -> None:
+        self.connection = message.connection
+        self.run_query_bar.set_responsive()
+        self.results_viewer.show_table(did_run=False)
+        if message.connection.init_message:
+            self.notify(message.connection.init_message, title="Database Connected.")
+        else:
+            self.notify("Database Connected.")
+        self.update_schema_data()
 
     @on(DataCatalog.NodeSubmitted)
     def insert_node_into_editor(
@@ -277,11 +294,11 @@ class Harlequin(App, inherit_bindings=False):
                 self.notify("Selected data copied to clipboard.")
 
     @on(Worker.StateChanged)
-    def handle_worker_error(self, message: Worker.StateChanged) -> None:
+    async def handle_worker_error(self, message: Worker.StateChanged) -> None:
         if message.state == WorkerState.ERROR:
-            self._handle_worker_error(message)
+            await self._handle_worker_error(message)
 
-    def _handle_worker_error(self, message: Worker.StateChanged) -> None:
+    async def _handle_worker_error(self, message: Worker.StateChanged) -> None:
         if (
             message.worker.name == "update_schema_data"
             and message.worker.error is not None
@@ -296,16 +313,33 @@ class Harlequin(App, inherit_bindings=False):
         ):
             self.run_query_bar.set_responsive()
             self.results_viewer.show_table()
-            header = getattr(message.worker.error, "title", "Query Error")
+            header = getattr(
+                message.worker.error, "title", message.worker.error.__class__.__name__
+            )
             self._push_error_modal(
                 title="Query Error",
                 header=header,
                 error=message.worker.error,
             )
+        elif message.worker.name == "_connect" and message.worker.error is not None:
+            title = getattr(
+                message.worker.error,
+                "title",
+                "Harlequin could not connect to your database.",
+            )
+            error = (
+                message.worker.error
+                if isinstance(message.worker.error, HarlequinError)
+                else HarlequinConnectionError(
+                    msg=str(message.worker.error), title=title
+                )
+            )
+            self.exit(return_code=2, message=pretty_error_message(error))
 
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.data_catalog.update_tree(message.catalog)
+        self.data_catalog.loading = False
         self.update_completers(message.catalog)
 
     @on(QueriesExecuted)
@@ -383,6 +417,8 @@ class Harlequin(App, inherit_bindings=False):
 
     @on(QuerySubmitted)
     def execute_query(self, message: QuerySubmitted) -> None:
+        if self.connection is None:
+            return
         if message.query_text:
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
@@ -476,10 +512,23 @@ class Harlequin(App, inherit_bindings=False):
         thread=True,
         exclusive=True,
         exit_on_error=False,
+        group="connect",
+        description="Connecting to DB",
+    )
+    def _connect(self) -> None:
+        connection = self.adapter.connect()
+        self.post_message(DatabaseConnected(connection=connection))
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
         group="query_runners",
         description="Executing queries.",
     )
     def _execute_query(self, message: QuerySubmitted) -> None:
+        if self.connection is None:
+            return
         cursors: Dict[str, HarlequinCursor] = {}
         queries = self._split_query_text(message.query_text)
         for q in queries:
@@ -514,7 +563,7 @@ class Harlequin(App, inherit_bindings=False):
                 title=title,
                 header=header,
                 error=error,
-            )
+            ),
         )
 
     @work(
@@ -543,6 +592,8 @@ class Harlequin(App, inherit_bindings=False):
 
     @work(thread=True, exclusive=True, exit_on_error=True, group="completer_builders")
     def update_completers(self, catalog: Catalog) -> None:
+        if self.connection is None:
+            return
         if (
             self.editor_collection.word_completer is not None
             and self.editor_collection.member_completer is not None
@@ -561,6 +612,8 @@ class Harlequin(App, inherit_bindings=False):
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:
+        if self.connection is None:
+            return
         catalog = self.connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
 
@@ -570,6 +623,8 @@ class Harlequin(App, inherit_bindings=False):
         return the empty string.
         """
         selection = self.editor.selected_text
+        if self.connection is None:
+            return selection
         if selection:
             try:
                 return self.connection.validate_sql(selection)
