@@ -38,7 +38,7 @@ jobs:
       - name: Run tests
         run: poetry run pytest -m "not online" -m "not flaky_windows" --snapshot-warn-unused
       - name: Store snapshot report on failure
-        uses: actions/upload-artifact@v3  
+        uses: actions/upload-artifact@v4  
         if: failure()
         with:
           name: Snapshot Report Windows 3.10
@@ -98,7 +98,7 @@ jobs:
           source .venv/bin/activate
           pytest -m "not online"
       - name: Store snapshot report on failure
-        uses: actions/upload-artifact@v3  
+        uses: actions/upload-artifact@v4  
         if: failure()
         with:
           name: Snapshot Report ${{ matrix.os }} ${{ matrix.py }}
