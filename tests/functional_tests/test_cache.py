@@ -4,7 +4,7 @@ from typing import List
 
 import pytest
 from harlequin import Harlequin
-from harlequin.cache import (
+from harlequin.editor_cache import (
     BufferState,
     Cache,
     Cursor,
@@ -42,7 +42,7 @@ def cache(buffer_states: List[BufferState]) -> Cache:
 
 @pytest.fixture(autouse=True)
 def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setattr("harlequin.cache.user_cache_dir", lambda **_: tmp_path)
+    monkeypatch.setattr("harlequin.editor_cache.user_cache_dir", lambda **_: tmp_path)
     return tmp_path
 
 

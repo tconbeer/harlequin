@@ -26,7 +26,6 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
-from harlequin.cache import BufferState, Cache, write_cache
 from harlequin.catalog import Catalog, CatalogItem, NewCatalog
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
@@ -40,6 +39,7 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.editor_cache import BufferState, Cache, write_cache
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
