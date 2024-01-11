@@ -390,8 +390,15 @@ class DuckDbAdapter(HarlequinAdapter):
                     f"attach '{db}'{' (READ_ONLY)' if self.read_only else ''}"
                 )
         except (duckdb.CatalogException, duckdb.IOException) as e:
+            if "sqlite_scanner" in (msg := str(e)):
+                msg = (
+                    "DuckDB raised the following error when trying to open "
+                    f"one or more database files:\n---\n{msg}\n---\n\n"
+                    "Did you mean to use Harlequin's sqlite adapter instead? "
+                    f"Maybe try:\nharlequin -a sqlite {' '.join(self.conn_str)}"
+                )
             raise HarlequinConnectionError(
-                str(e), title="DuckDB couldn't connect to your database."
+                msg, title="DuckDB couldn't connect to your database."
             ) from e
 
         if self.custom_extension_repo:

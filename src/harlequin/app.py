@@ -308,6 +308,7 @@ class Harlequin(App, inherit_bindings=False):
                 header="Could not update data catalog",
                 error=message.worker.error,
             )
+            self.data_catalog.loading = False
         elif (
             message.worker.name == "_execute_query" and message.worker.error is not None
         ):
