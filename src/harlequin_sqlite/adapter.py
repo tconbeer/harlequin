@@ -267,10 +267,21 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 check_same_thread=False,
                 uri=True,
             )
+            # sqlite won't error on connect if you open a file that isn't a sqlite db
+            # running pragma database_list will raise, though:
+            _ = conn.execute("pragma database_list")
         except sqlite3.Error as e:
+            if "file is not a database" in (msg := str(e)):
+                msg = (
+                    "sqlite raised the following error when trying to open "
+                    f"{primary_db}:\n---\n{msg}\n---\n\n"
+                    "Did you mean to use Harlequin's DuckDB adapter instead? "
+                    f"Maybe try:\nharlequin -a duckdb {' '.join(self.conn_str)}\n"
+                    f"or:\nharlequin -P None {' '.join(self.conn_str)}"
+                )
             raise HarlequinConnectionError(
-                msg=str(e),
-                title=f"SQLite couldn't connect to your database {primary_db}.",
+                msg=msg,
+                title="SQLite couldn't connect to your database.",
             ) from e
 
         for uri, name in zip(other_dbs, db_names[1:]):
@@ -282,7 +293,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                         "sqlite raised the following error when trying to open "
                         f"{uri}:\n---\n{msg}\n---\n\n"
                         "Did you mean to use Harlequin's DuckDB adapter instead? "
-                        f"Maybe try:\nharlequin -a duckdb {' '.join(self.conn_str)}"
+                        f"Maybe try:\nharlequin -a duckdb {' '.join(self.conn_str)}\n"
+                        f"or:\nharlequin -P None {' '.join(self.conn_str)}"
                     )
                 raise HarlequinConnectionError(
                     msg=msg, title="SQLite couldn't connect to your database."
