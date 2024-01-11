@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 -   Harlequin now loads immediately and connects to your database in the background ([#393](https://github.com/tconbeer/harlequin/issues/393)).
 -   Harlequin shows a loading indicator before the Data Catalog is hydrated for the first time ([#396](https://github.com/tconbeer/harlequin/issues/396)).
 
+### Bug Fixes
+
+-   Fixes a bug where `harlequin --config` would crash if configuring an adapter that declared no options.
+
 ## [1.9.2] - 2024-01-10
 
 ### Features

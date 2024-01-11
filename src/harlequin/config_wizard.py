@@ -88,11 +88,15 @@ def _wizard() -> None:
         if adapter_cls.ADAPTER_OPTIONS is not None
         else []
     )
-    which = questionary.checkbox(
-        message="Which of the following adapter options would you like to set?",
-        choices=adapter_option_choices,
-        style=HARLEQUIN_QUESTIONARY_STYLE,
-    ).unsafe_ask()
+
+    if adapter_option_choices:
+        which = questionary.checkbox(
+            message="Which of the following adapter options would you like to set?",
+            choices=adapter_option_choices,
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
+    else:
+        which = []
 
     adapter_options = {}
     if conn_str:

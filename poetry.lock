@@ -914,13 +914,13 @@ mysql-connector-python = ">=8.2.0,<9.0.0"
 
 [[package]]
 name = "harlequin-odbc"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Harlequin adapter for ODBC drivers."
-optional = true
+optional = false
 python-versions = ">=3.8.1,<4.0"
 files = [
-    {file = "harlequin_odbc-0.1.0-py3-none-any.whl", hash = "sha256:6743d27ec414ee851b389d0d1d1c8b3fe02a640ca808b1d6c70a8a55090e2c7d"},
-    {file = "harlequin_odbc-0.1.0.tar.gz", hash = "sha256:a7db1b7cd349fee1701f00cbe3a6d0ad7eee10e3457a0beb9420dd1b8ea4f854"},
+    {file = "harlequin_odbc-0.1.1-py3-none-any.whl", hash = "sha256:7c5554dec9ef0bedad5acb040b7346ae60257e8b907f6254398ba6beec0cde21"},
+    {file = "harlequin_odbc-0.1.1.tar.gz", hash = "sha256:beb2b57836ccdb21b4fa4b151e2cd6fc1b946f4f914eb233de5debc2c08920cf"},
 ]
 
 [package.dependencies]
@@ -1787,7 +1787,7 @@ windows-terminal = ["colorama (>=0.4.6)"]
 name = "pyodbc"
 version = "5.0.1"
 description = "DB API module for ODBC"
-optional = true
+optional = false
 python-versions = ">=3.8"
 files = [
     {file = "pyodbc-5.0.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:9824b175db875a2dd116c7cf16dc3bdf14855404417afd145c5b839da222cb46"},
@@ -2738,4 +2738,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "9e417b2fb3cf8280655ca779a66747064600ee831eb38b7184a9bf988e80ed0f"
+content-hash = "6a98c30a6864e1d1967b01f07d827fd2178a178a573bc2a9f724c42c54d65c47"
