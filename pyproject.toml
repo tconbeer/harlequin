@@ -51,6 +51,7 @@ pre-commit = "^3.3.1"
 textual-dev = "^1.0.1"
 harlequin-postgres = "^0.2"
 harlequin-mysql = "^0.1.1"
+harlequin-odbc = "^0.1.1"
 
 [tool.poetry.group.static.dependencies]
 black = "^23.3.0"
