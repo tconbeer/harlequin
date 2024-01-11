@@ -107,6 +107,7 @@ class Harlequin(App, inherit_bindings=False):
         Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
         Binding("ctrl+e", "export", "Export Data", show=False),
+        Binding("ctrl+r", "refresh_catalog", "Refresh Data Catalog", show=False),
     ]
 
     full_screen: reactive[bool] = reactive(False)
@@ -508,6 +509,10 @@ class Harlequin(App, inherit_bindings=False):
             self.data_catalog.disabled = False
         else:
             self.sidebar_hidden = not self.sidebar_hidden
+
+    def action_refresh_catalog(self) -> None:
+        self.data_catalog.loading = True
+        self.update_schema_data()
 
     @work(
         thread=True,
