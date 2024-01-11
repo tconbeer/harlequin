@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.10.0] - 2024-01-11
+
 ### Features
 
 -   Harlequin now loads immediately and connects to your database in the background ([#393](https://github.com/tconbeer/harlequin/issues/393)).
@@ -475,7 +477,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.9.2...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.10.0...HEAD
+
+[1.10.0]: https://github.com/tconbeer/harlequin/compare/1.9.2...1.10.0
 
 [1.9.2]: https://github.com/tconbeer/harlequin/compare/1.9.1...1.9.2
 
