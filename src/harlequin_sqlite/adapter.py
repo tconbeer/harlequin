@@ -267,16 +267,24 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 check_same_thread=False,
                 uri=True,
             )
-        except Exception as e:
+        except sqlite3.Error as e:
             raise HarlequinConnectionError(
-                msg=str(e), title="SQLite couldn't connect to your database."
+                msg=str(e),
+                title=f"SQLite couldn't connect to your database {primary_db}.",
             ) from e
 
         for uri, name in zip(other_dbs, db_names[1:]):
             try:
                 conn.execute(f"attach database '{uri}' as {name}")
             except sqlite3.Error as e:
+                if "file is not a database" in (msg := str(e)):
+                    msg = (
+                        "sqlite raised the following error when trying to open "
+                        f"{uri}:\n---\n{msg}\n---\n\n"
+                        "Did you mean to use Harlequin's DuckDB adapter instead? "
+                        f"Maybe try:\nharlequin -a duckdb {' '.join(self.conn_str)}"
+                    )
                 raise HarlequinConnectionError(
-                    msg=str(e), title="SQLite couldn't connect to your database {name}."
+                    msg=msg, title="SQLite couldn't connect to your database."
                 ) from e
         return HarlequinSqliteConnection(conn=conn)

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Harlequin now shows a more helpful error message when attempting to open a sqlite file with the duckdb adapter (or vice versa) ([#401](https://github.com/tconbeer/harlequin/issues/401)).
+
+### Bug Fixes
+-   The Data Catalog no longer shows the loading state after an error loading the catalog.
+
 ## [1.10.0] - 2024-01-11
 
 ### Features
