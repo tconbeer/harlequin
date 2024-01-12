@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.11.0] - 2024-01-12
+
 ### Features
 
 -   Harlequin now shows a more helpful error message when attempting to open a sqlite file with the duckdb adapter or vice versa ([#401](https://github.com/tconbeer/harlequin/issues/401)).
@@ -488,7 +490,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.10.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.11.0...HEAD
+
+[1.11.0]: https://github.com/tconbeer/harlequin/compare/1.10.0...1.11.0
 
 [1.10.0]: https://github.com/tconbeer/harlequin/compare/1.9.2...1.10.0
 
