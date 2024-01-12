@@ -8,6 +8,7 @@
 - F9, ctrl+b: Toggle the sidebar.
 - F10: Toggle full screen mode for the current widget.
 - ctrl+e: Write the returned data to a CSV, Parquet, or JSON file.
+- ctrl+r: Refresh the Data Catalog.
 
 
 ### Query Editor Bindings

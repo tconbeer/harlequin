@@ -14,8 +14,8 @@ from textual_textarea import TextArea, TextAreaSaved
 from textual_textarea.key_handlers import Cursor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
-from harlequin.cache import BufferState, load_cache
 from harlequin.components.error_modal import ErrorModal
+from harlequin.editor_cache import BufferState, load_cache
 
 
 class CodeEditor(TextArea):

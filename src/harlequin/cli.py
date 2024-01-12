@@ -8,6 +8,7 @@ import rich_click as click
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, YELLOW
 from harlequin.config import get_config_for_profile
 from harlequin.config_wizard import wizard
@@ -248,11 +249,15 @@ def build_cli() -> click.Command:
                 pretty_print_error(e)
                 ctx.exit(2)
 
-        # load and instantiate the adapter
-        adapter = config.pop("adapter", DEFAULT_ADAPTER)
+        # remove the harlequin config from the options passed to the adapter
         conn_str: Sequence[str] = config.pop("conn_str", tuple())  # type: ignore
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
+        max_results: str | int = config.pop("limit", DEFAULT_LIMIT)  # type: ignore
+        theme: str = config.pop("theme", DEFAULT_THEME)  # type: ignore
+
+        # load and instantiate the adapter
+        adapter = config.pop("adapter", DEFAULT_ADAPTER)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]  # type: ignore
         try:
             adapter_instance = adapter_cls(conn_str=conn_str, **config)
@@ -262,8 +267,9 @@ def build_cli() -> click.Command:
 
         tui = Harlequin(
             adapter=adapter_instance,
-            max_results=config.get("limit", DEFAULT_LIMIT),  # type: ignore
-            theme=config.get("theme", DEFAULT_THEME),  # type: ignore
+            connection_hash=get_connection_hash(conn_str, config),
+            max_results=max_results,
+            theme=theme,
         )
         tui.run()
 
