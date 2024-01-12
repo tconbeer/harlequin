@@ -94,26 +94,30 @@ def all_adapters(request: pytest.FixtureRequest) -> type[HarlequinAdapter]:
 
 @pytest.fixture
 def app(duckdb_adapter: type[HarlequinAdapter]) -> Harlequin:
-    return Harlequin(duckdb_adapter([":memory:"], no_init=True))
+    return Harlequin(duckdb_adapter([":memory:"], no_init=True), connection_hash="foo")
 
 
 @pytest.fixture
 def app_all_adapters(all_adapters: type[HarlequinAdapter]) -> Harlequin:
-    return Harlequin(all_adapters([":memory:"], no_init=True))
+    return Harlequin(all_adapters([":memory:"], no_init=True), connection_hash="foo")
 
 
 @pytest.fixture
 def app_small_duck(
     duckdb_adapter: type[HarlequinAdapter], small_duck: Path
 ) -> Harlequin:
-    return Harlequin(duckdb_adapter([str(small_duck)], no_init=True))
+    return Harlequin(
+        duckdb_adapter([str(small_duck)], no_init=True), connection_hash="small"
+    )
 
 
 @pytest.fixture
 def app_small_sqlite(
     sqlite_adapter: type[HarlequinAdapter], small_sqlite: Path
 ) -> Harlequin:
-    return Harlequin(sqlite_adapter([str(small_sqlite)], no_init=True))
+    return Harlequin(
+        sqlite_adapter([str(small_sqlite)], no_init=True), connection_hash="bar"
+    )
 
 
 @pytest.fixture(params=["duckdb", "sqlite"])
@@ -132,7 +136,10 @@ def app_all_adapters_small_db(
 def app_multi_duck(
     duckdb_adapter: type[HarlequinAdapter], tiny_duck: Path, small_duck: Path
 ) -> Harlequin:
-    return Harlequin(duckdb_adapter([str(tiny_duck), str(small_duck)], no_init=True))
+    return Harlequin(
+        duckdb_adapter([str(tiny_duck), str(small_duck)], no_init=True),
+        connection_hash="multi",
+    )
 
 
 def _create_sqlite_db_from_data_dir(data_dir: Path, db_path: Path) -> None:

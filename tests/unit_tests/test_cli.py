@@ -1,3 +1,5 @@
+import hashlib
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -52,11 +54,15 @@ def test_default(
     runner = CliRunner()
     res = runner.invoke(build_cli(), args=harlequin_args)
     assert res.exit_code == 0
-    mock_adapter.assert_called_once_with(
-        conn_str=(harlequin_args,) if harlequin_args else tuple()
-    )
+    expected_conn_str = (harlequin_args,) if harlequin_args else tuple()
+    mock_adapter.assert_called_once_with(conn_str=expected_conn_str)
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
+        connection_hash=hashlib.md5(
+            json.dumps({"conn_str": expected_conn_str}).encode("utf-8")
+        )
+        .digest()
+        .hex(),
         max_results=100_000,
         theme="harlequin",
     )

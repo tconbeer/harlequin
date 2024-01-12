@@ -6,8 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
--   Harlequin now shows a more helpful error message when attempting to open a sqlite file with the duckdb adapter (or vice versa) ([#401](https://github.com/tconbeer/harlequin/issues/401)).
+-   Harlequin now shows a more helpful error message when attempting to open a sqlite file with the duckdb adapter or vice versa ([#401](https://github.com/tconbeer/harlequin/issues/401)).
 -   <kbd>ctrl+r</kbd> forces a refresh of the Data Catalog (the catalog is automatically refreshed after DDL queries are executed in Harlequin) ([#375](https://github.com/tconbeer/harlequin/issues/375)).
+-   At startup, Harlequin attempts to load a cached version of the Data Catalog. The Data Catalog will be updated in the background. A loading indicator will be displayed if there is no cached catalog for the connection parameters ([#397](https://github.com/tconbeer/harlequin/issues/397)).
 
 ### Bug Fixes
 

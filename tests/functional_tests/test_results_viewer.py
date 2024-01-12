@@ -31,7 +31,9 @@ async def test_dupe_column_names(
 
 @pytest.mark.asyncio
 async def test_copy_data(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    mock_pyperclip: None,
 ) -> None:
     app = app_all_adapters
     query = "select 3, 'rosberg', 6, 'ROS', 'Nico', 'Rosberg', '1985-06-27', 'German', 'http://en.wikipedia.org/wiki/Nico_Rosberg'"

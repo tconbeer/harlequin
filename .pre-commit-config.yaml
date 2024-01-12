@@ -25,6 +25,7 @@ repos:
           - questionary
           - tomlkit
           - pandas-stubs
+          - importlib_metadata
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"

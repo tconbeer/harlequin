@@ -27,6 +27,7 @@ from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.catalog import Catalog, CatalogItem, NewCatalog
+from harlequin.catalog_cache import get_cached_catalog, update_cache_with_catalog
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CodeEditor,
@@ -39,7 +40,8 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
-from harlequin.editor_cache import BufferState, Cache, write_cache
+from harlequin.editor_cache import BufferState, Cache
+from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -116,6 +118,8 @@ class Harlequin(App, inherit_bindings=False):
     def __init__(
         self,
         adapter: HarlequinAdapter,
+        *,
+        connection_hash: str | None = None,
         theme: str = "harlequin",
         max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
@@ -124,6 +128,8 @@ class Harlequin(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.adapter = adapter
+        self.connection_hash = connection_hash
+        self.catalog: Catalog | None = None
         self.theme = theme
         try:
             self.max_results = int(max_results)
@@ -340,6 +346,7 @@ class Harlequin(App, inherit_bindings=False):
 
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
+        self.catalog = message.catalog
         self.data_catalog.update_tree(message.catalog)
         self.data_catalog.loading = False
         self.update_completers(message.catalog)
@@ -489,7 +496,9 @@ class Harlequin(App, inherit_bindings=False):
             buffers.append(
                 BufferState(editor.cursor, editor.selection_anchor, editor.text)
             )
-        write_cache(Cache(focus_index=focus_index, buffers=buffers))
+        write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
+        if self.catalog is not None and self.connection_hash is not None:
+            update_cache_with_catalog(self.connection_hash, self.catalog)
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
@@ -523,6 +532,10 @@ class Harlequin(App, inherit_bindings=False):
     )
     def _connect(self) -> None:
         connection = self.adapter.connect()
+        if self.connection_hash is not None and (
+            cached_catalog := get_cached_catalog(self.connection_hash)
+        ):
+            self.post_message(NewCatalog(catalog=cached_catalog))
         self.post_message(DatabaseConnected(connection=connection))
 
     @work(
@@ -596,7 +609,13 @@ class Harlequin(App, inherit_bindings=False):
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
         )
 
-    @work(thread=True, exclusive=True, exit_on_error=True, group="completer_builders")
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=True,
+        group="completer_builders",
+        description="building completers",
+    )
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:
             return
