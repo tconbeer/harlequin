@@ -176,14 +176,23 @@ def build_cli() -> click.Command:
         ),
     )
     @click.option(
-        "-a",
         "--adapter",
+        "-a",
         default=DEFAULT_ADAPTER,
         show_default=True,
         type=click.Choice(list(adapters.keys()), case_sensitive=False),
         help=(
             "The name of an installed database adapter plug-in "
             "to use to connect to the database at CONN_STR."
+        ),
+    )
+    @click.option(
+        "--show-files",
+        "-f",
+        type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+        help=(
+            "Pass the path to a directory to this option to show a file tree viewer "
+            "in Harlequin's Data Catalog."
         ),
     )
     @click.option(
@@ -255,6 +264,15 @@ def build_cli() -> click.Command:
             conn_str = (conn_str,)
         max_results: str | int = config.pop("limit", DEFAULT_LIMIT)  # type: ignore
         theme: str = config.pop("theme", DEFAULT_THEME)  # type: ignore
+        show_files: Path | str | None = config.pop("show_files", None)  # type: ignore
+        if show_files is not None:
+            try:
+                show_files = Path(show_files)
+            except TypeError as e:
+                pretty_print_error(
+                    HarlequinConfigError(msg=str(e), title="Harlequin Config Error")
+                )
+                ctx.exit(2)
 
         # load and instantiate the adapter
         adapter = config.pop("adapter", DEFAULT_ADAPTER)
@@ -270,6 +288,7 @@ def build_cli() -> click.Command:
             connection_hash=get_connection_hash(conn_str, config),
             max_results=max_results,
             theme=theme,
+            show_files=show_files,
         )
         tui.run()
 

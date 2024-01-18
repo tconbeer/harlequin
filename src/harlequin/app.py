@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 from functools import partial
+from pathlib import Path
 from typing import Dict, List, Optional, Type, Union
 
 from textual import on, work
@@ -26,7 +27,7 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
-from harlequin.catalog import Catalog, CatalogItem, NewCatalog
+from harlequin.catalog import Catalog, NewCatalog
 from harlequin.catalog_cache import get_cached_catalog, update_cache_with_catalog
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
@@ -121,6 +122,7 @@ class Harlequin(App, inherit_bindings=False):
         *,
         connection_hash: str | None = None,
         theme: str = "harlequin",
+        show_files: Path | None = None,
         max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
@@ -131,6 +133,7 @@ class Harlequin(App, inherit_bindings=False):
         self.connection_hash = connection_hash
         self.catalog: Catalog | None = None
         self.theme = theme
+        self.show_files = show_files
         try:
             self.max_results = int(max_results)
         except ValueError:
@@ -156,7 +159,9 @@ class Harlequin(App, inherit_bindings=False):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Horizontal():
-            yield DataCatalog(type_color=self.app_colors.gray)
+            yield DataCatalog(
+                type_color=self.app_colors.gray, show_files=self.show_files
+            )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
                 yield RunQueryBar(
@@ -198,7 +203,6 @@ class Harlequin(App, inherit_bindings=False):
 
         self.editor.focus()
         self.run_query_bar.checkbox.value = False
-        self.data_catalog.loading = True
 
         self._connect()
 
@@ -233,13 +237,10 @@ class Harlequin(App, inherit_bindings=False):
         self.update_schema_data()
 
     @on(DataCatalog.NodeSubmitted)
-    def insert_node_into_editor(
-        self, message: DataCatalog.NodeSubmitted[CatalogItem]
-    ) -> None:
+    def insert_node_into_editor(self, message: DataCatalog.NodeSubmitted) -> None:
         message.stop()
-        if message.node.data:
-            self.editor.insert_text_at_selection(text=message.node.data.query_name)
-            self.editor.focus()
+        self.editor.insert_text_at_selection(text=message.insert_name)
+        self.editor.focus()
 
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
@@ -315,7 +316,7 @@ class Harlequin(App, inherit_bindings=False):
                 header="Could not update data catalog",
                 error=message.worker.error,
             )
-            self.data_catalog.loading = False
+            self.data_catalog.database_tree.loading = False
         elif (
             message.worker.name == "_execute_query" and message.worker.error is not None
         ):
@@ -348,7 +349,6 @@ class Harlequin(App, inherit_bindings=False):
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.catalog = message.catalog
         self.data_catalog.update_tree(message.catalog)
-        self.data_catalog.loading = False
         self.update_completers(message.catalog)
 
     @on(QueriesExecuted)
@@ -520,7 +520,7 @@ class Harlequin(App, inherit_bindings=False):
             self.sidebar_hidden = not self.sidebar_hidden
 
     def action_refresh_catalog(self) -> None:
-        self.data_catalog.loading = True
+        self.data_catalog.database_tree.loading = True
         self.update_schema_data()
 
     @work(

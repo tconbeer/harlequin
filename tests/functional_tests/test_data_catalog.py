@@ -1,8 +1,11 @@
-from typing import Awaitable, Callable, List
+from pathlib import Path
+from typing import Awaitable, Callable, List, Type
 
 import pytest
 from harlequin import Harlequin
+from harlequin_duckdb.adapter import DuckDbAdapter
 from textual.geometry import Offset
+from textual.worker import WorkerCancelled
 
 
 @pytest.mark.asyncio
@@ -15,11 +18,11 @@ async def test_data_catalog(
         await app.workers.wait_for_complete()
         await pilot.pause()
         catalog = app.data_catalog
-        assert not catalog.show_root
+        assert not catalog.database_tree.show_root
         snap_results.append(await app_snapshot(app, "Initialization"))
 
         # this test app has two databases attached.
-        dbs = catalog.root.children
+        dbs = catalog.database_tree.root.children
         assert len(dbs) == 2
 
         # the first db is called "small"
@@ -48,7 +51,7 @@ async def test_data_catalog(
         await pilot.click(catalog.__class__, offset=Offset(x=8, y=3))
         await pilot.pause()
         assert schema_main.is_expanded is True
-        assert catalog.cursor_line == 2  # main is selected
+        assert catalog.database_tree.cursor_line == 2  # main is selected
         snap_results.append(await app_snapshot(app, "small.main expanded"))
 
         # ctrl+enter to insert into editor; editor gets focus
@@ -62,7 +65,7 @@ async def test_data_catalog(
         # use keys to navigate the tree into main.drivers
         await pilot.press("f6")
         await pilot.pause()
-        assert catalog.has_focus
+        assert catalog.database_tree.has_focus
         await pilot.press("down")
         await pilot.press("space")
         await pilot.press("down")
@@ -70,7 +73,9 @@ async def test_data_catalog(
         await pilot.press("enter")
         await pilot.pause()
 
-        col_node = catalog.get_node_at_line(catalog.cursor_line)
+        col_node = catalog.database_tree.get_node_at_line(
+            catalog.database_tree.cursor_line
+        )
         assert col_node is not None
         assert col_node.data is not None
         assert col_node.data.qualified_identifier == '"small"."main"."drivers"."dob"'
@@ -83,5 +88,36 @@ async def test_data_catalog(
         await pilot.pause()
         assert app.editor.text == '"dob"'
         snap_results.append(await app_snapshot(app, "small.main.drivers.dob inserted"))
+
+        assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_file_tree(
+    duckdb_adapter: Type[DuckDbAdapter],
+    data_dir: Path,
+    app_snapshot: Callable[..., Awaitable[bool]],
+) -> None:
+    snap_results: List[bool] = []
+    app = Harlequin(
+        duckdb_adapter((":memory:",)),
+        show_files=data_dir / "functional_tests" / "files",
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        try:
+            await app.workers.wait_for_complete()
+        except WorkerCancelled:
+            pass
+        await pilot.pause()
+        catalog = app.data_catalog
+        assert catalog.file_tree is not None
+
+        await pilot.press("f6")  # focus catalog
+        await pilot.press("k")  # show files
+        snap_results.append(await app_snapshot(app, "Initialization"))
+
+        await pilot.press("down")
+        await pilot.press("enter")
+        snap_results.append(await app_snapshot(app, "expanded foo dir"))
 
         assert all(snap_results)

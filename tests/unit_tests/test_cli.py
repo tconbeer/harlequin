@@ -65,6 +65,7 @@ def test_default(
         .hex(),
         max_results=100_000,
         theme="harlequin",
+        show_files=None,
     )
 
 
@@ -139,6 +140,21 @@ def test_limit(
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["max_results"] != 100_000
+
+
+@pytest.mark.parametrize("harlequin_args", ["--show-files .", "-f .", "foo.db -f ."])
+def test_show_files(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=harlequin_args)
+    assert res.exit_code == 0
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["show_files"] == Path(".")
 
 
 @pytest.mark.parametrize(
