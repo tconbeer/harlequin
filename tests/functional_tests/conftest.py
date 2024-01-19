@@ -29,7 +29,7 @@ def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> None:
+def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock = MagicMock()
     mock.determine_clipboard.return_value = mock.copy, mock.paste
 
@@ -38,3 +38,5 @@ def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> None:
 
     mock.copy.side_effect = set_paste
     monkeypatch.setattr("textual_textarea.textarea.pyperclip", mock)
+
+    return mock

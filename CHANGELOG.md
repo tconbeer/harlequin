@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   Adds an option, `--show-files` (alias `-f`), which will display the passed directory in the Data Catalog, alongside the connected database schema, in a second tab. Like database catalog items, you can use <kbd>ctrl+enter</kbd>, <kbd>ctrl+j</kbd>, or double-click to insert the path into the query editor.
+-   Items in the Data Catalog can now be copied to the clipboard with <kbd>ctrl+c</kbd>.
 
 ## [1.11.0] - 2024-01-12
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Awaitable, Callable
+from unittest.mock import MagicMock
 
 import pytest
 from harlequin import Harlequin
@@ -33,7 +34,7 @@ async def test_dupe_column_names(
 async def test_copy_data(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
-    mock_pyperclip: None,
+    mock_pyperclip: MagicMock,
 ) -> None:
     app = app_all_adapters
     query = "select 3, 'rosberg', 6, 'ROS', 'Nico', 'Rosberg', '1985-06-27', 'German', 'http://en.wikipedia.org/wiki/Nico_Rosberg'"

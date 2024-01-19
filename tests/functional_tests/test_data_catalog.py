@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Awaitable, Callable, List, Type
+from unittest.mock import MagicMock
 
 import pytest
 from harlequin import Harlequin
@@ -10,7 +11,9 @@ from textual.worker import WorkerCancelled
 
 @pytest.mark.asyncio
 async def test_data_catalog(
-    app_multi_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_multi_duck: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    mock_pyperclip: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_duck
@@ -73,14 +76,16 @@ async def test_data_catalog(
         await pilot.press("enter")
         await pilot.pause()
 
-        col_node = catalog.database_tree.get_node_at_line(
-            catalog.database_tree.cursor_line
-        )
+        col_node = catalog.database_tree.cursor_node
         assert col_node is not None
         assert col_node.data is not None
         assert col_node.data.qualified_identifier == '"small"."main"."drivers"."dob"'
         assert col_node.data.query_name == '"dob"'
         snap_results.append(await app_snapshot(app, "small.main.drivers.dob selected"))
+
+        # copy it
+        await pilot.press("ctrl+c")
+        assert mock_pyperclip.paste() == '"dob"'
 
         # reset the editor, then insert "dob"
         app.editor.text = ""
@@ -97,11 +102,13 @@ async def test_file_tree(
     duckdb_adapter: Type[DuckDbAdapter],
     data_dir: Path,
     app_snapshot: Callable[..., Awaitable[bool]],
+    mock_pyperclip: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
+    test_dir = data_dir / "functional_tests" / "files"
     app = Harlequin(
         duckdb_adapter((":memory:",)),
-        show_files=data_dir / "functional_tests" / "files",
+        show_files=test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
         try:
@@ -119,5 +126,8 @@ async def test_file_tree(
         await pilot.press("down")
         await pilot.press("enter")
         snap_results.append(await app_snapshot(app, "expanded foo dir"))
+
+        await pilot.press("ctrl+c")
+        assert mock_pyperclip.paste() == str(test_dir / "foo")
 
         assert all(snap_results)

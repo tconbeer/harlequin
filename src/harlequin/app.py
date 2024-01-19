@@ -242,6 +242,18 @@ class Harlequin(App, inherit_bindings=False):
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
+    @on(DataCatalog.NodeCopied)
+    def copy_node_name(self, message: DataCatalog.NodeCopied) -> None:
+        message.stop()
+        self.editor.text_input.clipboard = message.copy_name
+        if self.editor.use_system_clipboard:
+            try:
+                self.editor.text_input.system_copy(message.copy_name)
+            except Exception:
+                self.notify("Error copying data to system clipboard.", severity="error")
+            else:
+                self.notify("Selected label copied to clipboard.")
+
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched

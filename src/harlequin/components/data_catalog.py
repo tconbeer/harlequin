@@ -46,6 +46,22 @@ class DataCatalog(TabbedContent, can_focus=True):
             else:
                 return ""
 
+    class NodeCopied(Generic[EventTreeDataType], Message):
+        def __init__(self, node: TreeNode[EventTreeDataType]) -> None:
+            self.node: TreeNode[EventTreeDataType] = node
+            super().__init__()
+
+        @property
+        def copy_name(self) -> str:
+            if not self.node.data:
+                return ""
+            elif isinstance(self.node.data, CatalogItem):
+                return self.node.data.query_name
+            elif isinstance(self.node.data, DirEntry):
+                return str(self.node.data.path)
+            else:
+                return ""
+
     def __init__(
         self,
         *titles: TextType,
@@ -126,6 +142,7 @@ class SubmitMixin(Tree):
             show=True,
         ),
         Binding("ctrl+j", "submit", "Insert Name", show=False),
+        Binding("ctrl+c", "copy", "Copy Name", show=False),
     ]
 
     double_click: int | None = None
@@ -154,10 +171,12 @@ class SubmitMixin(Tree):
         self.double_click = None
 
     def action_submit(self) -> None:
-        if isinstance(self.cursor_line, int) and self.cursor_line > -1:
-            node = self.get_node_at_line(self.cursor_line)
-            if node is not None:
-                self.post_message(DataCatalog.NodeSubmitted(node=node))
+        if self.cursor_node is not None:
+            self.post_message(DataCatalog.NodeSubmitted(node=self.cursor_node))
+
+    def action_copy(self) -> None:
+        if self.cursor_node is not None:
+            self.post_message(DataCatalog.NodeCopied(node=self.cursor_node))
 
 
 class DatabaseTree(SubmitMixin, Tree[CatalogItem]):
