@@ -77,6 +77,24 @@ def _wizard() -> None:
         ).unsafe_ask()
     )
 
+    show_files = questionary.path(
+        message="Show local files from a directory? (Leave blank to hide)",
+        validate=_validate_dir_or_blank,
+        only_directories=True,
+        default=str(selected_profile.get("show_files", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    show_s3 = questionary.text(
+        message="Show cloud storage files?",
+        instruction=(
+            "Enter bucket name or URI (or `all`), or leave blank to hide "
+            "cloud storage viewer."
+        ),
+        default=str(selected_profile.get("show_s3", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
     adapter_cls = adapters[adapter]
     adapter_option_choices = (
         [
@@ -114,8 +132,15 @@ def _wizard() -> None:
         "adapter": adapter,
         "theme": theme,
         "limit": limit,
-        **adapter_options,
     }
+
+    if show_files:
+        new_profile["show_files"] = show_files
+
+    if show_s3:
+        new_profile["show_s3"] = show_s3
+
+    new_profile.update(adapter_options)
 
     _confirm_profile_generation(default_profile, profile_name, new_profile)
 
@@ -259,6 +284,13 @@ def _validate_int(raw: str) -> bool:
         return False
     else:
         return True
+
+
+def _validate_dir_or_blank(raw: str) -> bool:
+    if not raw:
+        return True
+    p = Path(raw)
+    return p.exists() and p.is_dir()
 
 
 def _sluggify_name(raw: str) -> str:
