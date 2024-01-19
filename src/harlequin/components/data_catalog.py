@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import ClassVar, Generic, List, Set, Tuple, Union
 from urllib.parse import urlsplit
 
-import boto3
 from rich.text import TextType
 from textual import on, work
 from textual.binding import Binding
@@ -24,6 +24,11 @@ from textual.widgets._tree import EventTreeDataType, TreeNode
 from textual.worker import Worker, WorkerState
 
 from harlequin.catalog import Catalog, CatalogItem
+
+try:
+    import boto3
+except ImportError:
+    pass
 
 
 class DataCatalog(TabbedContent, can_focus=True):
@@ -104,9 +109,22 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.add_pane(TabPane("Files", self.file_tree))
         else:
             self.file_tree = None
-        if self.show_s3 is not None:
+
+        if self.show_s3 is not None and "boto3" in sys.modules:
             self.s3_tree: S3Tree | None = S3Tree(uri=self.show_s3)
             self.add_pane(TabPane("s3", self.s3_tree))
+        elif self.show_s3 is not None and "boto3" not in sys.modules:
+            self.post_message(
+                DataCatalog.CatalogError(
+                    catalog_type="s3",
+                    error=Exception(
+                        "Could not load s3 catalog because boto3 is not available.\n\n"
+                        "Re-install harlequin with the s3 extra, like this:\n"
+                        "pip install harlequin[s3]"
+                    ),
+                )
+            )
+            self.s3_tree = None
         else:
             self.s3_tree = None
 

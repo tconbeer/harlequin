@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Awaitable, Callable, List, NamedTuple, Type
 from unittest.mock import MagicMock
@@ -14,7 +15,7 @@ class MockS3Object(NamedTuple):
 
 
 @pytest.fixture
-def mock_s3(monkeypatch: pytest.MonkeyPatch) -> None:
+def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_boto3 = MagicMock(name="mock_boto3")
     mock_s3 = MagicMock(name="mock_s3")
     mock_boto3.resource.return_value = mock_s3
@@ -31,6 +32,11 @@ def mock_s3(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_bucket.objects.filter.return_value = objects
 
     monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
+
+
+@pytest.fixture
+def mock_boto3_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "boto3")
 
 
 @pytest.mark.asyncio
@@ -160,10 +166,9 @@ async def test_file_tree(
 @pytest.mark.asyncio
 async def test_s3_tree(
     duckdb_adapter: Type[DuckDbAdapter],
-    data_dir: Path,
     app_snapshot: Callable[..., Awaitable[bool]],
     mock_pyperclip: MagicMock,
-    mock_s3: None,
+    mock_boto3: None,
 ) -> None:
     snap_results: List[bool] = []
     app = Harlequin(
@@ -190,3 +195,19 @@ async def test_s3_tree(
         assert mock_pyperclip.paste() == "s3://my-bucket/one"
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_s3_tree_does_not_crash_without_boto3(
+    duckdb_adapter: Type[DuckDbAdapter],
+    app_snapshot: Callable[..., Awaitable[bool]],
+    mock_boto3_not_installed: None,
+) -> None:
+    app = Harlequin(
+        duckdb_adapter((":memory:",)),
+        show_s3="my-bucket",
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert await app_snapshot(app, "Initialization")

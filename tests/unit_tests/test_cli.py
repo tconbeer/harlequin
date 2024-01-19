@@ -66,6 +66,7 @@ def test_default(
         max_results=100_000,
         theme="harlequin",
         show_files=None,
+        show_s3=None,
     )
 
 
