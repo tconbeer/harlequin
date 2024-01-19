@@ -26,6 +26,7 @@ repos:
           - tomlkit
           - pandas-stubs
           - importlib_metadata
+          - boto3-stubs
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"

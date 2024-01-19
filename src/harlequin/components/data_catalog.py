@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 from typing import ClassVar, Generic, List, Set, Tuple, Union
+from urllib.parse import urlsplit
 
+import boto3
 from rich.text import TextType
-from textual import on
+from textual import on, work
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.events import Click
@@ -18,6 +21,7 @@ from textual.widgets import (
 )
 from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import EventTreeDataType, TreeNode
+from textual.worker import Worker, WorkerState
 
 from harlequin.catalog import Catalog, CatalogItem
 
@@ -44,7 +48,7 @@ class DataCatalog(TabbedContent, can_focus=True):
             elif isinstance(self.node.data, DirEntry):
                 return f"'{self.node.data.path}'"
             else:
-                return ""
+                return str(self.node.data)
 
     class NodeCopied(Generic[EventTreeDataType], Message):
         def __init__(self, node: TreeNode[EventTreeDataType]) -> None:
@@ -60,7 +64,13 @@ class DataCatalog(TabbedContent, can_focus=True):
             elif isinstance(self.node.data, DirEntry):
                 return str(self.node.data.path)
             else:
-                return ""
+                return str(self.node.data)
+
+    class CatalogError(Message):
+        def __init__(self, catalog_type: str, error: BaseException) -> None:
+            self.catalog_type = catalog_type
+            self.error = error
+            super().__init__()
 
     def __init__(
         self,
@@ -71,6 +81,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         classes: Union[str, None] = None,
         disabled: bool = False,
         show_files: Path | None = None,
+        show_s3: str | None = None,
         type_color: str = "#888888",
     ):
         super().__init__(
@@ -82,6 +93,7 @@ class DataCatalog(TabbedContent, can_focus=True):
             disabled=disabled,
         )
         self.show_files = show_files
+        self.show_s3 = show_s3
         self.type_color = type_color
 
     def on_mount(self) -> None:
@@ -92,26 +104,38 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.add_pane(TabPane("Files", self.file_tree))
         else:
             self.file_tree = None
+        if self.show_s3 is not None:
+            self.s3_tree: S3Tree | None = S3Tree(uri=self.show_s3)
+            self.add_pane(TabPane("s3", self.s3_tree))
+        else:
+            self.s3_tree = None
+
+        if self.show_files is None and self.show_s3 is None:
             self.add_class("hide-tabs")
         self.query_one(Tabs).can_focus = False
 
     def on_focus(self) -> None:
-        if self.active:
-            try:
-                active_widget = self.query_one(f"#{self.active}").children[0]
-            except NoMatches:
-                self.database_tree.focus()
-            else:
-                active_widget.focus()
+        try:
+            active_widget = self.query_one(f"#{self.active}").children[0]
+        except NoMatches:
+            self.database_tree.focus()
+        else:
+            active_widget.focus()
 
     @on(TabbedContent.TabActivated)
     def focus_on_widget_in_active_pane(self) -> None:
         self.focus()
 
-    def update_tree(self, catalog: Catalog) -> None:
+    def update_database_tree(self, catalog: Catalog) -> None:
         self.database_tree.update_tree(catalog)
+
+    def update_file_tree(self) -> None:
         if self.file_tree is not None:
             self.file_tree.reload()
+
+    def update_s3_tree(self) -> None:
+        if self.s3_tree is not None:
+            self.s3_tree.reload()
 
     def action_switch_tab(self, offset: int) -> None:
         if not self.active:
@@ -131,8 +155,6 @@ class DataCatalog(TabbedContent, can_focus=True):
 
 
 class SubmitMixin(Tree):
-    # TODO: ADD COPY
-
     BINDINGS = [
         Binding(
             "ctrl+enter",
@@ -261,3 +283,167 @@ class FileTree(SubmitMixin, DirectoryTree):
 
     def on_mount(self) -> None:
         self.guide_depth = 3
+        self.root.expand()
+
+
+class S3Tree(SubmitMixin, Tree[str]):
+    COMPONENT_CLASSES: ClassVar[set[str]] = {
+        "directory-tree--extension",
+        "directory-tree--file",
+        "directory-tree--folder",
+        "directory-tree--hidden",
+    }
+
+    class DataReady(Message):
+        def __init__(self, data: dict) -> None:
+            self.data = data
+            super().__init__()
+
+    def __init__(
+        self,
+        uri: str,
+        data: CatalogItem | None = None,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        self.endpoint_url, self.bucket, self.prefix = self._parse_s3_uri(uri)
+        super().__init__(
+            "Root", data, name=name, id=id, classes=classes, disabled=disabled
+        )
+
+    render_label = DirectoryTree.render_label
+
+    def on_mount(self) -> None:
+        self.guide_depth = 3
+        self.show_root = False
+        self.root.data = self.endpoint_url or "s3:/"
+        self.reload()
+
+    @on(DataReady)
+    def build_tree(self, message: S3Tree.DataReady) -> None:
+        self.clear()
+        self._build_subtree(data=message.data, parent=self.root)
+        self.root.expand()
+        self.loading = False
+
+    @on(Worker.StateChanged)
+    async def handle_worker_state_change(self, message: Worker.StateChanged) -> None:
+        if message.state == WorkerState.ERROR:
+            await self._handle_worker_error(message)
+
+    async def _handle_worker_error(self, message: Worker.StateChanged) -> None:
+        if (
+            message.worker.name == "_reload_objects"
+            and message.worker.error is not None
+        ):
+            self.post_message(
+                DataCatalog.CatalogError(catalog_type="s3", error=message.worker.error)
+            )
+            self.loading = False
+
+    @staticmethod
+    def _parse_s3_uri(uri: str) -> tuple[str | None, str | None, str | None]:
+        """
+        Any of these are acceptable:
+        my-bucket
+        my-bucket/my-prefix
+        s3://my-bucket
+        s3://my-bucket/my-prefix
+        https://my-storage.com/my-bucket/
+        https://my-storage.com/my-bucket/my-prefix
+        https://my-bucket.s3.amazonaws.com/my-prefix
+        https://my-bucket.storage.googleapis.com/my-prefix
+        """
+
+        def _is_prefixed_aws_url(netloc: str) -> bool:
+            parts = netloc.split(".")
+            print(parts)
+            if ".".join(parts[1:]) == "s3.amazonaws.com":
+                return True
+            return False
+
+        def _is_prefixed_gcs_url(netloc: str) -> bool:
+            parts = netloc.split(".")
+            if ".".join(parts[1:]) == "storage.googleapis.com":
+                return True
+            return False
+
+        if uri == "all":
+            # special keyword so we list all buckets
+            return None, None, None
+
+        scheme, netloc, path, *_ = urlsplit(uri)
+        path = path.lstrip("/")
+
+        if not scheme:
+            assert not netloc
+            endpoint_url = None
+            bucket = path.split("/")[0]
+            prefix = "/".join(path.split("/")[1:])
+        elif scheme == "s3":
+            endpoint_url = None
+            bucket = netloc
+            prefix = path
+        elif _is_prefixed_aws_url(netloc):
+            endpoint_url = None
+            bucket = netloc.split(".")[0]
+            prefix = path
+        elif _is_prefixed_gcs_url(netloc):
+            endpoint_url = "https://storage.googleapis.com"
+            bucket = netloc.split(".")[0]
+            prefix = path
+        else:
+            endpoint_url = f"{scheme}://{netloc}"
+            bucket = path.split("/")[0]
+            prefix = "/".join(path.split("/")[1:])
+
+        return endpoint_url, bucket, prefix
+
+    def reload(self) -> None:
+        self.loading = True
+        self._reload_objects()
+
+    @work(thread=True, exclusive=True, exit_on_error=False)
+    def _reload_objects(self) -> None:
+        def recursive_dict() -> defaultdict:
+            return defaultdict(recursive_dict)
+
+        data = {}
+        s3 = boto3.resource("s3", endpoint_url=self.endpoint_url)
+        if self.bucket is None:
+            buckets = [b for b in s3.buckets.all()]
+        else:
+            buckets = [s3.Bucket(self.bucket)]
+        for bucket in buckets:
+            self.log(f"building tree for {bucket.name}")
+            data[bucket.name] = recursive_dict()
+            object_gen = (
+                bucket.objects.filter(Prefix=self.prefix)
+                if self.prefix
+                else bucket.objects.all()
+            )
+            for obj in object_gen:
+                self.log(f"inserting {obj.key} into tree {bucket.name}")
+                key_parts = obj.key.split("/")
+                target = data[bucket.name]
+                for part in key_parts:
+                    target = target[part]
+
+        self.post_message(S3Tree.DataReady(data=data))
+
+    def _build_subtree(
+        self,
+        data: dict[str, dict],
+        parent: TreeNode[str],
+    ) -> None:
+        for k in data:
+            if data[k]:
+                new_node = parent.add(
+                    label=k,
+                    data=f"{parent.data}/{k}",
+                )
+                self._build_subtree(data[k], new_node)
+            else:
+                parent.add_leaf(label=k, data=f"{parent.data}/{k}")

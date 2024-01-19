@@ -123,6 +123,7 @@ class Harlequin(App, inherit_bindings=False):
         connection_hash: str | None = None,
         theme: str = "harlequin",
         show_files: Path | None = None,
+        show_s3: str | None = None,
         max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
@@ -134,6 +135,7 @@ class Harlequin(App, inherit_bindings=False):
         self.catalog: Catalog | None = None
         self.theme = theme
         self.show_files = show_files
+        self.show_s3 = show_s3 or None
         try:
             self.max_results = int(max_results)
         except ValueError:
@@ -160,7 +162,9 @@ class Harlequin(App, inherit_bindings=False):
         """Create child widgets for the app."""
         with Horizontal():
             yield DataCatalog(
-                type_color=self.app_colors.gray, show_files=self.show_files
+                type_color=self.app_colors.gray,
+                show_files=self.show_files,
+                show_s3=self.show_s3,
             )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
@@ -357,10 +361,18 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit(return_code=2, message=pretty_error_message(error))
 
+    @on(DataCatalog.CatalogError)
+    def handle_catalog_error(self, message: DataCatalog.CatalogError) -> None:
+        self._push_error_modal(
+            title=f"Catalog Error: {message.catalog_type}",
+            header=f"Could not populate the {message.catalog_type} data catalog",
+            error=message.error,
+        )
+
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.catalog = message.catalog
-        self.data_catalog.update_tree(message.catalog)
+        self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
 
     @on(QueriesExecuted)
@@ -534,6 +546,8 @@ class Harlequin(App, inherit_bindings=False):
     def action_refresh_catalog(self) -> None:
         self.data_catalog.database_tree.loading = True
         self.update_schema_data()
+        self.data_catalog.update_file_tree()
+        self.data_catalog.update_s3_tree()
 
     @work(
         thread=True,

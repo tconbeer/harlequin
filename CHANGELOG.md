@@ -7,6 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   Adds an option, `--show-files` (alias `-f`), which will display the passed directory in the Data Catalog, alongside the connected database schema, in a second tab. Like database catalog items, you can use <kbd>ctrl+enter</kbd>, <kbd>ctrl+j</kbd>, or double-click to insert the path into the query editor.
+-   Adds an option, `--show-s3` (alias `--s3`), which will display objects from the passed URI in the Data Catalog (in another tab). Uses the credentials from the AWS CLI's default profile. Use `--show-s3 all` to show all objects in all buckets for the currently-authenticated user, or pass buckets and key prefixes to restrict the catalog. For example, these all work:
+    ```bash
+    harlequin --show-s3 my-bucket
+    harlequin --show-s3 my-bucket/my-nested/key-prefix
+    harlequin --show-s3 s3://my-bucket
+    harlequin --show-s3 https://my-storage.com/my-bucket/my-prefix
+    harlequin --show-s3 https://my-bucket.s3.amazonaws.com/my-prefix
+    harlequin --show-s3 https://my-bucket.storage.googleapis.com/my-prefix
+    ```
 -   Items in the Data Catalog can now be copied to the clipboard with <kbd>ctrl+c</kbd>.
 
 ## [1.11.0] - 2024-01-12

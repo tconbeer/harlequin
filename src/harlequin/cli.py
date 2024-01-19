@@ -196,6 +196,14 @@ def build_cli() -> click.Command:
         ),
     )
     @click.option(
+        "--show-s3",
+        "--s3",
+        help=(
+            "Pass a bucket name or URI, or the keyword `all` to show s3 objects "
+            "in the data catalog."
+        ),
+    )
+    @click.option(
         "--config",
         help=(
             "Run the configuration wizard to create or update a Harlequin "
@@ -273,6 +281,7 @@ def build_cli() -> click.Command:
                     HarlequinConfigError(msg=str(e), title="Harlequin Config Error")
                 )
                 ctx.exit(2)
+        show_s3: str | None = config.pop("show_s3", None)  # type: ignore
 
         # load and instantiate the adapter
         adapter = config.pop("adapter", DEFAULT_ADAPTER)
@@ -289,6 +298,7 @@ def build_cli() -> click.Command:
             max_results=max_results,
             theme=theme,
             show_files=show_files,
+            show_s3=show_s3,
         )
         tui.run()
 
