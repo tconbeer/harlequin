@@ -126,6 +126,10 @@ async def test_data_catalog(
         assert all(snap_results)
 
 
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Screenshots contain backslashes instead of slashes.",
+)
 @pytest.mark.asyncio
 async def test_file_tree(
     duckdb_adapter: Type[DuckDbAdapter],
