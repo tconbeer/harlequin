@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import ClassVar, Generic, List, Set, Tuple, Union
@@ -28,7 +27,7 @@ from harlequin.catalog import Catalog, CatalogItem
 try:
     import boto3
 except ImportError:
-    pass
+    boto3 = None  # type: ignore
 
 
 class DataCatalog(TabbedContent, can_focus=True):
@@ -110,10 +109,10 @@ class DataCatalog(TabbedContent, can_focus=True):
         else:
             self.file_tree = None
 
-        if self.show_s3 is not None and "boto3" in sys.modules:
+        if self.show_s3 is not None and boto3 is not None:
             self.s3_tree: S3Tree | None = S3Tree(uri=self.show_s3)
-            self.add_pane(TabPane("s3", self.s3_tree))
-        elif self.show_s3 is not None and "boto3" not in sys.modules:
+            self.add_pane(TabPane("S3", self.s3_tree))
+        elif self.show_s3 is not None and boto3 is None:
             self.post_message(
                 DataCatalog.CatalogError(
                     catalog_type="s3",
@@ -425,6 +424,9 @@ class S3Tree(SubmitMixin, Tree[str]):
 
     @work(thread=True, exclusive=True, exit_on_error=False)
     def _reload_objects(self) -> None:
+        if boto3 is None:
+            return
+
         def recursive_dict() -> defaultdict:
             return defaultdict(recursive_dict)
 

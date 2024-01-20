@@ -7,7 +7,6 @@ import pytest
 from harlequin import Harlequin
 from harlequin_duckdb.adapter import DuckDbAdapter
 from textual.geometry import Offset
-from textual.worker import WorkerCancelled
 
 
 class MockS3Object(NamedTuple):
@@ -36,7 +35,7 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def mock_boto3_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delitem(sys.modules, "boto3")
+    monkeypatch.delitem(sys.modules, "boto3", raising=False)
 
 
 @pytest.mark.asyncio
@@ -141,10 +140,6 @@ async def test_file_tree(
         show_files=test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        try:
-            await app.workers.wait_for_complete()
-        except WorkerCancelled:
-            pass
         await pilot.pause()
         catalog = app.data_catalog
         assert catalog.file_tree is not None
@@ -210,4 +205,4 @@ async def test_s3_tree_does_not_crash_without_boto3(
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert await app_snapshot(app, "Initialization")
+        assert await app_snapshot(app, "Error visible")
