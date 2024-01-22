@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   The new `--show-files` and `--show-s3` options are now correctly grouped under "Harlequin Options" in `harlequin --help`; installed adapters are now alphabetically sorted.
+
 ## [1.12.0] - 2024-01-22
 
 ### Features

@@ -68,11 +68,13 @@ click.rich_click.OPTION_GROUPS = {
             "name": "Harlequin Options",
             "options": [
                 "--profile",
-                "--config-path",
                 "--adapter",
+                "--show-files",
+                "--show-s3",
                 "--theme",
                 "--limit",
                 "--config",
+                "--config-path",
                 "--no-download-tzdata",
                 "--version",
                 "--help",
@@ -191,16 +193,16 @@ def build_cli() -> click.Command:
         "-f",
         type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
         help=(
-            "Pass the path to a directory to this option to show a file tree viewer "
-            "in Harlequin's Data Catalog."
+            "The path to a directory to show in a file tree viewer "
+            "in the Data Catalog."
         ),
     )
     @click.option(
         "--show-s3",
         "--s3",
         help=(
-            "Pass a bucket name or URI, or the keyword `all` to show s3 objects "
-            "in the data catalog."
+            "The bucket name or URI, or the keyword `all` to show s3 objects "
+            "in the Data Catalog."
         ),
     )
     @click.option(
@@ -307,7 +309,7 @@ def build_cli() -> click.Command:
     # we load the options into a dict keyed by their name to de-dupe options
     # that may be passed by multiple adapters.
     options: dict[str, Callable[[click.Command], click.Command]] = {}
-    for adapter_name, adapter_cls in adapters.items():
+    for adapter_name, adapter_cls in sorted(adapters.items()):
         option_name_list: list[str] = []
         if adapter_cls.ADAPTER_OPTIONS is not None:
             for option in adapter_cls.ADAPTER_OPTIONS:
