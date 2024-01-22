@@ -410,6 +410,7 @@ class S3Tree(SubmitMixin, Tree[str]):
 
         scheme, netloc, path, *_ = urlsplit(uri)
         path = path.lstrip("/")
+        bucket: str | None
 
         if not scheme:
             assert not netloc
@@ -430,7 +431,7 @@ class S3Tree(SubmitMixin, Tree[str]):
             prefix = path
         else:
             endpoint_url = f"{scheme}://{netloc}"
-            bucket = path.split("/")[0]
+            bucket = path.split("/")[0] or None
             prefix = "/".join(path.split("/")[1:])
 
         return endpoint_url, bucket, prefix
