@@ -33,11 +33,6 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
 
 
-@pytest.fixture
-def mock_boto3_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delitem(sys.modules, "boto3", raising=False)
-
-
 @pytest.mark.asyncio
 async def test_data_catalog(
     app_multi_duck: Harlequin,
@@ -196,11 +191,11 @@ async def test_s3_tree(
         assert all(snap_results)
 
 
+@pytest.mark.skipif("boto3" in sys.modules, reason="boto3 is installed.")
 @pytest.mark.asyncio
 async def test_s3_tree_does_not_crash_without_boto3(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
-    mock_boto3_not_installed: None,
 ) -> None:
     app = Harlequin(
         duckdb_adapter((":memory:",)),

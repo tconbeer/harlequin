@@ -3,16 +3,24 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from platformdirs import user_cache_dir
 from textual_textarea.key_handlers import Cursor as Cursor
 
 from harlequin.catalog import Catalog
 
-CACHE_VERSION = 0
+if TYPE_CHECKING:
+    from harlequin.components.data_catalog import S3Tree
+
+CACHE_VERSION = 1
+
+
+def recursive_dict() -> defaultdict:
+    return defaultdict(recursive_dict)
 
 
 class PermissiveEncoder(json.JSONEncoder):
@@ -29,6 +37,15 @@ class PermissiveEncoder(json.JSONEncoder):
 @dataclass
 class CatalogCache:
     databases: dict[str, Catalog]
+    s3: dict[tuple[str | None, str | None, str | None], dict]
+
+    def get_db(self, connection_hash: str) -> Catalog | None:
+        return self.databases.get(connection_hash, None)
+
+    def get_s3(
+        self, cache_key: tuple[str | None, str | None, str | None]
+    ) -> dict | None:
+        return self.s3.get(cache_key, None)
 
 
 def get_connection_hash(conn_str: Sequence[str], config: dict[str, Any]) -> str:
@@ -44,18 +61,20 @@ def get_connection_hash(conn_str: Sequence[str], config: dict[str, Any]) -> str:
     )
 
 
-def get_cached_catalog(connection_hash: str) -> Catalog | None:
-    cache = _load_cache()
-    if cache is None:
-        return None
-    return cache.databases.get(connection_hash, None)
+def get_catalog_cache() -> CatalogCache | None:
+    return _load_cache()
 
 
-def update_cache_with_catalog(connection_hash: str, catalog: Catalog) -> None:
+def update_catalog_cache(
+    connection_hash: str | None, catalog: Catalog | None, s3_tree: S3Tree | None
+) -> None:
     cache = _load_cache()
     if cache is None:
-        cache = CatalogCache(databases={})
-    cache.databases[connection_hash] = catalog
+        cache = CatalogCache(databases={}, s3={})
+    if catalog is not None and connection_hash is not None:
+        cache.databases[connection_hash] = catalog
+    if s3_tree is not None and s3_tree.catalog_data is not None:
+        cache.s3[s3_tree.cache_key] = s3_tree.catalog_data
     _write_cache(cache)
 
 
@@ -83,6 +102,7 @@ def _load_cache() -> CatalogCache | None:
         IndexError,
         FileNotFoundError,
         AssertionError,
+        EOFError,
     ):
         return None
     else:

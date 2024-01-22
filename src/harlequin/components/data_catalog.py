@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 from typing import ClassVar, Generic, List, Set, Tuple, Union
 from urllib.parse import urlsplit
@@ -23,6 +22,7 @@ from textual.widgets._tree import EventTreeDataType, TreeNode
 from textual.worker import Worker, WorkerState
 
 from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog_cache import CatalogCache, recursive_dict
 
 try:
     import boto3
@@ -153,6 +153,14 @@ class DataCatalog(TabbedContent, can_focus=True):
     def update_s3_tree(self) -> None:
         if self.s3_tree is not None:
             self.s3_tree.reload()
+
+    def load_s3_tree_from_cache(self, cache: CatalogCache) -> None:
+        if self.show_s3 is None or self.s3_tree is None:
+            return
+        cache_data = cache.get_s3(self.s3_tree.cache_key)
+        if cache_data is None:
+            return
+        self.s3_tree.build_tree(data=cache_data)
 
     def action_switch_tab(self, offset: int) -> None:
         if not self.active:
@@ -326,6 +334,7 @@ class S3Tree(SubmitMixin, Tree[str]):
         disabled: bool = False,
     ) -> None:
         self.endpoint_url, self.bucket, self.prefix = self._parse_s3_uri(uri)
+        self.catalog_data: dict | None = None
         super().__init__(
             "Root", data, name=name, id=id, classes=classes, disabled=disabled
         )
@@ -338,10 +347,18 @@ class S3Tree(SubmitMixin, Tree[str]):
         self.root.data = self.endpoint_url or "s3:/"
         self.reload()
 
+    @property
+    def cache_key(self) -> tuple[str | None, str | None, str | None]:
+        return (self.endpoint_url, self.bucket, self.prefix)
+
     @on(DataReady)
-    def build_tree(self, message: S3Tree.DataReady) -> None:
+    def build_tree_from_message_data(self, message: S3Tree.DataReady) -> None:
+        self.build_tree(message.data)
+
+    def build_tree(self, data: dict) -> None:
+        self.catalog_data = data
         self.clear()
-        self._build_subtree(data=message.data, parent=self.root)
+        self._build_subtree(data=data, parent=self.root)
         self.root.expand()
         self.loading = False
 
@@ -426,9 +443,6 @@ class S3Tree(SubmitMixin, Tree[str]):
     def _reload_objects(self) -> None:
         if boto3 is None:
             return
-
-        def recursive_dict() -> defaultdict:
-            return defaultdict(recursive_dict)
 
         data = {}
         s3 = boto3.resource("s3", endpoint_url=self.endpoint_url)

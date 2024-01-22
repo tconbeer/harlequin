@@ -28,7 +28,11 @@ from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.catalog import Catalog, NewCatalog
-from harlequin.catalog_cache import get_cached_catalog, update_cache_with_catalog
+from harlequin.catalog_cache import (
+    CatalogCache,
+    get_catalog_cache,
+    update_catalog_cache,
+)
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CodeEditor,
@@ -52,6 +56,12 @@ from harlequin.exception import (
     pretty_error_message,
     pretty_print_error,
 )
+
+
+class CatalogCacheLoaded(Message):
+    def __init__(self, cache: CatalogCache) -> None:
+        super().__init__()
+        self.cache = cache
 
 
 class DatabaseConnected(Message):
@@ -209,6 +219,7 @@ class Harlequin(App, inherit_bindings=False):
         self.run_query_bar.checkbox.value = False
 
         self._connect()
+        self._load_catalog_cache()
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -219,6 +230,15 @@ class Harlequin(App, inherit_bindings=False):
                 limit=self.run_query_bar.limit_value,
             )
         )
+
+    @on(CatalogCacheLoaded)
+    def build_trees(self, message: CatalogCacheLoaded) -> None:
+        if self.connection_hash is not None and (
+            cached_db := message.cache.get_db(self.connection_hash)
+        ):
+            self.post_message(NewCatalog(catalog=cached_db))
+        if self.show_s3 is not None:
+            self.data_catalog.load_s3_tree_from_cache(message.cache)
 
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
@@ -521,8 +541,9 @@ class Harlequin(App, inherit_bindings=False):
                 BufferState(editor.cursor, editor.selection_anchor, editor.text)
             )
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
-        if self.catalog is not None and self.connection_hash is not None:
-            update_cache_with_catalog(self.connection_hash, self.catalog)
+        update_catalog_cache(
+            self.connection_hash, self.catalog, self.data_catalog.s3_tree
+        )
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
@@ -558,11 +579,19 @@ class Harlequin(App, inherit_bindings=False):
     )
     def _connect(self) -> None:
         connection = self.adapter.connect()
-        if self.connection_hash is not None and (
-            cached_catalog := get_cached_catalog(self.connection_hash)
-        ):
-            self.post_message(NewCatalog(catalog=cached_catalog))
         self.post_message(DatabaseConnected(connection=connection))
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="cache_loaders",
+        description="Loading cached catalog",
+    )
+    def _load_catalog_cache(self) -> None:
+        cache = get_catalog_cache()
+        if cache is not None:
+            self.post_message(CatalogCacheLoaded(cache=cache))
 
     @work(
         thread=True,
