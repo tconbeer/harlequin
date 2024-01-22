@@ -86,8 +86,15 @@
 
 ### Data Catalog Bindings
 
-- enter: Select the current item.
-- space: Toggle the expand/collapses state of the current item.
-- up: Move the cursor up.
-- down: Move the cursor down.
 - ctrl+enter, ctrl+j: Insert the current name into the Query Editor.
+- ctrl+c: Copy the current name to the clipboard.
+
+#### Switching Tabs
+
+- j: Switch to the previous tab.
+- k: Switch to the next tab.
+
+#### Moving the Cursor
+
+- up,down: Move the cursor one row.
+- enter,space: Toggle the expand/collapsed state of the current item.

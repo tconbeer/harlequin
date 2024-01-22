@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 from functools import partial
+from pathlib import Path
 from typing import Dict, List, Optional, Type, Union
 
 from textual import on, work
@@ -26,8 +27,12 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
-from harlequin.catalog import Catalog, CatalogItem, NewCatalog
-from harlequin.catalog_cache import get_cached_catalog, update_cache_with_catalog
+from harlequin.catalog import Catalog, NewCatalog
+from harlequin.catalog_cache import (
+    CatalogCache,
+    get_catalog_cache,
+    update_catalog_cache,
+)
 from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CodeEditor,
@@ -51,6 +56,12 @@ from harlequin.exception import (
     pretty_error_message,
     pretty_print_error,
 )
+
+
+class CatalogCacheLoaded(Message):
+    def __init__(self, cache: CatalogCache) -> None:
+        super().__init__()
+        self.cache = cache
 
 
 class DatabaseConnected(Message):
@@ -121,6 +132,8 @@ class Harlequin(App, inherit_bindings=False):
         *,
         connection_hash: str | None = None,
         theme: str = "harlequin",
+        show_files: Path | None = None,
+        show_s3: str | None = None,
         max_results: int | str = 100_000,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
@@ -131,6 +144,8 @@ class Harlequin(App, inherit_bindings=False):
         self.connection_hash = connection_hash
         self.catalog: Catalog | None = None
         self.theme = theme
+        self.show_files = show_files
+        self.show_s3 = show_s3 or None
         try:
             self.max_results = int(max_results)
         except ValueError:
@@ -156,7 +171,11 @@ class Harlequin(App, inherit_bindings=False):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         with Horizontal():
-            yield DataCatalog(type_color=self.app_colors.gray)
+            yield DataCatalog(
+                type_color=self.app_colors.gray,
+                show_files=self.show_files,
+                show_s3=self.show_s3,
+            )
             with Vertical(id="main_panel"):
                 yield EditorCollection(language="sql", theme=self.theme)
                 yield RunQueryBar(
@@ -198,9 +217,9 @@ class Harlequin(App, inherit_bindings=False):
 
         self.editor.focus()
         self.run_query_bar.checkbox.value = False
-        self.data_catalog.loading = True
 
         self._connect()
+        self._load_catalog_cache()
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -211,6 +230,15 @@ class Harlequin(App, inherit_bindings=False):
                 limit=self.run_query_bar.limit_value,
             )
         )
+
+    @on(CatalogCacheLoaded)
+    def build_trees(self, message: CatalogCacheLoaded) -> None:
+        if self.connection_hash is not None and (
+            cached_db := message.cache.get_db(self.connection_hash)
+        ):
+            self.post_message(NewCatalog(catalog=cached_db))
+        if self.show_s3 is not None:
+            self.data_catalog.load_s3_tree_from_cache(message.cache)
 
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
@@ -233,13 +261,22 @@ class Harlequin(App, inherit_bindings=False):
         self.update_schema_data()
 
     @on(DataCatalog.NodeSubmitted)
-    def insert_node_into_editor(
-        self, message: DataCatalog.NodeSubmitted[CatalogItem]
-    ) -> None:
+    def insert_node_into_editor(self, message: DataCatalog.NodeSubmitted) -> None:
         message.stop()
-        if message.node.data:
-            self.editor.insert_text_at_selection(text=message.node.data.query_name)
-            self.editor.focus()
+        self.editor.insert_text_at_selection(text=message.insert_name)
+        self.editor.focus()
+
+    @on(DataCatalog.NodeCopied)
+    def copy_node_name(self, message: DataCatalog.NodeCopied) -> None:
+        message.stop()
+        self.editor.text_input.clipboard = message.copy_name
+        if self.editor.use_system_clipboard:
+            try:
+                self.editor.text_input.system_copy(message.copy_name)
+            except Exception:
+                self.notify("Error copying data to system clipboard.", severity="error")
+            else:
+                self.notify("Selected label copied to clipboard.")
 
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
@@ -315,7 +352,7 @@ class Harlequin(App, inherit_bindings=False):
                 header="Could not update data catalog",
                 error=message.worker.error,
             )
-            self.data_catalog.loading = False
+            self.data_catalog.database_tree.loading = False
         elif (
             message.worker.name == "_execute_query" and message.worker.error is not None
         ):
@@ -344,11 +381,18 @@ class Harlequin(App, inherit_bindings=False):
             )
             self.exit(return_code=2, message=pretty_error_message(error))
 
+    @on(DataCatalog.CatalogError)
+    def handle_catalog_error(self, message: DataCatalog.CatalogError) -> None:
+        self._push_error_modal(
+            title=f"Catalog Error: {message.catalog_type}",
+            header=f"Could not populate the {message.catalog_type} data catalog",
+            error=message.error,
+        )
+
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.catalog = message.catalog
-        self.data_catalog.update_tree(message.catalog)
-        self.data_catalog.loading = False
+        self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
 
     @on(QueriesExecuted)
@@ -497,8 +541,9 @@ class Harlequin(App, inherit_bindings=False):
                 BufferState(editor.cursor, editor.selection_anchor, editor.text)
             )
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
-        if self.catalog is not None and self.connection_hash is not None:
-            update_cache_with_catalog(self.connection_hash, self.catalog)
+        update_catalog_cache(
+            self.connection_hash, self.catalog, self.data_catalog.s3_tree
+        )
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
@@ -520,8 +565,10 @@ class Harlequin(App, inherit_bindings=False):
             self.sidebar_hidden = not self.sidebar_hidden
 
     def action_refresh_catalog(self) -> None:
-        self.data_catalog.loading = True
+        self.data_catalog.database_tree.loading = True
         self.update_schema_data()
+        self.data_catalog.update_file_tree()
+        self.data_catalog.update_s3_tree()
 
     @work(
         thread=True,
@@ -532,11 +579,19 @@ class Harlequin(App, inherit_bindings=False):
     )
     def _connect(self) -> None:
         connection = self.adapter.connect()
-        if self.connection_hash is not None and (
-            cached_catalog := get_cached_catalog(self.connection_hash)
-        ):
-            self.post_message(NewCatalog(catalog=cached_catalog))
         self.post_message(DatabaseConnected(connection=connection))
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="cache_loaders",
+        description="Loading cached catalog",
+    )
+    def _load_catalog_cache(self) -> None:
+        cache = get_catalog_cache()
+        if cache is not None:
+            self.post_message(CatalogCacheLoaded(cache=cache))
 
     @work(
         thread=True,

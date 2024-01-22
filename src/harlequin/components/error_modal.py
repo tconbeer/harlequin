@@ -1,6 +1,7 @@
 from typing import Union
 
 import pyperclip
+from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
@@ -39,7 +40,7 @@ class ErrorModal(ModalScreen):
             yield Static(self.header, id="error_header")
             with Vertical(id="error_inner"):
                 with VerticalScroll():
-                    yield ClickableStatic(str(self.error), id="error_info")
+                    yield ClickableStatic(escape(str(self.error)), id="error_info")
             yield Static(
                 "Press any key to continue. Click error to copy.", id="error_footer"
             )

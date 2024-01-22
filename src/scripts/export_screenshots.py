@@ -30,8 +30,8 @@ async def save_all_screenshots() -> None:
             app.editor.selection_anchor = (9, 0)  # type: ignore
             await app.workers.wait_for_complete()
             await pilot.pause()
-            app.data_catalog.root.expand()
-            for child in app.data_catalog.root.children:
+            app.data_catalog.database_tree.root.expand()
+            for child in app.data_catalog.database_tree.root.children:
                 print("here!")
                 child.expand()
                 for grandchild in child.children:
@@ -39,7 +39,7 @@ async def save_all_screenshots() -> None:
                     for great in grandchild.children:
                         if str(great.label).startswith("drivers"):
                             great.expand()
-            app.data_catalog.cursor_line = 7
+            app.data_catalog.database_tree.cursor_line = 7
             await pilot.press("ctrl+j")
             app.save_screenshot(filename=f"{theme}.svg", path="./static/themes/")
         app.exit()

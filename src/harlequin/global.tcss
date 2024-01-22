@@ -17,7 +17,7 @@ LoadingIndicator {
     background: $background;
 }
 
-DataCatalog:focus,
+DataCatalog:focus-within,
 EditorCollection:focus-within,
 ResultsViewer:focus-within {
     border: round $border-color-focus;
@@ -85,19 +85,34 @@ Toast .toast--title {
 DataCatalog {
     height: 1fr;
     width: 1fr;
+}
+
+DataCatalog DatabaseTree,
+DataCatalog FileTree,
+DataCatalog S3Tree {
+    background: $background;
     padding: 0 1;
 }
 
-DataCatalog .tree--guides {
+DataCatalog * .tree--guides {
     color: $primary;
 }
 
-DataCatalog .tree--guides-hover {
+DataCatalog * .tree--guides-hover {
     color: $primary;
 }
 
-DataCatalog .tree--guides-selected {
+DataCatalog * .tree--guides-selected {
     color: $secondary;
+}
+
+DataCatalog * .directory-tree--folder {
+    text-style: bold;
+}
+
+DataCatalog * .directory-tree--hidden {
+    text-style: italic;
+    color: $text-muted;
 }
 
 /* RIGHT HAND CONTAINER */
@@ -218,7 +233,7 @@ RunQueryBar.non-responsive Input {
 TabbedContent,
 TabPane {
     height: 1fr;
-    width: 100%;
+    width: 1fr;
 }
 
 .hide-tabs Tabs {
