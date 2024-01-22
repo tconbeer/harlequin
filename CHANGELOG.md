@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.12.0] - 2024-01-22
+
 ### Features
 
 -   Adds an option, `--show-files` (alias `-f`), which will display the passed directory in the Data Catalog, alongside the connected database schema, in a second tab. Like database catalog items, you can use <kbd>ctrl+enter</kbd>, <kbd>ctrl+j</kbd>, or double-click to insert the path into the query editor.
@@ -504,7 +506,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.11.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.12.0...HEAD
+
+[1.12.0]: https://github.com/tconbeer/harlequin/compare/1.11.0...1.12.0
 
 [1.11.0]: https://github.com/tconbeer/harlequin/compare/1.10.0...1.11.0
 
