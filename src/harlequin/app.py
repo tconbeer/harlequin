@@ -382,19 +382,6 @@ class Harlequin(App, inherit_bindings=False):
                 error=message.worker.error,
             )
             self.data_catalog.database_tree.loading = False
-        elif (
-            message.worker.name == "_execute_query" and message.worker.error is not None
-        ):
-            self.run_query_bar.set_responsive()
-            self.results_viewer.show_table()
-            header = getattr(
-                message.worker.error, "title", message.worker.error.__class__.__name__
-            )
-            self._push_error_modal(
-                title="Query Error",
-                header=header,
-                error=message.worker.error,
-            )
         elif message.worker.name == "_connect" and message.worker.error is not None:
             title = getattr(
                 message.worker.error,
@@ -684,7 +671,7 @@ class Harlequin(App, inherit_bindings=False):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=False,
+        exit_on_error=True,
         group="query_runners",
         description="Executing queries.",
     )
