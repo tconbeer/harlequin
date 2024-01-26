@@ -19,7 +19,10 @@ LoadingIndicator {
 
 DataCatalog:focus-within,
 EditorCollection:focus-within,
-ResultsViewer:focus-within {
+ResultsViewer:focus-within,
+HistoryScreen VerticalScroll:focus,
+HistoryScreen OptionList:focus,
+ {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
@@ -471,6 +474,48 @@ ExportScreen Button:focus {
 ExportScreen Button:hover,
 #cancel:hover {
     background: $secondary;
+}
+
+/* HISTORY SCREEN */
+
+HistoryScreen VerticalScroll {
+    background: $background;
+    border: round $border-color-nofocus;
+    width: 1fr;
+    height: 100%;
+}
+
+HistoryScreen VerticalScroll Static {
+    background: $background;
+    width: 100%;
+    height: auto;
+    padding: 0 1 0 0;
+}
+
+HistoryScreen OptionList {
+    background: $background;
+    border: round $border-color-nofocus;
+    width: 1fr;
+    height: 100%;
+    padding: 0;
+}
+
+HistoryScreen OptionList > .option-list--option-highlighted {
+    background: $secondary;
+    color: auto;
+    text-style: none;
+}
+
+
+HistoryScreen OptionList > .option-list--option-hover {
+    color: $text;
+    background: $boost;
+}
+
+HistoryScreen OptionList > .option-list--option-hover-highlighted {
+    background: $secondary;
+    color: auto;
+    text-style: none;
 }
 
 /* FOOTER */

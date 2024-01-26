@@ -3,6 +3,7 @@ from harlequin.components.data_catalog import DataCatalog
 from harlequin.components.error_modal import ErrorModal
 from harlequin.components.export_screen import ExportScreen, export_callback
 from harlequin.components.help_screen import HelpScreen
+from harlequin.components.history_screen import HistoryScreen
 from harlequin.components.results_viewer import ResultsViewer
 from harlequin.components.run_query_bar import RunQueryBar
 
@@ -16,4 +17,5 @@ __all__ = [
     "ResultsViewer",
     "RunQueryBar",
     "DataCatalog",
+    "HistoryScreen",
 ]

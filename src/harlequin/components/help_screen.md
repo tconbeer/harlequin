@@ -5,6 +5,7 @@
 - F2: Focus on the Query Editor.
 - F5: Focus on the Results Viewer.
 - F6: Focus on the Data Catalog.
+- F8: Show the Query History Viewer.
 - F9, ctrl+b: Toggle the sidebar.
 - F10: Toggle full screen mode for the current widget.
 - ctrl+e: Write the returned data to a CSV, Parquet, or JSON file.
@@ -98,3 +99,10 @@
 
 - up,down: Move the cursor one row.
 - enter,space: Toggle the expand/collapsed state of the current item.
+
+### Query History Viewer Bindings
+
+- up,down,PgUp,PgDn: Change selection and scroll.
+- tab: Change focus between the history list and the query preview pane.
+- enter: Create a new Editor buffer and insert the highlighted query.
+- escape: Return to the main screen.

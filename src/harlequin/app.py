@@ -41,6 +41,7 @@ from harlequin.components import (
     ErrorModal,
     ExportScreen,
     HelpScreen,
+    HistoryScreen,
     ResultsViewer,
     RunQueryBar,
     export_callback,
@@ -56,6 +57,7 @@ from harlequin.exception import (
     pretty_error_message,
     pretty_print_error,
 )
+from harlequin.history import History
 
 
 class CatalogCacheLoaded(Message):
@@ -70,6 +72,13 @@ class DatabaseConnected(Message):
         self.connection = connection
 
 
+class QueryError(Message):
+    def __init__(self, query_text: str, error: BaseException) -> None:
+        super().__init__()
+        self.query_text = query_text
+        self.error = error
+
+
 class QuerySubmitted(Message):
     def __init__(self, query_text: str, limit: int | None) -> None:
         super().__init__()
@@ -80,20 +89,25 @@ class QuerySubmitted(Message):
 
 class QueriesExecuted(Message):
     def __init__(
-        self, query_count: int, cursors: Dict[str, HarlequinCursor], submitted_at: float
+        self,
+        query_count: int,
+        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        submitted_at: float,
+        ddl_queries: list[str],
     ) -> None:
         super().__init__()
         self.query_count = query_count
         self.cursors = cursors
         self.submitted_at = submitted_at
+        self.ddl_queries = ddl_queries
 
 
 class ResultsFetched(Message):
     def __init__(
         self,
-        cursors: Dict[str, HarlequinCursor],
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]],
-        errors: List[BaseException],
+        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]],
+        errors: list[tuple[BaseException, str]],
         elapsed: float,
     ) -> None:
         super().__init__()
@@ -116,6 +130,7 @@ class Harlequin(App, inherit_bindings=False):
         Binding("f2", "focus_query_editor", "Focus Query Editor", show=False),
         Binding("f5", "focus_results_viewer", "Focus Results Viewer", show=False),
         Binding("f6", "focus_data_catalog", "Focus Data Catalog", show=False),
+        Binding("f8", "show_query_history", "History", show=True),
         Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
         Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
@@ -143,6 +158,7 @@ class Harlequin(App, inherit_bindings=False):
         self.adapter = adapter
         self.connection_hash = connection_hash
         self.catalog: Catalog | None = None
+        self.history: History | None = None
         self.theme = theme
         self.show_files = show_files
         self.show_s3 = show_s3 or None
@@ -170,22 +186,29 @@ class Harlequin(App, inherit_bindings=False):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
+        self.data_catalog = DataCatalog(
+            type_color=self.app_colors.gray,
+            show_files=self.show_files,
+            show_s3=self.show_s3,
+        )
+        self.editor_collection = EditorCollection(language="sql", theme=self.theme)
+        self.results_viewer = ResultsViewer(
+            max_results=self.max_results,
+            type_color=self.app_colors.gray,
+        )
+        self.run_query_bar = RunQueryBar(
+            max_results=self.max_results, classes="non-responsive"
+        )
+        self.footer = Footer()
+
+        # lay out the widgets
         with Horizontal():
-            yield DataCatalog(
-                type_color=self.app_colors.gray,
-                show_files=self.show_files,
-                show_s3=self.show_s3,
-            )
+            yield self.data_catalog
             with Vertical(id="main_panel"):
-                yield EditorCollection(language="sql", theme=self.theme)
-                yield RunQueryBar(
-                    max_results=self.max_results, classes="non-responsive"
-                )
-                yield ResultsViewer(
-                    max_results=self.max_results,
-                    type_color=self.app_colors.gray,
-                )
-        yield Footer()
+                yield self.editor_collection
+                yield self.run_query_bar
+                yield self.results_viewer
+        yield self.footer
 
     def push_screen(  # type: ignore
         self,
@@ -207,14 +230,17 @@ class Harlequin(App, inherit_bindings=False):
             self.editor.text_input._restart_blink()
         return new_screen
 
-    async def on_mount(self) -> None:
-        self.data_catalog = self.query_one(DataCatalog)
-        self.editor_collection = self.query_one(EditorCollection)
-        self.editor = self.editor_collection.current_editor
-        self.results_viewer = self.query_one(ResultsViewer)
-        self.run_query_bar = self.query_one(RunQueryBar)
-        self.footer = self.query_one(Footer)
+    def append_to_history(
+        self, query_text: str, result_row_count: int, elapsed: float
+    ) -> None:
+        if self.history is None:
+            self.history = History.blank()
+        self.history.append(
+            query_text=query_text, result_row_count=result_row_count, elapsed=elapsed
+        )
 
+    async def on_mount(self) -> None:
+        self.editor = self.editor_collection.current_editor
         self.editor.focus()
         self.run_query_bar.checkbox.value = False
 
@@ -239,6 +265,9 @@ class Harlequin(App, inherit_bindings=False):
             self.post_message(NewCatalog(catalog=cached_db))
         if self.show_s3 is not None:
             self.data_catalog.load_s3_tree_from_cache(message.cache)
+        if self.connection_hash is not None:
+            history = message.cache.get_history(self.connection_hash)
+            self.history = history if history is not None else History.blank()
 
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
@@ -389,6 +418,20 @@ class Harlequin(App, inherit_bindings=False):
             error=message.error,
         )
 
+    @on(QueryError)
+    def handle_query_error(self, message: QueryError) -> None:
+        self.append_to_history(
+            query_text=message.query_text, result_row_count=-1, elapsed=0.0
+        )
+        self.run_query_bar.set_responsive()
+        self.results_viewer.show_table()
+        header = getattr(message.error, "title", message.error.__class__.__name__)
+        self._push_error_modal(
+            title="Query Error",
+            header=header,
+            error=message.error,
+        )
+
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.catalog = message.catalog
@@ -402,9 +445,14 @@ class Harlequin(App, inherit_bindings=False):
         else:
             self.run_query_bar.set_responsive()
             self.results_viewer.show_table(did_run=message.query_count > 0)
-        if (n := message.query_count - len(message.cursors)) > 0:
+        if message.ddl_queries:
+            n = len(message.ddl_queries)
             # at least one DDL statement
             elapsed = time.monotonic() - message.submitted_at
+            for query_text in message.ddl_queries:
+                self.append_to_history(
+                    query_text=query_text, result_row_count=0, elapsed=elapsed
+                )
             self.notify(
                 f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
                 f"executed successfully in {elapsed:.2f} seconds."
@@ -413,22 +461,31 @@ class Harlequin(App, inherit_bindings=False):
 
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
-        for id_, (cols, data) in message.data.items():
-            await self.results_viewer.push_table(
+        for id_, (cols, data, query_text) in message.data.items():
+            table = await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
                 data=data,  # type: ignore
             )
+            self.append_to_history(
+                query_text=query_text,
+                result_row_count=table.source_row_count,
+                elapsed=message.elapsed,
+            )
         if message.errors:
+            for _, query_text in message.errors:
+                self.append_to_history(
+                    query_text=query_text, result_row_count=-1, elapsed=0.0
+                )
             header = getattr(
-                message.errors[0],
+                message.errors[0][0],
                 "title",
                 "The database raised an error when running your query:",
             )
             self._push_error_modal(
                 title="Query Error",
                 header=header,
-                error=message.errors[0],
+                error=message.errors[0][0],
             )
         else:
             self.notify(
@@ -521,6 +578,34 @@ class Harlequin(App, inherit_bindings=False):
             ExportScreen(adapter=self.adapter, id="export_screen"), callback
         )
 
+    def action_show_query_history(self) -> None:
+        async def history_callback(screen_data: str) -> None:
+            """
+            Insert the selected query into a new buffer.
+            """
+            await self.editor_collection.insert_buffer_with_text(query_text=screen_data)
+
+        if self.history is None:
+            # This should only happen immediately after start-up, before the cache is
+            # loaded from disk.
+            self._push_error_modal(
+                title="History Not Yet Loaded",
+                header="Harlequin could not load the Query History.",
+                error=ValueError(
+                    "Your Query History has not yet been loaded. "
+                    "Please wait a moment and try again."
+                ),
+            )
+        else:
+            self.push_screen(
+                HistoryScreen(
+                    history=self.history,
+                    theme=self.theme,
+                    id="history_screen",
+                ),
+                history_callback,
+            )
+
     def action_focus_data_catalog(self) -> None:
         if self.sidebar_hidden or self.data_catalog.disabled:
             self.action_toggle_sidebar()
@@ -542,7 +627,10 @@ class Harlequin(App, inherit_bindings=False):
             )
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
         update_catalog_cache(
-            self.connection_hash, self.catalog, self.data_catalog.s3_tree
+            connection_hash=self.connection_hash,
+            catalog=self.catalog,
+            s3_tree=self.data_catalog.s3_tree,
+            history=self.history,
         )
         await super().action_quit()
 
@@ -603,20 +691,29 @@ class Harlequin(App, inherit_bindings=False):
     def _execute_query(self, message: QuerySubmitted) -> None:
         if self.connection is None:
             return
-        cursors: Dict[str, HarlequinCursor] = {}
+        cursors: Dict[str, tuple[HarlequinCursor, str]] = {}
         queries = self._split_query_text(message.query_text)
+        ddl_queries: list[str] = []
         for q in queries:
-            cur = self.connection.execute(q)
-            if cur is not None:
-                if message.limit is not None:
-                    cur = cur.set_limit(message.limit)
-                table_id = f"t{hash(cur)}"
-                cursors[table_id] = cur
+            try:
+                cur = self.connection.execute(q)
+            except HarlequinQueryError as e:
+                self.post_message(QueryError(query_text=q, error=e))
+                break
+            else:
+                if cur is not None:
+                    if message.limit is not None:
+                        cur = cur.set_limit(message.limit)
+                    table_id = f"t{hash(cur)}"
+                    cursors[table_id] = (cur, q)
+                else:
+                    ddl_queries.append(q)
         self.post_message(
             QueriesExecuted(
-                query_count=len(queries),
+                query_count=len(cursors) + len(ddl_queries),
                 cursors=cursors,
                 submitted_at=message.submitted_at,
+                ddl_queries=ddl_queries,
             )
         )
 
@@ -648,17 +745,19 @@ class Harlequin(App, inherit_bindings=False):
         description="fetching data from adapter.",
     )
     def _fetch_data(
-        self, cursors: Dict[str, HarlequinCursor], submitted_at: float
+        self,
+        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        submitted_at: float,
     ) -> None:
-        errors: List[BaseException] = []
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None]] = {}
-        for id_, cur in cursors.items():
+        errors: list[tuple[BaseException, str]] = []
+        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]] = {}
+        for id_, (cur, q) in cursors.items():
             try:
                 cur_data = cur.fetchall()
             except HarlequinQueryError as e:
-                errors.append(e)
+                errors.append((e, q))
             else:
-                data[id_] = (cur.columns(), cur_data)
+                data[id_] = (cur.columns(), cur_data, q)
         elapsed = time.monotonic() - submitted_at
         self.post_message(
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)

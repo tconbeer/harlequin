@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Adds a Query History Viewer: press <kbd>F8</kbd> to view a list of up to 500 previously-executed queries ([#259](https://github.com/tconbeer/harlequin/issues/259)).
+
 ### Bug Fixes
 
 -   The new `--show-files` and `--show-s3` options are now correctly grouped under "Harlequin Options" in `harlequin --help`; installed adapters are now alphabetically sorted.
