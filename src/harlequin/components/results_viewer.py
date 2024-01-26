@@ -72,7 +72,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         table_id: str,
         column_labels: List[Tuple[str, str]],
         data: AutoBackendType,
-    ) -> None:
+    ) -> ResultsTable:
         formatted_labels = [
             self._format_column_label(col_name, col_type)
             for col_name, col_type in column_labels
@@ -94,6 +94,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         # need to manually refresh the table, since activating the tab
         # doesn't consistently cause a new layout calc.
         table.refresh(repaint=True, layout=True)
+        return table
 
     def show_loading(self) -> None:
         self.border_title = "Running Query"

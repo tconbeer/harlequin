@@ -239,7 +239,14 @@ class EditorCollection(TabbedContent):
         self.current_editor.member_completer = self.member_completer
         self.current_editor.focus()
 
-    async def action_new_buffer(self, state: Union[BufferState, None] = None) -> None:
+    async def insert_buffer_with_text(self, query_text: str) -> None:
+        new_editor = await self.action_new_buffer()
+        new_editor.text = query_text
+        new_editor.focus()
+
+    async def action_new_buffer(
+        self, state: Union[BufferState, None] = None
+    ) -> CodeEditor:
         self.counter += 1
         new_tab_id = f"tab-{self.counter}"
         editor = CodeEditor(
@@ -264,6 +271,7 @@ class EditorCollection(TabbedContent):
             self.current_editor.focus()
         if self.counter > 1:
             self.remove_class("hide-tabs")
+        return editor
 
     def action_close_buffer(self) -> None:
         if self.tab_count > 1:
