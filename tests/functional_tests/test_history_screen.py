@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
+from rich.console import COLOR_SYSTEMS
 
 
 @pytest.fixture
@@ -29,6 +30,10 @@ async def test_history_screen(
 ) -> None:
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
+        # rich.Syntax calculates different colors for the line numbers, depending
+        # on the color system of the rich.console, which is different across different
+        # GitHub action runners. Here we force everything to truecolor.
+        app.console._color_system = COLOR_SYSTEMS["truecolor"]
         q = "\n".join([f"select {i};" for i in range(15)])
         app.post_message(QuerySubmitted(query_text=q, limit=None))
         await pilot.pause()
