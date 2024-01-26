@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.13.0] - 2024-01-26
+
 ### Features
 
 -   Adds a Query History Viewer: press <kbd>F8</kbd> to view a list of up to 500 previously-executed queries ([#259](https://github.com/tconbeer/harlequin/issues/259)).
@@ -514,7 +516,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.12.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.13.0...HEAD
+
+[1.13.0]: https://github.com/tconbeer/harlequin/compare/1.12.0...1.13.0
 
 [1.12.0]: https://github.com/tconbeer/harlequin/compare/1.11.0...1.12.0
 
