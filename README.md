@@ -31,7 +31,7 @@ To open an in-memory DuckDB session, run Harlequin with no arguments:
 harlequin
 ```
 
-If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](troubleshooting/duckdb-version-mismatch) page.
+If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/duckdb-version-mismatch) page.
 
 ## Using Harlequin with SQLite and Other Adapters
 
@@ -58,6 +58,8 @@ harlequin --help
 ```
 
 To view a list of all key bindings (keyboard shortcuts) within the app, press <Key>F1</Key>. You can also view this list outside the app [in the docs](https://harlequin.sh/docs/bindings).
+
+COLOR, KEY BINDING, OR COPY-PASTE PROBLEMS? See [Troubleshooting](https://harlequin.sh/docs/troubleshooting/index) in the docs. 
 
 ## More info at [harlequin.sh](https://harlequin.sh)
 
