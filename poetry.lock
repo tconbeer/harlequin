@@ -2246,6 +2246,82 @@ plugins = ["importlib-metadata"]
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pyinstrument"
+version = "4.6.2"
+description = "Call stack profiler for Python. Shows you why your code is slow!"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "pyinstrument-4.6.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7a1b1cd768ea7ea9ab6f5490f7e74431321bcc463e9441dbc2f769617252d9e2"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:8a386b9d09d167451fb2111eaf86aabf6e094fed42c15f62ec51d6980bce7d96"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:23c3e3ca8553b9aac09bd978c73d21b9032c707ac6d803bae6a20ecc048df4a8"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5f329f5534ca069420246f5ce57270d975229bcb92a3a3fd6b2ca086527d9764"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d4dcdcc7ba224a0c5edfbd00b0f530f5aed2b26da5aaa2f9af5519d4aa8c7e41"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:73db0c2c99119c65b075feee76e903b4ed82e59440fe8b5724acf5c7cb24721f"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:da58f265326f3cf3975366ccb8b39014f1e69ff8327958a089858d71c633d654"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:feebcf860f955401df30d029ec8de7a0c5515d24ea809736430fd1219686fe14"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-win32.whl", hash = "sha256:b2b66ff0b16c8ecf1ec22de001cfff46872b2c163c62429055105564eef50b2e"},
+    {file = "pyinstrument-4.6.2-cp310-cp310-win_amd64.whl", hash = "sha256:8d104b7a7899d5fa4c5bf1ceb0c1a070615a72c5dc17bc321b612467ad5c5d88"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:62f6014d2b928b181a52483e7c7b82f2c27e22c577417d1681153e5518f03317"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:dcb5c8d763c5df55131670ba2a01a8aebd0d490a789904a55eb6a8b8d497f110"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6ed4e8c6c84e0e6429ba7008a66e435ede2d8cb027794c20923c55669d9c5633"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6c0f0e1d8f8c70faa90ff57f78ac0dda774b52ea0bfb2d9f0f41ce6f3e7c869e"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8b3c44cb037ad0d6e9d9a48c14d856254ada641fbd0ae9de40da045fc2226a2a"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:be9901f17ac2f527c352f2fdca3d717c1d7f2ce8a70bad5a490fc8cc5d2a6007"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:8a9791bf8916c1cf439c202fded32de93354b0f57328f303d71950b0027c7811"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:d6162615e783c59e36f2d7caf903a7e3ecb6b32d4a4ae8907f2760b2ef395bf6"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-win32.whl", hash = "sha256:28af084aa84bbfd3620ebe71d5f9a0deca4451267f363738ca824f733de55056"},
+    {file = "pyinstrument-4.6.2-cp311-cp311-win_amd64.whl", hash = "sha256:dd6007d3c2e318e09e582435dd8d111cccf30d342af66886b783208813caf3d7"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:e3813c8ecfab9d7d855c5f0f71f11793cf1507f40401aa33575c7fd613577c23"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:6c761372945e60fc1396b7a49f30592e8474e70a558f1a87346d27c8c4ce50f7"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4fba3244e94c117bf4d9b30b8852bbdcd510e7329fdd5c7c8b3799e00a9215a8"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:803ac64e526473d64283f504df3b0d5c2c203ea9603cab428641538ffdc753a7"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e2e554b1bb0df78f5ce8a92df75b664912ca93aa94208386102af454ec31b647"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:7c671057fad22ee3ded897a6a361204ea2538e44c1233cad0e8e30f6d27f33db"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-musllinux_1_1_i686.whl", hash = "sha256:d02f31fa13a9e8dc702a113878419deba859563a32474c9f68e04619d43d6f01"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:b55983a884f083f93f0fc6d12ff8df0acd1e2fb0580d2f4c7bfe6def33a84b58"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-win32.whl", hash = "sha256:fdc0a53b27e5d8e47147489c7dab596ddd1756b1e053217ef5bc6718567099ff"},
+    {file = "pyinstrument-4.6.2-cp312-cp312-win_amd64.whl", hash = "sha256:dd5c53a0159126b5ce7cbc4994433c9c671e057c85297ff32645166a06ad2c50"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:b082df0bbf71251a7f4880a12ed28421dba84ea7110bb376e0533067a4eaff40"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:90350533396071cb2543affe01e40bf534c35cb0d4b8fa9fdb0f052f9ca2cfe3"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:67268bb0d579330cff40fd1c90b8510363ca1a0e7204225840614068658dab77"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:20e15b4e1d29ba0b7fc81aac50351e0dc0d7e911e93771ebc3f408e864a2c93b"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-musllinux_1_1_aarch64.whl", hash = "sha256:2e625fc6ffcd4fd420493edd8276179c3f784df207bef4c2192725c1b310534c"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-musllinux_1_1_i686.whl", hash = "sha256:113d2fc534c9ca7b6b5661d6ada05515bf318f6eb34e8d05860fe49eb7cfe17e"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-musllinux_1_1_x86_64.whl", hash = "sha256:3098cd72b71a322a72dafeb4ba5c566465e193d2030adad4c09566bd2f89bf4f"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-win32.whl", hash = "sha256:08fdc7f88c989316fa47805234c37a40fafe7b614afd8ae863f0afa9d1707b37"},
+    {file = "pyinstrument-4.6.2-cp37-cp37m-win_amd64.whl", hash = "sha256:5ebeba952c0056dcc9b9355328c78c4b5c2a33b4b4276a9157a3ab589f3d1bac"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:34e59e91c88ec9ad5630c0964eca823949005e97736bfa838beb4789e94912a2"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:cd0320c39e99e3c0a3129d1ed010ac41e5a7eb96fb79900d270080a97962e995"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:46992e855d630575ec635eeca0068a8ddf423d4fd32ea0875a94e9f8688f0b95"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1e474c56da636253dfdca7cd1998b240d6b39f7ed34777362db69224fcf053b1"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d4b559322f30509ad8f082561792352d0805b3edfa508e492a36041fdc009259"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:06a8578b2943eb1dbbf281e1e59e44246acfefd79e1b06d4950f01b693de12af"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-musllinux_1_1_i686.whl", hash = "sha256:7bd3da31c46f1c1cb7ae89031725f6a1d1015c2041d9c753fe23980f5f9fd86c"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:e63f4916001aa9c625976a50779282e0a5b5e9b17c52a50ef4c651e468ed5b88"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-win32.whl", hash = "sha256:32ec8db6896b94af790a530e1e0edad4d0f941a0ab8dd9073e5993e7ea46af7d"},
+    {file = "pyinstrument-4.6.2-cp38-cp38-win_amd64.whl", hash = "sha256:a59fc4f7db738a094823afe6422509fa5816a7bf74e768ce5a7a2ddd91af40ac"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:3a165e0d2deb212d4cf439383982a831682009e1b08733c568cac88c89784e62"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:7ba858b3d6f6e5597c641edcc0e7e464f85aba86d71bc3b3592cb89897bf43f6"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2fd8e547cf3df5f0ec6e4dffbe2e857f6b28eda51b71c3c0b5a2fc0646527835"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0de2c1714a37a820033b19cf134ead43299a02662f1379140974a9ab733c5f3a"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:01fc45dedceec3df81668d702bca6d400d956c8b8494abc206638c167c78dfd9"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:5b6e161ef268d43ee6bbfae7fd2cdd0a52c099ddd21001c126ca1805dc906539"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:6ba8e368d0421f15ba6366dfd60ec131c1b46505d021477e0f865d26cf35a605"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:edca46f04a573ac2fb11a84b937844e6a109f38f80f4b422222fb5be8ecad8cb"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-win32.whl", hash = "sha256:baf375953b02fe94d00e716f060e60211ede73f49512b96687335f7071adb153"},
+    {file = "pyinstrument-4.6.2-cp39-cp39-win_amd64.whl", hash = "sha256:af1a953bce9fd530040895d01ff3de485e25e1576dccb014f76ba9131376fcad"},
+    {file = "pyinstrument-4.6.2.tar.gz", hash = "sha256:0002ee517ed8502bbda6eb2bb1ba8f95a55492fcdf03811ba13d4806e50dd7f6"},
+]
+
+[package.extras]
+bin = ["click", "nox"]
+docs = ["furo (==2021.6.18b36)", "myst-parser (==0.15.1)", "sphinx (==4.2.0)", "sphinxcontrib-programoutput (==0.17)"]
+examples = ["django", "numpy"]
+test = ["flaky", "greenlet (>=3.0.0a1)", "ipython", "pytest", "pytest-asyncio (==0.12.0)", "sphinx-autobuild (==2021.3.14)", "trio"]
+types = ["typing-extensions"]
+
+[[package]]
 name = "pyodbc"
 version = "5.0.1"
 description = "DB API module for ODBC"
@@ -3258,4 +3334,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "4a9c6060e06506b1ed717a04a2201b12425034058f489028fd17e1c35327f62a"
+content-hash = "6e060a7dcfe683bbd96d9a0fe757a3ac169ee6813b0bf76c060a8fbbe851c322"

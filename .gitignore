@@ -13,6 +13,7 @@
 Pipfile
 snapshot_report.html
 .harlequin.toml
+.profiles
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
