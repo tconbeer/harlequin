@@ -16,7 +16,8 @@ async def test_run_query_bar(
     messages: list[Message] = []
     async with app.run_test(size=(120, 36), message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         # initialization
         bar = app.run_query_bar
         assert bar.checkbox.value is False

@@ -35,6 +35,8 @@ async def test_history_screen(
         # GitHub action runners. Here we force everything to truecolor.
         app.console._color_system = COLOR_SYSTEMS["truecolor"]
         q = "\n".join([f"select {i};" for i in range(15)])
+        while app.editor is None:
+            await pilot.pause()
         app.post_message(QuerySubmitted(query_text=q, limit=None))
         await pilot.pause()
         await app.workers.wait_for_complete()

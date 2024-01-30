@@ -9,8 +9,8 @@ from harlequin import Harlequin
 async def test_query_formatting(app: Harlequin) -> None:
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert app.editor is not None
+        while app.editor is None:
+            await pilot.pause()
         app.editor.text = "select\n\n1 FROM\n\n foo"
 
         await pilot.press("f4")
@@ -24,11 +24,11 @@ async def test_multiple_buffers(
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
-        assert app.editor is not None
         app.editor.text = "tab 1"
         await pilot.press("home")
         await pilot.pause()
@@ -107,7 +107,8 @@ async def test_word_autocomplete(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None or app.editor_collection.word_completer is None:
+            await pilot.pause()
 
         await pilot.press("s")
         await pilot.pause()
@@ -163,8 +164,8 @@ async def test_member_autocomplete(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert app.editor is not None
+        while app.editor is None or app.editor_collection.member_completer is None:
+            await pilot.pause()
         app.editor.text = '"drivers"'
         app.editor.cursor = (0, 9)  # type: ignore
 

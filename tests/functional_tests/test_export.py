@@ -17,8 +17,8 @@ async def test_export(
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert app.editor is not None
+        while app.editor is None:
+            await pilot.pause()
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
         await app.workers.wait_for_complete()
