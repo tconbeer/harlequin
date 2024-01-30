@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, Type, Union
 
 from pygments.style import Style as PygmentsStyle
 from pygments.styles import get_style_by_name
@@ -163,18 +163,23 @@ class HarlequinColors:
 
     @classmethod
     def from_theme(cls, theme: str) -> "HarlequinColors":
-        try:
-            style = get_style_by_name(theme)
-        except ClassNotFound as e:
-            raise HarlequinThemeError(
-                (
-                    f"No theme found with the name {theme}.\n"
-                    "Theme must be the name of a Pygments Style. "
-                    "You can browse the supported styles here:\n"
-                    "https://pygments.org/styles/"
-                ),
-                title="Harlequin couldn't load your theme.",
-            ) from e
+        # perf optimization to short-circuit get_style_by_name call, which
+        # is slow.
+        if theme == "harlequin":
+            style: Type[PygmentsStyle] = HarlequinPygmentsStyle
+        else:
+            try:
+                style = get_style_by_name(theme)
+            except ClassNotFound as e:
+                raise HarlequinThemeError(
+                    (
+                        f"No theme found with the name {theme}.\n"
+                        "Theme must be the name of a Pygments Style. "
+                        "You can browse the supported styles here:\n"
+                        "https://pygments.org/styles/"
+                    ),
+                    title="Harlequin couldn't load your theme.",
+                ) from e
 
         background = style.background_color
         highlight = style.highlight_color

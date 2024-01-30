@@ -11,7 +11,8 @@ async def test_toggle_sidebar(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         # initialization
         sidebar = app.data_catalog
         assert not sidebar.disabled
@@ -47,7 +48,8 @@ async def test_toggle_full_screen(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         # initialization; all visible
         app.editor.focus()
         assert app.full_screen is False

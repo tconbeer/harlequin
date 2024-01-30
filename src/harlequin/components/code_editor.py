@@ -203,7 +203,10 @@ class EditorCollection(TabbedContent):
     @member_completer.setter
     def member_completer(self, new_completer: MemberCompleter) -> None:
         self._member_completer = new_completer
-        self.current_editor.member_completer = new_completer
+        try:
+            self.current_editor.member_completer = new_completer
+        except NoMatches:
+            pass
 
     @property
     def word_completer(self) -> WordCompleter | None:
@@ -212,10 +215,12 @@ class EditorCollection(TabbedContent):
     @word_completer.setter
     def word_completer(self, new_completer: WordCompleter) -> None:
         self._word_completer = new_completer
-        self.current_editor.word_completer = new_completer
+        try:
+            self.current_editor.word_completer = new_completer
+        except NoMatches:
+            pass
 
     async def on_mount(self) -> None:
-        self.add_class("hide-tabs")
         cache = load_cache()
         if cache is not None:
             for _i, buffer in enumerate(cache.buffers):
@@ -226,6 +231,8 @@ class EditorCollection(TabbedContent):
         else:
             await self.action_new_buffer()
         self.query_one(Tabs).can_focus = False
+        self.current_editor.word_completer = self.word_completer
+        self.current_editor.member_completer = self.member_completer
 
     def on_focus(self) -> None:
         self.current_editor.focus()
@@ -251,6 +258,7 @@ class EditorCollection(TabbedContent):
         new_tab_id = f"tab-{self.counter}"
         editor = CodeEditor(
             id=f"buffer-{self.counter}",
+            text=state.text if state is not None else "",
             language=self.language,
             theme=self.theme,
             word_completer=self.word_completer,
@@ -263,12 +271,14 @@ class EditorCollection(TabbedContent):
         )
         await self.add_pane(pane)  # type: ignore
         if state is not None:
-            editor.text = state.text
             editor.cursor = state.cursor
             editor.selection_anchor = state.selection_anchor
         else:
             self.active = new_tab_id
-            self.current_editor.focus()
+            try:
+                self.current_editor.focus()
+            except NoMatches:
+                pass
         if self.counter > 1:
             self.remove_class("hide-tabs")
         return editor

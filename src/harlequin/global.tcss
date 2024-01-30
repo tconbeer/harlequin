@@ -7,7 +7,8 @@ $border-title-color-focus: $primary;
 /* ALL WIDGETS */
 DataCatalog,
 EditorCollection,
-ResultsViewer {
+ResultsViewer,
+Lazy {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
     background: $background;
@@ -51,6 +52,14 @@ Vertical:disabled {
     height: 0;
     padding: 0 0;
     border: none;
+}
+
+Lazy {
+    background: $background;
+    color: $background;
+    display: block;
+    height: 1fr;
+    width: 100%;
 }
 
 Toast {

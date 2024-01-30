@@ -10,7 +10,8 @@ async def test_help_screen(
 ) -> None:
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         assert len(app.screen_stack) == 1
 
         await pilot.press("f1")

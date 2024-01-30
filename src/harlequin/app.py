@@ -14,6 +14,7 @@ from textual.containers import Horizontal, Vertical
 from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
+from textual.lazy import Lazy
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
@@ -191,7 +192,13 @@ class Harlequin(App, inherit_bindings=False):
             show_files=self.show_files,
             show_s3=self.show_s3,
         )
-        self.editor_collection = EditorCollection(language="sql", theme=self.theme)
+        self.editor_collection = EditorCollection(
+            language="sql", theme=self.theme, classes="hide-tabs"
+        )
+        self.editor: CodeEditor | None = None
+        editor_placeholder = Lazy(widget=self.editor_collection)
+        editor_placeholder.border_title = self.editor_collection.border_title
+        editor_placeholder.loading = True
         self.results_viewer = ResultsViewer(
             max_results=self.max_results,
             type_color=self.app_colors.gray,
@@ -205,7 +212,7 @@ class Harlequin(App, inherit_bindings=False):
         with Horizontal():
             yield self.data_catalog
             with Vertical(id="main_panel"):
-                yield self.editor_collection
+                yield editor_placeholder
                 yield self.run_query_bar
                 yield self.results_viewer
         yield self.footer
@@ -216,7 +223,7 @@ class Harlequin(App, inherit_bindings=False):
         callback: Union[ScreenResultCallbackType[ScreenResultType], None] = None,
         wait_for_dismiss: bool = False,
     ) -> Union[AwaitMount, asyncio.Future[ScreenResultType]]:
-        if self.editor._has_focus_within:
+        if self.editor is not None and self.editor._has_focus_within:
             self.editor.text_input._pause_blink(visible=True)
         return super().push_screen(  # type: ignore
             screen,
@@ -226,7 +233,11 @@ class Harlequin(App, inherit_bindings=False):
 
     def pop_screen(self) -> Screen[object]:
         new_screen = super().pop_screen()
-        if len(self.screen_stack) == 1 and self.editor._has_focus_within:
+        if (
+            len(self.screen_stack) == 1
+            and self.editor is not None
+            and self.editor._has_focus_within
+        ):
             self.editor.text_input._restart_blink()
         return new_screen
 
@@ -240,8 +251,6 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     async def on_mount(self) -> None:
-        self.editor = self.editor_collection.current_editor
-        self.editor.focus()
         self.run_query_bar.checkbox.value = False
 
         self._connect()
@@ -292,14 +301,25 @@ class Harlequin(App, inherit_bindings=False):
     @on(DataCatalog.NodeSubmitted)
     def insert_node_into_editor(self, message: DataCatalog.NodeSubmitted) -> None:
         message.stop()
+        if self.editor is None:
+            # recycle message while editor loads
+            self.post_message(message=message)
+            return
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
     @on(DataCatalog.NodeCopied)
     def copy_node_name(self, message: DataCatalog.NodeCopied) -> None:
         message.stop()
+        if self.editor is None:
+            # recycle message while we wait for the editor to load
+            self.post_message(message=message)
+            return
         self.editor.text_input.clipboard = message.copy_name
-        if self.editor.use_system_clipboard:
+        if (
+            self.editor.use_system_clipboard
+            and self.editor.text_input.system_copy is not None
+        ):
             try:
                 self.editor.text_input.system_copy(message.copy_name)
             except Exception:
@@ -355,10 +375,17 @@ class Harlequin(App, inherit_bindings=False):
     @on(DataTable.SelectionCopied)
     def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
         message.stop()
+        if self.editor is None:
+            # recycle the message while we wait for the editor to load
+            self.post_message(message=message)
+            return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
         self.editor.text_input.clipboard = text
-        if self.editor.use_system_clipboard:
+        if (
+            self.editor.use_system_clipboard
+            and self.editor.text_input.system_copy is not None
+        ):
             try:
                 self.editor.text_input.system_copy(text)
             except Exception:
@@ -524,7 +551,7 @@ class Harlequin(App, inherit_bindings=False):
 
     def watch_sidebar_hidden(self, sidebar_hidden: bool) -> None:
         if sidebar_hidden:
-            if self.data_catalog.has_focus:
+            if self.data_catalog.has_focus and self.editor is not None:
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
 
@@ -599,7 +626,8 @@ class Harlequin(App, inherit_bindings=False):
         self.data_catalog.focus()
 
     def action_focus_query_editor(self) -> None:
-        self.editor.focus()
+        if self.editor is not None:
+            self.editor.focus()
 
     def action_focus_results_viewer(self) -> None:
         self.results_viewer.focus()
@@ -705,6 +733,8 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     def _get_query_text(self) -> str:
+        if self.editor is None:
+            return ""
         return (
             self._validate_selection()
             or self.editor.current_query
@@ -788,6 +818,8 @@ class Harlequin(App, inherit_bindings=False):
         If the selection is valid query, return it. Otherwise
         return the empty string.
         """
+        if self.editor is None:
+            return ""
         selection = self.editor.selected_text
         if self.connection is None:
             return selection

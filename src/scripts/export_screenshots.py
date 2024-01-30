@@ -25,11 +25,14 @@ async def save_all_screenshots() -> None:
         print(f"Screenshotting {theme}")
         app = Harlequin(adapter=adapter, theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            if app.editor is None:
+                await pilot.pause(0.2)
+            assert app.editor is not None
             app.editor.text = TEXT
             app.editor.cursor = (9, 16)  # type: ignore
             app.editor.selection_anchor = (9, 0)  # type: ignore
-            await app.workers.wait_for_complete()
-            await pilot.pause()
             app.data_catalog.database_tree.root.expand()
             for child in app.data_catalog.database_tree.root.children:
                 print("here!")
