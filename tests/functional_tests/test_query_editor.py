@@ -8,6 +8,9 @@ from harlequin import Harlequin
 @pytest.mark.asyncio
 async def test_query_formatting(app: Harlequin) -> None:
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.editor is not None
         app.editor.text = "select\n\n1 FROM\n\n foo"
 
         await pilot.press("f4")
@@ -25,6 +28,7 @@ async def test_multiple_buffers(
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
+        assert app.editor is not None
         app.editor.text = "tab 1"
         await pilot.press("home")
         await pilot.pause()
@@ -160,6 +164,7 @@ async def test_member_autocomplete(
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = '"drivers"'
         app.editor.cursor = (0, 9)  # type: ignore
 

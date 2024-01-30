@@ -48,6 +48,7 @@ async def test_toggle_full_screen(
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         # initialization; all visible
         app.editor.focus()
         assert app.full_screen is False

@@ -19,6 +19,7 @@ async def test_dupe_column_names(
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = query
         await pilot.press("ctrl+j")
         await app.workers.wait_for_complete()
@@ -43,6 +44,7 @@ async def test_copy_data(
     async with app.run_test(message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = query
         await pilot.press("ctrl+j")
         await app.workers.wait_for_complete()
@@ -81,6 +83,7 @@ async def test_data_truncated_with_tooltip(
     async with app.run_test(tooltips=True) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = query
         await pilot.press("ctrl+j")
         await app.workers.wait_for_complete()

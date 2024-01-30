@@ -29,5 +29,5 @@ static/harlequin.gif: static/harlequin.mp4
 
 profiles: .profiles/buffers.html
 
-.profiles/buffers.html: src/scripts/profile_buffers.py pyproject.toml $(wildcard src/harlequin/**/*.py)
+.profiles/buffers.html: src/scripts/profile_buffers.py pyproject.toml $(shell find src/harlequin -type f)
 	pyinstrument -r html -o .profiles/buffers.html "src/scripts/profile_buffers.py"

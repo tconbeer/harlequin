@@ -12,6 +12,7 @@ from harlequin.editor_cache import (
     load_cache,
     write_cache,
 )
+from textual.worker import WorkerCancelled
 
 
 @pytest.fixture
@@ -64,7 +65,15 @@ def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
 async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
     write_cache(cache)
     async with app.run_test() as pilot:
+        try:
+            await app.workers.wait_for_complete()
+        except WorkerCancelled:
+            # Workers downstream from NewCatalog can get cancelled if the
+            # connected db catalog loads too fast
+            pass
         await pilot.pause()
+        assert app.editor_collection is not None
+        assert app.editor is not None
         assert app.editor_collection.tab_count == len(cache.buffers)
         assert [editor.text for editor in app.editor_collection.all_editors] == [
             buffer.text for buffer in cache.buffers
@@ -77,7 +86,10 @@ async def test_harlequin_writes_cache(app: Harlequin) -> None:
     cache_path = get_cache_file()
     assert not cache_path.exists()
     async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor_collection is not None
+        assert app.editor is not None
         assert app.editor_collection.tab_count == 1
         app.editor.text = "first"
         await pilot.press("ctrl+n")

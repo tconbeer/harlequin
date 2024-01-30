@@ -25,6 +25,7 @@ async def test_run_query_bar(
 
         # query without any limit by clicking the button;
         # dataset has 857 records
+        assert app.editor is not None
         app.editor.text = "select * from drivers"
         await pilot.click(bar.button.__class__)
         await app.workers.wait_for_complete()

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+-   Harlequin now starts much faster, especially when restoring multiple buffers from the cache.
+
 ## [1.13.0] - 2024-01-26
 
 ### Features

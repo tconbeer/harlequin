@@ -26,3 +26,4 @@ async def load_lots_of_buffers() -> None:
 
 
 asyncio.run(load_lots_of_buffers())
+print("Ran successfully")

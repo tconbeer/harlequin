@@ -16,6 +16,8 @@ async def test_select_1(
     app = app_all_adapters
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert app.title == "Harlequin"
         assert app.focused.__class__.__name__ == "TextInput"
 
@@ -70,6 +72,7 @@ async def test_queries_do_not_crash_all_adapters(
     async with app.run_test(message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = query
         await pilot.press("ctrl+j")
         await pilot.pause()
@@ -122,6 +125,7 @@ async def test_queries_do_not_crash(
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = query
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
@@ -146,6 +150,7 @@ async def test_multiple_queries(
     async with app.run_test(message_hook=messages.append) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         q = "select 1; select 2"
         app.editor.text = q
         await pilot.press("ctrl+j")
@@ -224,6 +229,7 @@ async def test_query_errors(
     async with app.run_test(size=(120, 36)) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
+        assert app.editor is not None
         app.editor.text = bad_query
 
         await pilot.press("ctrl+a")
