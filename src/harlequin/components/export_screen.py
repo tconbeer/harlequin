@@ -137,7 +137,7 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
 
     def on_mount(self) -> None:
         container = self.query_one("#export_outer")
-        container.border_title = "Data Exporter"
+        container.border_title = "Data Export Wizard"
         self.format_select = self.query_one(Select)
         self.file_input = self.query_one("#path_input", Input)
         self.file_input_validation_label = self.query_one("#validation_label", Label)
