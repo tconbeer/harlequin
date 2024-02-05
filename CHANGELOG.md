@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   The result counts in the Query History view now contain thousands separators ([#437](https://github.com/tconbeer/harlequin/issues/437) - thank you, [@code-master-ajay](https://github.com/code-master-ajay)!).
+
 ### Performance
 
 -   Harlequin now starts much faster, especially when restoring multiple buffers from the cache.
