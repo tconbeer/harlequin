@@ -44,7 +44,7 @@ class _CustomValidator(Validator):
 class AbstractOption(ABC):
     """
     The ABC for Harlequin options that are used as both command-line options and
-    GUI options. Options have names and descriptions, and may have user-faacing
+    GUI options. Options have names and descriptions, and may have user-facing
     labels and aliased, short declarations (for CLI options).
 
     Subclasses define options for specific data types, like text or boolean options.
