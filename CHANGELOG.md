@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The Databricks adapter is now installable as an extra; use `pip install harlequin[databricks]`. Thank you [@alexmalins](https://github.com/alexmalins)!
+
 ### Bug Fixes
 
 -   The result counts in the Query History view now contain thousands separators ([#437](https://github.com/tconbeer/harlequin/issues/437) - thank you, [@code-master-ajay](https://github.com/code-master-ajay)!).
