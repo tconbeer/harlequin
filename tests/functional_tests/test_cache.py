@@ -7,29 +7,26 @@ from harlequin import Harlequin
 from harlequin.editor_cache import (
     BufferState,
     Cache,
-    Cursor,
     get_cache_file,
     load_cache,
     write_cache,
 )
+from textual.widgets.text_area import Selection
 
 
 @pytest.fixture
 def buffer_states() -> List[BufferState]:
     return [
         BufferState(
-            cursor=Cursor(0, 3),
-            selection_anchor=None,
+            selection=Selection((0, 3), (0, 3)),
             text="select 1\n",
         ),
         BufferState(
-            cursor=Cursor(0, 0),
-            selection_anchor=None,
+            selection=Selection((0, 0), (0, 0)),
             text="",
         ),
         BufferState(
-            cursor=Cursor(1, 0),
-            selection_anchor=Cursor(0, 0),
+            selection=Selection((0, 0), (1, 0)),
             text="select\n*\nfrom\nfoo\n",
         ),
     ]

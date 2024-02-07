@@ -95,6 +95,13 @@ def _wizard() -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    locale = questionary.text(
+        message="What locale should Harlequin use for formatting numbers?",
+        instruction="Leave blank to use the system locale.",
+        default=selected_profile.get("locale", ""),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
     adapter_cls = adapters[adapter]
     adapter_option_choices = (
         [
@@ -139,6 +146,9 @@ def _wizard() -> None:
 
     if show_s3:
         new_profile["show_s3"] = show_s3
+
+    if locale:
+        new_profile["locale"] = locale
 
     new_profile.update(adapter_options)
 

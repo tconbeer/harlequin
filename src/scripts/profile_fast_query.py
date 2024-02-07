@@ -11,17 +11,22 @@ async def load_lots_of_buffers() -> None:
     with patch("harlequin.components.code_editor.load_cache") as mock_load_cache:
         buff = BufferState(
             selection=Selection((0, 0), (0, 0)),
-            text="select 1; " * 20,
+            text="select 1000; ",
         )
-        cache = Cache(focus_index=0, buffers=[buff] * 10)
+        cache = Cache(focus_index=0, buffers=[buff])
         mock_load_cache.return_value = cache
 
         adapter = DuckDbAdapter((":memory:",), no_init=True)
         app = Harlequin(adapter=adapter)
 
         async with app.run_test() as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            while app.editor is None:
+                await pilot.pause()
+            await pilot.press("ctrl+j")
+            while (table := app.results_viewer.get_visible_table()) is None:
+                await pilot.pause()
+            assert table.row_count == 1
+
         app.exit()
 
 

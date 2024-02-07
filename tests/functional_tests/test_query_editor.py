@@ -3,6 +3,7 @@ from typing import Awaitable, Callable, List
 
 import pytest
 from harlequin import Harlequin
+from textual.widgets.text_area import Selection
 
 
 @pytest.mark.asyncio
@@ -98,7 +99,10 @@ async def test_multiple_buffers(
         assert all(snap_results)
 
 
-@pytest.mark.flaky_windows
+@pytest.mark.xfail(
+    sys.platform in ("win32", "darwin"),
+    reason="Scroll bar is a different size.",
+)
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
@@ -167,7 +171,7 @@ async def test_member_autocomplete(
         while app.editor is None or app.editor_collection.member_completer is None:
             await pilot.pause()
         app.editor.text = '"drivers"'
-        app.editor.cursor = (0, 9)  # type: ignore
+        app.editor.selection = Selection((0, 9), (0, 9))
 
         await pilot.press("full_stop")
         await pilot.pause()

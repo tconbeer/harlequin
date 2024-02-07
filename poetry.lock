@@ -2915,13 +2915,13 @@ pytest = ">=7.0.0,<8.0.0"
 
 [[package]]
 name = "textual"
-version = "0.47.1"
+version = "0.49.0"
 description = "Modern Text User Interface framework"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual-0.47.1-py3-none-any.whl", hash = "sha256:da79df2e138f6de51bda84a1ee1460936bb2ecf5527ca2d47b9b59c584323327"},
-    {file = "textual-0.47.1.tar.gz", hash = "sha256:4b82e317884bb1092f693f474c319ceb068b5a0b128b121f1aa53a2d48b4b80c"},
+    {file = "textual-0.49.0-py3-none-any.whl", hash = "sha256:bc516ca3e3ab36c653059321a2a05262db3a4c0a62f275d3eb2a30ed8c94fd6b"},
+    {file = "textual-0.49.0.tar.gz", hash = "sha256:a66f981bde8f64c5cbb524d029946136d85602e82b595f4f5793f7bdc2e965b7"},
 ]
 
 [package.dependencies]
@@ -2954,13 +2954,13 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.6.3"
+version = "0.7.0"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_fastdatatable-0.6.3-py3-none-any.whl", hash = "sha256:2e713f9e0b97f875f0360e2bd25ef8976d8598e65b61296b63d09d45880c38fd"},
-    {file = "textual_fastdatatable-0.6.3.tar.gz", hash = "sha256:85150e1e2e62754f84d6ff4945c1c7e000731107c1850e5528bdb34f71b4be2c"},
+    {file = "textual_fastdatatable-0.7.0-py3-none-any.whl", hash = "sha256:8f6f936a3bf723214525a39c09b8ca2c5aa8ff568ebc2d0a2b550ebf0268a760"},
+    {file = "textual_fastdatatable-0.7.0.tar.gz", hash = "sha256:641860e00d48d7bc78420b8d7dc2322ceed63c38ff8b5b9d77e4b907e6c4b3ed"},
 ]
 
 [package.dependencies]
@@ -2971,18 +2971,18 @@ tzdata = {version = ">=2023", markers = "sys_platform == \"win32\""}
 
 [[package]]
 name = "textual-textarea"
-version = "0.10.0"
+version = "0.11.0"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.10.0-py3-none-any.whl", hash = "sha256:59eabf819cdee1ef1c4292137fd9eea072a230a770bdaf5c2e11d56c43910503"},
-    {file = "textual_textarea-0.10.0.tar.gz", hash = "sha256:62a4ef0384ef29b6e59480dee63986769caf7df1a51d183e12e7504956d3d547"},
+    {file = "textual_textarea-0.11.0-py3-none-any.whl", hash = "sha256:342c9a7b77eceaa545042ee2f3bbb2bb9edacc266f4c3bd3c31a75dc7c74b215"},
+    {file = "textual_textarea-0.11.0.tar.gz", hash = "sha256:ef595db0a6619acabecce9210e11e8be68d63bfa2b578c4a5156bcb7b32ee9b5"},
 ]
 
 [package.dependencies]
 pyperclip = ">=1.8.2,<2.0.0"
-textual = {version = ">=0.41.0,<1.0.0", extras = ["syntax"]}
+textual = {version = ">=0.48.1,<1.0.0", extras = ["syntax"]}
 tree-sitter-languages = "<1.10.0"
 
 [[package]]
@@ -3556,4 +3556,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "35eba502074f1bd442cadf41504f8e7470d1f0b76f369f27f526ddb4a8164961"
+content-hash = "439c946f9e570bb5a542cb89afaa632d32c39fe6194bb1a4b401439e86638f6f"

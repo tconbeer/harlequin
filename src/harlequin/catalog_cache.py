@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
 from platformdirs import user_cache_dir
-from textual_textarea.key_handlers import Cursor as Cursor
 
 from harlequin.catalog import Catalog
 from harlequin.history import History

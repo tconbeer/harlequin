@@ -10,15 +10,14 @@ from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
-from textual_textarea import TextArea, TextAreaSaved
-from textual_textarea.key_handlers import Cursor
+from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 
 
-class CodeEditor(TextArea):
+class CodeEditor(TextEditor):
     BINDINGS = [
         Binding(
             "ctrl+enter",
@@ -50,17 +49,17 @@ class CodeEditor(TextArea):
         if not semicolons:
             return self.text
 
-        before = Cursor(0, 0)
-        after: Union[None, Cursor] = None
+        before = (0, 0)
+        after: Union[None, tuple[int, int]] = None
         for c in semicolons:
-            if c <= self.cursor:
+            if c <= self.selection.end:
                 before = c
-            elif after is None and c > self.cursor:
+            elif after is None and c > self.selection.end:
                 after = c
                 break
         else:
             lno = self.text_input.document.line_count - 1
-            after = Cursor(lno, len(self.text_input.document.get_line(lno)))
+            after = (lno, len(self.text_input.document.get_line(lno)))
         return self.text_input.get_text_range(
             start=(before[0], before[1]), end=(after[0], after[1])
         )
@@ -72,13 +71,13 @@ class CodeEditor(TextArea):
         if not semicolons:
             return self.text
 
-        first = Cursor(0, 0)
-        second = Cursor(0, 0)
+        first = (0, 0)
+        second = (0, 0)
         for c in semicolons:
-            if c <= self.cursor:
+            if c <= self.selection.end:
                 first = second
                 second = c
-            elif c > self.cursor:
+            elif c > self.selection.end:
                 break
 
         return self.text_input.get_text_range(
@@ -124,17 +123,12 @@ class CodeEditor(TextArea):
         else:
             self.text_input.selection = old_selection
 
-    def _get_text_between_cursors(self, before: Cursor, after: Cursor) -> str:
-        return self.text_input.get_text_range(
-            start=(before[0], before[1]), end=(after[0], after[1])
-        )
-
     @property
-    def _semicolons(self) -> List[Cursor]:
-        semicolons: List[Cursor] = []
+    def _semicolons(self) -> list[tuple[int, int]]:
+        semicolons: list[tuple[int, int]] = []
         for i, line in enumerate(self.text.splitlines()):
             for pos in [m.span()[1] for m in re.finditer(";", line)]:
-                semicolons.append(Cursor(i, pos))
+                semicolons.append((i, pos))
         return semicolons
 
 
@@ -271,8 +265,7 @@ class EditorCollection(TabbedContent):
         )
         await self.add_pane(pane)  # type: ignore
         if state is not None:
-            editor.cursor = state.cursor
-            editor.selection_anchor = state.selection_anchor
+            editor.selection = state.selection
         else:
             self.active = new_tab_id
             try:

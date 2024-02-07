@@ -7,10 +7,13 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   The Databricks adapter is now installable as an extra; use `pip install harlequin[databricks]`. Thank you [@alexmalins](https://github.com/alexmalins)!
+-   In the Results Viewer, values are now formatted based on their type. Numbers have separators based on the locale, and numbers, dates/times/etc., and bools are right-aligned. Null values are now shown as a dim `∅ null`, instead of a blank cell.
+-   Adds a `--locale` option to override the system locale for number formatting.
 
 ### Bug Fixes
 
 -   The result counts in the Query History view now contain thousands separators ([#437](https://github.com/tconbeer/harlequin/issues/437) - thank you, [@code-master-ajay](https://github.com/code-master-ajay)!).
+-   Harlequin no longer crashes when executing SQLite queries that return multiple types in a single column ([#453](https://github.com/tconbeer/harlequin/issues/453)).
 
 ### Performance
 

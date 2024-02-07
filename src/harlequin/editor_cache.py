@@ -4,15 +4,14 @@ from pathlib import Path
 from typing import List, Union
 
 from platformdirs import user_cache_dir
-from textual_textarea.key_handlers import Cursor as Cursor
+from textual.widgets.text_area import Selection
 
-CACHE_VERSION = 0
+CACHE_VERSION = 1
 
 
 @dataclass
 class BufferState:
-    cursor: Cursor
-    selection_anchor: Union[Cursor, None]
+    selection: Selection
     text: str
 
 

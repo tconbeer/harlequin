@@ -14,9 +14,11 @@ from harlequin.config import get_config_for_profile
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
     HarlequinConfigError,
+    HarlequinLocaleError,
     HarlequinTzDataError,
     pretty_print_error,
 )
+from harlequin.locale_manager import set_locale
 from harlequin.plugins import load_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -75,6 +77,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--limit",
                 "--config",
                 "--config-path",
+                "--locale",
                 "--no-download-tzdata",
                 "--version",
                 "--help",
@@ -217,6 +220,13 @@ def build_cli() -> click.Command:
         is_eager=True,
     )
     @click.option(
+        "--locale",
+        help=(
+            "Provide a locale string (e.g., `en_US.UTF-8`) to override "
+            "the system locale for number formatting."
+        ),
+    )
+    @click.option(
         "--no-download-tzdata",
         help=(
             "(Windows Only) Prevent Harlequin from downloading an IANA timezone "
@@ -268,6 +278,15 @@ def build_cli() -> click.Command:
                 pretty_print_error(e)
                 ctx.exit(2)
 
+        # set the locale so we display numbers properly. Empty string uses system
+        # default
+        locale_config: str = config.pop("locale", "")  # type: ignore
+        try:
+            set_locale(locale_config)
+        except HarlequinLocaleError as e:
+            pretty_print_error(e)
+            ctx.exit(2)
+
         # remove the harlequin config from the options passed to the adapter
         conn_str: Sequence[str] = config.pop("conn_str", tuple())  # type: ignore
         if isinstance(conn_str, str):
@@ -286,8 +305,8 @@ def build_cli() -> click.Command:
         show_s3: str | None = config.pop("show_s3", None)  # type: ignore
 
         # load and instantiate the adapter
-        adapter = config.pop("adapter", DEFAULT_ADAPTER)
-        adapter_cls: type[HarlequinAdapter] = adapters[adapter]  # type: ignore
+        adapter: str = config.pop("adapter", DEFAULT_ADAPTER)  # type: ignore
+        adapter_cls: type[HarlequinAdapter] = adapters[adapter]
         try:
             adapter_instance = adapter_cls(conn_str=conn_str, **config)
         except HarlequinConfigError as e:

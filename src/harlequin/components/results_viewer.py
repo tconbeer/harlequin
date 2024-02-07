@@ -51,13 +51,11 @@ class ResultsViewer(TabbedContent, can_focus=True):
     def get_visible_table(self) -> Union[ResultsTable, None]:
         content = self.query_one(ContentSwitcher)
         active_tab_id = self.active
-        self.log("ACTIVE TAB ID:", active_tab_id)
         if active_tab_id:
             try:
                 tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
                 return tab_pane.query_one(ResultsTable)
             except NoMatches:
-                self.log("NO MATCHES FOR ACTIVE TAB ID:", active_tab_id)
                 return None
         else:
             tables = content.query(ResultsTable)
@@ -84,6 +82,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             max_rows=self.max_results,
             cursor_type="range",
             max_column_content_width=self.max_col_width,
+            null_rep="[dim]∅ null[/]",
         )
         n = self.tab_count + 1
         if n > 1:
