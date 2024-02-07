@@ -9,6 +9,7 @@ import duckdb
 import pytest
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.locale_manager import set_locale
 from harlequin.windows_timezone import check_and_install_tzdata
 
 if sys.version_info < (3, 10):
@@ -21,6 +22,11 @@ else:
 def install_tzdata() -> None:
     if sys.platform == "win32":
         check_and_install_tzdata()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_locale_to_enUS() -> None:
+    set_locale("en_US.UTF-8")
 
 
 @pytest.fixture

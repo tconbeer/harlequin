@@ -8,11 +8,8 @@ import platformdirs
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.lib as pl
-from rich import print
-from rich.panel import Panel
 
-from harlequin.colors import GREEN
-from harlequin.exception import HarlequinTzDataError
+from harlequin.exception import HarlequinTzDataError, pretty_print_warning
 
 HARLEQUIN_TZ_DATA_PATH = platformdirs.user_data_path(appname="harlequin") / "tzdata"
 
@@ -39,14 +36,7 @@ def check_and_install_tzdata() -> None:
                 "now (it will only do this once). For more info, see "
                 "[link]https://harlequin.sh/docs/troubleshooting/timezone-windows[/]"
             )
-            print(
-                Panel.fit(
-                    message,
-                    title="Harlequin Timezone Support",
-                    title_align="left",
-                    border_style=GREEN,
-                )
-            )
+            pretty_print_warning(title="Harlequin Timezone Support", message=message)
             try:
                 # tz database is missing. We need to install it.
                 response = urlopen(

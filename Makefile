@@ -13,11 +13,11 @@ lint:
 
 .PHONY: serve
 serve:
-	textual run --dev -c harlequin -f .
+	textual run --dev -c harlequin -P None -f .
 
 .PHONY: sqlite
 sqlite:
-	textual run --dev -c harlequin -a sqlite
+	textual run --dev -c harlequin -P None -a sqlite
 
 marketing: $(wildcard static/themes/*.svg) static/harlequin.gif
 

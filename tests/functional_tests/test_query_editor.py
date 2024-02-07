@@ -3,6 +3,7 @@ from typing import Awaitable, Callable, List
 
 import pytest
 from harlequin import Harlequin
+from textual.widgets.text_area import Selection
 
 
 @pytest.mark.asyncio
@@ -167,7 +168,7 @@ async def test_member_autocomplete(
         while app.editor is None or app.editor_collection.member_completer is None:
             await pilot.pause()
         app.editor.text = '"drivers"'
-        app.editor.cursor = (0, 9)  # type: ignore
+        app.editor.selection = Selection((0, 9), (0, 9))
 
         await pilot.press("full_stop")
         await pilot.pause()

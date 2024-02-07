@@ -37,6 +37,6 @@ def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
         mock.paste.return_value = x
 
     mock.copy.side_effect = set_paste
-    monkeypatch.setattr("textual_textarea.textarea.pyperclip", mock)
+    monkeypatch.setattr("textual_textarea.text_editor.pyperclip", mock)
 
     return mock

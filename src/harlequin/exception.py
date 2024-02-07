@@ -40,6 +40,10 @@ class HarlequinTzDataError(HarlequinError):
     pass
 
 
+class HarlequinLocaleError(HarlequinError):
+    pass
+
+
 def pretty_print_error(error: HarlequinError) -> None:
     from rich import print
 
@@ -52,4 +56,19 @@ def pretty_error_message(error: HarlequinError) -> Panel:
         title=error.title if error.title else ("Harlequin encountered an error."),
         title_align="left",
         border_style="red",
+    )
+
+
+def pretty_print_warning(title: str, message: str) -> None:
+    from rich import print
+
+    from harlequin.colors import GREEN
+
+    print(
+        Panel.fit(
+            message,
+            title=title,
+            title_align="left",
+            border_style=GREEN,
+        )
     )

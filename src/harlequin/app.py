@@ -446,6 +446,15 @@ class Harlequin(App, inherit_bindings=False):
             error=message.error,
         )
 
+    @on(DataTable.DataLoadError)
+    def handle_data_load_error(self, message: DataTable.DataLoadError) -> None:
+        header = getattr(message.error, "title", message.error.__class__.__name__)
+        self._push_error_modal(
+            title="Query Error",
+            header=header,
+            error=message.error,
+        )
+
     @on(NewCatalog)
     def update_tree_and_completers(self, message: NewCatalog) -> None:
         self.catalog = message.catalog
@@ -637,9 +646,7 @@ class Harlequin(App, inherit_bindings=False):
         for i, editor in enumerate(self.editor_collection.all_editors):
             if editor == self.editor_collection.current_editor:
                 focus_index = i
-            buffers.append(
-                BufferState(editor.cursor, editor.selection_anchor, editor.text)
-            )
+            buffers.append(BufferState(editor.selection, editor.text))
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
         update_catalog_cache(
             connection_hash=self.connection_hash,

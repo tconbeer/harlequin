@@ -20,7 +20,7 @@ async def test_select_1(
         while app.editor is None:
             await pilot.pause()
         assert app.title == "Harlequin"
-        assert app.focused.__class__.__name__ == "TextInput"
+        assert app.focused.__class__.__name__ == "TextAreaPlus"
 
         q = "select 1 as foo"
         for key in q:
@@ -61,6 +61,8 @@ async def test_select_1(
         "select null as foo",
         "",
         "select 1 where false",
+        "select 1 union all select 'hi'",
+        "select 'hi' union all select 1",
     ],
 )
 async def test_queries_do_not_crash_all_adapters(

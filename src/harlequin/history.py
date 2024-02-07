@@ -23,7 +23,7 @@ class QueryExecution:
             result = Text("ERROR", style="bold italic red", justify="right")
         else:
             res = (
-                f"{self.result_row_count:,} "
+                f"{self.result_row_count:n} "
                 f"{'record' if self.result_row_count == 1 else 'records'}"
                 if self.result_row_count
                 else "SUCCESS"
