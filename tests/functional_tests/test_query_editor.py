@@ -99,7 +99,10 @@ async def test_multiple_buffers(
         assert all(snap_results)
 
 
-@pytest.mark.flaky_windows
+@pytest.mark.xfail(
+    sys.platform in ("win32", "darwin"),
+    reason="Scroll bar is a different size.",
+)
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]

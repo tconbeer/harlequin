@@ -37,10 +37,6 @@ def test_connect_extensions() -> None:
     ).connect()
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    reason="PRQL extension not yet built for Windows and DuckDB v0.8.1.",
-)
 @pytest.mark.online
 def test_connect_prql() -> None:
     # Note: this may fail in the future if the extension doesn't support the latest
