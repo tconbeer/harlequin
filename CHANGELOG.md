@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.14.0] - 2024-02-07
+
 ### Features
 
 -   The Databricks adapter is now installable as an extra; use `pip install harlequin[databricks]`. Thank you [@alexmalins](https://github.com/alexmalins)!
@@ -531,7 +533,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.13.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.14.0...HEAD
+
+[1.14.0]: https://github.com/tconbeer/harlequin/compare/1.13.0...1.14.0
 
 [1.13.0]: https://github.com/tconbeer/harlequin/compare/1.12.0...1.13.0
 
