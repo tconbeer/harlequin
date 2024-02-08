@@ -41,6 +41,12 @@ class _CustomValidator(Validator):
             return self.failure(message or "Validation failed.")
 
 
+def concatenate(first: str, second: str) -> str:
+    if first == second:
+        return first
+    return f"{first}\n----or----\n{second}"
+
+
 class AbstractOption(ABC):
     """
     The ABC for Harlequin options that are used as both command-line options and
@@ -84,6 +90,14 @@ class AbstractOption(ABC):
         self.short_decls = [
             decl if decl.startswith("-") else f"-{decl}" for decl in short_decls
         ]
+
+    @abstractmethod
+    def merge(self, other: AbstractOption) -> AbstractOption:
+        """
+        Merges two options together; used for options with the same name, to return
+        a concatenated description and other merged properties.
+        """
+        pass
 
     @abstractmethod
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -133,6 +147,39 @@ class TextOption(AbstractOption):
         self.validator = validator
         self.default = default
         self.placeholder = placeholder
+
+    def merge(self, other: AbstractOption) -> AbstractOption:
+        if isinstance(other, ListOption):
+            return other.merge(self)
+
+        name = self.name
+        description = concatenate(self.description, other.description)
+        label = self.label or other.label
+        short_decls = set(self.short_decls) | set(other.short_decls)
+        default = (
+            self.default if self.default == getattr(other, "default", None) else None
+        )
+        placeholder = self.placeholder or getattr(other, "placeholder", None)
+
+        def merge_validator(raw: str) -> tuple[bool, str | None]:
+            if (
+                self.validator is not None
+                and isinstance(other, TextOption)
+                and other.validator is not None
+            ):
+                return self.validator(raw) or other.validator(raw)
+            else:
+                return True, None
+
+        return TextOption(
+            name=name,
+            description=description,
+            label=label,
+            short_decls=list(short_decls),
+            default=default,
+            placeholder=placeholder,
+            validator=merge_validator if self.validator is not None else None,
+        )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
         def click_callback(
@@ -209,6 +256,18 @@ class ListOption(AbstractOption):
         """
         super().__init__(name, description, label=label, short_decls=short_decls)
 
+    def merge(self, other: AbstractOption) -> ListOption:
+        name = self.name
+        description = concatenate(self.description, other.description)
+        label = self.label or other.label
+        short_decls = set(self.short_decls) | set(other.short_decls)
+        return ListOption(
+            name=name,
+            description=description,
+            label=label,
+            short_decls=list(short_decls),
+        )
+
     def to_click(self) -> Callable[[click.Command], click.Command]:
         return click.option(
             f"--{self.name}",
@@ -283,6 +342,43 @@ class PathOption(AbstractOption):
         self.default = default
         self.placeholder = placeholder
 
+    def merge(self, other: AbstractOption) -> AbstractOption:
+        if isinstance(other, (TextOption, ListOption)):
+            return other.merge(self)
+        name = self.name
+        description = concatenate(self.description, other.description)
+        label = self.label or other.label
+        short_decls = set(self.short_decls) | set(other.short_decls)
+        default = (
+            self.default if self.default == getattr(other, "default", None) else None
+        )
+        placeholder = self.placeholder or getattr(other, "placeholder", None)
+        if isinstance(other, PathOption):
+            exists = self.exists and other.exists
+            file_okay = self.file_okay or other.file_okay
+            dir_okay = self.dir_okay or other.dir_okay
+            resolve_path = self.resolve_path or other.resolve_path
+            path_type = self.path_type if self.path_type == other.path_type else str
+        else:
+            exists = False
+            file_okay = True
+            dir_okay = True
+            resolve_path = False
+            path_type = str
+        return PathOption(
+            name=name,
+            description=description,
+            label=label,
+            short_decls=list(short_decls),
+            exists=exists,
+            file_okay=file_okay,
+            dir_okay=dir_okay,
+            resolve_path=resolve_path,
+            path_type=path_type,
+            default=default,
+            placeholder=placeholder,
+        )
+
     def to_click(self) -> Callable[[click.Command], click.Command]:
         return click.option(
             f"--{self.name}",
@@ -347,7 +443,7 @@ class SelectOption(AbstractOption):
         self,
         name: str,
         description: str,
-        choices: list[str] | list[tuple[str, str]],
+        choices: Sequence[str | tuple[str, str]],
         label: str | None = None,
         short_decls: list[str] | None = None,
         default: str | None = None,
@@ -361,13 +457,33 @@ class SelectOption(AbstractOption):
                 HTML/CSS id and a valid CLI option name (without the `--` prefix).
                 e.g., "port", "header"
             description (str): Help text for this option.
-            choices (list[str] | list[tuple[str, str]]): A list of values or list of
+            choices (Sequence[str | tuple[str, str]]): A list of values or list of
                 (label, value) pairs for the user to select from.
             label (str | None): For GUI options, a human-friendly label for this option.
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
             default (str | None): The default value for this option.
         """
+
+    def merge(self, other: AbstractOption) -> AbstractOption:
+        if isinstance(other, (TextOption, PathOption, ListOption)):
+            return other.merge(self)
+        name = self.name
+        description = concatenate(self.description, other.description)
+        label = self.label or other.label
+        short_decls = set(self.short_decls) | set(other.short_decls)
+        choices = set(self.choices) | set(getattr(other, "choices", []))
+        default = (
+            self.default if self.default == getattr(other, "default", None) else None
+        )
+        return SelectOption(
+            name=name,
+            description=description,
+            choices=list(choices),
+            label=label,
+            short_decls=list(short_decls),
+            default=default,
+        )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
         return click.option(
@@ -424,6 +540,20 @@ class FlagOption(AbstractOption):
     """
     A boolean option, defaults to False.
     """
+
+    def merge(self, other: AbstractOption) -> AbstractOption:
+        if not isinstance(other, FlagOption):
+            return other.merge(self)
+        name = self.name
+        description = concatenate(self.description, other.description)
+        label = self.label or other.label
+        short_decls = set(self.short_decls) | set(other.short_decls)
+        return FlagOption(
+            name=name,
+            description=description,
+            label=label,
+            short_decls=list(short_decls),
+        )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
         return click.option(
