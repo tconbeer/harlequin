@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 import rich_click as click
 
@@ -19,6 +19,7 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.locale_manager import set_locale
+from harlequin.options import AbstractOption
 from harlequin.plugins import load_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -327,20 +328,24 @@ def build_cli() -> click.Command:
     # with the additional options declared by the adapter.
     # we load the options into a dict keyed by their name to de-dupe options
     # that may be passed by multiple adapters.
-    options: dict[str, Callable[[click.Command], click.Command]] = {}
+    options: dict[str, AbstractOption] = {}
     for adapter_name, adapter_cls in sorted(adapters.items()):
         option_name_list: list[str] = []
         if adapter_cls.ADAPTER_OPTIONS is not None:
             for option in adapter_cls.ADAPTER_OPTIONS:
-                options.update({option.name: option.to_click()})
+                existing = options.get(option.name, None)
+                if existing is not None:
+                    options[option.name] = existing.merge(option)
+                else:
+                    options[option.name] = option
                 option_name_list.append(f"--{option.name}")
         click.rich_click.OPTION_GROUPS["harlequin"].append(
             {"name": f"{adapter_name} Adapter Options", "options": option_name_list}
         )
 
     fn = inner_cli
-    for click_opt in options.values():
-        fn = click_opt(fn)  # type: ignore
+    for option in options.values():
+        fn = option.to_click()(fn)  # type: ignore
 
     return fn
 
