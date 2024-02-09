@@ -7,7 +7,9 @@ from harlequin.components import ExportScreen
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("filename", ["one.csv", "one.parquet", "one.json"])
+@pytest.mark.parametrize(
+    "filename", ["one.csv", "one.parquet", "one.json", "one.orc", "one.feather"]
+)
 async def test_export(
     app: Harlequin,
     tmp_path: Path,

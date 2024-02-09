@@ -17,8 +17,8 @@ repos:
           - duckdb>=0.8.0
           - shandy-sqlfmt[jinjafmt]
           - textual>=0.49.0
-          - textual-textarea>=0.11.0
-          - textual-fastdatatable>=0.7.0
+          - textual-textarea>=0.11.3
+          - textual-fastdatatable>=0.7.1
           - pytest
           - types-pygments
           - rich-click>=1.7.1
