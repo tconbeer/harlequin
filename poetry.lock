@@ -2971,13 +2971,13 @@ tzdata = {version = ">=2023", markers = "sys_platform == \"win32\""}
 
 [[package]]
 name = "textual-textarea"
-version = "0.11.0"
+version = "0.11.2"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.11.0-py3-none-any.whl", hash = "sha256:342c9a7b77eceaa545042ee2f3bbb2bb9edacc266f4c3bd3c31a75dc7c74b215"},
-    {file = "textual_textarea-0.11.0.tar.gz", hash = "sha256:ef595db0a6619acabecce9210e11e8be68d63bfa2b578c4a5156bcb7b32ee9b5"},
+    {file = "textual_textarea-0.11.2-py3-none-any.whl", hash = "sha256:80f9a4f224fa3f3e661486a58493b77b11654de3c10797edddd98f050691d885"},
+    {file = "textual_textarea-0.11.2.tar.gz", hash = "sha256:24c3796dc706132acbdb4682457bab6a9867ac5585d280a9c229d81b7fa8af00"},
 ]
 
 [package.dependencies]
@@ -3556,4 +3556,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "439c946f9e570bb5a542cb89afaa632d32c39fe6194bb1a4b401439e86638f6f"
+content-hash = "98a807a1efb0538dcda33228d7b207c2708b9bbde6d25b43a52b61869ea1d3c1"

@@ -5,7 +5,7 @@ import os
 import time
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union
+from typing import Type
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -24,6 +24,7 @@ from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
+from textual_textarea import TextAreaClipboardError
 
 from harlequin import HarlequinConnection
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
@@ -92,7 +93,7 @@ class QueriesExecuted(Message):
     def __init__(
         self,
         query_count: int,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: dict[str, tuple[HarlequinCursor, str]],
         submitted_at: float,
         ddl_queries: list[str],
     ) -> None:
@@ -106,8 +107,8 @@ class QueriesExecuted(Message):
 class ResultsFetched(Message):
     def __init__(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]],
+        cursors: dict[str, tuple[HarlequinCursor, str]],
+        data: dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]],
         errors: list[tuple[BaseException, str]],
         elapsed: float,
     ) -> None:
@@ -151,8 +152,8 @@ class Harlequin(App, inherit_bindings=False):
         show_files: Path | None = None,
         show_s3: str | None = None,
         max_results: int | str = 100_000,
-        driver_class: Union[Type[Driver], None] = None,
-        css_path: Union[CSSPathType, None] = None,
+        driver_class: Type[Driver] | None = None,
+        css_path: CSSPathType | None = None,
         watch_css: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
@@ -173,8 +174,9 @@ class Harlequin(App, inherit_bindings=False):
                 )
             )
             self.exit(return_code=2)
-        self.query_timer: Union[float, None] = None
+        self.query_timer: float | None = None
         self.connection: HarlequinConnection | None = None
+        self._seen_clipboard_error = False
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
@@ -219,10 +221,13 @@ class Harlequin(App, inherit_bindings=False):
 
     def push_screen(  # type: ignore
         self,
-        screen: Union[Screen[ScreenResultType], str],
-        callback: Union[ScreenResultCallbackType[ScreenResultType], None] = None,
+        screen: Screen[ScreenResultType] | str,
+        callback: ScreenResultCallbackType[ScreenResultType] | None = None,
         wait_for_dismiss: bool = False,
-    ) -> Union[AwaitMount, asyncio.Future[ScreenResultType]]:
+    ) -> AwaitMount | asyncio.Future[ScreenResultType]:
+        """
+        Convenience method for pushing a screen while managing the cursor blink.
+        """
         if self.editor is not None and self.editor._has_focus_within:
             self.editor.text_input._pause_blink(visible=True)
         return super().push_screen(  # type: ignore
@@ -232,6 +237,9 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     def pop_screen(self) -> Screen[object]:
+        """
+        Convenience method for popping a screen while managing the cursor blink.
+        """
         new_screen = super().pop_screen()
         if (
             len(self.screen_stack) == 1
@@ -244,6 +252,9 @@ class Harlequin(App, inherit_bindings=False):
     def append_to_history(
         self, query_text: str, result_row_count: int, elapsed: float
     ) -> None:
+        """
+        Appends the query text and results to the history, for the history screen.
+        """
         if self.history is None:
             self.history = History.blank()
         self.history.append(
@@ -268,6 +279,7 @@ class Harlequin(App, inherit_bindings=False):
 
     @on(CatalogCacheLoaded)
     def build_trees(self, message: CatalogCacheLoaded) -> None:
+        message.stop()
         if self.connection_hash is not None and (
             cached_db := message.cache.get_db(self.connection_hash)
         ):
@@ -289,6 +301,7 @@ class Harlequin(App, inherit_bindings=False):
 
     @on(DatabaseConnected)
     def initialize_app(self, message: DatabaseConnected) -> None:
+        message.stop()
         self.connection = message.connection
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table(did_run=False)
@@ -315,17 +328,21 @@ class Harlequin(App, inherit_bindings=False):
             # recycle message while we wait for the editor to load
             self.post_message(message=message)
             return
-        self.editor.text_input.clipboard = message.copy_name
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(message.copy_name)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected label copied to clipboard.")
+        self.editor.copy_to_clipboard(message.copy_name)
+        self.notify("Catalog item copied to clipboard.")
+
+    @on(TextAreaClipboardError)
+    def show_error(self, message: TextAreaClipboardError) -> None:
+        if not self._seen_clipboard_error:
+            self.notify(
+                message=(
+                    "Harlequin could not access the system clipboard. See "
+                    "https://harlequin.sh/docs/troubleshooting/copying-and-pasting"
+                ),
+                severity="error",
+                timeout=10,
+            )
+            self._seen_clipboard_error = True
 
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
@@ -380,18 +397,10 @@ class Harlequin(App, inherit_bindings=False):
             self.post_message(message=message)
             return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
+        n = len(message.values)
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
-        self.editor.text_input.clipboard = text
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(text)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected data copied to clipboard.")
+        self.editor.copy_to_clipboard(text)
+        self.notify(f"Selected data copied to clipboard. ({n} row{'' if n == 1 else 's'})")
 
     @on(Worker.StateChanged)
     async def handle_worker_error(self, message: Worker.StateChanged) -> None:
@@ -528,7 +537,7 @@ class Harlequin(App, inherit_bindings=False):
         other_widgets = [self.run_query_bar, self.footer]
         all_widgets = [*full_screen_widgets, *other_widgets]
         if full_screen:
-            target: Optional[DOMNode] = self.focused
+            target: DOMNode | None = self.focused
             while target not in full_screen_widgets:
                 if (
                     target is None
@@ -713,7 +722,7 @@ class Harlequin(App, inherit_bindings=False):
     def _execute_query(self, message: QuerySubmitted) -> None:
         if self.connection is None:
             return
-        cursors: Dict[str, tuple[HarlequinCursor, str]] = {}
+        cursors: dict[str, tuple[HarlequinCursor, str]] = {}
         queries = self._split_query_text(message.query_text)
         ddl_queries: list[str] = []
         for q in queries:
@@ -742,14 +751,15 @@ class Harlequin(App, inherit_bindings=False):
     def _get_query_text(self) -> str:
         if self.editor is None:
             return ""
-        return (
-            self._validate_selection()
-            or self.editor.current_query
-            or self.editor.previous_query
-        )
+        return self._validate_selection() or self.editor.current_query
 
-    @staticmethod
-    def _split_query_text(query_text: str) -> List[str]:
+    def _split_query_text(self, query_text: str) -> list[str]:
+        if not query_text:
+            return [""]
+        if self.editor is not None and self.editor.parser is not None:
+            tree = self.editor.parser.parse(query_text.encode("utf-8"))
+            if not any([node.type == "ERROR" for node in tree.root_node.children]):
+                return [node.text.decode("utf-8") for node in tree.root_node.children if node.type != ";"]
         return [q for q in query_text.split(";") if q.strip()]
 
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
@@ -770,11 +780,11 @@ class Harlequin(App, inherit_bindings=False):
     )
     def _fetch_data(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: dict[str, tuple[HarlequinCursor, str]],
         submitted_at: float,
     ) -> None:
         errors: list[tuple[BaseException, str]] = []
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]] = {}
+        data: dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]] = {}
         for id_, (cur, q) in cursors.items():
             try:
                 cur_data = cur.fetchall()

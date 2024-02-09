@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Union
 
 from rich.text import TextType
 from sqlfmt.api import Mode, format_string
@@ -15,6 +15,9 @@ from textual_textarea import TextAreaSaved, TextEditor
 from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
+
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
 
 class CodeEditor(TextEditor):
@@ -44,11 +47,52 @@ class CodeEditor(TextEditor):
 
     @property
     def current_query(self) -> str:
-        semicolons = self._semicolons
+        try:
+            return self._get_current_query_from_syntax_tree()
+        except ValueError:
+            return self._get_current_query_from_simple_parsing()
 
+    def _get_current_query_from_syntax_tree(self) -> str:
+        if self.syntax_tree is None:
+            return ""
+        
+        if any([node.type=="ERROR" for node in self.syntax_tree.root_node.children]):
+            raise ValueError("could not parse query")
+
+        cursor_row, cursor_codepoint_offset = self.selection.end
+        line = self.text_input.document.get_line(cursor_row)
+        cursor_byte_offset = len(line[:cursor_codepoint_offset].encode("utf8"))
+        cursor_point = (cursor_row, cursor_byte_offset)
+
+        current_node: "Node" | None = None
+        for node in self.syntax_tree.root_node.children:
+            if node.start_point > cursor_point:
+                break
+            elif node.type != ";":
+                current_node = node
+
+        if current_node is None:
+            return ""
+        if current_node.text is not None:
+            return current_node.text.decode("utf-8")
+
+        # we can't use current_node.text, since the parser works off a callable and
+        # so apparently doesn't maintain the text property.
+        document_bytes = self.text_input.document.text.encode("utf-8")
+        return document_bytes[slice(*current_node.byte_range)].decode("utf-8")
+
+    def _get_current_query_from_simple_parsing(self) -> str:
+        semicolons = self._find_semicolons()
         if not semicolons:
             return self.text
 
+        return self._get_current_query_bounded_by_semicolons(
+            semicolons
+        ) or self._get_previous_query_bounded_by_semicolons(semicolons)
+
+    def _get_current_query_bounded_by_semicolons(
+        self, semicolons: list[tuple[int, int]]
+    ) -> str:
         before = (0, 0)
         after: Union[None, tuple[int, int]] = None
         for c in semicolons:
@@ -64,13 +108,9 @@ class CodeEditor(TextEditor):
             start=(before[0], before[1]), end=(after[0], after[1])
         )
 
-    @property
-    def previous_query(self) -> str:
-        semicolons = self._semicolons
-
-        if not semicolons:
-            return self.text
-
+    def _get_previous_query_bounded_by_semicolons(
+        self, semicolons: list[tuple[int, int]]
+    ) -> str:
         first = (0, 0)
         second = (0, 0)
         for c in semicolons:
@@ -123,8 +163,7 @@ class CodeEditor(TextEditor):
         else:
             self.text_input.selection = old_selection
 
-    @property
-    def _semicolons(self) -> list[tuple[int, int]]:
+    def _find_semicolons(self) -> list[tuple[int, int]]:
         semicolons: list[tuple[int, int]] = []
         for i, line in enumerate(self.text.splitlines()):
             for pos in [m.span()[1] for m in re.finditer(";", line)]:
