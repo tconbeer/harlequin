@@ -12,7 +12,6 @@ from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
-    HarlequinCopyError,
     HarlequinQueryError,
 )
 from textual_fastdatatable.backend import AutoBackendType
@@ -100,74 +99,6 @@ class DuckDbConnection(HarlequinConnection):
     def __init__(self, conn: duckdb.DuckDBPyConnection, init_message: str = "") -> None:
         self.conn: duckdb.DuckDBPyConnection = conn
         self.init_message = init_message
-
-    def copy(
-        self, query: str, path: Path, format_name: str, options: dict[str, Any]
-    ) -> None:
-        if not query:
-            raise HarlequinCopyError("Cannot export result of empty query.")
-        try:
-            cursor = self.execute(query)
-        except HarlequinQueryError as e:
-            raise HarlequinCopyError(msg=e.msg, title=e.title) from e
-        if cursor is None:
-            raise HarlequinCopyError("Cannot export result of a DDL/DML query.")
-        final_path = str(path.expanduser())
-        kwargs = {k: v for k, v in options.items() if v}
-        if format_name == "csv":
-            if kwargs.get("quoting"):
-                kwargs["quoting"] = "ALL"
-            try:
-                cursor.relation.write_csv(file_name=final_path, **kwargs)
-            except (duckdb.Error, OSError) as e:
-                raise HarlequinCopyError(
-                    str(e),
-                    title=(
-                        "DuckDB raised an error when writing your query "
-                        "to a CSV file."
-                    ),
-                ) from e
-        elif format_name == "parquet":
-            try:
-                cursor.relation.write_parquet(
-                    file_name=final_path, compression=kwargs.get("compression")
-                )
-            except (duckdb.Error, OSError) as e:
-                raise HarlequinCopyError(
-                    str(e),
-                    title=(
-                        "DuckDB raised an error when writing your query "
-                        "to a Parquet file."
-                    ),
-                ) from e
-        elif format_name == "json":
-            array = f"{', ARRAY TRUE' if kwargs.get('array') else ''}"
-            compression = f", COMPRESSION {kwargs.get('compression')}"
-            date_format = (
-                f", DATEFORMAT '{kwargs.get('''date_format''')}'"
-                if kwargs.get("date_format")
-                else ""
-            )
-            ts_format = (
-                f", TIMESTAMPFORMAT '{kwargs.get('''options.timestamp_format''')}'"
-                if kwargs.get("options.timestamp_format")
-                else ""
-            )
-            try:
-                self.execute(
-                    f"copy ({query}) to '{final_path}' "
-                    "(FORMAT JSON"
-                    f"{array}{compression}{date_format}{ts_format}"
-                    ")"
-                )
-            except (HarlequinQueryError, OSError) as e:
-                raise HarlequinCopyError(
-                    str(e),
-                    title=(
-                        "DuckDB raised an error when writing your query "
-                        "to a JSON file."
-                    ),
-                ) from e
 
     def execute(self, query: str) -> DuckDbCursor | None:
         try:
