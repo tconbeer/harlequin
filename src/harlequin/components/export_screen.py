@@ -12,24 +12,24 @@ from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
 from textual_textarea import PathInput
 
-from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.components.error_modal import ErrorModal
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.exception import HarlequinCopyError
-from harlequin.options import AbstractOption
+from harlequin.export import copy
+from harlequin.options import AbstractOption, HarlequinCopyFormat
 
 ExportOptions = Dict[str, Any]
 
 
 def export_callback(
     screen_data: Tuple[Path, str, ExportOptions],
-    connection: HarlequinConnection,
-    query: str,
+    table: ResultsTable,
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
     try:
-        connection.copy(
-            query=query,
+        copy(
+            table=table,
             path=screen_data[0],
             format_name=screen_data[1],
             options=screen_data[2],
@@ -95,16 +95,16 @@ class CopyOptionsMenu(Widget, can_focus=False):
 class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
     def __init__(
         self,
-        adapter: HarlequinAdapter,
+        formats: list[HarlequinCopyFormat],
         name: str | None = None,
         id: str | None = None,  # noqa: A002
         classes: str | None = None,
     ) -> None:
         super().__init__(name, id, classes)
-        self.adapter = adapter
+        self.formats = formats
 
     def compose(self) -> ComposeResult:
-        assert self.adapter.COPY_FORMATS is not None
+        assert self.formats is not None
         with Vertical(id="export_outer"):
             yield Static(
                 "Export the results of your query to a file.",
@@ -124,10 +124,7 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
             with Horizontal(classes="option_row"):
                 yield Label("Format:", classes="select_label")
                 yield Select(
-                    options=[
-                        (option.label, option.name)
-                        for option in self.adapter.COPY_FORMATS
-                    ],
+                    options=[(option.label, option.name) for option in self.formats],
                     id="format_select",
                 )
             yield NoFocusVerticalScroll(id="options_container")
@@ -190,11 +187,9 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
             for child in self.options_container.children:
                 await child.remove()
             try:
-                assert self.adapter.COPY_FORMATS is not None
+                assert self.formats is not None
                 [options] = [
-                    fmt.options
-                    for fmt in self.adapter.COPY_FORMATS
-                    if fmt.name == event.value
+                    fmt.options for fmt in self.formats if fmt.name == event.value
                 ]
             except (ValueError, IndexError, AssertionError):
                 return
@@ -202,7 +197,6 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
             await self.options_container.mount(menu)
 
     def _export(self) -> None:
-        assert self.adapter.COPY_FORMATS is not None
         path = Path(self.file_input.value)
         if path.is_dir():
             self.app.push_screen(
@@ -219,7 +213,7 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
                     header="Must select format",
                     error=OSError(
                         "You must select a file format "
-                        f"{[fmt.label for fmt in self.adapter.COPY_FORMATS]}"
+                        f"{[fmt.label for fmt in self.formats]}"
                     ),
                 )
             )
@@ -234,10 +228,7 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
                 )
 
     def _get_format_from_file_extension(self, input_value: str) -> str | None:
-        assert self.adapter.COPY_FORMATS is not None
-        mapping = {
-            ext: fmt.name for fmt in self.adapter.COPY_FORMATS for ext in fmt.extensions
-        }
+        mapping = {ext: fmt.name for fmt in self.formats for ext in fmt.extensions}
         try:
             p = Path(input_value)
             format_name = mapping[p.suffix]

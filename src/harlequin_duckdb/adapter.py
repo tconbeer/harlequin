@@ -19,7 +19,6 @@ from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
-from harlequin_duckdb.copy_formats import DUCKDB_COPY_FORMATS
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -334,7 +333,7 @@ class DuckDbConnection(HarlequinConnection):
 
 class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
-    COPY_FORMATS = DUCKDB_COPY_FORMATS
+    COPY_FORMATS = None
 
     def __init__(
         self,

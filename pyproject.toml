@@ -22,8 +22,8 @@ python = ">=3.8.1,<4.0.0"
 
 # textual and component libraries
 textual = "==0.49.0"
-textual-fastdatatable = "==0.7.0"
-textual-textarea = "==0.11.0"
+textual-fastdatatable = "==0.7.1"
+textual-textarea = "==0.11.3"
 
 # click
 click = "^8.1.3"

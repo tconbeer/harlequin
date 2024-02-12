@@ -2954,13 +2954,13 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.7.0"
+version = "0.7.1"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_fastdatatable-0.7.0-py3-none-any.whl", hash = "sha256:8f6f936a3bf723214525a39c09b8ca2c5aa8ff568ebc2d0a2b550ebf0268a760"},
-    {file = "textual_fastdatatable-0.7.0.tar.gz", hash = "sha256:641860e00d48d7bc78420b8d7dc2322ceed63c38ff8b5b9d77e4b907e6c4b3ed"},
+    {file = "textual_fastdatatable-0.7.1-py3-none-any.whl", hash = "sha256:fe632c9329c0660f199800d58e55fc9903bcb71a20291087b16228d6a1683b81"},
+    {file = "textual_fastdatatable-0.7.1.tar.gz", hash = "sha256:02d929ddd755e7d23936ea8090c549090816e9eca63cc14a06ac2a82a556b763"},
 ]
 
 [package.dependencies]
@@ -2971,13 +2971,13 @@ tzdata = {version = ">=2023", markers = "sys_platform == \"win32\""}
 
 [[package]]
 name = "textual-textarea"
-version = "0.11.0"
+version = "0.11.3"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "textual_textarea-0.11.0-py3-none-any.whl", hash = "sha256:342c9a7b77eceaa545042ee2f3bbb2bb9edacc266f4c3bd3c31a75dc7c74b215"},
-    {file = "textual_textarea-0.11.0.tar.gz", hash = "sha256:ef595db0a6619acabecce9210e11e8be68d63bfa2b578c4a5156bcb7b32ee9b5"},
+    {file = "textual_textarea-0.11.3-py3-none-any.whl", hash = "sha256:8645ab0b1016a29f76d7117aef9c11d6d99bde403f76f88619911e8184952908"},
+    {file = "textual_textarea-0.11.3.tar.gz", hash = "sha256:b75f0573dea87c69f1b98c9da6ffb45b123e53ae712920a5ebe81343db081a11"},
 ]
 
 [package.dependencies]
@@ -3556,4 +3556,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "439c946f9e570bb5a542cb89afaa632d32c39fe6194bb1a4b401439e86638f6f"
+content-hash = "f4fbf77546736539d3cbdbe3d14bc4f779abed23ef8b63ae9f7ab06c0e11f265"

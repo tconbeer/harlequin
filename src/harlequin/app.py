@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from functools import partial
 from pathlib import Path
@@ -47,6 +48,7 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.editor_cache import BufferState, Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
@@ -565,40 +567,30 @@ class Harlequin(App, inherit_bindings=False):
         self.data_catalog.disabled = sidebar_hidden
 
     def action_export(self) -> None:
-        if not self.adapter.implements_copy:
-            self._push_error_modal(
-                title="Not Implemented by Adapter",
-                header="Harlequin could not load the Export menu.",
-                error=NotImplementedError(
-                    "The current adapter has not implemented the export menu. "
-                    "Please write a COPY statement using the query editor."
-                ),
-            )
-            return
         show_export_error = partial(
             self._push_error_modal,
             "Export Data Error",
             "Could not export data.",
         )
-        queries = self._split_query_text(self._get_query_text())
-        if not queries or not queries[0]:
-            show_export_error(
-                error=ValueError(
-                    "You must type a query into the editor first, or move your "
-                    "cursor into an existing query."
-                )
-            )
+        table = self.results_viewer.get_visible_table()
+        if table is None:
+            show_export_error(error=ValueError("You must execute a query first."))
             return
         notify = partial(self.notify, "Data exported successfully.")
         callback = partial(
             export_callback,
-            query=queries[0],
-            connection=self.connection,
+            table=table,
             success_callback=notify,
             error_callback=show_export_error,
         )
         self.app.push_screen(
-            ExportScreen(adapter=self.adapter, id="export_screen"), callback
+            ExportScreen(
+                formats=WINDOWS_COPY_FORMATS
+                if sys.platform == "win32"
+                else HARLEQUIN_COPY_FORMATS,
+                id="export_screen",
+            ),
+            callback,
         )
 
     def action_show_query_history(self) -> None:

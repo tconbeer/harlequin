@@ -538,8 +538,20 @@ class SelectOption(AbstractOption):
 
 class FlagOption(AbstractOption):
     """
-    A boolean option, defaults to False.
+    A boolean option, defaults to False. (Can set another default, but that only applies
+    for GUI options, not CLI options, which always default to False)
     """
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        label: str | None = None,
+        short_decls: Sequence[str] | None = None,
+        default: bool = False,
+    ) -> None:
+        super().__init__(name, description, label=label, short_decls=short_decls)
+        self.default = default
 
     def merge(self, other: AbstractOption) -> AbstractOption:
         if not isinstance(other, FlagOption):
@@ -548,11 +560,13 @@ class FlagOption(AbstractOption):
         description = concatenate(self.description, other.description)
         label = self.label or other.label
         short_decls = set(self.short_decls) | set(other.short_decls)
+        default = self.default and other.default
         return FlagOption(
             name=name,
             description=description,
             label=label,
             short_decls=list(short_decls),
+            default=default,
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -562,7 +576,7 @@ class FlagOption(AbstractOption):
 
     def to_widgets(self) -> Generator[Widget, None, None]:
         yield NoFocusLabel(f"{self.label}:", classes="switch_label")
-        yield Switch(id=self.name)
+        yield Switch(value=self.default, id=self.name)
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
         try:
@@ -582,7 +596,7 @@ HarlequinAdapterOption = AbstractOption
 
 class HarlequinCopyFormat:
     """
-    A file format for data export that is supported by the Adapter.
+    A file format for data export that is supported by Harlequin.
     """
 
     name: str

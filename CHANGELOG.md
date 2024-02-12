@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The Data Exporter has been refactored to work with any adapter.
+-   The Data Exporter now supports two additional formats: Feather and ORC (ORC is not supported on Windows).
+
+### Bug Fixes
+
+-   The Query Editor no longer loses focus after pressing `escape` (regression since 1.14.0).
+
 ## [1.14.0] - 2024-02-07
 
 ### Features

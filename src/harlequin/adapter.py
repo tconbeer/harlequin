@@ -156,8 +156,7 @@ class HarlequinAdapter(ABC):
     Harlequin.
 
     It must declare its configuration setting the ADAPTER_OPTIONS
-    class variable. If the adapter supports copying (exporting
-    data to a file or directory), it also must declare COPY_FORMATS.
+    class variable.
 
     Adapters are initialized with a conn_str (a tuple of strings), and
     kwargs that represent CLI options. Adapters must be robust to receiving
@@ -169,6 +168,7 @@ class HarlequinAdapter(ABC):
 
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = None
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
+    """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
