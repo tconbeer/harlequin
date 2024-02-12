@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.0] - 2024-02-12
+
 ### Features
 
 -   The Data Exporter has been refactored to work with any adapter.
@@ -542,7 +544,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.14.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.15.0...HEAD
+
+[1.15.0]: https://github.com/tconbeer/harlequin/compare/1.14.0...1.15.0
 
 [1.14.0]: https://github.com/tconbeer/harlequin/compare/1.13.0...1.14.0
 
