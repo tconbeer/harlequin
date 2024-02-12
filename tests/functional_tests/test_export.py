@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Awaitable, Callable, List
 
@@ -8,7 +9,19 @@ from harlequin.components import ExportScreen
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "filename", ["one.csv", "one.parquet", "one.json", "one.orc", "one.feather"]
+    "filename",
+    [
+        "one.csv",
+        "one.parquet",
+        "one.json",
+        pytest.param(
+            "one.orc",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="ORC not supported on Windows"
+            ),
+        ),
+        "one.feather",
+    ],
 )
 async def test_export(
     app: Harlequin,

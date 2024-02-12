@@ -339,3 +339,4 @@ feather = HarlequinCopyFormat(
 )
 
 HARLEQUIN_COPY_FORMATS = [csv, parquet, json, orc, feather]
+WINDOWS_COPY_FORMATS = [csv, parquet, json, feather]

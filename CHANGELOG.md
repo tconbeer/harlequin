@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   The Data Exporter has been refactored to work with any adapter.
--   The Data Exporter now supports two additional formats: ORC and Feather.
+-   The Data Exporter now supports two additional formats: Feather and ORC (ORC is not supported on Windows).
 
 ### Bug Fixes
 

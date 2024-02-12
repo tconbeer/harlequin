@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from functools import partial
 from pathlib import Path
@@ -47,7 +48,7 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
-from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS
+from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.editor_cache import BufferState, Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
@@ -583,7 +584,13 @@ class Harlequin(App, inherit_bindings=False):
             error_callback=show_export_error,
         )
         self.app.push_screen(
-            ExportScreen(formats=HARLEQUIN_COPY_FORMATS, id="export_screen"), callback
+            ExportScreen(
+                formats=WINDOWS_COPY_FORMATS
+                if sys.platform == "win32"
+                else HARLEQUIN_COPY_FORMATS,
+                id="export_screen",
+            ),
+            callback,
         )
 
     def action_show_query_history(self) -> None:
