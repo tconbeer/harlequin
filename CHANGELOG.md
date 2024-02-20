@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `harlequin --config` creates a new file (parent folder as well, if non-existent) instead of crashing with FileNotFoundError ([#465](https://github.com/tconbeer/harlequin/issues/465))
+
 ## [1.15.0] - 2024-02-12
 
 ### Features
