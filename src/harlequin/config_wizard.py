@@ -152,7 +152,9 @@ def _wizard() -> None:
 
     new_profile.update(adapter_options)
 
-    _confirm_profile_generation(default_profile, profile_name, new_profile)
+    profile_confirm = _confirm_profile_generation(
+        default_profile, profile_name, new_profile
+    )
 
     config["profiles"][profile_name] = new_profile  # type: ignore
 
@@ -162,7 +164,9 @@ def _wizard() -> None:
         full_config["tool"]["harlequin"] = config  # type: ignore
         config = full_config
 
-    file.write(config)
+    if profile_confirm:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file.write(config)
 
 
 def _prompt_for_path() -> tuple[Path, bool]:
@@ -175,6 +179,7 @@ def _prompt_for_path() -> tuple[Path, bool]:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
     path = Path(raw_path)
+    path = path.expanduser()
     is_pyproject = path.stem == "pyproject"
     if path.suffix != ".toml":
         raise HarlequinWizardError(
@@ -263,7 +268,7 @@ def _prompt_to_set_default_profile(
 
 def _confirm_profile_generation(
     default_profile: str | None, profile_name: str, new_profile: dict[str, Any]
-) -> None:
+) -> bool:
     new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
@@ -285,6 +290,8 @@ def _confirm_profile_generation(
 
     if not all_good:
         raise KeyboardInterrupt()
+
+    return True
 
 
 def _validate_int(raw: str) -> bool:
