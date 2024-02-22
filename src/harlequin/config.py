@@ -11,7 +11,10 @@ if sys.version_info < (3, 11):
 else:
     import tomllib
 
-CONFIG_FILENAMES = ("pyproject.toml", ".harlequin.toml")  # order matters!
+# these tuples define the search path; order matters: the latter items
+# will have the highest priority and will override config in the
+# former items
+CONFIG_FILENAMES = ("pyproject.toml", ".harlequin.toml")
 SEARCH_DIRS = (Path.home(), Path.cwd())
 
 Profile = Dict[str, Union[bool, int, List[str], str, Path]]
@@ -40,11 +43,40 @@ def load_config(config_path: Path | None) -> Config:
     return config
 
 
+def get_highest_priority_existing_config_file() -> Path | None:
+    """
+    Returns the closest existing config file using the default search path;
+    checks pyproject files for a tool.harlequin section and ignores those
+    that are missing that section. Returns None if no
+    config files are found.
+    """
+    candidates = _find_config_files(config_path=None)
+    while candidates:
+        p = candidates.pop()
+        if p.stem == "pyproject":
+            try:
+                config = _read_config_file(p)
+            except HarlequinConfigError:
+                continue
+            if not config:
+                continue
+        return p
+    return None
+
+
+def sluggify_option_name(raw: str) -> str:
+    return raw.strip("-").replace("-", "_")
+
+
 def _find_config_files(config_path: Path | None) -> list[Path]:
+    """
+    Returns a list of candidate config file paths, to be read and
+    merged. Returns an empty list if none already exist.
+    """
     found_files: list[Path] = []
     if config_path is None:
-        for filename in CONFIG_FILENAMES:
-            for p in [p / filename for p in SEARCH_DIRS]:
+        for d in SEARCH_DIRS:
+            for p in [d / filename for filename in CONFIG_FILENAMES]:
                 if p.exists():
                     found_files.append(p)
     elif config_path.exists():
@@ -57,27 +89,37 @@ def _find_config_files(config_path: Path | None) -> list[Path]:
     return found_files
 
 
+def _read_config_file(path: Path) -> Config:
+    """
+    Reads the relevant config section from a dedicated config file
+    or pyproject.toml file at path. Raises HarlequinConfigError
+    if there is a problem with the file.
+    """
+    try:
+        with open(path, "rb") as f:
+            raw_config = tomllib.load(f)
+    except OSError as e:
+        raise HarlequinConfigError(
+            f"Error opening config file at {path}. {e}",
+            title="Harlequin couldn't load your config file.",
+        ) from e
+    except tomllib.TOMLDecodeError as e:
+        raise HarlequinConfigError(
+            f"Error decoding config file at {path}. " f"Check for invalid TOML. {e}",
+            title="Harlequin couldn't load your config file.",
+        ) from e
+    relevant_config: Config = (
+        raw_config
+        if path.stem != "pyproject"
+        else raw_config.get("tool", {}).get("harlequin", {})
+    )
+    return relevant_config
+
+
 def _merge_config_files(paths: list[Path]) -> Config:
     config: Config = {}
     for p in paths:
-        try:
-            with open(p, "rb") as f:
-                raw_config = tomllib.load(f)
-        except OSError as e:
-            raise HarlequinConfigError(
-                f"Error opening config file at {p}. {e}",
-                title="Harlequin couldn't load your config file.",
-            ) from e
-        except tomllib.TOMLDecodeError as e:
-            raise HarlequinConfigError(
-                f"Error decoding config file at {p}. " f"Check for invalid TOML. {e}",
-                title="Harlequin couldn't load your config file.",
-            ) from e
-        relevant_config = (
-            raw_config
-            if p.stem != "pyproject"
-            else raw_config.get("tool", {}).get("harlequin", {})
-        )
+        relevant_config = _read_config_file(p)
         config.update(relevant_config)
     return config
 
@@ -120,7 +162,7 @@ def _raise_on_bad_schema(config: Config) -> None:
                     raise HarlequinConfigError(
                         f"Profile {profile_name} defines an option '{option_name}',"
                         "which is an invalid name for an option. Did you mean "
-                        f"""'{option_name.strip("-").replace("-", "_")}'?""",
+                        f"""'{sluggify_option_name(option_name)}'?""",
                         title="Harlequin couldn't load your config file.",
                     )
 
@@ -140,7 +182,7 @@ def _raise_on_bad_schema(config: Config) -> None:
         and config["profiles"].get(default, None) is None
     ):
         raise HarlequinConfigError(
-            f"Config file sets default_profile to {default}, but does not define a "
+            f"Config files set the default_profile to {default}, but do not define a "
             "profile with that name.",
             title="Harlequin couldn't load your config file.",
         )

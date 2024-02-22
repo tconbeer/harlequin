@@ -7,6 +7,7 @@ import questionary
 import tomlkit
 from pygments.styles import get_all_styles
 from rich import print as rich_print
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from tomlkit.exceptions import TOMLKitError
@@ -15,14 +16,18 @@ from tomlkit.toml_file import TOMLFile
 
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
+from harlequin.config import (
+    get_highest_priority_existing_config_file,
+    sluggify_option_name,
+)
 from harlequin.exception import HarlequinWizardError, pretty_print_error
 from harlequin.options import ListOption
 from harlequin.plugins import load_plugins
 
 
-def wizard() -> None:
+def wizard(config_path: Path | None) -> None:
     try:
-        _wizard()
+        _wizard(config_path)
     except KeyboardInterrupt:
         print("Cancelled config updates. No changes were made to any files.")
         return
@@ -31,8 +36,8 @@ def wizard() -> None:
         return
 
 
-def _wizard() -> None:
-    path, is_pyproject = _prompt_for_path()
+def _wizard(config_path: Path | None) -> None:
+    path, is_pyproject = _prompt_for_path(config_path)
     config, file = _read_toml(path)
 
     # extract existing profiles from config file.
@@ -106,7 +111,8 @@ def _wizard() -> None:
     adapter_option_choices = (
         [
             questionary.Choice(
-                title=opt.name, checked=_sluggify_name(opt.name) in selected_profile
+                title=opt.name,
+                checked=sluggify_option_name(opt.name) in selected_profile,
             )
             for opt in adapter_cls.ADAPTER_OPTIONS
         ]
@@ -152,9 +158,7 @@ def _wizard() -> None:
 
     new_profile.update(adapter_options)
 
-    profile_confirm = _confirm_profile_generation(
-        default_profile, profile_name, new_profile
-    )
+    _confirm_profile_generation(default_profile, profile_name, new_profile)
 
     config["profiles"][profile_name] = new_profile  # type: ignore
 
@@ -164,28 +168,34 @@ def _wizard() -> None:
         full_config["tool"]["harlequin"] = config  # type: ignore
         config = full_config
 
-    if profile_confirm:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        file.write(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file.write(config)
 
 
-def _prompt_for_path() -> tuple[Path, bool]:
-    raw_path: str = questionary.path(
-        "What config file do you want to create or update?",
-        default=".harlequin.toml",
-        validate=lambda p: True
-        if p.endswith(".toml")
-        else "Must have a .toml extension",
-        style=HARLEQUIN_QUESTIONARY_STYLE,
-    ).unsafe_ask()
-    path = Path(raw_path)
-    path = path.expanduser()
-    is_pyproject = path.stem == "pyproject"
+def _prompt_for_path(config_path: Path | None) -> tuple[Path, bool]:
+    if config_path is None:
+        existing = get_highest_priority_existing_config_file()
+        raw_path: str = questionary.path(
+            "What config file do you want to create or update?",
+            default=str(existing) if existing is not None else ".harlequin.toml",
+            validate=lambda p: True
+            if p.endswith(".toml")
+            else "Must have a .toml extension",
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
+        path = Path(raw_path).expanduser().resolve()
+    else:
+        path = config_path
+        rich_print(
+            f"[italic]Updating the file at [bold {YELLOW}]{escape(str(path))}"
+            f"[/ bold {YELLOW}]:[/]"
+        )
     if path.suffix != ".toml":
         raise HarlequinWizardError(
             msg="Must create a file with a .toml extension.",
             title="Harlequin could not create your configuration.",
         )
+    is_pyproject = path.stem == "pyproject"
     return path, is_pyproject
 
 
@@ -236,11 +246,11 @@ def _prompt_to_set_adapter_options(
             if option.name not in which:
                 continue
             value = option.to_questionary(
-                selected_profile.get(_sluggify_name(option.name), None)
+                selected_profile.get(sluggify_option_name(option.name), None)
             ).unsafe_ask()
             if isinstance(option, ListOption):
                 value = value.split(" ")
-            adapter_options.update({_sluggify_name(option.name): value})
+            adapter_options.update({sluggify_option_name(option.name): value})
 
 
 def _prompt_to_set_default_profile(
@@ -268,7 +278,7 @@ def _prompt_to_set_default_profile(
 
 def _confirm_profile_generation(
     default_profile: str | None, profile_name: str, new_profile: dict[str, Any]
-) -> bool:
+) -> None:
     new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
@@ -291,8 +301,6 @@ def _confirm_profile_generation(
     if not all_good:
         raise KeyboardInterrupt()
 
-    return True
-
 
 def _validate_int(raw: str) -> bool:
     try:
@@ -308,7 +316,3 @@ def _validate_dir_or_blank(raw: str) -> bool:
         return True
     p = Path(raw)
     return p.exists() and p.is_dir()
-
-
-def _sluggify_name(raw: str) -> str:
-    return raw.strip("-").replace("-", "_")
