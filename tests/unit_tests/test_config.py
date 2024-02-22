@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from harlequin.config import get_config_for_profile, load_config
+from harlequin.config import (
+    _find_config_files,
+    get_config_for_profile,
+    get_highest_priority_existing_config_file,
+    load_config,
+)
 from harlequin.exception import HarlequinConfigError
 
 
@@ -65,3 +70,39 @@ def test_bad_config_raises(
     assert isinstance(err, HarlequinConfigError)
     assert "config" in err.title
     assert all([w in err.msg for w in key_words])
+
+
+def test_config_file_discovery(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # first, patch the real search paths with tmps
+    mock_home = tmp_path_factory.mktemp("home")
+    mock_config = tmp_path_factory.mktemp("config")
+    mock_cwd = tmp_path_factory.mktemp("cwd")
+    custom = tmp_path_factory.mktemp("custom") / "foo.toml"
+
+    # create empty config files in our mock dirs
+    expected_paths = [
+        mock_home / "pyproject.toml",
+        mock_home / ".harlequin.toml",
+        mock_config / "config.toml",
+        mock_config / "harlequin.toml",
+        mock_cwd / "pyproject.toml",
+        mock_cwd / ".harlequin.toml",
+        mock_cwd / "harlequin.toml",
+        custom,
+    ]
+    for p in expected_paths:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.open("w").close()
+
+    monkeypatch.setattr(Path, "cwd", lambda: mock_cwd)
+    monkeypatch.setattr(Path, "home", lambda: mock_home)
+    monkeypatch.setattr("harlequin.config.user_config_path", lambda **_: mock_config)
+
+    assert _find_config_files(config_path=custom) == expected_paths
+
+    expected_paths.pop()
+    assert _find_config_files(config_path=None) == expected_paths
+    assert get_highest_priority_existing_config_file() == expected_paths[-1]

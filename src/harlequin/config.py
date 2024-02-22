@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Union
 
+from platformdirs import user_config_path
+
 from harlequin.exception import HarlequinConfigError
 
 if sys.version_info < (3, 11):
@@ -11,11 +13,6 @@ if sys.version_info < (3, 11):
 else:
     import tomllib
 
-# these tuples define the search path; order matters: the latter items
-# will have the highest priority and will override config in the
-# former items
-CONFIG_FILENAMES = ("pyproject.toml", ".harlequin.toml")
-SEARCH_DIRS = (Path.home(), Path.cwd())
 
 Profile = Dict[str, Union[bool, int, List[str], str, Path]]
 Config = Dict[str, Union[str, Dict[str, Profile]]]
@@ -71,22 +68,38 @@ def sluggify_option_name(raw: str) -> str:
 def _find_config_files(config_path: Path | None) -> list[Path]:
     """
     Returns a list of candidate config file paths, to be read and
-    merged. Returns an empty list if none already exist.
+    merged. Returns an empty list if none already exist. Order matters:
+    the last item will have highest priority.
     """
     found_files: list[Path] = []
-    if config_path is None:
-        for d in SEARCH_DIRS:
-            for p in [d / filename for filename in CONFIG_FILENAMES]:
-                if p.exists():
-                    found_files.append(p)
-    elif config_path.exists():
+    for search in [_search_home, _search_config, _search_cwd]:
+        found_files.extend(search())
+    if config_path is not None and config_path.exists():
         found_files.append(config_path)
-    else:
+    elif config_path is not None:
         raise HarlequinConfigError(
             f"Config file could not be found at specified path: {config_path}",
             title="Harlequin couldn't load your config file.",
         )
     return found_files
+
+
+def _search_cwd() -> list[Path]:
+    directory = Path.cwd()
+    filenames = ["pyproject.toml", ".harlequin.toml", "harlequin.toml"]
+    return [directory / f for f in filenames if (directory / f).exists()]
+
+
+def _search_config() -> list[Path]:
+    directory = user_config_path(appname="harlequin", appauthor=False)
+    filenames = ["config.toml", ".harlequin.toml", "harlequin.toml"]
+    return [directory / f for f in filenames if (directory / f).exists()]
+
+
+def _search_home() -> list[Path]:
+    directory = Path.home()
+    filenames = ["pyproject.toml", ".harlequin.toml", "harlequin.toml"]
+    return [directory / f for f in filenames if (directory / f).exists()]
 
 
 def _read_config_file(path: Path) -> Config:
