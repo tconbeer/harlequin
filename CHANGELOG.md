@@ -4,9 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   `harlequin --config` option now accepts the `--config-path` CLI option ([#466](https://github.com/tconbeer/harlequin/issues/466)).
+-   `harlequin --config` now defaults to updating the nearest (highest priority) existing config file in the default search path, instead of `./.harlequin.toml`.
+
 ### Bug Fixes
 
-- `harlequin --config` creates a new file (parent folder as well, if non-existent) instead of crashing with FileNotFoundError ([#465](https://github.com/tconbeer/harlequin/issues/465))
+-   `harlequin --config` creates a new file (parent folder as well, if non-existent) instead of crashing with FileNotFoundError ([#465](https://github.com/tconbeer/harlequin/issues/465))
 
 ## [1.15.0] - 2024-02-12
 

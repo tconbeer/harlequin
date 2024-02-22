@@ -114,7 +114,7 @@ def _version_option() -> str:
 def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None:
     if not value or ctx.resilient_parsing:
         return
-    wizard()
+    wizard(ctx.params.get("config_path", None))
     ctx.exit(0)
 
 
@@ -218,7 +218,7 @@ def build_cli() -> click.Command:
         is_flag=True,
         callback=_config_wizard_callback,
         expose_value=True,
-        is_eager=True,
+        # is_eager=True,
     )
     @click.option(
         "--locale",
