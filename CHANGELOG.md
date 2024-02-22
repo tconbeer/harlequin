@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changes
+
+-   The default search path and priority for config files has changed, to better align with the standard defined by each operating system. Harlequin now loads config files from the following locations (and merges them, with items listed first taking priority):
+    1. The file located at the path provided by the `--config-path` CLI option.
+    2. Files named `harlequin.toml`, `.harlequin.toml`, or `pyproject.toml` in the current working directory.
+    3. Files named `harlequin.toml`, `.harlequin.toml`, or `config.toml` in the user's default config directory, in the `harlequin` subdirectory. For example:
+        - Linux: `$XDG_CONFIG_HOME/harlequin/config.toml` or `~/.config/harlequin/config.toml`
+        - Mac: `~/Library/Application Support/harlequin/config.toml`
+        - Windows: `~\AppData\Local\harlequin\config.toml`
+    4. Files named `harlequin.toml`, `.harlequin.toml`, or `pyproject.toml` in the user's home directory (`~`).
+    ([#471](https://github.com/tconbeer/harlequin/issues/471))
+
 ### Features
 
 -   `harlequin --config` option now accepts the `--config-path` CLI option ([#466](https://github.com/tconbeer/harlequin/issues/466)).
