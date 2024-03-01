@@ -36,7 +36,7 @@ jobs:
       - name: Ensure package can be built
         run: poetry build --no-interaction
       - name: Update CHANGELOG
-        uses: thomaseizinger/keep-a-changelog-new-release@v1
+        uses: thomaseizinger/keep-a-changelog-new-release@v2
         with:
           version: ${{ github.event.inputs.newVersion }}
       - name: Commit Changes
