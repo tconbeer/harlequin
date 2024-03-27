@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Pressing `F8` on the history screen no longer causes a crash ([#485](https://github.com/tconbeer/harlequin/issues/485))
+
 ## [1.16.0] - 2024-02-22
 
 ### Changes

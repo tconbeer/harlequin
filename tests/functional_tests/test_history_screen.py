@@ -57,3 +57,23 @@ async def test_history_screen(
         snap_results.append(await app_snapshot(app, "New buffer with select 14"))
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_history_screen_crash(
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    mock_time: None,
+) -> None:
+    async with app.run_test() as pilot:
+        q = "\n".join([f"select {i};" for i in range(15)])
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(query_text=q, limit=None))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # https://github.com/tconbeer/harlequin/issues/485
+        await pilot.press("f8")
+        await pilot.press("f8")
