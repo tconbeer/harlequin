@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.1] - 2024-03-27
+
 ### Bug Fixes
 
 -   Pressing `F8` on the history screen no longer causes a crash ([#485](https://github.com/tconbeer/harlequin/issues/485))
@@ -571,7 +573,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.16.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.16.1...HEAD
+
+[1.16.1]: https://github.com/tconbeer/harlequin/compare/1.16.0...1.16.1
 
 [1.16.0]: https://github.com/tconbeer/harlequin/compare/1.15.0...1.16.0
 
