@@ -611,7 +611,7 @@ class Harlequin(App, inherit_bindings=False):
                     "Please wait a moment and try again."
                 ),
             )
-        else:
+        elif self.screen.id != "history_screen":
             self.push_screen(
                 HistoryScreen(
                     history=self.history,
