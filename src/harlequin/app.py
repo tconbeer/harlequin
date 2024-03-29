@@ -819,7 +819,7 @@ class Harlequin(App, inherit_bindings=False):
         """
         if self.editor is None:
             return ""
-        selection = self.editor.selected_text
+        selection = self.editor.selected_text.strip()
         if self.connection is None:
             return selection
         if selection:

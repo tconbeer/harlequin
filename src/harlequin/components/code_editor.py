@@ -62,7 +62,7 @@ class CodeEditor(TextEditor):
             after = (lno, len(self.text_input.document.get_line(lno)))
         return self.text_input.get_text_range(
             start=(before[0], before[1]), end=(after[0], after[1])
-        )
+        ).strip()
 
     @property
     def previous_query(self) -> str:
@@ -82,7 +82,7 @@ class CodeEditor(TextEditor):
 
         return self.text_input.get_text_range(
             start=(first[0], first[1]), end=(second[0], second[1])
-        )
+        ).strip()
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
