@@ -585,9 +585,11 @@ class Harlequin(App, inherit_bindings=False):
         )
         self.app.push_screen(
             ExportScreen(
-                formats=WINDOWS_COPY_FORMATS
-                if sys.platform == "win32"
-                else HARLEQUIN_COPY_FORMATS,
+                formats=(
+                    WINDOWS_COPY_FORMATS
+                    if sys.platform == "win32"
+                    else HARLEQUIN_COPY_FORMATS
+                ),
                 id="export_screen",
             ),
             callback,

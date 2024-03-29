@@ -8,8 +8,7 @@ from harlequin.exception import HarlequinCopyError
 
 
 class ExporterCallable(Protocol):
-    def __call__(self, table: ResultsTable, dest_path: str, **kwargs: Any) -> None:
-        ...
+    def __call__(self, table: ResultsTable, dest_path: str, **kwargs: Any) -> None: ...
 
 
 def copy(

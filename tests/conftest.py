@@ -162,9 +162,11 @@ def _create_sqlite_db_from_data_dir(data_dir: Path, db_path: Path) -> None:
                 reader = csv.reader(f)
                 for row in reader:
                     quoted = [
-                        val
-                        if isinstance(val, (int, float))
-                        else f"'{val.replace(SINGLE_QUOTE, DOUBLED_SINGLE_QUOTE)}'"
+                        (
+                            val
+                            if isinstance(val, (int, float))
+                            else f"'{val.replace(SINGLE_QUOTE, DOUBLED_SINGLE_QUOTE)}'"
+                        )
                         for val in row
                     ]
                     conn.execute(f"insert into {p.stem} values({', '.join(quoted)})")

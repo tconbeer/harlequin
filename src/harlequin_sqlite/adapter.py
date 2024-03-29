@@ -200,8 +200,9 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
         timeout: str | float = 5.0,
         detect_types: str | int = 0,
-        isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"]
-        | None = "DEFERRED",
+        isolation_level: (
+            Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] | None
+        ) = "DEFERRED",
         cached_statements: str | int = 128,
         **_: Any,
     ) -> None:
