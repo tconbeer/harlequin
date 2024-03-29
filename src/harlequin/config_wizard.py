@@ -178,9 +178,9 @@ def _prompt_for_path(config_path: Path | None) -> tuple[Path, bool]:
         raw_path: str = questionary.path(
             "What config file do you want to create or update?",
             default=str(existing) if existing is not None else ".harlequin.toml",
-            validate=lambda p: True
-            if p.endswith(".toml")
-            else "Must have a .toml extension",
+            validate=lambda p: (
+                True if p.endswith(".toml") else "Must have a .toml extension"
+            ),
             style=HARLEQUIN_QUESTIONARY_STYLE,
         ).unsafe_ask()
         path = Path(raw_path).expanduser().resolve()

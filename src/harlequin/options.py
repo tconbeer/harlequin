@@ -228,9 +228,11 @@ class TextOption(AbstractOption):
 
         return questionary.text(
             message=self.name,
-            default=safe_existing_value
-            if safe_existing_value is not None
-            else self.default or "",
+            default=(
+                safe_existing_value
+                if safe_existing_value is not None
+                else self.default or ""
+            ),
             validate=_q_validator,
             style=HARLEQUIN_QUESTIONARY_STYLE,
         )
@@ -429,9 +431,11 @@ class PathOption(AbstractOption):
 
         return questionary.path(
             message=self.name,
-            default=safe_existing_value
-            if safe_existing_value is not None
-            else self.default or "",
+            default=(
+                safe_existing_value
+                if safe_existing_value is not None
+                else self.default or ""
+            ),
             only_directories=not self.file_okay,
             validate=_path_validator,
             style=HARLEQUIN_QUESTIONARY_STYLE,
@@ -520,9 +524,9 @@ class SelectOption(AbstractOption):
         return questionary.select(
             message=self.name,
             choices=self._flat_choices(),
-            default=safe_existing_value
-            if safe_existing_value is not None
-            else self.default,
+            default=(
+                safe_existing_value if safe_existing_value is not None else self.default
+            ),
             style=HARLEQUIN_QUESTIONARY_STYLE,
         )
 

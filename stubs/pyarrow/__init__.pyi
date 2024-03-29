@@ -147,9 +147,11 @@ def nulls(
     memory_pool: MemoryPool | None = None,
 ) -> Array: ...
 def table(
-    data: pd.DataFrame
-    | Mapping[str, _PandasConvertible | list]
-    | list[_PandasConvertible],
+    data: (
+        pd.DataFrame
+        | Mapping[str, _PandasConvertible | list]
+        | list[_PandasConvertible]
+    ),
     names: list[str] | None = None,
     schema: Schema | None = None,
     metadata: Mapping | None = None,
