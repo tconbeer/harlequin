@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   If the cursor is after the final semicolon in the query editor, and there is only whitespace after the semicolon, Harlequin will now execute the last query before the semicolon, instead of doing nothing when clicking Run Query or pressing <kbd>ctrl+j</kbd>.
+
 ## [1.16.1] - 2024-03-27
 
 ### Bug Fixes

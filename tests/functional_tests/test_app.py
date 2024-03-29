@@ -207,6 +207,57 @@ async def test_multiple_queries(
 
 
 @pytest.mark.asyncio
+async def test_single_query_terminated_with_semicolon(
+    app_all_adapters: Harlequin,
+) -> None:
+    app = app_all_adapters
+    messages: list[Message] = []
+    async with app.run_test(message_hook=messages.append) as pilot:
+        await app.workers.wait_for_complete()
+        while app.editor is None:
+            await pilot.pause()
+        q = "select 1;    \n\t\n"
+        app.editor.text = q
+        await pilot.press("ctrl+j")
+
+        # should only run current query
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        [query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == "select 1;"
+        assert app.results_viewer.tab_count == 1
+
+        app.editor.focus()
+        await pilot.press("ctrl+a")
+        await pilot.press("ctrl+j")
+
+        # should not run whitespace query, even though included
+        # in selection.
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        [_, query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == "select 1;"
+        assert app.results_viewer.tab_count == 1
+
+        app.editor.focus()
+        await pilot.press("ctrl+end")
+        await pilot.press("ctrl+j")
+        # should run previous query
+        assert not app.editor.current_query
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        [*_, query_submitted_message] = [
+            m for m in messages if isinstance(m, QuerySubmitted)
+        ]
+        assert query_submitted_message.query_text == "select 1;"
+        assert app.results_viewer.tab_count == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "bad_query",
     [
