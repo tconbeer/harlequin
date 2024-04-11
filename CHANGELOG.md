@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+-   Wrong link on text_area_clipboard_error error message ([#509](https://github.com/tconbeer/harlequin/issues/509))
+
 ## [1.16.2] - 2024-03-29
 
 ### Bug Fixes
