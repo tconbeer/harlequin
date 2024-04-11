@@ -35,7 +35,7 @@ jobs:
       - name: Publish package to PyPI
         run: poetry publish --no-interaction
       - name: Create a Github Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.harlequin_version.outputs.harlequin_version }}
           target_commitish: main
