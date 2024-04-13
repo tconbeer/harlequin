@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   The ADBC adapter is now installable as an extra; use `pip install harlequin[adbc]`.
+
 ### Bug Fixes
 
 -   Wrong link on text_area_clipboard_error error message ([#509](https://github.com/tconbeer/harlequin/issues/509))
