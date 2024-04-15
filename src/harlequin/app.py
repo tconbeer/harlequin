@@ -648,6 +648,8 @@ class Harlequin(App, inherit_bindings=False):
             s3_tree=self.data_catalog.s3_tree,
             history=self.history,
         )
+        if self.connection:
+            self.connection.close()
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
