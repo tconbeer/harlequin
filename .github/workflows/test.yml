@@ -42,6 +42,7 @@ jobs:
           key: ${{ runner.os }}-poetry-171
 
       - name: Install Poetry
+        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
