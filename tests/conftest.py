@@ -80,21 +80,21 @@ def small_sqlite(tmp_path: Path, data_dir: Path) -> Path:
 @pytest.fixture
 def duckdb_adapter() -> type[HarlequinAdapter]:
     eps = entry_points(group="harlequin.adapter")
-    cls: type[HarlequinAdapter] = eps["duckdb"].load()  # type: ignore
+    cls: type[HarlequinAdapter] = eps["duckdb"].load()
     return cls
 
 
 @pytest.fixture
 def sqlite_adapter() -> type[HarlequinAdapter]:
     eps = entry_points(group="harlequin.adapter")
-    cls: type[HarlequinAdapter] = eps["sqlite"].load()  # type: ignore
+    cls: type[HarlequinAdapter] = eps["sqlite"].load()
     return cls
 
 
 @pytest.fixture(params=["duckdb", "sqlite"])
 def all_adapters(request: pytest.FixtureRequest) -> type[HarlequinAdapter]:
     eps = entry_points(group="harlequin.adapter")
-    cls: type[HarlequinAdapter] = eps[request.param].load()  # type: ignore
+    cls: type[HarlequinAdapter] = eps[request.param].load()
     return cls
 
 
