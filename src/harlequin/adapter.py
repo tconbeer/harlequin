@@ -149,6 +149,15 @@ class HarlequinConnection(ABC):
         """
         raise NotImplementedError
 
+    def close(self) -> None:
+        """
+        Closes the connection, if necessary. This function is called when the app
+        quits.
+
+        Returns: None
+        """
+        return None
+
 
 class HarlequinAdapter(ABC):
     """
