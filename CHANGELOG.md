@@ -7,10 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 -   A new `HarlequinConnection.close()` method can be implemented by adapters to gracefully close database connections when the application exits.
+-   The ADBC adapter is now installable as an extra; use `pip install harlequin[adbc]`.
 
 ### Bug Fixes
 
--   Wrong link on text_area_clipboard_error error message ([#509](https://github.com/tconbeer/harlequin/issues/509))
+-   Fixes broken link on clipboard error message ([#509](https://github.com/tconbeer/harlequin/issues/509))
 
 ## [1.16.2] - 2024-03-29
 

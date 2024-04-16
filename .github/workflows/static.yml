@@ -25,7 +25,7 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: 1.4.2
+          version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
           installer-parallel: true

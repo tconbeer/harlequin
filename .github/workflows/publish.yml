@@ -24,7 +24,7 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: 1.2.2
+          version: 1.7.1
       - name: Configure poetry
         run: poetry config --no-interaction pypi-token.pypi ${{ secrets.HARLEQUIN_PYPI_TOKEN }}
       - name: Get harlequin Version

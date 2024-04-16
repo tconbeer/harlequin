@@ -1,14 +1,14 @@
 .PHONY: check
 check:
 	black .
-	ruff . --fix
+	ruff check . --fix
 	pytest -m "not online"
 	mypy
 
 .PHONY: lint
 lint:
 	black .
-	ruff . --fix
+	ruff check . --fix
 	mypy
 
 .PHONY: serve
