@@ -11,6 +11,9 @@ jobs:
   publish-package:
     if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v') }}
     runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      id-token: write
 
     steps:
       - name: Check out harlequin main branch
@@ -25,15 +28,13 @@ jobs:
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
-      - name: Configure poetry
-        run: poetry config --no-interaction pypi-token.pypi ${{ secrets.HARLEQUIN_PYPI_TOKEN }}
       - name: Get harlequin Version
         id: harlequin_version
         run: echo "harlequin_version=$(poetry version --short)" >> $GITHUB_OUTPUT
       - name: Build package
         run: poetry build --no-interaction
       - name: Publish package to PyPI
-        run: poetry publish --no-interaction
+        uses: pypa/gh-action-pypi-publish@release/v1
       - name: Create a Github Release
         uses: softprops/action-gh-release@v2
         with:
