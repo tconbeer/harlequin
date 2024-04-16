@@ -38,6 +38,12 @@ tomli = { version = "^2.0.1", python = "<3.11.0" }
 tomlkit = "^0.12.3"
 questionary = "^2.0.1"
 
+# temporary pins
+# pin numpy to fix compatibility between pyarrow (textual-fastdatatable)
+# and harlequin-databricks. Should be able to remove when harlequin-databricks
+# dependency on databricks-sql-connector gets updated
+numpy = { version = "^1", python = ">=3.9.0,<3.13.0"}
+
 # optional deps
 boto3 = { version = "^1.34.22", optional = true }
 
