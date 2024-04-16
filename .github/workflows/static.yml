@@ -12,35 +12,48 @@ jobs:
   static:
     name: Static Analysis - 3.8
     runs-on: ubuntu-latest
+    env:
+      POETRY_VIRTUALENVS_IN_PROJECT: 1
+      POETRY_INSTALLER_PARALLEL: 1
+      POETRY_VIRTUALENVS_CREATE: 1
     steps:
       - name: Check out Repo
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
       - name: Set up Python 3.8
         uses: actions/setup-python@v5
         id: setup-python
         with:
           python-version: "3.8"
+
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-poetry-171  # increment to reset cache
+
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-          installer-parallel: true
+
       - name: Load cached venv
         id: cached-poetry-dependencies
         uses: actions/cache@v4
         with:
           path: .venv
           key: static-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --sync --no-interaction --without dev
+
       - name: Run analysis
         run: |
           source .venv/bin/activate
           black . --check
-          ruff .
+          ruff check .
           mypy

@@ -12,6 +12,10 @@ jobs:
     if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v') }}
     runs-on: ubuntu-latest
     environment: publish
+    env:
+      POETRY_VIRTUALENVS_IN_PROJECT: 1
+      POETRY_INSTALLER_PARALLEL: 1
+      POETRY_VIRTUALENVS_CREATE: 1
     permissions:
       id-token: write
 
@@ -20,21 +24,34 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-poetry-171  # increment to reset cache
+
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
+
       - name: Get harlequin Version
         id: harlequin_version
         run: echo "harlequin_version=$(poetry version --short)" >> $GITHUB_OUTPUT
+
       - name: Build package
         run: poetry build --no-interaction
+
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
       - name: Create a Github Release
         uses: softprops/action-gh-release@v2
         with:
