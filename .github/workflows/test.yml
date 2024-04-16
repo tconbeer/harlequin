@@ -38,7 +38,7 @@ jobs:
         id: cached-poetry-install
         uses: actions/cache@v4
         with:
-          path: ~/.local
+          path: ~\.local
           key: ${{ runner.os }}-poetry-171
 
       - name: Install Poetry
@@ -116,8 +116,7 @@ jobs:
         run: poetry install --sync --no-interaction --only main,test
       - name: Run tests
         run: |
-          source .venv/bin/activate
-          pytest -m "not online"
+          poetry run pytest -m "not online"
 
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v4  

@@ -54,7 +54,6 @@ jobs:
 
       - name: Run analysis
         run: |
-          source .venv/bin/activate
-          black . --check
-          ruff check .
-          mypy
+          poetry run black . --check
+          poetry run ruff check .
+          poetry run mypy
