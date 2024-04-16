@@ -94,8 +94,10 @@ sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 harlequin = "harlequin.colors:HarlequinPygmentsStyle"
 
 [tool.ruff]
-select = ["A", "B", "E", "F", "I"]
 target-version = "py38"
+
+[tool.ruff.lint]
+select = ["A", "B", "E", "F", "I"]
 
 [tool.mypy]
 python_version = "3.8"
