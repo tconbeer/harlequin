@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0] - 2024-04-16
+
 ### Features
 
 -   A new `HarlequinConnection.close()` method can be implemented by adapters to gracefully close database connections when the application exits.
@@ -588,7 +590,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.16.2...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.17.0...HEAD
+
+[1.17.0]: https://github.com/tconbeer/harlequin/compare/1.16.2...1.17.0
 
 [1.16.2]: https://github.com/tconbeer/harlequin/compare/1.16.1...1.16.2
 
