@@ -50,7 +50,10 @@ jobs:
 
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --sync --no-interaction --without dev
+        run: |
+          poetry env info
+          poetry install --sync --no-interaction --without dev
+          poetry env info
 
       - name: Run analysis
         run: |
