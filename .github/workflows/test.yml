@@ -30,6 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python 3.10
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -40,6 +41,10 @@ jobs:
         with:
           path: ~\.local
           key: ${{ runner.os }}-poetry-171
+
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: Add-Content $env:GITHUB_PATH "~\.local"
 
       - name: Install Poetry
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
@@ -99,6 +104,10 @@ jobs:
         with:
           path: ~/.local
           key: ${{ runner.os }}-poetry-171
+
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "~/.local" >> $GITHUB_PATH
 
       - name: Install Poetry
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
