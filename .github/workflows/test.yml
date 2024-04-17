@@ -48,7 +48,9 @@ jobs:
           version: 1.7.1
 
       - name: Install python dependencies
-        run: poetry install --sync --no-interaction --only main,test
+        run: |
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
+          poetry install --sync --no-interaction --only main,test
 
       - name: Run tests
         run: poetry run pytest -m "not online" -m "not flaky_windows" --snapshot-warn-unused
@@ -113,7 +115,10 @@ jobs:
 
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --sync --no-interaction --only main,test
+        run: |
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
+          poetry install --sync --no-interaction --only main,test
+
       - name: Run tests
         run: |
           poetry run pytest -m "not online"
