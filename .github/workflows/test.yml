@@ -54,7 +54,6 @@ jobs:
 
       - name: Install python dependencies
         run: |
-          poetry env use ${{ steps.setup-python.outputs.python-version }}
           poetry install --sync --no-interaction --only main,test
 
       - name: Run tests
