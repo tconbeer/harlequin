@@ -44,7 +44,7 @@ jobs:
 
       - name: Add cached Poetry to PATH
         if: steps.cached-poetry-install.outputs.cache-hit == 'true'
-        run:  echo "$HOME\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        run: echo "$HOME\.local\bin" >> $GITHUB_PATH
 
       - name: Install Poetry
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
