@@ -29,13 +29,18 @@ jobs:
           python-version: "3.8"
 
       - name: Load cached Poetry installation
-        id: cached-poetry
+        id: cached-poetry-install
         uses: actions/cache@v4
         with:
           path: ~/.local
           key: ${{ runner.os }}-poetry-171  # increment to reset cache
 
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
+        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
@@ -49,11 +54,13 @@ jobs:
 
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --sync --no-interaction --without dev
+        run: |
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
+          poetry install --sync --no-interaction --without dev
+          poetry env info
 
       - name: Run analysis
         run: |
-          source .venv/bin/activate
-          black . --check
-          ruff check .
-          mypy
+          poetry run black . --check
+          poetry run ruff check .
+          poetry run mypy

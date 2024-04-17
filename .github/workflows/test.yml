@@ -30,6 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python 3.10
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -38,16 +39,22 @@ jobs:
         id: cached-poetry-install
         uses: actions/cache@v4
         with:
-          path: ~/.local
+          path: ~\.local
           key: ${{ runner.os }}-poetry-171
 
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "$HOME\.local\bin" >> $GITHUB_PATH
+
       - name: Install Poetry
+        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
           version: 1.7.1
 
       - name: Install python dependencies
-        run: poetry install --sync --no-interaction --only main,test
+        run: |
+          poetry install --sync --no-interaction --only main,test
 
       - name: Run tests
         run: poetry run pytest -m "not online" -m "not flaky_windows" --snapshot-warn-unused
@@ -97,6 +104,10 @@ jobs:
           path: ~/.local
           key: ${{ runner.os }}-poetry-171
 
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
@@ -112,11 +123,13 @@ jobs:
 
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --sync --no-interaction --only main,test
+        run: |
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
+          poetry install --sync --no-interaction --only main,test
+
       - name: Run tests
         run: |
-          source .venv/bin/activate
-          pytest -m "not online"
+          poetry run pytest -m "not online"
 
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v4  
