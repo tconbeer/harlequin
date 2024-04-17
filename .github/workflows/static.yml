@@ -51,7 +51,7 @@ jobs:
       - name: Install python dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: |
-          poetry env info
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
           poetry install --sync --no-interaction --without dev
           poetry env info
 
