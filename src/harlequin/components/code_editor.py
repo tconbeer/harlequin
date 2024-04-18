@@ -263,7 +263,7 @@ class EditorCollection(TabbedContent):
             editor,
             id=new_tab_id,
         )
-        await self.add_pane(pane)  # type: ignore
+        await self.add_pane(pane)
         if state is not None:
             editor.selection = state.selection
         else:

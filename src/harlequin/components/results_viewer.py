@@ -88,7 +88,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         if n > 1:
             self.remove_class("hide-tabs")
         pane = TabPane(f"Result {n}", table)
-        await self.add_pane(pane)  # type: ignore
+        await self.add_pane(pane)
         self.active = f"tab-{n}"
         # need to manually refresh the table, since activating the tab
         # doesn't consistently cause a new layout calc.
