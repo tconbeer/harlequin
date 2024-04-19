@@ -18,11 +18,17 @@
 
 - F4: Format the query.
 - ctrl+enter, ctrl+j: Run the query.
+
 - ctrl+o: Open a text file in the Query Editor.
 - ctrl+s: Save the contents of the Query Editor to a file.
+
 - ctrl+n: Create a new buffer (editor tab).
 - ctrl+w: Close the current buffer (editor tab).
 - ctrl+k: View the next buffer (editor tab).
+
+- ctrl+g: Go to line
+- ctrl+f: Find
+- F3: Find next (like Find, but uses previous value).
 
 #### Editing Text
 
