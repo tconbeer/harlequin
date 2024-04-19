@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
+### Features
+
+-   The Query Editor's Open and Save dialogs now display the full computed file path that will be opened or saved ([tconbeer/textual-textarea#232](https://github.com/tconbeer/textual-textarea/issues/232) - thank you [@bjornasm](https://github.com/bjornasm)!)
+-   The Query Editor adds a "Find" action with <kbd>ctrl+f</kbd> and "Find Next" action with <kbd>F3</kbd>.
+-   The Query Editor adds a "Go To Line" action with <kbd>ctrl+g</kbd>.
+-   The Query Editor adds bindings for <kbd>ctrl+shift+home/end</kbd> to select text while moving the cursor to the start/end of the document.
+
+### Bug Fixes
+
+-   Fixes a crash from initializing the Error Modal incorrectly from the Query Editor.
+-   Fixes a crash from saving to a path in a non-existent directory.
+
+### Changes
+
+-   The Query Editor uses a slightly different implementation of undo and redo, with improved performance and some subtly different behavior ([#240](https://github.com/tconbeer/textual-textarea/issues/240).
+
 ## [1.17.0] - 2024-04-16
 
 ### Features
