@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sys
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -212,8 +212,8 @@ def test_rewrite_load(extension_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    sys.platform != "win32",
-    reason="Default ubuntu and mac distributions disable sqlite3 extensions.",
+    not hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Not supported on many Pythons.",
 )
 def test_load_extension(extension_path: Path) -> None:
     conn = HarlequinSqliteAdapter(
@@ -223,7 +223,8 @@ def test_load_extension(extension_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32", reason="Windows supports sqlite extensions."
+    hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Not supported on many Pythons.",
 )
 def test_load_extension_raises(extension_path: Path) -> None:
     with pytest.raises(HarlequinConfigError) as exc_info:

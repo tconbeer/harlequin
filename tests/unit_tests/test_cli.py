@@ -1,6 +1,6 @@
 import hashlib
 import json
-import sys
+import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -312,9 +312,10 @@ def test_bad_config_exits(
 
 
 @pytest.mark.skipif(
-    sys.platform != "win32", reason="Extension option only supported on Windows."
+    not hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Extension option not supported on many pythons.",
 )
-def test_sqlite_extension_windows(
+def test_sqlite_extensions(
     mock_harlequin: MagicMock,
     mock_sqlite_adapter: MagicMock,
     mock_empty_config: None,
@@ -329,8 +330,8 @@ def test_sqlite_extension_windows(
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Extension option not supported on non-windows platforms.",
+    hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Extension option not supported on many pythons.",
 )
 def test_sqlite_extension_not_supported(
     mock_harlequin: MagicMock,
