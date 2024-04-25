@@ -196,6 +196,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     def __init__(
         self,
         conn_str: Sequence[str],
+        init_path: Path | str | None = None,
+        no_init: bool | str = False,
         read_only: bool = False,
         connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
         timeout: str | float = 5.0,
@@ -208,6 +210,12 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     ) -> None:
         try:
             self.conn_str = conn_str if conn_str else (":memory:",)
+            self.init_path = (
+                Path(init_path).resolve()
+                if init_path is not None
+                else Path.home() / ".sqliterc"
+            )
+            self.no_init = bool(no_init)
             self.read_only = bool(read_only)
             self.connection_mode = connection_mode
             self.timeout = float(timeout)
@@ -300,4 +308,110 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 raise HarlequinConnectionError(
                     msg=msg, title="SQLite couldn't connect to your database."
                 ) from e
-        return HarlequinSqliteConnection(conn=conn)
+
+        init_msg = ""
+        if self.init_path is not None and not self.no_init:
+            init_script = self._read_init_script(self.init_path)
+            try:
+                count = 0
+                for command in self._split_script(init_script):
+                    rewritten_command = self._rewrite_init_command(command)
+                    for cmd in rewritten_command.split(";"):
+                        if cmd.strip():
+                            conn.execute(cmd)
+                            count += 1
+            except sqlite3.Error as e:
+                msg = f"Attempted to execute script at {self.init_path}\n{e}"
+                raise HarlequinConnectionError(
+                    msg, title="SQLite could not execute your initialization script."
+                ) from e
+            else:
+                if count > 0:
+                    init_msg = (
+                        f"Executed {count} {'command' if count == 1 else 'commands'} "
+                        f"from {self.init_path}"
+                    )
+        return HarlequinSqliteConnection(conn=conn, init_message=init_msg)
+
+    @staticmethod
+    def _read_init_script(init_path: Path) -> str:
+        try:
+            with open(init_path.expanduser(), "r") as f:
+                init_script = f.read()
+        except OSError:
+            init_script = ""
+        return init_script
+
+    @staticmethod
+    def _split_script(script: str) -> list[str]:
+        """
+        SQLite init scripts can contain SQL queries or dot commands. The SQL
+        queries may contain newlines, but the dot commands are newline-terminated.
+        This takes a raw script and returns a list of executable commands
+        """
+        lines = script.splitlines()
+        commands: list[str] = []
+        i = 0
+        for j, line in enumerate(lines):
+            if line.startswith("."):
+                commands.append("\n".join(lines[i:j]))
+                commands.append(line)
+                i = j + 1
+            # queries can be terminated by / or "go" on a line
+            # by itself
+            elif line in ("/", "go"):
+                commands.append("\n".join(lines[i:j]))
+                i = j + 1
+        commands.append("\n".join(lines[i:]))
+        return [command.strip() for command in commands if command]
+
+    @classmethod
+    def _rewrite_init_command(cls, command: str) -> str:
+        """
+        SQLite init scripts can contain dot commands, which can only be executed
+        by the CLI, not the python API. Here, we rewrite some common ones into
+        SQL, and rewrite the others to be no-ops.
+        """
+        if not command.startswith("."):
+            return command
+        elif command.startswith(".open"):
+            return cls._rewrite_dot_open(command)
+        elif command.startswith(".load"):
+            return cls._rewrite_dot_load(command)
+        else:
+            return ""
+
+    @staticmethod
+    def _rewrite_dot_open(command: str) -> str:
+        """
+        Rewrites .open command into its approx SQL equivalent.
+        (This attaches databases instead of opening a new connection).
+
+        Options (--readonly, etc.) are not supported.
+        """
+        args = command.split()[1:]
+        if not args:
+            return "attach ''"
+        elif args[-1] == ":memory:":
+            return "attach ':memory:';"
+        else:
+            # options are not supported.
+            db_path = Path(args[-1])
+            return f"attach '{db_path}' as {db_path.stem};"
+
+    @staticmethod
+    def _rewrite_dot_load(command: str) -> str:
+        """
+        Rewrites .load command into its SQL equivalent, load_extension().
+        """
+        args = command.split()[1:]
+        if not args:
+            raise sqlite3.ProgrammingError("Could not execute .load with no args.")
+        elif len(args) == 1:
+            return f"select load_extension('{args[0]}');"
+        elif len(args) == 2:
+            return f"select load_extension('{args[0]}', '{args[1]}');"
+        else:
+            raise sqlite3.ProgrammingError(
+                "Could not execute .load with following args: " f"{args}"
+            )

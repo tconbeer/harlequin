@@ -361,7 +361,7 @@ class DuckDbAdapter(HarlequinAdapter):
                             connection.execute(cmd)
                             count += 1
             except duckdb.Error as e:
-                msg = f"Attempted to execute script at {init_script[0]}\n{e}"
+                msg = f"Attempted to execute script at {self.init_path}\n{e}"
                 raise HarlequinConnectionError(
                     msg, title="DuckDB could not execute your initialization script."
                 ) from e
