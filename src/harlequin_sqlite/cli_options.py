@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from sqlite3 import Connection
 
-from harlequin.options import FlagOption, PathOption, SelectOption, TextOption
+from harlequin.options import (
+    FlagOption,
+    ListOption,
+    PathOption,
+    SelectOption,
+    TextOption,
+)
 
 read_only = FlagOption(
     name="read-only",
@@ -120,6 +127,15 @@ no_init = FlagOption(
     description="Start Harlequin without executing the initialization script.",
 )
 
+extensions = ListOption(
+    name="extension",
+    description=(
+        "Load the SQLite extension from the passed path when starting "
+        "Harlequin. To install multiple extensions, repeat this option."
+    ),
+    short_decls=["-e"],
+)
+
 SQLITE_OPTIONS = [
     init,
     no_init,
@@ -130,3 +146,6 @@ SQLITE_OPTIONS = [
     isolation_level,
     cached_statements,
 ]
+
+if hasattr(Connection, "enable_load_extension"):
+    SQLITE_OPTIONS.append(extensions)

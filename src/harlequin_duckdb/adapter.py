@@ -336,14 +336,13 @@ class DuckDbAdapter(HarlequinAdapter):
                 f"SET custom_extension_repository='{self.custom_extension_repo}';"
             )
 
-        if self.extensions:
+        for extension in self.extensions:
             try:
-                for extension in self.extensions:
-                    # todo: support installing from a URL instead.
-                    connection.install_extension(
-                        extension=extension, force_install=self.force_install_extensions
-                    )
-                    connection.load_extension(extension=extension)
+                # todo: support installing from a URL instead.
+                connection.install_extension(
+                    extension=extension, force_install=self.force_install_extensions
+                )
+                connection.load_extension(extension=extension)
             except (duckdb.HTTPException, duckdb.IOException) as e:
                 raise HarlequinConnectionError(
                     str(e), title="DuckDB couldn't install or load your extension."

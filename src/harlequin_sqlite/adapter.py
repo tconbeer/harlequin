@@ -206,6 +206,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] | None
         ) = "DEFERRED",
         cached_statements: str | int = 128,
+        extension: list[str] | None = None,
         **_: Any,
     ) -> None:
         try:
@@ -222,11 +223,25 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             self.detect_types = int(detect_types)
             self.isolation_level = isolation_level
             self.cached_statements = int(cached_statements)
+            self.extensions = extension if extension is not None else []
+            self.can_load_extensions = hasattr(
+                sqlite3.Connection, "enable_load_extension"
+            )
         except (ValueError, TypeError) as e:
             raise HarlequinConfigError(
                 msg=f"SQLite adapter received bad config value: {e}",
                 title="Harlequin could not initialize the selected adapter.",
             ) from e
+
+        if self.extensions and not self.can_load_extensions:
+            raise HarlequinConfigError(
+                title="Harlequin could not initialize the selected adapter.",
+                msg=(
+                    "SQLite adapter received --extension option, but extensions "
+                    "are disabled on this SQLite distribution. See "
+                    "https://harlequin.sh/docs/sqlite/extensions"
+                ),
+            )
 
     def connect(self) -> HarlequinSqliteConnection:
         if (
@@ -309,28 +324,56 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                     msg=msg, title="SQLite couldn't connect to your database."
                 ) from e
 
+        if self.can_load_extensions:
+            conn.enable_load_extension(True)
+
+        for extension in self.extensions:
+            try:
+                conn.load_extension(extension)
+            except sqlite3.Error as e:
+                raise HarlequinConnectionError(
+                    str(e), title="SQLite couldn't load your extension."
+                ) from e
+
         init_msg = ""
         if self.init_path is not None and not self.no_init:
             init_script = self._read_init_script(self.init_path)
-            try:
-                count = 0
-                for command in self._split_script(init_script):
-                    rewritten_command = self._rewrite_init_command(command)
-                    for cmd in rewritten_command.split(";"):
-                        if cmd.strip():
+            count = 0
+            for command in self._split_script(init_script):
+                rewritten_command = self._rewrite_init_command(command)
+                for cmd in rewritten_command.split(";"):
+                    if cmd.strip():
+                        try:
                             conn.execute(cmd)
+                        except sqlite3.Error as e:
+                            msg = (
+                                f"Attempted to execute script at {self.init_path}. "
+                                f"Contents:\n{command}\nRewritten to:\n"
+                                f"{rewritten_command}\nCurrently executing:\n"
+                                f"{cmd}\nError:\n{e}"
+                            )
+                            if not self.can_load_extensions and isinstance(
+                                e, sqlite3.OperationalError
+                            ):
+                                msg += (
+                                    "\nWarning: Cannot load extensions with this "
+                                    "SQLite distribution. See "
+                                    "https://harlequin.sh/docs/sqlite/extensions"
+                                )
+                            raise HarlequinConnectionError(
+                                msg,
+                                title=(
+                                    "SQLite could not execute your initialization "
+                                    "script."
+                                ),
+                            ) from e
+                        else:
                             count += 1
-            except sqlite3.Error as e:
-                msg = f"Attempted to execute script at {self.init_path}\n{e}"
-                raise HarlequinConnectionError(
-                    msg, title="SQLite could not execute your initialization script."
-                ) from e
-            else:
-                if count > 0:
-                    init_msg = (
-                        f"Executed {count} {'command' if count == 1 else 'commands'} "
-                        f"from {self.init_path}"
-                    )
+            if count > 0:
+                init_msg = (
+                    f"Executed {count} {'command' if count == 1 else 'commands'} "
+                    f"from {self.init_path}"
+                )
         return HarlequinSqliteConnection(conn=conn, init_message=init_msg)
 
     @staticmethod

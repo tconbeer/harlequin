@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 
     ([#325](https://github.com/tconbeer/harlequin/issues/325))
 
+-   SQLite adapter: Adds a new CLI option, `--extension` or `-e`, which will load a SQLite extension. **Note:** SQLite extensions are not supported by Python on most platforms by default. See [here](https://harlequin.sh/docs/sqlite/extensions) for more details ([#533](https://github.com/tconbeer/harlequin/issues/533)).
+
 ## [1.18.0] - 2024-04-19
 
 ### Features
