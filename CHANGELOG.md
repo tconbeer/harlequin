@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   SQLite adapter: Harlequin now executes an initialization script on start-up of the SQLite adapter. By default, it executes the script found at `~/.sqliterc`. To execute a different script, start Harlequin with the `--init-path` option (aliases `-i`/`-init`):
+
+    ```bash
+    harlequin -a sqlite --init-path ./my-project-script
+    ```
+
+    To start Harlequin without executing an initialization script, use the `--no-init` flag:
+
+    ```bash
+    harlequin -a sqlite --no-init
+    ```
+
+    **Note:** SQLite initialization scripts can contain dot commands or SQL statements. If Harlequin encounters a dot command, it will attempt to rewrite it as a SQL statement, and then execute the rewritten statement. Otherwise, it will ignore the dot command. Currently, Harlequin can only rewrite `.open` and `.load` commands.
+
+    ([#325](https://github.com/tconbeer/harlequin/issues/325))
+
 ## [1.18.0] - 2024-04-19
 
 ### Features

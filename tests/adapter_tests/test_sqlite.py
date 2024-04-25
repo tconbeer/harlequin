@@ -174,73 +174,35 @@ def test_get_catalog(tiny_sqlite: Path, small_sqlite: Path) -> None:
     assert conn.get_catalog() == expected
 
 
-# def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
-#     script = (
-#         f".bail on\nselect \n1;\n.bail off\n.open {tiny_duck}\n"
-#         "create table test_init as select 2;"
-#     )
-#     commands = DuckDbAdapter._split_script(script)
-#     assert len(commands) == 5
-#     rewritten = [DuckDbAdapter._rewrite_init_command(cmd) for cmd in commands]
-#     assert rewritten[0] == ""
-#     assert rewritten[1] == commands[1]
-#     assert rewritten[2] == ""
-#     assert rewritten[3].startswith(f"attach '{tiny_duck}'")
-#     assert rewritten[4] == commands[4]
+def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
+    script = (
+        f".bail on\nselect \n1;\n.bail off\n.open {tiny_sqlite}\n"
+        "create table test_init as select 2;"
+    )
+    commands = HarlequinSqliteAdapter._split_script(script)
+    assert len(commands) == 5
+    rewritten = [HarlequinSqliteAdapter._rewrite_init_command(cmd) for cmd in commands]
+    assert rewritten[0] == ""
+    assert rewritten[1] == commands[1]
+    assert rewritten[2] == ""
+    assert rewritten[3].startswith(f"attach '{tiny_sqlite}'")
+    assert rewritten[4] == commands[4]
 
-#     with open(tmp_path / "myscript", "w") as f:
-#         f.write(script)
+    with open(tmp_path / "myscript", "w") as f:
+        f.write(script)
 
-#     conn = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
-#     cur = conn.execute("select * from test_init")
-#     assert cur
-#     assert cur.relation.fetchall() == [(2,)]
+    conn = HarlequinSqliteAdapter(
+        [":memory:"], init_path=tmp_path / "myscript"
+    ).connect()
+    cur = conn.execute("select * from test_init")
+    assert cur
+    assert cur.fetchall() == [(2,)]
 
 
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = HarlequinSqliteAdapter((":memory:",), foo="bar")
     assert adapter
     assert adapter.connect()
-
-
-# @pytest.mark.parametrize(
-#     "format_name,options",
-#     [
-#         ("csv", {}),
-#         ("parquet", {}),
-#         ("json", {}),
-#         (
-#             "csv",
-#             {
-#                 "header": True,
-#                 "sep": "|",
-#                 "compression": "gzip",
-#                 "quoting": True,
-#                 "date_format": "%Y-%m",
-#                 "timestamp_format": "%c",
-#                 "quotechar": "'",
-#                 "escapechar": "'",
-#                 "na_rep": "N/A",
-#                 "encoding": "UTF8",
-#             },
-#         ),
-#         ("parquet", {"compression": "zstd"}),
-#         (
-#             "json",
-#             {
-#                 "array": True,
-#                 "compression": "gzip",
-#                 "date_format": "%Y-%m",
-#                 "timestamp_format": "%c",
-#             },
-#         ),
-#     ],
-# )
-# def test_copy(format_name: str, options: dict[str, Any], tmp_path: Path) -> None:
-#     conn = DuckDbAdapter((":memory:",)).connect()
-#     p = tmp_path / f"one.{format_name}"
-#     conn.copy(query="select 1", path=p, format_name=format_name, options=options)
-#     assert p.is_file()
 
 
 def test_limit(small_sqlite: Path) -> None:

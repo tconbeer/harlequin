@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from harlequin.options import (
-    FlagOption,
-    SelectOption,
-    TextOption,
-)
+from pathlib import Path
+
+from harlequin.options import FlagOption, PathOption, SelectOption, TextOption
 
 read_only = FlagOption(
     name="read-only",
@@ -102,7 +100,29 @@ cached_statements = TextOption(
     validator=_int_validator,
 )
 
+
+init = PathOption(
+    name="init-path",
+    description=(
+        "The path to an initialization script. On startup, Harlequin will execute "
+        "the commands in the script against the attached database."
+    ),
+    short_decls=["-i", "-init"],
+    exists=False,
+    file_okay=True,
+    dir_okay=False,
+    resolve_path=True,
+    path_type=Path,
+)
+
+no_init = FlagOption(
+    name="no-init",
+    description="Start Harlequin without executing the initialization script.",
+)
+
 SQLITE_OPTIONS = [
+    init,
+    no_init,
     read_only,
     connection_mode,
     timeout,
