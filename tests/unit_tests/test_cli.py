@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ from harlequin import Harlequin
 from harlequin.cli import build_cli
 from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
+from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
 
 
 @pytest.fixture()
@@ -17,6 +19,19 @@ def mock_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock_adapter.ADAPTER_OPTIONS = DUCKDB_OPTIONS
     mock_entrypoint = MagicMock(name="mock_entrypoint")
     mock_entrypoint.name = "duckdb"
+    mock_entrypoint.load.return_value = mock_adapter
+    mock_entry_points = MagicMock()
+    mock_entry_points.return_value = [mock_entrypoint]
+    monkeypatch.setattr("harlequin.plugins.entry_points", mock_entry_points)
+    return mock_adapter
+
+
+@pytest.fixture()
+def mock_sqlite_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    mock_adapter = MagicMock(name="mock_sqlite_adapter", spec=HarlequinSqliteAdapter)
+    mock_adapter.ADAPTER_OPTIONS = SQLITE_OPTIONS
+    mock_entrypoint = MagicMock(name="mock_entrypoint")
+    mock_entrypoint.name = "sqlite"
     mock_entrypoint.load.return_value = mock_adapter
     mock_entry_points = MagicMock()
     mock_entry_points.return_value = [mock_entrypoint]
@@ -294,3 +309,40 @@ def test_bad_config_exits(
     assert res.exit_code == 2
     key_words = ["default_profile", "foo"]
     assert all([w in res.stdout for w in key_words])
+
+
+@pytest.mark.skipif(
+    not hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Extension option not supported on many pythons.",
+)
+def test_sqlite_extensions(
+    mock_harlequin: MagicMock,
+    mock_sqlite_adapter: MagicMock,
+    mock_empty_config: None,
+    data_dir: Path,
+) -> None:
+    extension_path = data_dir / "unit_tests" / "sqlite_extension" / "hello0"
+    runner = CliRunner()
+    res = runner.invoke(
+        build_cli(), args=f"-a sqlite --extension {extension_path.as_posix()}"
+    )
+    assert res.exit_code == 0
+
+
+@pytest.mark.skipif(
+    hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Extension option not supported on many pythons.",
+)
+def test_sqlite_extension_not_supported(
+    mock_harlequin: MagicMock,
+    mock_sqlite_adapter: MagicMock,
+    mock_empty_config: None,
+    data_dir: Path,
+) -> None:
+    extension_path = data_dir / "unit_tests" / "sqlite_extension" / "hello0"
+    runner = CliRunner()
+    res = runner.invoke(
+        build_cli(), args=f"-a sqlite --extension {extension_path.as_posix()}"
+    )
+    assert res.exit_code == 2
+    assert "No such option" in res.stdout

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 from harlequin.catalog import Catalog, CatalogItem
-from harlequin.exception import HarlequinConnectionError
+from harlequin.exception import HarlequinConfigError, HarlequinConnectionError
 from harlequin_sqlite import HarlequinSqliteAdapter
+
+
+@pytest.fixture
+def extension_path(data_dir: Path) -> Path:
+    return data_dir / "adapter_tests" / "sqlite" / "extensions" / "hello0"
 
 
 def test_connect(tiny_sqlite: Path, small_sqlite: Path) -> None:
@@ -197,6 +203,35 @@ def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
     cur = conn.execute("select * from test_init")
     assert cur
     assert cur.fetchall() == [(2,)]
+
+
+def test_rewrite_load(extension_path: Path) -> None:
+    cmd = f".load {extension_path.as_posix()}"
+    rewritten = HarlequinSqliteAdapter._rewrite_init_command(cmd)
+    assert rewritten.startswith("select load_extension")
+
+
+@pytest.mark.skipif(
+    not hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Not supported on many Pythons.",
+)
+def test_load_extension(extension_path: Path) -> None:
+    conn = HarlequinSqliteAdapter(
+        [":memory:"], extension=[extension_path.as_posix()]
+    ).connect()
+    assert conn
+
+
+@pytest.mark.skipif(
+    hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason="Not supported on many Pythons.",
+)
+def test_load_extension_raises(extension_path: Path) -> None:
+    with pytest.raises(HarlequinConfigError) as exc_info:
+        _ = HarlequinSqliteAdapter(
+            [":memory:"], extension=[extension_path.as_posix()]
+        ).connect()
+    assert "harlequin.sh" in str(exc_info)
 
 
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
