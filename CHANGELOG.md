@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0] - 2024-04-25
+
 ### Features
 
 -   SQLite adapter: Harlequin now executes an initialization script on start-up of the SQLite adapter. By default, it executes the script found at `~/.sqliterc`. To execute a different script, start Harlequin with the `--init-path` option (aliases `-i`/`-init`):
@@ -628,7 +630,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.18.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.19.0...HEAD
+
+[1.19.0]: https://github.com/tconbeer/harlequin/compare/1.18.0...1.19.0
 
 [1.18.0]: https://github.com/tconbeer/harlequin/compare/1.17.0...1.18.0
 
