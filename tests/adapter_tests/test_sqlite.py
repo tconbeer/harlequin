@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -255,6 +256,9 @@ def test_limit(small_sqlite: Path) -> None:
     assert len(results) == 100  # type: ignore
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="Transactions only supported on py3.12+"
+)
 def test_transaction_mode() -> None:
     adapter = HarlequinSqliteAdapter((":memory:",))
     conn = adapter.connect()
