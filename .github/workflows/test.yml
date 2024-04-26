@@ -130,7 +130,7 @@ jobs:
 
       - name: Run tests
         run: |
-          poetry run pytest -m "not online"
+          poetry run pytest -m "not online" --snapshot-warn-unused
 
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v4  
