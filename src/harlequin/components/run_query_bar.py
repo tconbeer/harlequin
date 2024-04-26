@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Union
 
+from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.validation import Integer
@@ -25,8 +26,11 @@ class RunQueryBar(Horizontal):
         )
 
     def compose(self) -> ComposeResult:
-        yield Checkbox("Limit ", id="limit_checkbox")
-        yield Input(
+        self.transaction_button = Button(
+            "Tx: Auto", id="transaction_button", classes="hidden"
+        )
+        self.limit_checkbox = Checkbox("Limit ", id="limit_checkbox")
+        self.limit_input = Input(
             str(min(500, self.max_results)),
             id="limit_input",
             validators=Integer(
@@ -39,35 +43,36 @@ class RunQueryBar(Horizontal):
                 ),
             ),
         )
-        yield Button("Run Query", id="run_query")
+        self.run_button = Button("Run Query", id="run_query")
+        yield self.transaction_button
+        yield self.limit_checkbox
+        yield self.limit_input
+        yield self.run_button
 
     def on_mount(self) -> None:
-        self.checkbox = self.query_one(Checkbox)
-        self.input = self.query_one(Input)
-        self.button = self.query_one(Button)
         if self.app.is_headless:
-            self.input.cursor_blink = False
+            self.limit_input.cursor_blink = False
 
-    def on_input_changed(self, message: Input.Changed) -> None:
+    @on(Input.Changed, "#limit_input")
+    def handle_new_limit_value(self, message: Input.Changed) -> None:
         """
         check and uncheck the box for valid/invalid input
         """
-        if message.input.id == "limit_input":
-            if (
-                message.input.value
-                and message.validation_result
-                and message.validation_result.is_valid
-            ):
-                self.checkbox.value = True
-            else:
-                self.checkbox.value = False
+        if (
+            message.input.value
+            and message.validation_result
+            and message.validation_result.is_valid
+        ):
+            self.limit_checkbox.value = True
+        else:
+            self.limit_checkbox.value = False
 
     @property
     def limit_value(self) -> int | None:
-        if not self.checkbox.value or not self.input.is_valid:
+        if not self.limit_checkbox.value or not self.limit_input.is_valid:
             return None
         try:
-            return int(self.input.value)
+            return int(self.limit_input.value)
         except ValueError:
             return None
 

@@ -178,17 +178,38 @@ Tooltip {
 }
 
 RunQueryBar Button {
-    background: $primary;
     border: none;
     height: 1;
+}
+
+RunQueryBar Button#run_query {
+    background: $primary;
     margin: 0 0 0 4;
 }
 
-RunQueryBar Button:hover {
+RunQueryBar Button#run_query:hover {
     background: $secondary;
 }
 
-RunQueryBar Button:focus {
+RunQueryBar Button#run_query:focus {
+    text-style: reverse;
+}
+
+RunQueryBar Button#transaction_button {
+    background: $background;
+    text-style: none;
+    margin: 0 4 0 0;
+}
+
+RunQueryBar Button#transaction_button.hidden {
+    display: none;
+}
+
+RunQueryBar Button#transaction_button:hover {
+    color: $secondary;
+}
+
+RunQueryBar Button#run_query:focus {
     text-style: reverse;
 }
 

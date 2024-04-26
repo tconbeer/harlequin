@@ -17,7 +17,7 @@ serve:
 
 .PHONY: sqlite
 sqlite:
-	textual run --dev -c harlequin -P None -a sqlite
+	textual run --dev -c harlequin -P sqlite
 
 marketing: $(wildcard static/themes/*.svg) static/harlequin.gif
 

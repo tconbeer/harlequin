@@ -120,6 +120,12 @@ class ResultsFetched(Message):
         self.elapsed = elapsed
 
 
+class TransactionModeChanged(Message):
+    def __init__(self, new_mode: str) -> None:
+        super().__init__()
+        self.new_mode = new_mode
+
+
 class Harlequin(App, inherit_bindings=False):
     """
     The SQL IDE for your Terminal.
@@ -267,7 +273,7 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     async def on_mount(self) -> None:
-        self.run_query_bar.checkbox.value = False
+        self.run_query_bar.limit_checkbox.value = False
 
         self._connect()
         self._load_catalog_cache()
@@ -281,6 +287,13 @@ class Harlequin(App, inherit_bindings=False):
                 limit=self.run_query_bar.limit_value,
             )
         )
+
+    @on(Button.Pressed, "#transaction_button")
+    def handle_transaction_button_press(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.toggle_transaction_mode()
+        if self.editor is not None:
+            self.editor.focus()
 
     @on(CatalogCacheLoaded)
     def build_trees(self, message: CatalogCacheLoaded) -> None:
@@ -306,6 +319,9 @@ class Harlequin(App, inherit_bindings=False):
     @on(DatabaseConnected)
     def initialize_app(self, message: DatabaseConnected) -> None:
         self.connection = message.connection
+        self.post_message(
+            TransactionModeChanged(new_mode=message.connection.transaction_mode)
+        )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table(did_run=False)
         if message.connection.init_message:
@@ -354,9 +370,9 @@ class Harlequin(App, inherit_bindings=False):
 
     def on_text_area_selection_changed(self) -> None:
         if self._validate_selection():
-            self.run_query_bar.button.label = "Run Selection"
+            self.run_query_bar.run_button.label = "Run Selection"
         else:
-            self.run_query_bar.button.label = "Run Query"
+            self.run_query_bar.run_button.label = "Run Query"
 
     @on(Input.Changed, "#limit_input")
     def update_limit_tooltip(self, message: Input.Changed) -> None:
@@ -579,6 +595,15 @@ class Harlequin(App, inherit_bindings=False):
             if self.data_catalog.has_focus and self.editor is not None:
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
+
+    @on(TransactionModeChanged)
+    def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
+        message.stop()
+        if message.new_mode:
+            self.run_query_bar.transaction_button.remove_class("hidden")
+            self.run_query_bar.transaction_button.label = f"Tx: {message.new_mode}"
+        else:
+            self.run_query_bar.transaction_button.add_class("hidden")
 
     def action_export(self) -> None:
         show_export_error = partial(
@@ -847,3 +872,14 @@ class Harlequin(App, inherit_bindings=False):
                 return selection
         else:
             return ""
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="transaction_togglers",
+    )
+    def toggle_transaction_mode(self) -> None:
+        if self.connection is not None:
+            new_mode = self.connection.toggle_transaction_mode()
+            self.post_message(TransactionModeChanged(new_mode=new_mode))
