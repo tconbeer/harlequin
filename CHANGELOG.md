@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Adapters can now implement `HarlequinConnection.transaction_mode` and `HarlequinConnection.toggle_transaction_mode()` to enable the new Transaction Mode UI for their adapter.
+
+### Bug Fixes
+
+-   SQLite adapter: Harlequin now properly sets the connection's autocommit isolation level on Python 3.12 and higher.
+
 ## [1.19.0] - 2024-04-25
 
 ### Features

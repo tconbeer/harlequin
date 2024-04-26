@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from itertools import zip_longest
+from itertools import cycle, zip_longest
 from pathlib import Path
 from typing import Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
@@ -60,6 +60,10 @@ class HarlequinSqliteConnection(HarlequinConnection):
     def __init__(self, conn: sqlite3.Connection, init_message: str = "") -> None:
         self.conn = conn
         self.init_message = init_message
+        self._auto_isolation_level = conn.isolation_level
+        self._transaction_mode_gen = cycle(["Auto", "Manual"])
+        self._transaction_mode = next(self._transaction_mode_gen)
+        self._sync_connection_transaction_mode()
 
     def execute(self, query: str) -> HarlequinSqliteCursor | None:
         try:
@@ -116,6 +120,22 @@ class HarlequinSqliteConnection(HarlequinConnection):
 
     def get_completions(self) -> list[HarlequinCompletion]:
         return get_completion_data(self.conn)
+
+    @property
+    def transaction_mode(self) -> str:
+        return self._transaction_mode
+
+    def toggle_transaction_mode(self) -> str:
+        new_mode = next(self._transaction_mode_gen)
+        self._transaction_mode = new_mode
+        self._sync_connection_transaction_mode()
+        return new_mode
+
+    def _sync_connection_transaction_mode(self) -> None:
+        if self.transaction_mode == "Auto":
+            self.conn.isolation_level = self._auto_isolation_level
+        else:
+            self.conn.isolation_level = None
 
     def _get_databases(self) -> list[str]:
         objects: list[tuple[str, str, str]] = self.conn.execute(
@@ -202,9 +222,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
         timeout: str | float = 5.0,
         detect_types: str | int = 0,
-        isolation_level: (
-            Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] | None
-        ) = "DEFERRED",
+        isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] = "DEFERRED",
         cached_statements: str | int = 128,
         extension: list[str] | None = None,
         **_: Any,
@@ -307,6 +325,13 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 msg=msg,
                 title="SQLite couldn't connect to your database.",
             ) from e
+
+        # Python 3.12 added an autocommit attribute that takes precendence over
+        # the isolation_level. We make sure to use the legacy behavior instead:
+        if hasattr(conn, "autocommit") and hasattr(
+            sqlite3, "LEGACY_TRANSACTION_CONTROL"
+        ):
+            conn.autocommit = sqlite3.LEGACY_TRANSACTION_CONTROL
 
         for uri, name in zip(other_dbs, db_names[1:]):
             try:

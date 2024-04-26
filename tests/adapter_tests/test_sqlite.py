@@ -253,3 +253,13 @@ def test_limit(small_sqlite: Path) -> None:
     cur = cur.set_limit(100)
     results = cur.fetchall()
     assert len(results) == 100  # type: ignore
+
+
+def test_transaction_mode() -> None:
+    adapter = HarlequinSqliteAdapter((":memory:",))
+    conn = adapter.connect()
+    assert conn.transaction_mode == "Auto"
+    assert conn.toggle_transaction_mode() == "Manual"
+    assert conn.transaction_mode == "Manual"
+    assert conn.toggle_transaction_mode() == "Auto"
+    assert conn.transaction_mode == "Auto"

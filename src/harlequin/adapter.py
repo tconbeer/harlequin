@@ -158,6 +158,30 @@ class HarlequinConnection(ABC):
         """
         return None
 
+    @property
+    def transaction_mode(self) -> str:
+        """
+        The user-facing label of the currently-active transaction mode.
+
+        Returns the empty string if the adapter does not support different
+        transaction modes.
+
+        Returns: str
+        """
+        return ""
+
+    def toggle_transaction_mode(self) -> str:
+        """
+        Switches to the next transaction mode in the adapter's sequence of modes
+        and returns the name of the new mode.
+
+        No-ops and returns the empty string if the adapter does not support different
+        transaction modes.
+
+        Returns: str, the user-facing label of the new mode.
+        """
+        return ""
+
 
 class HarlequinAdapter(ABC):
     """
