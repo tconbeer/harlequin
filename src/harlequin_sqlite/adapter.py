@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
 
-from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
+from harlequin.adapter import (
+    HarlequinAdapter,
+    HarlequinConnection,
+    HarlequinCursor,
+    HarlequinTransactionMode,
+)
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
@@ -61,8 +66,15 @@ class HarlequinSqliteConnection(HarlequinConnection):
     def __init__(self, conn: sqlite3.Connection, init_message: str = "") -> None:
         self.conn = conn
         self.init_message = init_message
-        self._transaction_modes = (
-            ["Auto", "Manual"] if hasattr(conn, "autocommit") else [""]
+        self._transaction_modes: list[HarlequinTransactionMode | None] = (
+            [
+                HarlequinTransactionMode(label="Auto"),
+                HarlequinTransactionMode(
+                    label="Manual", commit=self.conn.commit, rollback=self.conn.rollback
+                ),
+            ]
+            if hasattr(conn, "autocommit")
+            else [None]
         )
         self._transaction_mode_gen = cycle(self._transaction_modes)
         self._transaction_mode = next(self._transaction_mode_gen)
@@ -73,7 +85,11 @@ class HarlequinSqliteConnection(HarlequinConnection):
         # transaction isn't explicitly began, it's basically the same as
         # auto. By forcing an explicit begin, the behavior is more like
         # manual mode on other databases.
-        if self.transaction_mode == "Manual" and not self.conn.in_transaction:
+        if (
+            self.transaction_mode
+            and self.transaction_mode.label == "Manual"
+            and not self.conn.in_transaction
+        ):
             with suppress(sqlite3.Error):
                 self.conn.execute("begin;")
         try:
@@ -138,10 +154,10 @@ class HarlequinSqliteConnection(HarlequinConnection):
         return get_completion_data(self.conn)
 
     @property
-    def transaction_mode(self) -> str:
+    def transaction_mode(self) -> HarlequinTransactionMode | None:
         return self._transaction_mode
 
-    def toggle_transaction_mode(self) -> str:
+    def toggle_transaction_mode(self) -> HarlequinTransactionMode | None:
         new_mode = next(self._transaction_mode_gen)
         self._transaction_mode = new_mode
         self._sync_connection_transaction_mode()
@@ -157,7 +173,7 @@ class HarlequinSqliteConnection(HarlequinConnection):
         if self.conn.in_transaction:
             self.conn.commit()
 
-        if self.transaction_mode == "Auto":
+        if self.transaction_mode and self.transaction_mode.label == "Auto":
             self.conn.autocommit = True
         else:
             self.conn.autocommit = False

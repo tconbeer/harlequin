@@ -262,8 +262,15 @@ def test_limit(small_sqlite: Path) -> None:
 def test_transaction_mode() -> None:
     adapter = HarlequinSqliteAdapter((":memory:",))
     conn = adapter.connect()
-    assert conn.transaction_mode == "Auto"
-    assert conn.toggle_transaction_mode() == "Manual"
-    assert conn.transaction_mode == "Manual"
-    assert conn.toggle_transaction_mode() == "Auto"
-    assert conn.transaction_mode == "Auto"
+    assert conn.transaction_mode is not None
+    assert conn.transaction_mode.label == "Auto"
+    assert conn.transaction_mode.commit is None
+    assert conn.transaction_mode.rollback is None
+    new_mode = conn.toggle_transaction_mode()
+    assert new_mode
+    assert new_mode.label == "Manual"
+    assert new_mode.commit is not None
+    assert new_mode.rollback is not None
+    assert conn.transaction_mode.label == "Manual"
+    assert conn.toggle_transaction_mode()
+    assert conn.transaction_mode.label == "Auto"

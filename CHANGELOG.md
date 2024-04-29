@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
--   For adapters that support it, Harlequin now provides a button to toggle the transaction mode of the database connection ([#334](https://github.com/tconbeer/harlequin/issues/334)).
+-   For adapters that support it, Harlequin now provides a buttons to toggle the transaction mode of the database connection, and commit and roll back transactions ([#334](https://github.com/tconbeer/harlequin/issues/334)).
 -   Adapters can now implement `HarlequinConnection.transaction_mode` and `HarlequinConnection.toggle_transaction_mode()` to enable the new Transaction Mode UI for their adapter.
 
 ### Changed

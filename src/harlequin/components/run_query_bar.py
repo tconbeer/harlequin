@@ -29,6 +29,11 @@ class RunQueryBar(Horizontal):
         self.transaction_button = Button(
             "Tx: Auto", id="transaction_button", classes="hidden"
         )
+        self.transaction_button.tooltip = "Click to change modes"
+        self.commit_button = Button("🡅", id="commit_button", classes="hidden")
+        self.commit_button.tooltip = "Commit transaction"
+        self.rollback_button = Button("⮌", id="rollback_button", classes="hidden")
+        self.rollback_button.tooltip = "Roll back transaction"
         self.limit_checkbox = Checkbox("Limit ", id="limit_checkbox")
         self.limit_input = Input(
             str(min(500, self.max_results)),
@@ -44,10 +49,14 @@ class RunQueryBar(Horizontal):
             ),
         )
         self.run_button = Button("Run Query", id="run_query")
-        yield self.transaction_button
-        yield self.limit_checkbox
-        yield self.limit_input
-        yield self.run_button
+        with Horizontal(id="transaction_buttons"):
+            yield self.transaction_button
+            yield self.commit_button
+            yield self.rollback_button
+        with Horizontal(id="run_buttons"):
+            yield self.limit_checkbox
+            yield self.limit_input
+            yield self.run_button
 
     def on_mount(self) -> None:
         if self.app.is_headless:

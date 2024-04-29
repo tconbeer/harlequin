@@ -1,14 +1,37 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
+
+
+@dataclass
+class HarlequinTransactionMode:
+    """
+    A container for a database connection transaction mode. A mode must
+    have a label, and may also define a zero-arg callable that commits
+    or rolls back a transaction (if these callables are defined, Harlequin
+    will present buttons for committing and rolling back transactions).
+
+    Args:
+        label (str): A short label for this mode, to be shown in the UI
+            as f"Tx: {label}"
+        commit (Callable[[], None] | None): A callable to commit an open
+            transaction.
+        rollback (Callable[[], None] | None): A callable to roll back an
+            open transaction.
+    """
+
+    label: str
+    commit: Callable[[], None] | None = None
+    rollback: Callable[[], None] | None = None
 
 
 class HarlequinCursor(ABC):
@@ -159,28 +182,28 @@ class HarlequinConnection(ABC):
         return None
 
     @property
-    def transaction_mode(self) -> str:
+    def transaction_mode(self) -> HarlequinTransactionMode | None:
         """
         The user-facing label of the currently-active transaction mode.
 
-        Returns the empty string if the adapter does not support different
+        Returns None if the adapter does not support different
         transaction modes.
 
-        Returns: str
+        Returns: HarlequinTransactionMode | None
         """
-        return ""
+        return None
 
-    def toggle_transaction_mode(self) -> str:
+    def toggle_transaction_mode(self) -> HarlequinTransactionMode | None:
         """
         Switches to the next transaction mode in the adapter's sequence of modes
-        and returns the name of the new mode.
+        and returns the new mode.
 
-        No-ops and returns the empty string if the adapter does not support different
+        No-ops and returns None if the adapter does not support different
         transaction modes.
 
-        Returns: str, the user-facing label of the new mode.
+        Returns: HarlequinTransactionMode, the new mode, after toggling, or None.
         """
-        return ""
+        return None
 
 
 class HarlequinAdapter(ABC):
