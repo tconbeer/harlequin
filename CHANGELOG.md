@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.20.0] - 2024-04-29
+
 ### Features
 
 -   For adapters that support it, Harlequin now provides a buttons to toggle the transaction mode of the database connection, and commit and roll back transactions ([#334](https://github.com/tconbeer/harlequin/issues/334)).
@@ -12,7 +14,6 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 -   SQLite adapter: The adapter no longer accepts an `--isolation-level` option on Python 3.12 or higher; instead, the adapter allows autocommit configuration via the Harlequin UI.
-
 
 ## [1.19.0] - 2024-04-25
 
@@ -640,7 +641,9 @@ All notable changes to this project will be documented in this file.
 
 -   Use the DuckDB CLI.
 
-[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.19.0...HEAD
+[Unreleased]: https://github.com/tconbeer/harlequin/compare/1.20.0...HEAD
+
+[1.20.0]: https://github.com/tconbeer/harlequin/compare/1.19.0...1.20.0
 
 [1.19.0]: https://github.com/tconbeer/harlequin/compare/1.18.0...1.19.0
 
