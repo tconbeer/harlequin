@@ -27,11 +27,7 @@ from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin import HarlequinConnection
-from harlequin.adapter import (
-    HarlequinAdapter,
-    HarlequinCursor,
-    HarlequinTransactionMode,
-)
+from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
 from harlequin.catalog import Catalog, NewCatalog
 from harlequin.catalog_cache import (
@@ -65,6 +61,7 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.history import History
+from harlequin.transaction_mode import HarlequinTransactionMode
 
 
 class CatalogCacheLoaded(Message):
@@ -938,6 +935,7 @@ class Harlequin(App, inherit_bindings=False):
             else:
                 elapsed = time.monotonic() - started_at
                 self.notify(f"Transaction committed in {elapsed:.2f} seconds.")
+                self.update_schema_data()
 
     @work(
         thread=True,

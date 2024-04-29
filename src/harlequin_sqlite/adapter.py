@@ -7,12 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
 
-from harlequin.adapter import (
-    HarlequinAdapter,
-    HarlequinConnection,
-    HarlequinCursor,
-    HarlequinTransactionMode,
-)
+from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import (
@@ -21,6 +16,7 @@ from harlequin.exception import (
     HarlequinQueryError,
 )
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
+from harlequin.transaction_mode import HarlequinTransactionMode
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
