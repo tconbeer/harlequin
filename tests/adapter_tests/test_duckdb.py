@@ -252,3 +252,11 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
+
+
+def test_transaction_mode() -> None:
+    adapter = DuckDbAdapter((":memory:",))
+    conn = adapter.connect()
+    assert conn.transaction_mode is None
+    assert conn.toggle_transaction_mode() is None
+    assert conn.transaction_mode is None

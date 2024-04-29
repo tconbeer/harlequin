@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -253,3 +254,23 @@ def test_limit(small_sqlite: Path) -> None:
     cur = cur.set_limit(100)
     results = cur.fetchall()
     assert len(results) == 100  # type: ignore
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="Transactions only supported on py3.12+"
+)
+def test_transaction_mode() -> None:
+    adapter = HarlequinSqliteAdapter((":memory:",))
+    conn = adapter.connect()
+    assert conn.transaction_mode is not None
+    assert conn.transaction_mode.label == "Auto"
+    assert conn.transaction_mode.commit is None
+    assert conn.transaction_mode.rollback is None
+    new_mode = conn.toggle_transaction_mode()
+    assert new_mode
+    assert new_mode.label == "Manual"
+    assert new_mode.commit is not None
+    assert new_mode.rollback is not None
+    assert conn.transaction_mode.label == "Manual"
+    assert conn.toggle_transaction_mode()
+    assert conn.transaction_mode.label == "Auto"

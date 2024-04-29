@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from itertools import zip_longest
+from contextlib import suppress
+from itertools import cycle, zip_longest
 from pathlib import Path
 from typing import Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
@@ -15,6 +16,7 @@ from harlequin.exception import (
     HarlequinQueryError,
 )
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
+from harlequin.transaction_mode import HarlequinTransactionMode
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
@@ -60,11 +62,41 @@ class HarlequinSqliteConnection(HarlequinConnection):
     def __init__(self, conn: sqlite3.Connection, init_message: str = "") -> None:
         self.conn = conn
         self.init_message = init_message
+        self._transaction_modes: list[HarlequinTransactionMode | None] = (
+            [
+                HarlequinTransactionMode(label="Auto"),
+                HarlequinTransactionMode(
+                    label="Manual", commit=self.conn.commit, rollback=self.conn.rollback
+                ),
+            ]
+            if hasattr(conn, "autocommit")
+            else [None]
+        )
+        self._transaction_mode_gen = cycle(self._transaction_modes)
+        self._transaction_mode = next(self._transaction_mode_gen)
+        self._sync_connection_transaction_mode()
 
     def execute(self, query: str) -> HarlequinSqliteCursor | None:
+        # the behavior on manual mode is really counter-intuitive; if a
+        # transaction isn't explicitly began, it's basically the same as
+        # auto. By forcing an explicit begin, the behavior is more like
+        # manual mode on other databases.
+        if (
+            self.transaction_mode
+            and self.transaction_mode.label == "Manual"
+            and not self.conn.in_transaction
+        ):
+            with suppress(sqlite3.Error):
+                self.conn.execute("begin;")
         try:
             cur = self.conn.execute(query)
         except sqlite3.Error as e:
+            # no-op if user ran a begin; statement, since we already started the txn
+            if (
+                isinstance(e, sqlite3.OperationalError)
+                and str(e) == "cannot start a transaction within a transaction"
+            ):
+                return None
             raise HarlequinQueryError(
                 msg=str(e),
                 title="SQLite raised an error when compiling or running your query:",
@@ -116,6 +148,31 @@ class HarlequinSqliteConnection(HarlequinConnection):
 
     def get_completions(self) -> list[HarlequinCompletion]:
         return get_completion_data(self.conn)
+
+    @property
+    def transaction_mode(self) -> HarlequinTransactionMode | None:
+        return self._transaction_mode
+
+    def toggle_transaction_mode(self) -> HarlequinTransactionMode | None:
+        new_mode = next(self._transaction_mode_gen)
+        self._transaction_mode = new_mode
+        self._sync_connection_transaction_mode()
+        return new_mode
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def _sync_connection_transaction_mode(self) -> None:
+        if not self._transaction_mode or not hasattr(self.conn, "autocommit"):
+            return
+
+        if self.conn.in_transaction:
+            self.conn.commit()
+
+        if self.transaction_mode and self.transaction_mode.label == "Auto":
+            self.conn.autocommit = True
+        else:
+            self.conn.autocommit = False
 
     def _get_databases(self) -> list[str]:
         objects: list[tuple[str, str, str]] = self.conn.execute(
@@ -202,9 +259,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
         timeout: str | float = 5.0,
         detect_types: str | int = 0,
-        isolation_level: (
-            Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] | None
-        ) = "DEFERRED",
+        isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] = "DEFERRED",
         cached_statements: str | int = 128,
         extension: list[str] | None = None,
         **_: Any,
@@ -307,6 +362,11 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 msg=msg,
                 title="SQLite couldn't connect to your database.",
             ) from e
+
+        # Python 3.12 added an autocommit attribute, which should be
+        # turned on by default
+        if hasattr(conn, "autocommit"):
+            conn.autocommit = True
 
         for uri, name in zip(other_dbs, db_names[1:]):
             try:

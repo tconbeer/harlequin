@@ -1,12 +1,25 @@
 from __future__ import annotations
 
+import sys
 from typing import Awaitable, Callable
 
+import duckdb
 import pytest
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
 from textual.message import Message
+
+
+def transaction_button_visible(app: Harlequin) -> bool:
+    """
+    Skip snapshot checks for versions of that app showing the autocommit button.
+    """
+    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
+
+
+def duckdb_version_info() -> tuple[int, ...]:
+    return tuple(int(v) for v in getattr(duckdb, "__version__", "0.0.0").split("."))
 
 
 @pytest.mark.asyncio
@@ -48,7 +61,10 @@ async def test_select_1(
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.source_row_count == table.row_count == 1
-        assert await app_snapshot(app, "select 1 as foo")
+        # sqlite on py3.12 will show the Tx: Auto button, and snap
+        # will fail
+        if not transaction_button_visible(app):
+            assert await app_snapshot(app, "select 1 as foo")
 
 
 @pytest.mark.asyncio
@@ -203,7 +219,8 @@ async def test_multiple_queries(
         await pilot.press("j")
         assert app.results_viewer.active == "tab-2"
 
-        assert all(snap_results)
+        if not transaction_button_visible(app):
+            assert all(snap_results)
 
 
 @pytest.mark.asyncio
@@ -266,11 +283,18 @@ async def test_single_query_terminated_with_semicolon(
         "select; select 0::struct(id int)",  # multiple errors
         "select 1; select 0::struct(id int)",  # one error, mult queries
         "select 0::struct(id int); select 1",  # one error, mult queries, err first
-        """
+        # duckdb can't do arrow unions on duckdb < 0.10
+        pytest.param(
+            """
             CREATE TABLE tbl1(u UNION(num INT, str VARCHAR));
             INSERT INTO tbl1 values (1) , ('two') , (union_value(str := 'three'));
             SELECT u FROM tbl1;
-        """,  # arrow doesn't do union types.
+        """,
+            marks=pytest.mark.skipif(
+                duckdb_version_info() >= (0, 10, 0),
+                reason="duckdb can convert to arrow union types in later versions",
+            ),
+        ),
     ],
 )
 async def test_query_errors(
@@ -302,4 +326,5 @@ async def test_query_errors(
         assert "non-responsive" not in app.results_viewer.classes
         snap_results.append(await app_snapshot(app, "After dismissing error"))
 
-        assert all(snap_results)
+        if not transaction_button_visible(app):
+            assert all(snap_results)

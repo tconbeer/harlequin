@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
@@ -8,6 +9,13 @@ from harlequin import Harlequin
 from harlequin.components.results_viewer import ResultsViewer
 from textual.message import Message
 from textual_fastdatatable import DataTable
+
+
+def transaction_button_visible(app: Harlequin) -> bool:
+    """
+    Skip snapshot checks for versions of that app showing the autocommit button.
+    """
+    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
 
 
 @pytest.mark.asyncio
@@ -28,7 +36,8 @@ async def test_dupe_column_names(
         await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert await app_snapshot(app, "dupe columns")
+        if not transaction_button_visible(app):
+            assert await app_snapshot(app, "dupe columns")
 
 
 @pytest.mark.asyncio
@@ -71,7 +80,8 @@ async def test_copy_data(
         app.editor.focus()
         await pilot.press("ctrl+v")  # paste
         assert app.editor.text == expected
-        assert await app_snapshot(app, "paste values from table")
+        if not transaction_button_visible(app):
+            assert await app_snapshot(app, "paste values from table")
 
 
 @pytest.mark.asyncio
@@ -95,4 +105,5 @@ async def test_data_truncated_with_tooltip(
 
         await pilot.hover(ResultsViewer, (2, 2))
         await pilot.pause(0.5)
-        assert await app_snapshot(app, "hover over truncated value")
+        if not transaction_button_visible(app):
+            assert await app_snapshot(app, "hover over truncated value")

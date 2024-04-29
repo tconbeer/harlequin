@@ -9,6 +9,7 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
+from harlequin.transaction_mode import HarlequinTransactionMode
 
 
 class HarlequinCursor(ABC):
@@ -155,6 +156,30 @@ class HarlequinConnection(ABC):
         quits.
 
         Returns: None
+        """
+        return None
+
+    @property
+    def transaction_mode(self) -> HarlequinTransactionMode | None:
+        """
+        The user-facing label of the currently-active transaction mode.
+
+        Returns None if the adapter does not support different
+        transaction modes.
+
+        Returns: HarlequinTransactionMode | None
+        """
+        return None
+
+    def toggle_transaction_mode(self) -> HarlequinTransactionMode | None:
+        """
+        Switches to the next transaction mode in the adapter's sequence of modes
+        and returns the new mode.
+
+        No-ops and returns None if the adapter does not support different
+        transaction modes.
+
+        Returns: HarlequinTransactionMode, the new mode, after toggling, or None.
         """
         return None
 

@@ -61,6 +61,7 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.history import History
+from harlequin.transaction_mode import HarlequinTransactionMode
 
 
 class CatalogCacheLoaded(Message):
@@ -118,6 +119,12 @@ class ResultsFetched(Message):
         self.data = data
         self.errors = errors
         self.elapsed = elapsed
+
+
+class TransactionModeChanged(Message):
+    def __init__(self, new_mode: HarlequinTransactionMode | None) -> None:
+        super().__init__()
+        self.new_mode = new_mode
 
 
 class Harlequin(App, inherit_bindings=False):
@@ -267,7 +274,7 @@ class Harlequin(App, inherit_bindings=False):
         )
 
     async def on_mount(self) -> None:
-        self.run_query_bar.checkbox.value = False
+        self.run_query_bar.limit_checkbox.value = False
 
         self._connect()
         self._load_catalog_cache()
@@ -281,6 +288,27 @@ class Harlequin(App, inherit_bindings=False):
                 limit=self.run_query_bar.limit_value,
             )
         )
+
+    @on(Button.Pressed, "#transaction_button")
+    def handle_transaction_button_press(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.toggle_transaction_mode()
+        if self.editor is not None:
+            self.editor.focus()
+
+    @on(Button.Pressed, "#commit_button")
+    def handle_commit_button_press(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.commit()
+        if self.editor is not None:
+            self.editor.focus()
+
+    @on(Button.Pressed, "#rollback_button")
+    def handle_rollback_button_press(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.rollback()
+        if self.editor is not None:
+            self.editor.focus()
 
     @on(CatalogCacheLoaded)
     def build_trees(self, message: CatalogCacheLoaded) -> None:
@@ -306,6 +334,9 @@ class Harlequin(App, inherit_bindings=False):
     @on(DatabaseConnected)
     def initialize_app(self, message: DatabaseConnected) -> None:
         self.connection = message.connection
+        self.post_message(
+            TransactionModeChanged(new_mode=message.connection.transaction_mode)
+        )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table(did_run=False)
         if message.connection.init_message:
@@ -354,9 +385,9 @@ class Harlequin(App, inherit_bindings=False):
 
     def on_text_area_selection_changed(self) -> None:
         if self._validate_selection():
-            self.run_query_bar.button.label = "Run Selection"
+            self.run_query_bar.run_button.label = "Run Selection"
         else:
-            self.run_query_bar.button.label = "Run Query"
+            self.run_query_bar.run_button.label = "Run Query"
 
     @on(Input.Changed, "#limit_input")
     def update_limit_tooltip(self, message: Input.Changed) -> None:
@@ -579,6 +610,27 @@ class Harlequin(App, inherit_bindings=False):
             if self.data_catalog.has_focus and self.editor is not None:
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
+
+    @on(TransactionModeChanged)
+    def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
+        message.stop()
+        if message.new_mode is not None:
+            self.run_query_bar.transaction_button.remove_class("hidden")
+            self.run_query_bar.transaction_button.label = (
+                f"Tx: {message.new_mode.label}"
+            )
+            if message.new_mode.commit is not None:
+                self.run_query_bar.commit_button.remove_class("hidden")
+            else:
+                self.run_query_bar.commit_button.add_class("hidden")
+            if message.new_mode.rollback is not None:
+                self.run_query_bar.rollback_button.remove_class("hidden")
+            else:
+                self.run_query_bar.rollback_button.add_class("hidden")
+        else:
+            self.run_query_bar.transaction_button.add_class("hidden")
+            self.run_query_bar.commit_button.add_class("hidden")
+            self.run_query_bar.rollback_button.add_class("hidden")
 
     def action_export(self) -> None:
         show_export_error = partial(
@@ -847,3 +899,66 @@ class Harlequin(App, inherit_bindings=False):
                 return selection
         else:
             return ""
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="transaction_togglers",
+    )
+    def toggle_transaction_mode(self) -> None:
+        if self.connection is not None:
+            new_mode = self.connection.toggle_transaction_mode()
+            self.post_message(TransactionModeChanged(new_mode=new_mode))
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="commit-rollback",
+    )
+    def commit(self) -> None:
+        if (
+            self.connection is not None
+            and self.connection.transaction_mode is not None
+            and self.connection.transaction_mode.commit is not None
+        ):
+            started_at = time.monotonic()
+            try:
+                self.connection.transaction_mode.commit()
+            except Exception as e:
+                self._push_error_modal(
+                    title="Transaction Error",
+                    header="Harlequin could not commit the transaction.",
+                    error=e,
+                )
+            else:
+                elapsed = time.monotonic() - started_at
+                self.notify(f"Transaction committed in {elapsed:.2f} seconds.")
+                self.update_schema_data()
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="commit-rollback",
+    )
+    def rollback(self) -> None:
+        if (
+            self.connection is not None
+            and self.connection.transaction_mode is not None
+            and self.connection.transaction_mode.rollback is not None
+        ):
+            started_at = time.monotonic()
+            try:
+                self.connection.transaction_mode.rollback()
+            except Exception as e:
+                self._push_error_modal(
+                    title="Transaction Error",
+                    header="Harlequin could not roll back the transaction.",
+                    error=e,
+                )
+            else:
+                elapsed = time.monotonic() - started_at
+                self.notify(f"Transaction rolled back in {elapsed:.2f} seconds.")
+                self.update_schema_data()

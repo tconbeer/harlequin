@@ -68,7 +68,7 @@ jobs:
 
   test:
     name: ${{ matrix.os }} - ${{ matrix.py }}
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.os }}
     env:
       motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
       POETRY_VIRTUALENVS_IN_PROJECT: 1
@@ -78,9 +78,10 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu
-          - MacOs
+          - ubuntu-latest
+          - MacOs-13
         py:
+          - "3.12"
           - "3.11"
           - "3.10"
           - "3.9"
@@ -129,7 +130,7 @@ jobs:
 
       - name: Run tests
         run: |
-          poetry run pytest -m "not online"
+          poetry run pytest -m "not online" --snapshot-warn-unused
 
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v4  

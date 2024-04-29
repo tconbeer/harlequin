@@ -89,9 +89,7 @@ isolation_level = SelectOption(
     description=(
         "Control legacy transaction handling behaviour. See Connection.isolation_level "
         "and Transaction control via the isolation_level attribute for more "
-        'information. Can be "DEFERRED" (default), "EXCLUSIVE" or "IMMEDIATE"; or None '
-        "to disable opening transactions implicitly. Has no effect unless "
-        "Connection.autocommit is set to LEGACY_TRANSACTION_CONTROL (the default)."
+        'information. Can be "DEFERRED" (default), "EXCLUSIVE" or "IMMEDIATE".'
     ),
     choices=["DEFERRED", "EXCLUSIVE", "IMMEDIATE"],
     default="DEFERRED",
@@ -143,9 +141,12 @@ SQLITE_OPTIONS = [
     connection_mode,
     timeout,
     detect_types,
-    isolation_level,
     cached_statements,
 ]
 
 if hasattr(Connection, "enable_load_extension"):
     SQLITE_OPTIONS.append(extensions)
+
+# Python 3.12 and lower
+if not hasattr(Connection, "autocommit"):
+    SQLITE_OPTIONS.append(isolation_level)

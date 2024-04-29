@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   For adapters that support it, Harlequin now provides a buttons to toggle the transaction mode of the database connection, and commit and roll back transactions ([#334](https://github.com/tconbeer/harlequin/issues/334)).
+-   Adapters can now implement `HarlequinConnection.transaction_mode` and `HarlequinConnection.toggle_transaction_mode()` to enable the new Transaction Mode UI for their adapter.
+
+### Changed
+
+-   SQLite adapter: The adapter no longer accepts an `--isolation-level` option on Python 3.12 or higher; instead, the adapter allows autocommit configuration via the Harlequin UI.
+
+
 ## [1.19.0] - 2024-04-25
 
 ### Features
