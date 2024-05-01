@@ -54,7 +54,7 @@ jobs:
         run: poetry build --no-interaction
 
       - name: Update CHANGELOG
-        uses: thomaseizinger/keep-a-changelog-new-release@v2
+        uses: thomaseizinger/keep-a-changelog-new-release@v3
         with:
           version: ${{ github.event.inputs.newVersion }}
 
