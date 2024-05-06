@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from typing import Awaitable, Callable
 
-import duckdb
 import pytest
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
@@ -16,10 +15,6 @@ def transaction_button_visible(app: Harlequin) -> bool:
     Skip snapshot checks for versions of that app showing the autocommit button.
     """
     return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
-def duckdb_version_info() -> tuple[int, ...]:
-    return tuple(int(v) for v in getattr(duckdb, "__version__", "0.0.0").split("."))
 
 
 @pytest.mark.asyncio
@@ -283,18 +278,6 @@ async def test_single_query_terminated_with_semicolon(
         "select; select 0::struct(id int)",  # multiple errors
         "select 1; select 0::struct(id int)",  # one error, mult queries
         "select 0::struct(id int); select 1",  # one error, mult queries, err first
-        # duckdb can't do arrow unions on duckdb < 0.10
-        pytest.param(
-            """
-            CREATE TABLE tbl1(u UNION(num INT, str VARCHAR));
-            INSERT INTO tbl1 values (1) , ('two') , (union_value(str := 'three'));
-            SELECT u FROM tbl1;
-        """,
-            marks=pytest.mark.skipif(
-                duckdb_version_info() >= (0, 10, 0),
-                reason="duckdb can convert to arrow union types in later versions",
-            ),
-        ),
     ],
 )
 async def test_query_errors(
