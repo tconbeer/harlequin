@@ -81,7 +81,7 @@ class AbstractOption(ABC):
         else:
             raise ValueError(
                 "An Option's name attribute must match "
-                """r'[A-Za-z](\w|-)*' """
+                r"""r'[A-Za-z](\w|-)*' """
                 "so it is a valid CLI flag and HTML/CSS id."
             )
         self.description = description
