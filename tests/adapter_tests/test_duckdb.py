@@ -44,7 +44,7 @@ def test_connect_prql() -> None:
         [],
         allow_unsigned_extensions=True,
         extension=["prql"],
-        custom_extension_repo="welsch.lu/duckdb/prql/latest",
+        custom_extension_repo="http://welsch.lu/duckdb/prql/latest",
         force_install_extensions=True,
     ).connect()
 
