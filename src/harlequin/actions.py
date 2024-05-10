@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from textual.screen import Screen
 from textual_textarea.text_editor import TextAreaPlus
 
 from harlequin.components import (
@@ -11,6 +12,7 @@ from harlequin.components import (
     EditorCollection,
     HarlequinTree,
     HistoryScreen,
+    ResultsTable,
     ResultsViewer,
 )
 
@@ -43,6 +45,8 @@ HARLEQUIN_ACTIONS = {
         description="Help",
         show=True,
     ),
+    "focus_next": Action(target=Screen, action="focus_next"),
+    "focus_previous": Action(target=Screen, action="focus_previous"),
     "focus_query_editor": Action(
         target=None,
         action="focus_query_editor",
@@ -111,7 +115,7 @@ HARLEQUIN_ACTIONS = {
     "code_editor.goto_line": Action(
         target=CodeEditor, action="goto_line", description="Go To Line", show=True
     ),
-    # Cursor movement
+    # Moving the cursor
     "code_editor.cursor_up": Action(target=TextAreaPlus, action="cursor_up"),
     "code_editor.cursor_down": Action(target=TextAreaPlus, action="cursor_down"),
     "code_editor.cursor_left": Action(target=TextAreaPlus, action="cursor_left"),
@@ -207,6 +211,10 @@ HARLEQUIN_ACTIONS = {
     "data_catalog.copy_name": Action(
         target=HarlequinTree, action="copy", description="Copy Name"
     ),
+    "data_catalog.select_cursor": Action(target=HarlequinTree, action="select_cursor"),
+    "data_catalog.toggle_node": Action(target=HarlequinTree, action="toggle_node"),
+    "data_catalog.cursor_up": Action(target=HarlequinTree, action="cursor_up"),
+    "data_catalog.cursor_down": Action(target=HarlequinTree, action="cursor_down"),
     #######################################################
     # ResultsViewer ACTIONS
     #######################################################
@@ -216,6 +224,77 @@ HARLEQUIN_ACTIONS = {
     "results_viewer.next_tab": Action(
         target=ResultsViewer, action="switch_tab(1)", description="Next Tab"
     ),
+    "results_viewer.copy_selection": Action(
+        target=ResultsTable, action="copy_selection"
+    ),
+    "results_viewer.select_cursor": Action(target=ResultsTable, action="select_cursor"),
+    # Moving the cursor
+    "results_viewer.cursor_up": Action(target=ResultsTable, action="cursor_up"),
+    "results_viewer.cursor_down": Action(target=ResultsTable, action="cursor_down"),
+    "results_viewer.cursor_left": Action(target=ResultsTable, action="cursor_left"),
+    "results_viewer.cursor_right": Action(target=ResultsTable, action="cursor_right"),
+    "results_viewer.cursor_row_start": Action(
+        target=ResultsTable, action="cursor_row_start"
+    ),
+    "results_viewer.cursor_row_end": Action(
+        target=ResultsTable, action="cursor_row_end"
+    ),
+    "results_viewer.cursor_column_start": Action(
+        target=ResultsTable, action="scroll_home"
+    ),
+    "results_viewer.cursor_column_end": Action(
+        target=ResultsTable, action="scroll_end"
+    ),
+    "results_viewer.cursor_next_cell": Action(
+        target=ResultsTable, action="cursor_next"
+    ),
+    "results_viewer.cursor_previous_cell": Action(
+        target=ResultsTable, action="cursor_prev"
+    ),
+    "results_viewer.cursor_page_up": Action(target=ResultsTable, action="page_up"),
+    "results_viewer.cursor_page_down": Action(target=ResultsTable, action="page_down"),
+    "results_viewer.cursor_table_start": Action(
+        target=ResultsTable, action="cursor_table_start"
+    ),
+    "results_viewer.cursor_table_end": Action(
+        target=ResultsTable, action="cursor_table_end"
+    ),
+    # Selecting cells
+    "results_viewer.select_up": Action(target=ResultsTable, action="cursor_up(True)"),
+    "results_viewer.select_down": Action(
+        target=ResultsTable, action="cursor_down(True)"
+    ),
+    "results_viewer.select_left": Action(
+        target=ResultsTable, action="cursor_left(True)"
+    ),
+    "results_viewer.select_right": Action(
+        target=ResultsTable, action="cursor_right(True)"
+    ),
+    "results_viewer.select_row_start": Action(
+        target=ResultsTable, action="cursor_row_start(True)"
+    ),
+    "results_viewer.select_row_end": Action(
+        target=ResultsTable, action="cursor_row_end(True)"
+    ),
+    "results_viewer.select_column_start": Action(
+        target=ResultsTable, action="scroll_home(True)"
+    ),
+    "results_viewer.select_column_end": Action(
+        target=ResultsTable, action="scroll_end(True)"
+    ),
+    "results_viewer.select_page_up": Action(
+        target=ResultsTable, action="page_up(True)"
+    ),
+    "results_viewer.select_page_down": Action(
+        target=ResultsTable, action="page_down(True)"
+    ),
+    "results_viewer.select_table_start": Action(
+        target=ResultsTable, action="cursor_table_start(True)"
+    ),
+    "results_viewer.select_table_end": Action(
+        target=ResultsTable, action="cursor_table_end(True)"
+    ),
+    "results_viewer.select_all": Action(target=ResultsTable, action="select_all"),
     #######################################################
     # HistoryScreen ACTIONS
     #######################################################

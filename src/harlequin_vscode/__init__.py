@@ -14,7 +14,8 @@ VSCODE = HarlequinKeyMap(
         HarlequinKeyBinding("f10", "toggle_full_screen"),
         HarlequinKeyBinding("ctrl+e", "show_data_exporter"),
         HarlequinKeyBinding("ctrl+r", "refresh_catalog"),
-        # TODO: ADD BUILT-IN BINDINGS TAB, SHIFT+TAB, ETC.
+        HarlequinKeyBinding("tab", "focus_next"),
+        HarlequinKeyBinding("shift+tab", "focus_previous"),
         # Editor Collection Bindings
         HarlequinKeyBinding("ctrl+n", "editor_collection.new_buffer"),
         HarlequinKeyBinding("ctrl+w", "editor_collection.close_buffer"),
@@ -74,11 +75,46 @@ VSCODE = HarlequinKeyMap(
             key_display="CTRL+ENTER / CTRL+J",
         ),
         HarlequinKeyBinding("ctrl+c", "data_catalog.copy_name"),
-        # TODO: ADD NATIVE BINDINGS
+        HarlequinKeyBinding("enter", "data_catalog.select_cursor"),
+        HarlequinKeyBinding("space", "data_catalog.toggle_node"),
+        HarlequinKeyBinding("up", "data_catalog.cursor_up"),
+        HarlequinKeyBinding("down", "data_catalog.cursor_down"),
         # Results Viewer Bindings
         HarlequinKeyBinding("j", "results_viewer.previous_tab"),
         HarlequinKeyBinding("k", "results_viewer.next_tab"),
-        # TODO: ADD NATIVE BINDINGS
+        HarlequinKeyBinding("ctrl+c", "results_viewer.copy_selection"),
+        HarlequinKeyBinding("enter", "results_viewer.select_cursor"),
+        HarlequinKeyBinding("up", "results_viewer.cursor_up"),
+        HarlequinKeyBinding("down", "results_viewer.cursor_down"),
+        HarlequinKeyBinding("left", "results_viewer.cursor_left"),
+        HarlequinKeyBinding("right", "results_viewer.cursor_right"),
+        HarlequinKeyBinding("ctrl+left", "results_viewer.cursor_row_start"),
+        HarlequinKeyBinding("ctrl+right", "results_viewer.cursor_row_end"),
+        HarlequinKeyBinding("ctrl+up,home", "results_viewer.cursor_column_start"),
+        HarlequinKeyBinding("ctrl+down,end", "results_viewer.cursor_column_end"),
+        HarlequinKeyBinding("tab", "results_viewer.cursor_next_cell"),
+        HarlequinKeyBinding("shift+tab", "results_viewer.cursor_previous_cell"),
+        HarlequinKeyBinding("pageup", "results_viewer.cursor_page_up"),
+        HarlequinKeyBinding("pagedown", "results_viewer.cursor_page_down"),
+        HarlequinKeyBinding("ctrl+home", "results_viewer.cursor_table_start"),
+        HarlequinKeyBinding("ctrl+end", "results_viewer.cursor_table_end"),
+        HarlequinKeyBinding("shift+up", "results_viewer.select_up"),
+        HarlequinKeyBinding("shift+down", "results_viewer.select_down"),
+        HarlequinKeyBinding("shift+left", "results_viewer.select_left"),
+        HarlequinKeyBinding("shift+right", "results_viewer.select_right"),
+        HarlequinKeyBinding("ctrl+shift+left", "results_viewer.select_row_start"),
+        HarlequinKeyBinding("ctrl+shift+right", "results_viewer.select_row_end"),
+        HarlequinKeyBinding(
+            "ctrl+shift+up,shift+home", "results_viewer.select_column_start"
+        ),
+        HarlequinKeyBinding(
+            "ctrl+shift+down,shift+end", "results_viewer.select_column_end"
+        ),
+        HarlequinKeyBinding("shift+pageup", "results_viewer.select_page_up"),
+        HarlequinKeyBinding("shift+pagedown", "results_viewer.select_page_down"),
+        HarlequinKeyBinding("ctrl+shift+home", "results_viewer.select_table_start"),
+        HarlequinKeyBinding("ctrl+shift+end", "results_viewer.select_table_end"),
+        HarlequinKeyBinding("ctrl+a", "results_viewer.select_all"),
         # History Screen Bindings
         HarlequinKeyBinding("enter", "history_screen.select_query"),
         HarlequinKeyBinding("escape", "history_screen.cancel"),

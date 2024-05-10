@@ -175,7 +175,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.focus()
 
 
-class HarlequinTree(Tree):
+class HarlequinTree(Tree, inherit_bindings=False):
 
     double_click: int | None = None
 
@@ -211,7 +211,7 @@ class HarlequinTree(Tree):
             self.post_message(DataCatalog.NodeCopied(node=self.cursor_node))
 
 
-class DatabaseTree(HarlequinTree, Tree[CatalogItem]):
+class DatabaseTree(HarlequinTree, Tree[CatalogItem], inherit_bindings=False):
     def __init__(
         self,
         type_color: str = "#888888",
@@ -284,7 +284,7 @@ class DatabaseTree(HarlequinTree, Tree[CatalogItem]):
         return expanded_nodes, selected_node
 
 
-class FileTree(HarlequinTree, DirectoryTree):
+class FileTree(HarlequinTree, DirectoryTree, inherit_bindings=False):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "directory-tree--extension",
         "directory-tree--file",
@@ -298,7 +298,7 @@ class FileTree(HarlequinTree, DirectoryTree):
         self.post_message(WidgetMounted(widget=self))
 
 
-class S3Tree(HarlequinTree, Tree[str]):
+class S3Tree(HarlequinTree, Tree[str], inherit_bindings=False):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "directory-tree--extension",
         "directory-tree--file",

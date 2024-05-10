@@ -14,13 +14,16 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin.messages import WidgetMounted
 
 
-class ResultsTable(DataTable):
+class ResultsTable(DataTable, inherit_bindings=False):
     DEFAULT_CSS = """
         ResultsTable {
             height: 100%;
             width: 100%;
         }
     """
+
+    def on_mount(self) -> None:
+        self.post_message(WidgetMounted(widget=self))
 
 
 class ResultsViewer(TabbedContent, can_focus=True):
