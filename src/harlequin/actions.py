@@ -80,20 +80,11 @@ HARLEQUIN_ACTIONS = {
         target=None, action="refresh_catalog", description="Refresh Data Catalog"
     ),
     #######################################################
-    # EditorCollection ACTIONS
-    #######################################################
-    "editor_collection.new_buffer": Action(
-        target=EditorCollection, action="new_buffer"
-    ),
-    "editor_collection.close_buffer": Action(
-        target=EditorCollection, action="close_buffer"
-    ),
-    "editor_collection.next_buffer": Action(
-        target=EditorCollection, action="next_buffer"
-    ),
-    #######################################################
     # CodeEditor ACTIONS
     #######################################################
+    "code_editor.new_buffer": Action(target=EditorCollection, action="new_buffer"),
+    "code_editor.close_buffer": Action(target=EditorCollection, action="close_buffer"),
+    "code_editor.next_buffer": Action(target=EditorCollection, action="next_buffer"),
     "code_editor.run_query": Action(
         target=CodeEditor, action="submit", description="Run Query", show=True
     ),
@@ -196,6 +187,7 @@ HARLEQUIN_ACTIONS = {
     "code_editor.delete_to_end_of_line": Action(
         target=TextAreaPlus, action="delete_to_end_of_line"
     ),
+    # TODO: ADD AUTOCOMPLETE BINDINGS
     #######################################################
     # DataCatalog ACTIONS
     #######################################################

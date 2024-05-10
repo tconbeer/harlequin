@@ -16,11 +16,10 @@ VSCODE = HarlequinKeyMap(
         HarlequinKeyBinding("ctrl+r", "refresh_catalog"),
         HarlequinKeyBinding("tab", "focus_next"),
         HarlequinKeyBinding("shift+tab", "focus_previous"),
-        # Editor Collection Bindings
-        HarlequinKeyBinding("ctrl+n", "editor_collection.new_buffer"),
-        HarlequinKeyBinding("ctrl+w", "editor_collection.close_buffer"),
-        HarlequinKeyBinding("ctrl+k", "editor_collection.next_buffer"),
         # Code Editor Bindings
+        HarlequinKeyBinding("ctrl+n", "code_editor.new_buffer"),
+        HarlequinKeyBinding("ctrl+w", "code_editor.close_buffer"),
+        HarlequinKeyBinding("ctrl+k", "code_editor.next_buffer"),
         HarlequinKeyBinding(
             "ctrl+enter,ctrl+j",
             "code_editor.run_query",
