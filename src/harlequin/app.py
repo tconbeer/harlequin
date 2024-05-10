@@ -6,12 +6,13 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Type, Union
 
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import DOMQuery
 from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
@@ -27,8 +28,10 @@ from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin import HarlequinConnection
+from harlequin.actions import HARLEQUIN_ACTIONS
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.autocomplete import completer_factory
+from harlequin.bindings import bind
 from harlequin.catalog import Catalog, NewCatalog
 from harlequin.catalog_cache import (
     CatalogCache,
@@ -52,6 +55,7 @@ from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.editor_cache import BufferState, Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
+    HarlequinBindingError,
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
@@ -61,7 +65,12 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.history import History
+from harlequin.messages import WidgetMounted
+from harlequin.plugins import load_keymap_plugins
 from harlequin.transaction_mode import HarlequinTransactionMode
+
+if TYPE_CHECKING:
+    from harlequin.keymap import HarlequinKeyMap
 
 
 class CatalogCacheLoaded(Message):
@@ -136,16 +145,6 @@ class Harlequin(App, inherit_bindings=False):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
-        Binding("f1", "show_help_screen", "Help"),
-        Binding("f2", "focus_query_editor", "Focus Query Editor", show=False),
-        Binding("f5", "focus_results_viewer", "Focus Results Viewer", show=False),
-        Binding("f6", "focus_data_catalog", "Focus Data Catalog", show=False),
-        Binding("f8", "show_query_history", "History", show=True),
-        Binding("ctrl+b", "toggle_sidebar", "Toggle Sidebar", show=False),
-        Binding("f9", "toggle_sidebar", "Toggle Sidebar", show=False),
-        Binding("f10", "toggle_full_screen", "Toggle Full Screen Mode", show=False),
-        Binding("ctrl+e", "export", "Export Data", show=False),
-        Binding("ctrl+r", "refresh_catalog", "Refresh Data Catalog", show=False),
     ]
 
     full_screen: reactive[bool] = reactive(False)
@@ -155,6 +154,7 @@ class Harlequin(App, inherit_bindings=False):
         self,
         adapter: HarlequinAdapter,
         *,
+        keymap_names: Sequence[str] | None = None,
         connection_hash: str | None = None,
         theme: str = "harlequin",
         show_files: Path | None = None,
@@ -184,6 +184,12 @@ class Harlequin(App, inherit_bindings=False):
             self.exit(return_code=2)
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
+
+        if keymap_names is None:
+            keymap_names = ("vscode",)
+
+        self.keymap_names = keymap_names
+        self.all_keymaps = load_keymap_plugins()
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
@@ -278,6 +284,7 @@ class Harlequin(App, inherit_bindings=False):
 
         self._connect()
         self._load_catalog_cache()
+        self.action_bind_keymaps(*self.keymap_names)
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -570,6 +577,33 @@ class Harlequin(App, inherit_bindings=False):
             self.results_viewer.show_table(did_run=True)
             self.results_viewer.focus()
 
+    @on(WidgetMounted)
+    def bind_keys(self, message: WidgetMounted) -> None:
+        """
+        When widgets are first mounted, they will have their default bindings.
+        Here we add the bindings from the keymap.
+        """
+        for keymap_name in self.keymap_names:
+            keymap = self._get_keymap(keymap_name=keymap_name)
+            for binding in keymap.bindings:
+                action = HARLEQUIN_ACTIONS[binding.action]
+                if action.target is not None and isinstance(
+                    message.widget, action.target
+                ):
+                    try:
+                        bind(
+                            target=message.widget,
+                            keys=binding.keys,
+                            action=action.action,
+                            description=action.description,
+                            show=action.show,
+                            key_display=binding.key_display,
+                            priority=action.priority,
+                        )
+                    except HarlequinBindingError as e:
+                        pretty_print_error(e)
+                        self.exit(return_code=2)
+
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
         other_widgets = [self.run_query_bar, self.footer]
@@ -631,6 +665,45 @@ class Harlequin(App, inherit_bindings=False):
             self.run_query_bar.transaction_button.add_class("hidden")
             self.run_query_bar.commit_button.add_class("hidden")
             self.run_query_bar.rollback_button.add_class("hidden")
+
+    def action_noop(self) -> None:
+        """
+        A no-op action to unmap keys.
+        """
+        return
+
+    def action_bind_keymaps(self, *keymap_names: str) -> None:
+        """
+        Binds the action/key pairs in the keymaps to the currently-mounted
+        widgets in Harlequin.
+        """
+        self.keymap_names = keymap_names
+        for keymap_name in keymap_names:
+            keymap = self._get_keymap(keymap_name=keymap_name)
+            for binding in keymap.bindings:
+                action = HARLEQUIN_ACTIONS[binding.action]
+                if action.target is not None:
+                    targets: DOMQuery[Widget] | list[App] = self.query(action.target)
+                    if not targets:
+                        # some widgets are not yet mounted... we'll get them
+                        # by listening for their mount event
+                        continue
+                else:
+                    targets = [self]
+                for target in targets:
+                    try:
+                        bind(
+                            target=target,
+                            keys=binding.keys,
+                            action=action.action,
+                            description=action.description,
+                            show=action.show,
+                            key_display=binding.key_display,
+                            priority=action.priority,
+                        )
+                    except HarlequinBindingError as e:
+                        pretty_print_error(e)
+                        self.exit(return_code=2)
 
     def action_export(self) -> None:
         show_export_error = partial(
@@ -962,3 +1035,22 @@ class Harlequin(App, inherit_bindings=False):
                 elapsed = time.monotonic() - started_at
                 self.notify(f"Transaction rolled back in {elapsed:.2f} seconds.")
                 self.update_schema_data()
+
+    def _get_keymap(self, keymap_name: str) -> "HarlequinKeyMap":
+        try:
+            keymap = self.all_keymaps[keymap_name]
+        except KeyError as e:
+            self.exit(
+                return_code=2,
+                message=pretty_error_message(
+                    HarlequinConfigError(
+                        title="Could not bind keymap",
+                        msg=(
+                            "Harlequin could not find an installed keymap plug-in "
+                            f"named {e}. You may need to install it before "
+                            "specifying it as an option."
+                        ),
+                    )
+                ),
+            )
+        return keymap

@@ -12,6 +12,10 @@ class HarlequinError(Exception):
         self.title = title
 
 
+class HarlequinBindingError(HarlequinError):
+    pass
+
+
 class HarlequinConnectionError(HarlequinError):
     pass
 

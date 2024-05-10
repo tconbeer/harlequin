@@ -1,7 +1,6 @@
 from typing import List, Tuple, Union
 
 from rich.markup import escape
-from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -11,6 +10,8 @@ from textual.widgets import (
 )
 from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
+
+from harlequin.messages import WidgetMounted
 
 
 class ResultsTable(DataTable):
@@ -23,11 +24,6 @@ class ResultsTable(DataTable):
 
 
 class ResultsViewer(TabbedContent, can_focus=True):
-    BINDINGS = [
-        Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
-        Binding("k", "switch_tab(1)", "Next Tab", show=False),
-    ]
-
     BORDER_TITLE = "Query Results"
 
     def __init__(
@@ -43,6 +39,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         self.query_one(Tabs).can_focus = False
         self.add_class("hide-tabs")
         self.max_col_width = self._get_max_col_width()
+        self.post_message(WidgetMounted(widget=self))
 
     def clear_all_tables(self) -> None:
         self.clear_panes()

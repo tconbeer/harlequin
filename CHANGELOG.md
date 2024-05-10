@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+-   Harlequin now loads key bindings from keymap plug-ins, and accepts a `--keymap` CLI option to specify one or more keymaps to be loaded.
+
+### Changed
+
+-   The default key bindings have been refactored to a plug-in in a separate package (`harlequin_vscode`) that is distributed with Harlequin.
+
 ## [1.21.0] - 2024-06-17
 
 - The Cassandra adapter is now installable as an extra; use `pip install harlequin[cassandra]`.

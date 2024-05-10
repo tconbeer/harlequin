@@ -1,0 +1,86 @@
+from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
+
+VSCODE = HarlequinKeyMap(
+    name="vscode",
+    bindings=[
+        # App Bindings
+        HarlequinKeyBinding("ctrl+q", "quit"),
+        HarlequinKeyBinding("f1", "help"),
+        HarlequinKeyBinding("f2", "focus_query_editor"),
+        HarlequinKeyBinding("f5", "focus_results_viewer"),
+        HarlequinKeyBinding("f6", "focus_data_catalog"),
+        HarlequinKeyBinding("f8", "show_query_history"),
+        HarlequinKeyBinding("ctrl+b,f9", "toggle_sidebar"),
+        HarlequinKeyBinding("f10", "toggle_full_screen"),
+        HarlequinKeyBinding("ctrl+e", "show_data_exporter"),
+        HarlequinKeyBinding("ctrl+r", "refresh_catalog"),
+        # TODO: ADD BUILT-IN BINDINGS TAB, SHIFT+TAB, ETC.
+        # Editor Collection Bindings
+        HarlequinKeyBinding("ctrl+n", "editor_collection.new_buffer"),
+        HarlequinKeyBinding("ctrl+w", "editor_collection.close_buffer"),
+        HarlequinKeyBinding("ctrl+k", "editor_collection.next_buffer"),
+        # Code Editor Bindings
+        HarlequinKeyBinding(
+            "ctrl+enter,ctrl+j",
+            "code_editor.run_query",
+            key_display="CTRL+ENTER / CTRL+J",
+        ),
+        HarlequinKeyBinding("f4", "code_editor.format_buffer"),
+        HarlequinKeyBinding("ctrl+s", "code_editor.save_buffer"),
+        HarlequinKeyBinding("ctrl+o", "code_editor.load_buffer"),
+        HarlequinKeyBinding("ctrl+f", "code_editor.find"),
+        HarlequinKeyBinding("f3", "code_editor.find_next"),
+        HarlequinKeyBinding("ctrl+g", "code_editor.goto_line"),
+        HarlequinKeyBinding("up", "code_editor.cursor_up"),
+        HarlequinKeyBinding("down", "code_editor.cursor_down"),
+        HarlequinKeyBinding("left", "code_editor.cursor_left"),
+        HarlequinKeyBinding("right", "code_editor.cursor_right"),
+        HarlequinKeyBinding("ctrl+left", "code_editor.cursor_word_left"),
+        HarlequinKeyBinding("ctrl+right", "code_editor.cursor_word_right"),
+        HarlequinKeyBinding("home", "code_editor.cursor_line_start"),
+        HarlequinKeyBinding("end", "code_editor.cursor_line_end"),
+        HarlequinKeyBinding("ctrl+home", "code_editor.cursor_doc_start"),
+        HarlequinKeyBinding("ctrl+end", "code_editor.cursor_doc_end"),
+        HarlequinKeyBinding("pageup", "code_editor.cursor_page_up"),
+        HarlequinKeyBinding("pagedown", "code_editor.cursor_page_down"),
+        HarlequinKeyBinding("shift+up", "code_editor.select_up"),
+        HarlequinKeyBinding("shift+down", "code_editor.select_down"),
+        HarlequinKeyBinding("shift+left", "code_editor.select_left"),
+        HarlequinKeyBinding("shift+right", "code_editor.select_right"),
+        HarlequinKeyBinding("ctrl+shift+left", "code_editor.select_word_left"),
+        HarlequinKeyBinding("ctrl+shift+right", "code_editor.select_word_right"),
+        HarlequinKeyBinding("shift+home", "code_editor.select_line_start"),
+        HarlequinKeyBinding("shift+end", "code_editor.select_line_end"),
+        HarlequinKeyBinding("ctrl+shift+home", "code_editor.select_doc_start"),
+        HarlequinKeyBinding("ctrl+shift+end", "code_editor.select_doc_end"),
+        HarlequinKeyBinding("ctrl+a", "code_editor.select_all"),
+        HarlequinKeyBinding("ctrl+up", "code_editor.scroll_up_one"),
+        HarlequinKeyBinding("ctrl+down", "code_editor.scroll_down_one"),
+        HarlequinKeyBinding("ctrl+underscore", "code_editor.toggle_comment"),
+        HarlequinKeyBinding("ctrl+x", "code_editor.cut"),
+        HarlequinKeyBinding("ctrl+c", "code_editor.copy"),
+        HarlequinKeyBinding("ctrl+u,ctrl+v,shift+insert", "code_editor.paste"),
+        HarlequinKeyBinding("ctrl+z", "code_editor.undo"),
+        HarlequinKeyBinding("ctrl+y", "code_editor.redo"),
+        HarlequinKeyBinding("backspace", "code_editor.delete_left"),
+        HarlequinKeyBinding("delete", "code_editor.delete_right"),
+        HarlequinKeyBinding("shift+delete", "code_editor.delete_line"),
+        # Data Catalog Bindings
+        HarlequinKeyBinding("j", "data_catalog.previous_tab"),
+        HarlequinKeyBinding("k", "data_catalog.next_tab"),
+        HarlequinKeyBinding(
+            "ctrl+enter,ctrl+j",
+            "data_catalog.insert_name",
+            key_display="CTRL+ENTER / CTRL+J",
+        ),
+        HarlequinKeyBinding("ctrl+c", "data_catalog.copy_name"),
+        # TODO: ADD NATIVE BINDINGS
+        # Results Viewer Bindings
+        HarlequinKeyBinding("j", "results_viewer.previous_tab"),
+        HarlequinKeyBinding("k", "results_viewer.next_tab"),
+        # TODO: ADD NATIVE BINDINGS
+        # History Screen Bindings
+        HarlequinKeyBinding("enter", "history_screen.select_query"),
+        HarlequinKeyBinding("escape", "history_screen.cancel"),
+    ],
+)

@@ -22,7 +22,7 @@ from harlequin.config import (
 )
 from harlequin.exception import HarlequinWizardError, pretty_print_error
 from harlequin.options import ListOption
-from harlequin.plugins import load_plugins
+from harlequin.plugins import load_adapter_plugins
 
 
 def wizard(config_path: Path | None) -> None:
@@ -51,7 +51,7 @@ def _wizard(config_path: Path | None) -> None:
     profile_name = _prompt_for_profile_name(profiles)
     selected_profile = profiles.get(profile_name, {})
 
-    adapters = load_plugins()
+    adapters = load_adapter_plugins()
     adapter = questionary.select(
         message="Which adapter should this profile use?",
         choices=sorted(adapters.keys()),

@@ -20,7 +20,7 @@ from harlequin.exception import (
 )
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
-from harlequin.plugins import load_plugins
+from harlequin.plugins import load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
 if sys.version_info < (3, 10):
@@ -32,6 +32,7 @@ else:
 DEFAULT_ADAPTER = "duckdb"
 DEFAULT_LIMIT = 100_000
 DEFAULT_THEME = "harlequin"
+DEFAULT_KEYMAPS = ["vscode"]
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -125,7 +126,7 @@ def build_cli() -> click.Command:
 
     Returns: click.Command
     """
-    adapters = load_plugins()
+    adapters = load_adapter_plugins()
 
     @click.command()
     @click.version_option(package_name="harlequin", message=_version_option())
@@ -208,6 +209,17 @@ def build_cli() -> click.Command:
             "The bucket name or URI, or the keyword `all` to show s3 objects "
             "in the Data Catalog."
         ),
+    )
+    @click.option(
+        "--keymap",
+        help=(
+            "The name of a keymap plugin to load. Repeat this option to load "
+            "multiple keymaps. Keymaps listed last will override earlier ones. "
+            "For example, to tweak the default keymap, use '--keymap vscode "
+            "--keymap my_keys'"
+        ),
+        multiple=True,
+        default=["vscode"],
     )
     @click.option(
         "--config",
@@ -314,8 +326,12 @@ def build_cli() -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
+        # load specified keymaps
+        keymap_names: list[str] = config.pop("keymaps", DEFAULT_KEYMAPS)  # type: ignore
+
         tui = Harlequin(
             adapter=adapter_instance,
+            keymap_names=keymap_names,
             connection_hash=get_connection_hash(conn_str, config),
             max_results=max_results,
             theme=theme,

@@ -6,7 +6,6 @@ from urllib.parse import urlsplit
 
 from rich.text import TextType
 from textual import on, work
-from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
@@ -23,6 +22,7 @@ from textual.worker import Worker, WorkerState
 
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.catalog_cache import CatalogCache, recursive_dict
+from harlequin.messages import WidgetMounted
 
 try:
     import boto3
@@ -32,11 +32,6 @@ except ImportError:
 
 class DataCatalog(TabbedContent, can_focus=True):
     BORDER_TITLE = "Data Catalog"
-
-    BINDINGS = [
-        Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
-        Binding("k", "switch_tab(1)", "Next Tab", show=False),
-    ]
 
     class NodeSubmitted(Generic[EventTreeDataType], Message):
         def __init__(self, node: TreeNode[EventTreeDataType]) -> None:
@@ -130,6 +125,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         if self.show_files is None and self.show_s3 is None:
             self.add_class("hide-tabs")
         self.query_one(Tabs).can_focus = False
+        self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
         try:
@@ -179,18 +175,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.focus()
 
 
-class SubmitMixin(Tree):
-    BINDINGS = [
-        Binding(
-            "ctrl+enter",
-            "submit",
-            "Insert Name",
-            key_display="CTRL+ENTER / CTRL+J",
-            show=True,
-        ),
-        Binding("ctrl+j", "submit", "Insert Name", show=False),
-        Binding("ctrl+c", "copy", "Copy Name", show=False),
-    ]
+class HarlequinTree(Tree):
 
     double_click: int | None = None
 
@@ -226,7 +211,7 @@ class SubmitMixin(Tree):
             self.post_message(DataCatalog.NodeCopied(node=self.cursor_node))
 
 
-class DatabaseTree(SubmitMixin, Tree[CatalogItem]):
+class DatabaseTree(HarlequinTree, Tree[CatalogItem]):
     def __init__(
         self,
         type_color: str = "#888888",
@@ -258,6 +243,7 @@ class DatabaseTree(SubmitMixin, Tree[CatalogItem]):
         self.show_root = False
         self.guide_depth = 3
         self.root.expand()
+        self.post_message(WidgetMounted(widget=self))
 
     def _build_item_label(self, label: str, type_label: str) -> str:
         return f"{label} [{self.type_color}]{type_label}[/]" if type_label else label
@@ -298,7 +284,7 @@ class DatabaseTree(SubmitMixin, Tree[CatalogItem]):
         return expanded_nodes, selected_node
 
 
-class FileTree(SubmitMixin, DirectoryTree):
+class FileTree(HarlequinTree, DirectoryTree):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "directory-tree--extension",
         "directory-tree--file",
@@ -309,9 +295,10 @@ class FileTree(SubmitMixin, DirectoryTree):
     def on_mount(self) -> None:
         self.guide_depth = 3
         self.root.expand()
+        self.post_message(WidgetMounted(widget=self))
 
 
-class S3Tree(SubmitMixin, Tree[str]):
+class S3Tree(HarlequinTree, Tree[str]):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "directory-tree--extension",
         "directory-tree--file",
@@ -346,6 +333,7 @@ class S3Tree(SubmitMixin, Tree[str]):
         self.show_root = False
         self.root.data = self.endpoint_url or "s3:/"
         self.reload()
+        self.post_message(WidgetMounted(widget=self))
 
     @property
     def cache_key(self) -> tuple[str | None, str | None, str | None]:

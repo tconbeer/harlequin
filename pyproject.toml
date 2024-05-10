@@ -11,6 +11,7 @@ packages = [
     { include = "harlequin", from = "src" },
     { include = "harlequin_duckdb", from = "src" },
     { include = "harlequin_sqlite", from = "src" },
+    { include = "harlequin_vscode", from = "src" },
 ]
 
 [build-system]
@@ -102,6 +103,9 @@ nebulagraph = ["harlequin-nebulagraph"]
 [tool.poetry.plugins."harlequin.adapter"]
 duckdb = "harlequin_duckdb:DuckDbAdapter"
 sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
+
+[tool.poetry.plugins."harlequin.keymap"]
+vscode = "harlequin_vscode:VSCODE"
 
 [tool.poetry.plugins."pygments.styles"]
 harlequin = "harlequin.colors:HarlequinPygmentsStyle"

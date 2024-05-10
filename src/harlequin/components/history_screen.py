@@ -10,6 +10,7 @@ from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from harlequin.history import History, QueryExecution
+from harlequin.messages import WidgetMounted
 
 
 class HistoryOption(Option):
@@ -26,7 +27,6 @@ class HistoryList(OptionList):
 
 
 class HistoryScreen(Screen[str]):
-    BINDINGS = [("escape", "cancel", "Cancel"), ("enter", "select", "Select Query")]
 
     def __init__(
         self,
@@ -51,6 +51,7 @@ class HistoryScreen(Screen[str]):
     def on_mount(self) -> None:
         scroll = self.query_one(VerticalScroll)
         scroll.border_title = "Highlighted Query Preview"
+        self.post_message(WidgetMounted(widget=self))
 
     def action_cancel(self) -> None:
         self.app.pop_screen()

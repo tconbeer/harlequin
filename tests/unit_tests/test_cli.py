@@ -79,6 +79,7 @@ def test_default(
         .digest()
         .hex(),
         max_results=100_000,
+        keymap_names=["vscode"],
         theme="harlequin",
         show_files=None,
         show_s3=None,

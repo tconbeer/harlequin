@@ -6,7 +6,6 @@ from typing import List, Union
 from rich.text import TextType
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
@@ -15,20 +14,10 @@ from textual_textarea import TextAreaSaved, TextEditor
 from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
+from harlequin.messages import WidgetMounted
 
 
-class CodeEditor(TextEditor):
-    BINDINGS = [
-        Binding(
-            "ctrl+enter",
-            "submit",
-            "Run Query",
-            key_display="CTRL+ENTER / CTRL+J",
-            show=True,
-        ),
-        Binding("ctrl+j", "submit", "Run Query", show=False),
-        Binding("f4", "format", "Format Query", show=True),
-    ]
+class CodeEditor(TextEditor, inherit_bindings=False):
 
     class Submitted(Message, bubble=True):
         """Posted when user runs the query.
@@ -86,6 +75,7 @@ class CodeEditor(TextEditor):
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
+        self.post_message(WidgetMounted(widget=self))
         self.has_shown_clipboard_error = False
 
     def on_unmount(self) -> None:
@@ -133,11 +123,6 @@ class CodeEditor(TextEditor):
 
 
 class EditorCollection(TabbedContent):
-    BINDINGS = [
-        Binding("ctrl+n", "new_buffer", "New Tab", show=False),
-        Binding("ctrl+w", "close_buffer", "Close Tab", show=False),
-        Binding("ctrl+k", "next_buffer", "Next Tab", show=False),
-    ]
 
     BORDER_TITLE = "Query Editor"
 
@@ -227,6 +212,7 @@ class EditorCollection(TabbedContent):
         self.query_one(Tabs).can_focus = False
         self.current_editor.word_completer = self.word_completer
         self.current_editor.member_completer = self.member_completer
+        self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
         self.current_editor.focus()
