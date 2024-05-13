@@ -17,12 +17,13 @@ from tomlkit.toml_file import TOMLFile
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
 from harlequin.config import (
+    get_config_for_profile,
     get_highest_priority_existing_config_file,
     sluggify_option_name,
 )
 from harlequin.exception import HarlequinWizardError, pretty_print_error
 from harlequin.options import ListOption
-from harlequin.plugins import load_adapter_plugins
+from harlequin.plugins import load_adapter_plugins, load_keymap_plugins
 
 
 def wizard(config_path: Path | None) -> None:
@@ -70,6 +71,20 @@ def _wizard(config_path: Path | None) -> None:
         message="What theme should this profile use?",
         choices=sorted(get_all_styles()),
         default=selected_profile.get("theme", "harlequin"),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    keymap_choices = [
+        questionary.Choice(
+            title=opt,
+            checked=opt in selected_profile.get("keymap_name", ["vscode"]),
+        )
+        for opt in _all_keymap_names(config_path=config_path)
+    ]
+
+    keymap_name = questionary.checkbox(
+        message="Which keymaps would you like to use?",
+        choices=keymap_choices,
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
@@ -145,6 +160,7 @@ def _wizard(config_path: Path | None) -> None:
         "adapter": adapter,
         "theme": theme,
         "limit": limit,
+        "keymap_name": keymap_name,
     }
 
     if show_files:
@@ -300,6 +316,14 @@ def _confirm_profile_generation(
 
     if not all_good:
         raise KeyboardInterrupt()
+
+
+def _all_keymap_names(config_path: Path | None) -> list[str]:
+    _, user_defined_keymaps = get_config_for_profile(
+        config_path=config_path, profile_name=None
+    )
+    all_keymaps = load_keymap_plugins(user_defined_keymaps=user_defined_keymaps)
+    return [k for k in all_keymaps.keys()]
 
 
 def _validate_int(raw: str) -> bool:
