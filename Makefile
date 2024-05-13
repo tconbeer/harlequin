@@ -13,7 +13,7 @@ lint:
 
 .PHONY: serve
 serve:
-	textual run --dev -c harlequin -P None -f .
+	textual run --dev -c harlequin -P dev -f .
 
 .PHONY: sqlite
 sqlite:

@@ -155,6 +155,7 @@ class Harlequin(App, inherit_bindings=False):
         adapter: HarlequinAdapter,
         *,
         keymap_names: Sequence[str] | None = None,
+        user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
         theme: str = "harlequin",
         show_files: Path | None = None,
@@ -175,27 +176,35 @@ class Harlequin(App, inherit_bindings=False):
         try:
             self.max_results = int(max_results)
         except ValueError:
-            pretty_print_error(
-                HarlequinConfigError(
-                    f"limit={max_results!r} was set by config file but is not "
-                    "a valid integer."
-                )
+            self.exit(
+                return_code=2,
+                message=pretty_error_message(
+                    HarlequinConfigError(
+                        f"limit={max_results!r} was set by config file but is not "
+                        "a valid integer."
+                    )
+                ),
             )
-            self.exit(return_code=2)
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
 
         if keymap_names is None:
             keymap_names = ("vscode",)
+        if user_defined_keymaps is None:
+            user_defined_keymaps = []
 
         self.keymap_names = keymap_names
-        self.all_keymaps = load_keymap_plugins()
+        try:
+            self.all_keymaps = load_keymap_plugins(
+                user_defined_keymaps=user_defined_keymaps
+            )
+        except HarlequinConfigError as e:
+            self.exit(return_code=2, message=pretty_error_message(e))
 
         try:
             self.app_colors = HarlequinColors.from_theme(theme)
         except HarlequinThemeError as e:
-            pretty_print_error(e)
-            self.exit(return_code=2)
+            self.exit(return_code=2, message=pretty_error_message(e))
         else:
             self.design = self.app_colors.design_system
             self.stylesheet = Stylesheet(variables=self.get_css_variables())

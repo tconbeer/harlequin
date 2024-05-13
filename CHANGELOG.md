@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
--   Harlequin now loads key bindings from keymap plug-ins, and accepts a `--keymap` CLI option to specify one or more keymaps to be loaded.
+-   Harlequin now loads key bindings from keymap plug-ins, and accepts a `--keymap_name` CLI option to specify a keymap to be loaded. This option can be repeated to load (and merge) multiple keymaps.
+-   Harlequin now also loads key bindings from keymaps configured in Harlequin config files or `pyproject.toml` files. To merge user-defined keymaps with keymap plug-ins, repeat the `--keymap-name` option. For example: `--keymap-name vscode --keymap-name my_custom_keymap`. For more information on user-defined keymaps, see Harlequin's [docs](https://harlequin.sh/docs/bindings).
 
 ### Changed
 

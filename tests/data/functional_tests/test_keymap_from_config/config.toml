@@ -1,0 +1,24 @@
+default_profile="more_keys"
+
+[[keymaps.more_arrows]]
+keys="w"
+action="results_viewer.cursor_up"
+key_display="⬆"
+
+[[keymaps.more_arrows]]
+keys="a"
+action="results_viewer.cursor_left"
+key_display="⬅"
+
+[[keymaps.more_arrows]]
+keys="s"
+action="results_viewer.cursor_down"
+key_display="⬇"
+
+[[keymaps.more_arrows]]
+keys="d"
+action="results_viewer.cursor_right"
+key_display="➡"
+
+[profiles.more_keys]
+keymap_name=["vscode", "more_arrows"]

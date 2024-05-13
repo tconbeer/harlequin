@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from click.testing import CliRunner
 from harlequin import Harlequin
-from harlequin.cli import build_cli
+from harlequin.cli import DEFAULT_KEYMAP_NAMES, DEFAULT_LIMIT, DEFAULT_THEME, build_cli
 from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
@@ -48,8 +48,9 @@ def mock_harlequin(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture()
 def mock_empty_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("harlequin.cli.get_config_for_profile", lambda **_: dict())
-    return None
+    monkeypatch.setattr(
+        "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
+    )
 
 
 @pytest.fixture()
@@ -78,9 +79,10 @@ def test_default(
         )
         .digest()
         .hex(),
-        max_results=100_000,
-        keymap_names=["vscode"],
-        theme="harlequin",
+        max_results=DEFAULT_LIMIT,
+        keymap_names=DEFAULT_KEYMAP_NAMES,
+        user_defined_keymaps=[],
+        theme=DEFAULT_THEME,
         show_files=None,
         show_s3=None,
     )
