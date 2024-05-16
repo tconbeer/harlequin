@@ -101,7 +101,7 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
         ("default_no_exist.toml", ["default_profile", "foo"]),
         ("extra_key.toml", ["unexpected key"]),
         ("none_profile.toml", ["None", "not allowed"]),
-        ("not_toml.toml", ["TOML"]),
+        ("not_toml.toml", ["Attempted to load"]),
         ("profiles_not_table.toml", ["profiles", "key", "table"]),
         ("profile_not_table.toml", ["members", "profiles", "table"]),
         ("bad_option_name.toml", ["option", "invalid", "read-only", "read_only"]),
