@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Sequence, TypedDict
 
 from platformdirs import user_config_path
+from tomlkit.exceptions import TOMLKitError
+from tomlkit.toml_document import TOMLDocument
+from tomlkit.toml_file import TOMLFile
 
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap, RawKeyBinding
-
-if sys.version_info < (3, 11):
-    import tomli as tomllib
-else:
-    import tomllib
 
 
 class Profile(TypedDict, total=False):
@@ -32,6 +29,65 @@ class Config(TypedDict, total=False):
     default_profile: str | None
     keymaps: dict[str, list[RawKeyBinding]]
     profiles: dict[str, Profile]
+
+
+class ConfigFile:
+    def __init__(self, path: Path) -> None:
+        """
+        Opens and reads the TOML file at path. Can be used to create
+        a new file if one does not already exist.
+
+        Stores references to the TOMLFile, TOMLDocument, and tracks
+        whether or not the file is a pyproject.toml file.
+
+        Raises: HarlequinConfigError if we can't read the TOML file.
+        """
+        self.path = path
+        self.toml_file = TOMLFile(path)
+        try:
+            self.toml_doc = self.toml_file.read()
+        except OSError:
+            self.toml_doc = TOMLDocument()
+        except TOMLKitError as e:
+            raise HarlequinConfigError(
+                f"Attempted to load the config file at {path}, but encountered an "
+                f"error:\n\n{e}",
+                title="Harlequin could not load the config file.",
+            ) from e
+        self.is_pyproject = path.stem == "pyproject"
+
+    @property
+    def relevant_config(self) -> Config:
+        """
+        Reads the relevant config section from a dedicated config file
+        or pyproject.toml file at path. Raises HarlequinConfigError
+        if there is a problem with the file.
+        """
+        relevant_config: Config = (
+            self.toml_doc
+            if not self.is_pyproject
+            else self.toml_doc.get("tool", {}).get("harlequin", {})
+        )
+        return relevant_config
+
+    def update(self, config: Config) -> None:
+        """
+        Replace the relevant section of the in-memory TOML doc with the updated
+        Config.
+        """
+        if self.is_pyproject:
+            if "tool" not in self.toml_doc:
+                self.toml_doc["tool"] = {}
+            self.toml_doc["tool"]["harlequin"].update(config)  # type: ignore
+        else:
+            self.toml_doc.update(self.relevant_config)
+
+    def write(self) -> None:
+        """
+        Write the in-memory TOML doc to disk, at self.path.
+        """
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.toml_file.write(self.toml_doc)
 
 
 def get_config_for_profile(
@@ -80,10 +136,10 @@ def get_highest_priority_existing_config_file() -> Path | None:
         p = candidates.pop()
         if p.stem == "pyproject":
             try:
-                config = _read_config_file(p)
+                config_file = ConfigFile(p)
             except HarlequinConfigError:
                 continue
-            if not config:
+            if not config_file.relevant_config:
                 continue
         return p
     return None
@@ -130,38 +186,11 @@ def _search_home() -> list[Path]:
     return [directory / f for f in filenames if (directory / f).exists()]
 
 
-def _read_config_file(path: Path) -> Config:
-    """
-    Reads the relevant config section from a dedicated config file
-    or pyproject.toml file at path. Raises HarlequinConfigError
-    if there is a problem with the file.
-    """
-    try:
-        with open(path, "rb") as f:
-            raw_config = tomllib.load(f)
-    except OSError as e:
-        raise HarlequinConfigError(
-            f"Error opening config file at {path}. {e}",
-            title="Harlequin couldn't load your config file.",
-        ) from e
-    except tomllib.TOMLDecodeError as e:
-        raise HarlequinConfigError(
-            f"Error decoding config file at {path}. " f"Check for invalid TOML. {e}",
-            title="Harlequin couldn't load your config file.",
-        ) from e
-    relevant_config: Config = (
-        raw_config
-        if path.stem != "pyproject"
-        else raw_config.get("tool", {}).get("harlequin", {})
-    )
-    return relevant_config
-
-
 def _merge_config_files(paths: list[Path]) -> Config:
     config: Config = {}
     for p in paths:
-        relevant_config = _read_config_file(p)
-        config.update(relevant_config)
+        config_file = ConfigFile(p)
+        config.update(config_file.relevant_config)
     return config
 
 

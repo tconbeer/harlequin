@@ -35,7 +35,6 @@ duckdb = ">=0.8.0"
 shandy-sqlfmt = ">=0.19.0"
 platformdirs = ">=3.10,<5.0"
 importlib_metadata = { version = ">=4.6.0", python = "<3.10.0" }
-tomli = { version = "^2.0.1", python = "<3.11.0" }
 tomlkit = "^0.12.3"
 questionary = "^2.0.1"
 

@@ -10,13 +10,13 @@ from rich import print as rich_print
 from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
-from tomlkit.exceptions import TOMLKitError
-from tomlkit.toml_document import TOMLDocument
-from tomlkit.toml_file import TOMLFile
 
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
 from harlequin.config import (
+    Config,
+    ConfigFile,
+    Profile,
     get_config_for_profile,
     get_highest_priority_existing_config_file,
     sluggify_option_name,
@@ -38,16 +38,14 @@ def wizard(config_path: Path | None) -> None:
 
 
 def _wizard(config_path: Path | None) -> None:
-    path, is_pyproject = _prompt_for_path(config_path)
-    config, file = _read_toml(path)
+    path = _prompt_for_path(config_path)
+    config_file = ConfigFile(path)
+    config = config_file.relevant_config
 
     # extract existing profiles from config file.
-    if is_pyproject:
-        full_config = config
-        config = config.get("tool", {}).get("harlequin", {})
     if "profiles" not in config:
         config["profiles"] = {}
-    profiles = config.get("profiles", {})
+    profiles = config["profiles"]
 
     profile_name = _prompt_for_profile_name(profiles)
     selected_profile = profiles.get(profile_name, {})
@@ -156,7 +154,7 @@ def _wizard(config_path: Path | None) -> None:
 
     default_profile = _prompt_to_set_default_profile(profile_name, config, profiles)
 
-    new_profile = {
+    new_profile: Profile = {
         "adapter": adapter,
         "theme": theme,
         "limit": limit,
@@ -172,23 +170,17 @@ def _wizard(config_path: Path | None) -> None:
     if locale:
         new_profile["locale"] = locale
 
-    new_profile.update(adapter_options)
+    new_profile.update(adapter_options)  # type: ignore[typeddict-item]
 
     _confirm_profile_generation(default_profile, profile_name, new_profile)
 
-    config["profiles"][profile_name] = new_profile  # type: ignore
+    config["profiles"][profile_name] = new_profile
 
-    if is_pyproject:
-        if "tool" not in full_config:
-            full_config["tool"] = {}
-        full_config["tool"]["harlequin"] = config  # type: ignore
-        config = full_config
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    file.write(config)
+    config_file.update(config=config)
+    config_file.write()
 
 
-def _prompt_for_path(config_path: Path | None) -> tuple[Path, bool]:
+def _prompt_for_path(config_path: Path | None) -> Path:
     if config_path is None:
         existing = get_highest_priority_existing_config_file()
         raw_path: str = questionary.path(
@@ -211,26 +203,10 @@ def _prompt_for_path(config_path: Path | None) -> tuple[Path, bool]:
             msg="Must create a file with a .toml extension.",
             title="Harlequin could not create your configuration.",
         )
-    is_pyproject = path.stem == "pyproject"
-    return path, is_pyproject
+    return path
 
 
-def _read_toml(path: Path) -> tuple[TOMLDocument, TOMLFile]:
-    file = TOMLFile(path)
-    try:
-        config = file.read()
-    except OSError:
-        config = TOMLDocument()
-    except TOMLKitError as e:
-        raise HarlequinWizardError(
-            f"Attempted to load the config file at {path}, but encountered an "
-            f"error:\n\n{e}",
-            title="Harlequin could not load the config file.",
-        ) from e
-    return config, file
-
-
-def _prompt_for_profile_name(profiles: TOMLDocument) -> str:
+def _prompt_for_profile_name(profiles: dict[str, Profile]) -> str:
     NEW_PROFILE_SENTINEL = "[Create a New Profile]"
     profile_name = NEW_PROFILE_SENTINEL
     if profiles:
@@ -252,7 +228,7 @@ def _prompt_to_set_adapter_options(
     adapter_options: dict[str, Any],
     adapter_cls: type[HarlequinAdapter],
     which: list[str],
-    selected_profile: TOMLDocument,
+    selected_profile: Profile,
 ) -> None:
     """
     Mutates passed adapter_options dict.
@@ -270,7 +246,7 @@ def _prompt_to_set_adapter_options(
 
 
 def _prompt_to_set_default_profile(
-    profile_name: str, config: TOMLDocument, profiles: TOMLDocument
+    profile_name: str, config: Config, profiles: dict[str, Profile]
 ) -> str | None:
     possible_names = set([profile_name, *profiles.keys()])
     NO_DEFAULT_SENTINEL = "[No default]"
@@ -293,9 +269,9 @@ def _prompt_to_set_default_profile(
 
 
 def _confirm_profile_generation(
-    default_profile: str | None, profile_name: str, new_profile: dict[str, Any]
+    default_profile: str | None, profile_name: str, new_profile: Profile
 ) -> None:
-    new_config: dict[str, Any] = (
+    new_config: Config = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
     new_config.update({"profiles": {profile_name: new_profile}})
