@@ -64,9 +64,9 @@ class ConfigFile:
         if there is a problem with the file.
         """
         relevant_config: Config = (
-            self.toml_doc
+            self.toml_doc.unwrap()
             if not self.is_pyproject
-            else self.toml_doc.get("tool", {}).get("harlequin", {})
+            else self.toml_doc.unwrap().get("tool", {}).get("harlequin", {})
         )
         return relevant_config
 
