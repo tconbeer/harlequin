@@ -16,6 +16,11 @@ class RawKeyBinding(TypedDict):
     key_display: NotRequired[str | None]
 
 
+class RawKeyMap(TypedDict):
+    name: str
+    bindings: list[RawKeyBinding]
+
+
 @dataclass
 class HarlequinKeyBinding:
     keys: str
@@ -24,6 +29,9 @@ class HarlequinKeyBinding:
     """The name of an action. Must be a key of harlequin.actions.HARLEQUIN_ACTIONS"""
     key_display: str | None = None
     """If specified, overrides the key display in Harlequin footer for this binding."""
+
+    def to_dict(self) -> RawKeyBinding:
+        return self.__dict__  # type: ignore
 
 
 @dataclass
@@ -50,3 +58,6 @@ class HarlequinKeyMap:
                 ),
             ) from e
         return keymap
+
+    def to_dict(self) -> RawKeyMap:
+        return {"name": self.name, "bindings": [b.to_dict() for b in self.bindings]}
