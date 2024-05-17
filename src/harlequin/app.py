@@ -13,7 +13,6 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import DOMQuery
-from textual.css.stylesheet import Stylesheet
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.lazy import Lazy
@@ -30,6 +29,7 @@ from textual_fastdatatable.backend import AutoBackendType
 from harlequin import HarlequinConnection
 from harlequin.actions import HARLEQUIN_ACTIONS
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
+from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
 from harlequin.bindings import bind
 from harlequin.catalog import Catalog, NewCatalog
@@ -38,7 +38,6 @@ from harlequin.catalog_cache import (
     get_catalog_cache,
     update_catalog_cache,
 )
-from harlequin.colors import HarlequinColors
 from harlequin.components import (
     CodeEditor,
     DataCatalog,
@@ -60,7 +59,6 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinError,
     HarlequinQueryError,
-    HarlequinThemeError,
     pretty_error_message,
     pretty_print_error,
 )
@@ -136,12 +134,12 @@ class TransactionModeChanged(Message):
         self.new_mode = new_mode
 
 
-class Harlequin(App, inherit_bindings=False):
+class Harlequin(AppBase):
     """
     The SQL IDE for your Terminal.
     """
 
-    CSS_PATH = "global.tcss"
+    CSS_PATH = "app.tcss"
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
@@ -165,7 +163,12 @@ class Harlequin(App, inherit_bindings=False):
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
     ):
-        super().__init__(driver_class, css_path, watch_css)
+        super().__init__(
+            theme=theme,
+            driver_class=driver_class,
+            css_path=css_path,
+            watch_css=watch_css,
+        )
         self.adapter = adapter
         self.connection_hash = connection_hash
         self.catalog: Catalog | None = None
@@ -200,14 +203,6 @@ class Harlequin(App, inherit_bindings=False):
             )
         except HarlequinConfigError as e:
             self.exit(return_code=2, message=pretty_error_message(e))
-
-        try:
-            self.app_colors = HarlequinColors.from_theme(theme)
-        except HarlequinThemeError as e:
-            self.exit(return_code=2, message=pretty_error_message(e))
-        else:
-            self.design = self.app_colors.design_system
-            self.stylesheet = Stylesheet(variables=self.get_css_variables())
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
