@@ -361,6 +361,9 @@ class DuckDbAdapter(HarlequinAdapter):
                         f"from {self.init_path}"
                     )
 
+        self.ADAPTER_DRIVER_DETAILS = f"""
+Connected to database `{primary_db}`
+        """
         return DuckDbConnection(conn=connection, init_message=msg)
 
     @staticmethod

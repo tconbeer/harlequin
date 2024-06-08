@@ -28,7 +28,8 @@ class HelpScreen(ModalScreen):
             with VerticalScroll(id="modal_inner"):
                 yield Markdown(markdown=markdown)
             yield Static(
-                "Scroll with arrows. Press any other key to continue.", id="modal_footer"
+                "Scroll with arrows. Press any other key to continue.",
+                id="modal_footer",
             )
 
     def on_mount(self) -> None:
