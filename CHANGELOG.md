@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   The Cassandra adapter is now installable as an extra; use `pip install harlequin[cassandra]`.
+
 ## [1.20.0] - 2024-04-29
 
 ### Features
