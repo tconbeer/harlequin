@@ -208,8 +208,12 @@ class HarlequinAdapter(ABC):
     option's default values, as those will not be passed by the CLI when
     initializing the adapter.
 
-    Adapters can provide client side (adapter) details using the ADAPTER_DETAILS 
-    class variable. It is expected to be formatted as markdown.
+    Adapters can provide client-side (Harlequin adapter) details using the
+    ADAPTER_DETAILS class variable. It is expected to be formatted as markdown.
+
+    Adapters can also provide server-side (DB driver) details using the
+    ADAPTER_DRIVER_DETAILS_DETAILS class variable. It is expected to be formatted
+    as markdown.
     """
 
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = None
@@ -217,6 +221,7 @@ class HarlequinAdapter(ABC):
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
     IMPLEMENTS_CANCEL = False
     ADAPTER_DETAILS: str | None = None
+    ADAPTER_DRIVER_DETAILS: str | None = None
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
@@ -273,8 +278,15 @@ class HarlequinAdapter(ABC):
         return self.COPY_FORMATS is not None
 
     @property
-    def provides_details(self) -> None:
+    def provides_details(self) -> bool:
         """
         Provides adapter details.
         """
         return self.ADAPTER_DETAILS is not None
+
+    @property
+    def driver_provides_details(self) -> bool:
+        """
+        Provides adapter details.
+        """
+        return self.ADAPTER_DRIVER_DETAILS is not None

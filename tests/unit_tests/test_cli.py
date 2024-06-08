@@ -16,6 +16,7 @@ from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
 def mock_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock_adapter = MagicMock(name="mock_duckdb_adapter", spec=DuckDbAdapter)
     mock_adapter.ADAPTER_OPTIONS = DUCKDB_OPTIONS
+    mock_adapter.profile_name = None
     mock_entrypoint = MagicMock(name="mock_entrypoint")
     mock_entrypoint.name = "duckdb"
     mock_entrypoint.load.return_value = mock_adapter
@@ -73,6 +74,7 @@ def test_default(
     mock_adapter.assert_called_once_with(conn_str=expected_conn_str)
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
+        profile_name=None,
         connection_hash=mock_adapter.return_value.connection_id,
         max_results=DEFAULT_LIMIT,
         keymap_names=DEFAULT_KEYMAP_NAMES,

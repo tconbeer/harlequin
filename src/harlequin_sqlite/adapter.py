@@ -440,6 +440,9 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                     f"Executed {count} {'command' if count == 1 else 'commands'} "
                     f"from {self.init_path}"
                 )
+        self.ADAPTER_DRIVER_DETAILS = f"""
+Connected to database `{primary_db}`
+        """
         return HarlequinSqliteConnection(conn=conn, init_message=init_msg)
 
     @staticmethod
