@@ -57,6 +57,7 @@ from harlequin.catalog_cache import (
 from harlequin.components import (
     CodeEditor,
     DataCatalog,
+    DebugInfoScreen,
     EditorCollection,
     ErrorModal,
     ExportScreen,
@@ -69,6 +70,11 @@ from harlequin.components import (
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
+from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.config import (
+    get_highest_priority_existing_config_file,
+    load_config,
+)
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import BufferState, Cache
@@ -950,6 +956,36 @@ class Harlequin(AppBase):
 
     def action_show_help_screen(self) -> None:
         self.push_screen(HelpScreen(id="help_screen"))
+
+    def action_show_debug_info_screen(self) -> None:
+        config_path = get_highest_priority_existing_config_file()
+        config = load_config(config_path)
+        active_profile = config.get("default_profile")
+        adapter_options = getattr(self.adapter, "ADAPTER_OPTIONS", None)
+        adapter_type = type(self.adapter).__name__
+
+        harlequin_info = HarlequinDebugInfo(
+            active_profile=active_profile,
+            config_path=config_path,
+            theme=self.theme,
+            keymap_names=self.keymap_names,
+            all_keymaps=list(self.all_keymaps.keys()),
+            config=config,
+        )
+        adapter_info = AdapterDebugInfo(
+            adapter_options=adapter_options,
+            adapter_type=adapter_type,
+            adapter_details=self.adapter.ADAPTER_DETAILS
+            if self.adapter.ADAPTER_DETAILS
+            else "No details were provided by adapter.",
+        )
+        self.push_screen(
+            DebugInfoScreen(
+                harlequin_details=harlequin_info.parse_info(),
+                adapter_details=adapter_info.parse_info(),
+                id="debug_info_screen",
+            )
+        )
 
     def action_toggle_full_screen(self) -> None:
         self.full_screen = not self.full_screen

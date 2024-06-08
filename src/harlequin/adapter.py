@@ -207,12 +207,16 @@ class HarlequinAdapter(ABC):
     disregard any extra (unexpected) kwargs. They should not rely on the
     option's default values, as those will not be passed by the CLI when
     initializing the adapter.
+
+    Adapters can provide client side (adapter) details using the ADAPTER_DETAILS 
+    class variable. It is expected to be formatted as markdown.
     """
 
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = None
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
     IMPLEMENTS_CANCEL = False
+    ADAPTER_DETAILS: str | None = None
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
@@ -267,3 +271,10 @@ class HarlequinAdapter(ABC):
         also provide options for customizing the Export dialog GUI.
         """
         return self.COPY_FORMATS is not None
+
+    @property
+    def provides_details(self) -> None:
+        """
+        Provides adapter details.
+        """
+        return self.ADAPTER_DETAILS is not None

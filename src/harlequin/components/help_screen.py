@@ -23,18 +23,18 @@ class HelpScreen(ModalScreen):
         with open(markdown_path, "r") as f:
             markdown = f.read()
 
-        with VerticalSuppressClicks(id="help_outer"):
-            yield Static(" ".join(self.header_text), id="help_header")
-            with VerticalScroll(id="help_inner"):
+        with VerticalSuppressClicks(id="modal_outer"):
+            yield Static(" ".join(self.header_text), id="modal_header")
+            with VerticalScroll(id="modal_inner"):
                 yield Markdown(markdown=markdown)
             yield Static(
-                "Scroll with arrows. Press any other key to continue.", id="help_footer"
+                "Scroll with arrows. Press any other key to continue.", id="modal_footer"
             )
 
     def on_mount(self) -> None:
-        container = self.query_one("#help_outer")
+        container = self.query_one("#modal_outer")
         container.border_title = "Harlequin Help"
-        self.body = self.query_one("#help_inner")
+        self.body = self.query_one("#modal_inner")
 
     def on_key(self, event: events.Key) -> None:
         event.stop()
