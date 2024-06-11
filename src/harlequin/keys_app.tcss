@@ -1,0 +1,165 @@
+/* VARIABLES */
+$border-color-nofocus: $panel;
+$border-title-color-nofocus: $panel;
+$border-color-focus: $primary;
+$border-title-color-focus: $primary;
+
+
+Static#instructions {
+    background: $background;
+    width: 1fr;
+    height: auto;
+}
+
+Input {
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+Input:focus {
+    border: round $border-color-focus;
+}
+
+DataTable {
+    height: 1fr;
+    width: 100%;
+    border: round $border-color-nofocus;
+}
+DataTable:focus{
+    border: round $border-color-focus;
+}
+DataTable > .datatable--header {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+DataTable > .datatable--cursor {
+    background: $panel;
+    color: auto;
+}
+
+DataTable:focus > .datatable--cursor {
+    background: $secondary;
+}
+
+DataTable > .datatable--header-hover {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+DataTable > .datatable--hover {
+    color: $text;
+    background: $boost;
+}
+
+/* EditModal */
+
+EditModal {
+    align: center middle;
+    padding: 0;
+}
+
+EditModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+EditModal Horizontal.option_row {
+    height: 3;
+    margin: 1 1 0 0;
+    padding: 0 2;
+}
+
+EditModal Horizontal.option_row NoFocusLabel {
+    height: 1;
+    text-align: right;
+    width: 12;
+    margin: 1 2 0 1;
+}
+
+EditModal Horizontal.option_row Label#action_label {
+    padding: 1 1;
+}
+
+EditModal Horizontal.option_row Input {
+    width: 1fr;
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+EditModal Horizontal.option_row Input:focus {
+    border: round $border-color-focus;
+}
+
+EditModal Horizontal.option_row Button.key {
+    background: $background;
+    border: none;
+    padding: 1 1;
+    margin: 0 2;
+    min-width: 20;
+    text-style: none;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+
+
+EditModal Horizontal.option_row Button.key_btn {
+    background: $background;
+    border: none;
+    padding: 1 1;
+    margin: 0 2;
+    min-width: 3;
+    text-style: none;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+/* Save and Cancel buttons */
+
+EditModal Horizontal#button_row {
+    height: auto;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+EditModal Horizontal#button_row Button {
+    background: $primary;
+    height: 3;
+    margin: 0 6;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+EditModal Horizontal#button_row Button#cancel{
+    background: $panel;
+    &:hover {
+        background: $secondary;
+    }
+}
+
+

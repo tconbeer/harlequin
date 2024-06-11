@@ -121,7 +121,7 @@ files = [
     "src/**/*.py",
     "tests/**/*.py",
 ]
-mypy_path = "src:stubs"
+mypy_path = "stubs"
 
 show_column_numbers = true
 

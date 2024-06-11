@@ -294,6 +294,6 @@ HARLEQUIN_ACTIONS = {
         target=HistoryScreen, action="select", description="Select Query"
     ),
     "history_screen.cancel": Action(
-        target=HarlequinTree, action="cancel", description="Cancel"
+        target=HistoryScreen, action="cancel", description="Cancel"
     ),
 }

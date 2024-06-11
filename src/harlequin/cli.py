@@ -18,6 +18,7 @@ from harlequin.exception import (
     HarlequinTzDataError,
     pretty_print_error,
 )
+from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import load_adapter_plugins
@@ -117,6 +118,14 @@ def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None
     if not value or ctx.resilient_parsing:
         return
     wizard(ctx.params.get("config_path", None))
+    ctx.exit(0)
+
+
+def _keys_app_callback(ctx: click.Context, param: Any, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    app = HarlequinKeys(theme=ctx.params.get("theme", None))
+    app.run()
     ctx.exit(0)
 
 
@@ -231,7 +240,15 @@ def build_cli() -> click.Command:
         is_flag=True,
         callback=_config_wizard_callback,
         expose_value=True,
-        # is_eager=True,
+    )
+    @click.option(
+        "--keys",
+        help=(
+            "Run the key binding config app to create or update a Harlequin " "keymap."
+        ),
+        is_flag=True,
+        callback=_keys_app_callback,
+        expose_value=True,
     )
     @click.option(
         "--locale",

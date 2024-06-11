@@ -28,22 +28,10 @@ HistoryScreen OptionList:focus,
     border-title-color: $border-title-color-focus;
 }
 
-* {
-    scrollbar-background: $background-lighten-1;
-    scrollbar-background-hover: $background-lighten-1;
-    scrollbar-background-active: $background-lighten-1;
-    scrollbar-corner-color: $background-lighten-1;
-    
-    scrollbar-color: $panel;
-    scrollbar-color-hover: $primary;
-    scrollbar-color-active: $secondary;
-}
-
 CodeEditor:disabled,
 Container:disabled,
 DataCatalog:disabled,
 EditorCollection:disabled,
-Footer:disabled,
 ResultsViewer:disabled,
 ResultsTable:disabled,
 RunQueryBar:disabled,
@@ -60,37 +48,6 @@ Lazy {
     display: block;
     height: 1fr;
     width: 100%;
-}
-
-Toast {
-    width: auto;
-    background: $background;
-    tint: white 0%;
-    color: $text;
-    border-right: none;
-    border-left: wide $primary;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
-Toast.-information {
-    border-right: none;
-    border-left: wide $primary;
-}
-
-
-Toast.-warning {
-    border-right: none;
-    border-left: wide $secondary;
-}
-
-Toast.-error {
-    border-right: none;
-    border-left: wide $error;
-}
-
-Toast .toast--title {
-    color: $primary;
 }
 
 /* DATA CATALOG */
@@ -574,29 +531,4 @@ HistoryScreen OptionList > .option-list--option-hover-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;
-}
-
-/* FOOTER */
-Footer {
-    background: $background;
-    color: $secondary;
-    dock: bottom;
-    height: 1;
-}
-
-Footer > .footer--highlight {
-    background: $boost;
-    color: $secondary;
-}
-
-Footer > .footer--highlight-key {
-    background: $boost;
-    color: $primary;
-    text-style: none;
-}
-
-Footer > .footer--key {
-    text-style: none;
-    background: $background;
-    color: $primary;
 }

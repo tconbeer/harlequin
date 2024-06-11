@@ -19,6 +19,10 @@ serve:
 sqlite:
 	textual run --dev -c harlequin -P sqlite
 
+.PHONY: keys
+keys:
+	textual run --dev -c harlequin --keys
+
 marketing: $(wildcard static/themes/*.svg) static/harlequin.gif
 
 static/themes/%.svg: pyproject.toml src/scripts/export_screenshots.py

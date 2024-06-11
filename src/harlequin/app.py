@@ -139,7 +139,7 @@ class Harlequin(AppBase):
     The SQL IDE for your Terminal.
     """
 
-    CSS_PATH = "app.tcss"
+    CSS_PATH = ["global.tcss", "app.tcss"]
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
@@ -235,20 +235,6 @@ class Harlequin(AppBase):
                 yield self.run_query_bar
                 yield self.results_viewer
         yield self.footer
-
-    @property
-    def namespace_bindings(self) -> dict[str, tuple[DOMNode, Binding]]:
-        """
-        Re-order bindings so they appear in the footer with the global bindings first.
-        """
-
-        def sort_key(item: tuple[str, tuple[DOMNode, Binding]]) -> int:
-            return 0 if item[1][0] == self else 1
-
-        binding_map = {
-            k: v for k, v in sorted(super().namespace_bindings.items(), key=sort_key)
-        }
-        return binding_map
 
     def push_screen(  # type: ignore
         self,
