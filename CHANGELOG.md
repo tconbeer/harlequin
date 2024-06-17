@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 -   The Cassandra adapter is now installable as an extra; use `pip install harlequin[cassandra]`.
+-   The NebulaGraph adapter is now installable as an extra; use `pip install harlequin[nebulagraph]`.
 
 ## [1.20.0] - 2024-04-29
 
