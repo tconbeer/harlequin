@@ -21,10 +21,6 @@ class AppBase(App, inherit_bindings=False):
     A common base app for Harlequin and its mini-apps.
     """
 
-    BINDINGS = [
-        Binding("ctrl+q", "quit", "Quit", priority=True),
-    ]
-
     def __init__(
         self,
         *,

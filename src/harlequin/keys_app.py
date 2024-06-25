@@ -11,17 +11,19 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
 from textual.driver import Driver
+from textual.events import Key
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Input, Static, Label
+from textual.widget import Widget
+from textual.widgets import Button, Footer, Input, Label, Static
 from textual_fastdatatable import DataTable
 
 from harlequin.actions import HARLEQUIN_ACTIONS
 from harlequin.app_base import AppBase
 from harlequin.config import get_config_for_profile
+from harlequin.copy_widgets import NoFocusLabel
 from harlequin.keymap import HarlequinKeyBinding
 from harlequin.plugins import load_keymap_plugins
-from harlequin.copy_widgets import NoFocusLabel
 
 INSTRUCTIONS = dedent(
     """
@@ -40,10 +42,33 @@ class BindingsReady(Message):
         self.bindings = bindings
         self.table_data = table_data
 
-class BindingEdited(Message):
-    def __init__(self, updated_binding: HarlequinKeyBinding) -> None:
+
+class BindingKeyUpdated(Message):
+    def __init__(self, source_button: Widget, key: str) -> None:
         super().__init__()
-        self.updated_binding=updated_binding
+        self.source_button = source_button
+        self.key = key
+
+
+class EditButton(Button, inherit_bindings=False):
+    BINDINGS = [Binding("enter", "press", "Edit Binding", show=True)]
+
+    def __init__(self, key: str, classes: str | None = None):
+        super().__init__(label=key, classes=classes)
+        self.key = key
+
+
+class RemoveButton(Button, inherit_bindings=False):
+    BINDINGS = [Binding("enter", "press", "Remove Binding", show=True)]
+
+    def __init__(self, key: str, classes: str | None = None):
+        super().__init__(label="X", classes=classes)
+        self.key = key
+
+
+class AddButton(Button, inherit_bindings=False):
+    BINDINGS = [Binding("enter", "press", "Add Binding", show=True)]
+
 
 class BindingTable(DataTable, inherit_bindings=False):
     BINDINGS = [
@@ -75,8 +100,29 @@ class BindingTable(DataTable, inherit_bindings=False):
         )
 
 
+class InputModal(ModalScreen, inherit_bindings=False):
+
+    def __init__(self, source_button: Widget) -> None:
+        super().__init__()
+        self.source_button = source_button
+
+    def compose(self) -> ComposeResult:
+        outer = Vertical(id="outer")
+        with outer:
+            yield NoFocusLabel("Press a key combination")
+
+    @on(Key)
+    def close_and_post_key(self, event: Key) -> None:
+        event.stop()
+        event.prevent_default()
+        self.dismiss(result=event.key)
+
+
 class EditModal(ModalScreen):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+q", "quit", "Quit"),
+    ]
 
     def __init__(self, binding: HarlequinKeyBinding) -> None:
         super().__init__()
@@ -93,24 +139,35 @@ class EditModal(ModalScreen):
                 for key in self.binding.keys.split(","):
                     with Horizontal(classes="option_row"):
                         yield NoFocusLabel("Key:")
-                        yield Button(label=key, classes="key")
-                        yield Button(label="X", classes="key_btn")
+                        yield EditButton(key=key).focus()
+                        yield RemoveButton(key=key)
+                with Horizontal(classes="option_row", id="add_row"):
+                    yield NoFocusLabel("")
+                    yield AddButton(label="[dim]<Add Binding>[/dim]")
             with Horizontal(classes="option_row"):
                 yield NoFocusLabel("Key Display:")
                 yield Input(
-                    value=self.binding.key_display if self.binding.key_display else None,
+                    value=(
+                        self.binding.key_display if self.binding.key_display else None
+                    ),
                     placeholder="(Optional)",
-                    id="key_display_input"
+                    id="key_display_input",
                 )
             with Horizontal(id="button_row"):
                 yield Button(label="Cancel", variant="error", id="cancel")
                 yield Button(label="Submit", variant="primary", id="submit")
+            yield Footer()
 
     def action_cancel(self) -> None:
-        self.app.pop_screen()
+        self.dismiss(result=self.binding)
 
     def action_submit(self) -> None:
-        self.post_message(BindingEdited(updated_binding=self.binding))
+        keys = ",".join({btn.key for btn in self.query(EditButton)})
+        key_display = self.query_one("#key_display_input", expect_type=Input).value
+        new_binding = HarlequinKeyBinding(
+            keys=keys, action=self.binding.action, key_display=key_display
+        )
+        self.dismiss(result=new_binding)
 
     @on(Button.Pressed, "#cancel")
     def cancel_modal(self) -> None:
@@ -120,8 +177,48 @@ class EditModal(ModalScreen):
     def submit(self) -> None:
         self.action_submit()
 
+    @on(Button.Pressed)
+    def handle_button_press(self, message: Button.Pressed) -> None:
+        if isinstance(message.button, EditButton):
+
+            def edit_button(new_key: str) -> None:
+                assert isinstance(message.button, EditButton)
+                message.button.label = new_key
+                message.button.key = new_key
+
+            self.app.push_screen(InputModal(source_button=message.button), edit_button)
+            return
+
+        elif isinstance(message.button, AddButton):
+
+            def add_button(key: str) -> None:
+                row = Horizontal(
+                    NoFocusLabel("Key:"),
+                    EditButton(key=key),
+                    RemoveButton(key=key),
+                    classes="option_row",
+                )
+                self.mount(row, before="#add_row")
+
+            self.app.push_screen(InputModal(source_button=message.button), add_button)
+            return
+
+        elif isinstance(message.button, RemoveButton):
+            row = message.button.parent
+            assert isinstance(row, Horizontal)
+            row.remove()
+            return
+
+    @on(BindingKeyUpdated)
+    def update_button(self, message: BindingKeyUpdated) -> None:
+        self.log("HERE!!")
+        if isinstance(message.source_button, EditButton):
+            message.source_button.label = message.key
+
 
 class HarlequinKeys(AppBase):
+
+    BINDINGS = [Binding("ctrl+q", "quit", "Quit")]
     CSS_PATH = ["global.tcss", "keys_app.tcss"]
 
     def __init__(
@@ -156,9 +253,26 @@ class HarlequinKeys(AppBase):
         yield self.search_input
         yield Footer()
 
-    def push_edit_modal(self, binding: HarlequinKeyBinding) -> None:
+    def push_edit_modal(self, binding: HarlequinKeyBinding, cursor_row: int) -> None:
+        def update_binding(new_binding: HarlequinKeyBinding) -> None:
+            assert self.bindings is not None
+            assert self.table is not None
+            k = format_action(new_binding.action)
+            existing_binding = self.bindings[k]
+            self.bindings[k] = new_binding
+            if existing_binding.keys != new_binding.keys:
+                self.table.update_cell(
+                    row_index=cursor_row, column_index=1, value=new_binding.keys
+                )
+            if existing_binding.key_display != new_binding.key_display:
+                self.table.update_cell(
+                    row_index=cursor_row,
+                    column_index=2,
+                    value=new_binding.key_display or "",
+                )
+
         if len(self.screen_stack) == 1:
-            self.push_screen(EditModal(binding=binding))
+            self.push_screen(EditModal(binding=binding), update_binding)
 
     @on(BindingsReady)
     def mount_bindings_table(self, message: BindingsReady) -> None:
@@ -174,7 +288,7 @@ class HarlequinKeys(AppBase):
             return
         action_name = self.table.get_cell_at(Coordinate(message.cursor_row, 0))
         binding = self.bindings[action_name]
-        self.push_edit_modal(binding=binding)
+        self.push_edit_modal(binding=binding, cursor_row=message.cursor_row)
 
     @work(
         thread=True,
@@ -211,15 +325,7 @@ class HarlequinKeys(AppBase):
                 if binding.key_display:
                     merged_action.key_display = binding.key_display
 
-        table_data: list[tuple[str, str, str]] = []
-        for formatted_name, binding in displayed_bindings.items():
-            table_data.append(
-                (
-                    formatted_name,
-                    binding.keys,
-                    binding.key_display or "",
-                )
-            )
+        table_data = format_bindings_for_table(displayed_bindings=displayed_bindings)
         self.post_message(
             BindingsReady(bindings=displayed_bindings, table_data=table_data)
         )
@@ -234,3 +340,18 @@ def format_action(action: str) -> str:
     )
     action_display_name = " ".join(w.capitalize() for w in action_name.split("_"))
     return f"{component_display_name}{action_display_name}"
+
+
+def format_bindings_for_table(
+    displayed_bindings: dict[str, HarlequinKeyBinding]
+) -> list[tuple[str, str, str]]:
+    table_data: list[tuple[str, str, str]] = []
+    for formatted_name, binding in displayed_bindings.items():
+        table_data.append(
+            (
+                formatted_name,
+                binding.keys,
+                binding.key_display or "",
+            )
+        )
+    return table_data

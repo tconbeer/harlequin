@@ -96,7 +96,8 @@ EditModal Horizontal.option_row Input:focus {
     border: round $border-color-focus;
 }
 
-EditModal Horizontal.option_row Button.key {
+EditModal Horizontal.option_row EditButton, 
+EditModal Horizontal.option_row AddButton {
     background: $background;
     border: none;
     padding: 1 1;
@@ -116,13 +117,14 @@ EditModal Horizontal.option_row Button.key {
 }
 
 
-EditModal Horizontal.option_row Button.key_btn {
+EditModal Horizontal.option_row RemoveButton {
     background: $background;
     border: none;
     padding: 1 1;
     margin: 0 2;
     min-width: 3;
     text-style: none;
+    color: $error;
     &:hover {
         border: round $secondary;
         padding: 0 0;
@@ -163,3 +165,18 @@ EditModal Horizontal#button_row Button#cancel{
 }
 
 
+/* InputModal */
+
+InputModal {
+    align: center middle;
+    padding: 0;
+}
+
+InputModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    align: center middle;
+    height: 7;
+    padding: 1 2;
+    max-width: 48;
+}
