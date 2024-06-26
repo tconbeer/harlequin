@@ -156,15 +156,18 @@ class QuitModal(ModalScreen[Tuple[bool, Union[Path, None], Union[str, None]]]):
         self.path_validation_label = Label(
             "", id="path_validation_label", classes="validation-label"
         )
+        name_validator = KeymapNameValidator(plugin_names=self.plugin_names)
+        validation_result = name_validator.validate(self.keymap_name or "")
         self.name_input = Input(
             id="name_input",
-            value=self.keymap_name,
+            value=self.keymap_name if validation_result.is_valid else None,
             placeholder="Enter a name for this keymap",
-            validators=[KeymapNameValidator(plugin_names=self.plugin_names)],
+            validators=[name_validator],
         )
         self.name_validation_label = Label(
             "", id="name_validation_label", classes="validation-label"
         )
+        self.save_button = Button(label="Save + Quit", variant="primary", id="submit")
         with Vertical(id="outer"):
             with Horizontal(classes="option_row"):
                 yield NoFocusLabel("Config Path:")
@@ -179,9 +182,11 @@ class QuitModal(ModalScreen[Tuple[bool, Union[Path, None], Union[str, None]]]):
             with Horizontal(id="button_row"):
                 yield Button(label="Keep Editing", id="cancel")
                 yield Button(label="Discard + Quit", variant="error", id="discard")
-                yield Button(
-                    label="Save + Quit", variant="primary", id="submit"
-                ).focus()
+                yield self.save_button
+        if validation_result.is_valid:
+            self.save_button.focus()
+        else:
+            self.name_input.focus()
 
     @on(Input.Changed, "#path_input")
     def validate_path(self, event: Input.Changed) -> None:
