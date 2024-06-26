@@ -13,7 +13,7 @@ from harlequin.exception import HarlequinConfigError
 class RawKeyBinding(TypedDict):
     keys: str
     action: str
-    key_display: NotRequired[str | None]
+    key_display: NotRequired[str]
 
 
 class RawKeyMap(TypedDict):
@@ -31,7 +31,18 @@ class HarlequinKeyBinding:
     """If specified, overrides the key display in Harlequin footer for this binding."""
 
     def to_dict(self) -> RawKeyBinding:
-        return self.__dict__  # type: ignore
+        """
+        Returns a dictionary that can be written to a TOML config file.
+        """
+
+        class Missing:
+            def __bool__(self) -> bool:
+                return True
+
+        all_keys: RawKeyBinding = self.__dict__  # type: ignore[assignment]
+        if not all_keys.get("key_display", Missing):
+            all_keys.pop("key_display")
+        return all_keys
 
 
 @dataclass

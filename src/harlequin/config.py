@@ -77,10 +77,12 @@ class ConfigFile:
         """
         if self.is_pyproject:
             if "tool" not in self.toml_doc:
-                self.toml_doc["tool"] = {}
+                self.toml_doc["tool"] = {"harlequin": {}}
+            elif "harlequin" not in self.toml_doc["tool"]:  # type: ignore
+                self.toml_doc["tool"]["harlequin"] = {}  # type: ignore
             self.toml_doc["tool"]["harlequin"].update(config)  # type: ignore
         else:
-            self.toml_doc.update(self.relevant_config)
+            self.toml_doc.update(config)
 
     def write(self) -> None:
         """

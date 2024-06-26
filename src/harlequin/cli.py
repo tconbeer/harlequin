@@ -124,7 +124,15 @@ def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None
 def _keys_app_callback(ctx: click.Context, param: Any, value: bool) -> None:
     if not value or ctx.resilient_parsing:
         return
-    app = HarlequinKeys(theme=ctx.params.get("theme", None))
+    profile_name = ctx.params.get("profile", None)
+    if profile_name == "None":
+        profile_name = None
+    app = HarlequinKeys(
+        theme=ctx.params.get("theme", None),
+        config_path=ctx.params.get("config_path", None),
+        profile_name=profile_name,
+        keymap_name=ctx.params.get("keymap_name", None),
+    )
     app.run()
     ctx.exit(0)
 
