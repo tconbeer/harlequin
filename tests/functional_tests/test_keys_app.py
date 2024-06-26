@@ -53,18 +53,23 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Enter Key Modal"))
 
         await pilot.press("f3")
+        await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3"))
 
         await pilot.press("tab", "tab", "enter", "f4")
+        await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3 and f4"))
 
         await pilot.press("shift+tab", "enter")
+        await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f4 removed"))
 
         await pilot.press("tab", "tab", "tab", "tab", "enter")
+        await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
+        await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Quit modal"))
 
         await pilot.press("f", "o", "o", "tab", "tab", "tab", "enter")

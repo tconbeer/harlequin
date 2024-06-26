@@ -301,7 +301,7 @@ class EditModal(ModalScreen):
         self.dismiss(result=self.binding)
 
     def action_submit(self) -> None:
-        keys = ",".join({btn.key for btn in self.query(EditButton)})
+        keys = ",".join(sorted({btn.key for btn in self.query(EditButton)}))
         key_display: str | None = self.query_one(
             "#key_display_input", expect_type=Input
         ).value
