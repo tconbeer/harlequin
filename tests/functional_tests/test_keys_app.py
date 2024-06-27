@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -58,6 +59,7 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Edit Modal: f3"))
 
         await pilot.press("tab", "tab", "enter", "f4")
+        await pilot.pause()
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3 and f4"))
 
@@ -70,9 +72,17 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
+        # the quit modal should now be visible. We make some tweaks so tests
+        # pass consistently
         input_widgets = app.query(Input)
         for widget in input_widgets:
             widget.cursor_blink = False  # prevent flaky tests
+        path_input = app.query_one("#path_input", expect_type=Input)
+        assert path_input.value == str(target_path)
+        if sys.platform == "win32":
+            # on windows the path will use backslashes, which makes
+            # the snapshot fail. Use forward slashes instead.
+            path_input.value = target_path.as_posix()
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Quit modal"))
 
