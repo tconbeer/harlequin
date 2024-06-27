@@ -4,15 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.22.0] - 2024-06-27
+
 ### Features
 
--   Harlequin now loads key bindings from keymap plug-ins, and accepts a `--keymap_name` CLI option to specify a keymap to be loaded. This option can be repeated to load (and merge) multiple keymaps.
--   Harlequin now also loads key bindings from keymaps configured in Harlequin config files or `pyproject.toml` files. To merge user-defined keymaps with keymap plug-ins, repeat the `--keymap-name` option. For example: `--keymap-name vscode --keymap-name my_custom_keymap`. For more information on user-defined keymaps, see Harlequin's [docs](https://harlequin.sh/docs/bindings).
--   Harlequin ships with a new app for creating keymaps to customize keybindings. You can run it with `harlequin --keys`. The new app will load any existing keymap config and allow you to edit individual bindings. On quitting the app, it will write the new keymap to a file, so you can use it the next time you start Harlequin.
+- Harlequin now loads key bindings from keymap plug-ins, and accepts a `--keymap_name` CLI option to specify a keymap to be loaded. This option can be repeated to load (and merge) multiple keymaps.
+- Harlequin now also loads key bindings from keymaps configured in Harlequin config files or `pyproject.toml` files. To merge user-defined keymaps with keymap plug-ins, repeat the `--keymap-name` option. For example: `--keymap-name vscode --keymap-name my_custom_keymap`. For more information on user-defined keymaps, see Harlequin's [docs](https://harlequin.sh/docs/bindings).
+- Harlequin ships with a new app for creating keymaps to customize keybindings. You can run it with `harlequin --keys`. The new app will load any existing keymap config and allow you to edit individual bindings. On quitting the app, it will write the new keymap to a file, so you can use it the next time you start Harlequin.
 
 ### Changed
 
--   The default key bindings have been refactored to a plug-in in a separate package (`harlequin_vscode`) that is distributed with Harlequin.
+- The default key bindings have been refactored to a plug-in in a separate package (`harlequin_vscode`) that is distributed with Harlequin.
 
 ## [1.21.0] - 2024-06-17
 
@@ -656,7 +658,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.21.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.22.0...HEAD
+[1.22.0]: https://github.com/tconbeer/harlequin/compare/1.21.0...1.22.0
 [1.21.0]: https://github.com/tconbeer/harlequin/compare/1.20.0...1.21.0
 [1.20.0]: https://github.com/tconbeer/harlequin/compare/1.19.0...1.20.0
 [1.19.0]: https://github.com/tconbeer/harlequin/compare/1.18.0...1.19.0
