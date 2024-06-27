@@ -1,7 +1,6 @@
 from typing import List, Tuple, Union
 
 from rich.markup import escape
-from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -12,8 +11,10 @@ from textual.widgets import (
 from textual_fastdatatable import DataTable
 from textual_fastdatatable.backend import AutoBackendType
 
+from harlequin.messages import WidgetMounted
 
-class ResultsTable(DataTable):
+
+class ResultsTable(DataTable, inherit_bindings=False):
     DEFAULT_CSS = """
         ResultsTable {
             height: 100%;
@@ -21,13 +22,11 @@ class ResultsTable(DataTable):
         }
     """
 
+    def on_mount(self) -> None:
+        self.post_message(WidgetMounted(widget=self))
+
 
 class ResultsViewer(TabbedContent, can_focus=True):
-    BINDINGS = [
-        Binding("j", "switch_tab(-1)", "Previous Tab", show=False),
-        Binding("k", "switch_tab(1)", "Next Tab", show=False),
-    ]
-
     BORDER_TITLE = "Query Results"
 
     def __init__(
@@ -43,6 +42,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         self.query_one(Tabs).can_focus = False
         self.add_class("hide-tabs")
         self.max_col_width = self._get_max_col_width()
+        self.post_message(WidgetMounted(widget=self))
 
     def clear_all_tables(self) -> None:
         self.clear_panes()
@@ -150,6 +150,14 @@ class ResultsViewer(TabbedContent, can_focus=True):
             new_tab_number = unsafe_tab_number
         self.active = f"tab-{new_tab_number}"
         self._focus_on_visible_table()
+
+    def action_focus_data_catalog(self) -> None:
+        if hasattr(self.app, "action_focus_data_catalog"):
+            self.app.action_focus_data_catalog()
+
+    def action_focus_query_editor(self) -> None:
+        if hasattr(self.app, "action_focus_query_editor"):
+            self.app.action_focus_query_editor()
 
     def _focus_on_visible_table(self) -> None:
         maybe_table = self.get_visible_table()

@@ -1,0 +1,534 @@
+/* VARIABLES */
+$border-color-nofocus: $panel;
+$border-title-color-nofocus: $panel;
+$border-color-focus: $primary;
+$border-title-color-focus: $primary;
+
+/* ALL WIDGETS */
+DataCatalog,
+EditorCollection,
+ResultsViewer,
+Lazy {
+    border: round $border-color-nofocus;
+    border-title-color: $border-title-color-nofocus;
+    background: $background;
+}
+
+LoadingIndicator {
+    background: $background;
+}
+
+DataCatalog:focus-within,
+EditorCollection:focus-within,
+ResultsViewer:focus-within,
+HistoryScreen VerticalScroll:focus,
+HistoryScreen OptionList:focus,
+ {
+    border: round $border-color-focus;
+    border-title-color: $border-title-color-focus;
+}
+
+CodeEditor:disabled,
+Container:disabled,
+DataCatalog:disabled,
+EditorCollection:disabled,
+ResultsViewer:disabled,
+ResultsTable:disabled,
+RunQueryBar:disabled,
+Vertical:disabled {
+    width: 0;
+    height: 0;
+    padding: 0 0;
+    border: none;
+}
+
+Lazy {
+    background: $background;
+    color: $background;
+    display: block;
+    height: 1fr;
+    width: 100%;
+}
+
+/* DATA CATALOG */
+DataCatalog {
+    height: 1fr;
+    width: 1fr;
+}
+
+DataCatalog DatabaseTree,
+DataCatalog FileTree,
+DataCatalog S3Tree {
+    background: $background;
+    padding: 0 1;
+}
+
+DataCatalog * .tree--guides {
+    color: $primary;
+}
+
+DataCatalog * .tree--guides-hover {
+    color: $primary;
+}
+
+DataCatalog * .tree--guides-selected {
+    color: $secondary;
+}
+
+DataCatalog * .directory-tree--folder {
+    text-style: bold;
+}
+
+DataCatalog * .directory-tree--hidden {
+    text-style: italic;
+    color: $text-muted;
+}
+
+/* RIGHT HAND CONTAINER */
+#main_panel {
+    width: 3fr;
+}
+
+CodeEditor,
+EditorCollection {
+    height: 1fr;
+    width: 100%;
+}
+
+CompletionList {
+    background: $background-lighten-2 ;
+}
+CompletionList:focus {
+    border: none;
+}
+CompletionList > .option-list--option-highlighted {
+    color: $text;
+    background: $secondary;
+    text-style: bold;
+}
+
+/* RUN QUERY BAR */
+RunQueryBar {
+    height: 1;
+    width: 100%;
+    padding: 0 2 0 0;
+    background: $background;
+}
+
+RunQueryBar Horizontal#transaction_buttons {
+    width: auto;
+}
+
+RunQueryBar Horizontal#run_buttons {
+    width: 1fr;
+    align-horizontal: right;
+}
+
+RunQueryBar Input {
+    border: none;
+    padding: 0;
+    width: 7;
+    background: $background;
+}
+
+RunQueryBar Input.-invalid {
+    border: none;
+    color: $error
+}
+
+Tooltip {
+    border: round $border-color-focus;
+    background: $background;
+    padding: 0 1;
+}
+
+RunQueryBar Button {
+    border: none;
+    height: 1;
+}
+
+RunQueryBar Button#run_query {
+    background: $primary;
+    margin: 0 0 0 4;
+}
+
+RunQueryBar Button#run_query:hover {
+    background: $secondary;
+}
+
+RunQueryBar Button#run_query:focus {
+    text-style: reverse;
+}
+
+RunQueryBar Button#transaction_button,
+RunQueryBar Button#commit_button,
+RunQueryBar Button#rollback_button {
+    background: $background;
+    text-style: none;
+    margin: 0 0 0 0;
+}
+
+RunQueryBar Button#commit_button,
+RunQueryBar Button#rollback_button {
+    width: auto;
+    min-width: 3;
+}
+
+RunQueryBar Button#commit_button {
+    color: $primary;
+}
+
+RunQueryBar Button#rollback_button {
+    color: $error;
+}
+
+RunQueryBar Button#transaction_button.hidden,
+RunQueryBar Button#commit_button.hidden,
+RunQueryBar Button#rollback_button.hidden, {
+    display: none;
+}
+
+RunQueryBar Button#transaction_button:hover,
+RunQueryBar Button#commit_button:hover,
+RunQueryBar Button#rollback_button:hover, {
+    color: $secondary;
+}
+
+RunQueryBar Button#run_query:focus {
+    text-style: reverse;
+}
+
+RunQueryBar Checkbox {
+    border: none;
+    padding: 0;
+    background: $background;
+}
+
+RunQueryBar Checkbox:focus > .toggle--label {
+    text-style: none;
+}
+
+RunQueryBar Checkbox > .toggle--button {
+    background: $panel
+}
+
+RunQueryBar Checkbox:hover {
+    # background: $background-lighten-1;
+    text-style: none;
+}
+
+RunQueryBar Checkbox:hover > .toggle--button {
+    background: $secondary;
+}
+
+RunQueryBar Checkbox.-on > .toggle--button {    
+    color: $accent;
+    background: $background-lighten-1
+}
+
+RunQueryBar Checkbox.-on:hover > .toggle--button {
+    background: $secondary;
+}
+
+RunQueryBar Input:hover,
+RunQueryBar Input:focus {
+    background: $background-lighten-1;
+}
+
+RunQueryBar Input {
+    background: $background;
+}
+
+RunQueryBar.non-responsive Checkbox, 
+RunQueryBar.non-responsive Button, 
+RunQueryBar.non-responsive Input {
+    text-style: italic;
+    background: $background;
+}
+
+/* RESULTS VIEWER */
+
+TabbedContent,
+TabPane {
+    height: 1fr;
+    width: 1fr;
+}
+
+.hide-tabs Tabs {
+    height: 0;
+}
+
+TabPane {
+    padding: 0;
+}
+
+ResultsViewer.non-responsive {
+    border: round $panel-lighten-1;
+}
+
+ResultsTable > .datatable--header {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+ResultsTable > .datatable--cursor {
+    background: $secondary;
+    color: auto;
+}
+
+ResultsTable > .datatable--header-hover {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+ResultsTable > .datatable--hover {
+    color: $text;
+    background: $boost;
+}
+
+/* ERROR MODAL */
+ErrorModal {
+    align: center middle;
+    padding: 0;
+}
+
+#error_outer {
+    border: round $error;
+    background: $background;
+    margin: 5 10;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#error_header {
+    dock: top;
+    color: $text-muted;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+#error_inner {
+    border: round $border-color-nofocus ;
+    padding: 1 1 1 2;
+}
+
+ClickableStatic {
+    padding: 0 3 0 0;
+}
+
+ClickableStatic:hover {
+    color: $primary;
+}
+
+#error_footer {
+    dock: bottom;
+    color: $text-muted;
+    margin: 1 0 0 0;
+    padding: 0 1;
+}
+
+/* HELP SCREEN */
+HelpScreen {
+    align: center middle;
+    padding: 0;
+}
+
+#help_outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#help_header {
+    dock: top;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+#help_inner {
+    border: round $border-color-nofocus;
+    padding: 0 0 0 0;
+}
+
+#help_info {
+    padding: 0 0 0 0;
+}
+
+#help_footer {
+    dock: bottom;
+    color: $text-muted;
+    margin: 1 0 0 0;
+    padding: 0 1;
+}
+
+/* Export Screen */
+ExportScreen {
+    align: center middle;
+    padding: 0;
+}
+
+#export_outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#export_header {
+    padding: 0 1;
+}
+
+#path_input {
+    margin: 1 0 0 0;
+}
+
+#validation_label {
+    color: $error;
+    text-style: italic;
+    margin: 0 0 0 3;
+}
+
+ExportScreen #validation_label {
+    height: 1;
+}
+
+ExportScreen .option_row {
+    height: 3;
+    margin: 1 1 0 0;
+}
+
+ExportScreen Horizontal Label {
+    height: 1;
+    text-align: right;
+    width: 20;
+}
+
+.select_label, .switch_label, .input_label {
+    margin: 1 2 0 1;
+}
+
+ExportScreen Horizontal Select {
+    width: 41; /* off by one!? */
+    padding: 0;
+    margin: 0;
+}
+
+ExportScreen Horizontal Select > SelectCurrent {
+    width: 40;
+    background: transparent;
+    border: round $border-color-nofocus;
+    margin: 0 0 0 0;
+}
+
+ExportScreen Horizontal Select:focus-within > SelectCurrent {
+    border: round $border-color-focus;
+}
+
+ExportScreen Horizontal Select > SelectOverlay {
+    width: 40;
+    border: round $border-color-focus;
+    background: transparent;
+}
+
+ExportScreen Input {
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+ExportScreen Input:focus {
+    border: round $border-color-focus;
+}
+
+ExportScreen Horizontal Input {
+    width: 40;
+}
+
+ExportScreen Switch:hover {
+    border: tall transparent;
+}
+
+ExportScreen Switch:focus:hover {
+    border: tall $border-color-focus;
+}
+
+ExportScreen Switch.-on > .switch--slider {
+    color: $primary;
+    border: tall transparent;
+}
+
+CopyOptionsMenu {
+    height: auto;
+}
+
+#export_button_row {
+    height: auto;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+ExportScreen Button {
+    background: $primary;
+    height: 3;
+    margin: 0 6;
+    border: none;
+}
+
+ExportScreen Button:focus {
+    text-style: reverse;
+}
+
+#cancel{
+    background: $panel;
+}
+
+ExportScreen Button:hover,
+#cancel:hover {
+    background: $secondary;
+}
+
+/* HISTORY SCREEN */
+
+HistoryScreen VerticalScroll {
+    background: $background;
+    border: round $border-color-nofocus;
+    width: 1fr;
+    height: 100%;
+}
+
+HistoryScreen VerticalScroll Static {
+    background: $background;
+    width: 100%;
+    height: auto;
+    padding: 0 1 0 0;
+}
+
+HistoryScreen OptionList {
+    background: $background;
+    border: round $border-color-nofocus;
+    width: 1fr;
+    height: 100%;
+    padding: 0;
+}
+
+HistoryScreen OptionList > .option-list--option-highlighted {
+    background: $secondary;
+    color: auto;
+    text-style: none;
+}
+
+
+HistoryScreen OptionList > .option-list--option-hover {
+    color: $text;
+    background: $boost;
+}
+
+HistoryScreen OptionList > .option-list--option-hover-highlighted {
+    background: $secondary;
+    color: auto;
+    text-style: none;
+}

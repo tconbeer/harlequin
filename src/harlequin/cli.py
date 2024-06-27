@@ -18,9 +18,10 @@ from harlequin.exception import (
     HarlequinTzDataError,
     pretty_print_error,
 )
+from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
-from harlequin.plugins import load_plugins
+from harlequin.plugins import load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
 if sys.version_info < (3, 10):
@@ -32,6 +33,7 @@ else:
 DEFAULT_ADAPTER = "duckdb"
 DEFAULT_LIMIT = 100_000
 DEFAULT_THEME = "harlequin"
+DEFAULT_KEYMAP_NAMES = ["vscode"]
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -75,6 +77,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--show-files",
                 "--show-s3",
                 "--theme",
+                "--keymap-name",
                 "--limit",
                 "--config",
                 "--config-path",
@@ -118,6 +121,22 @@ def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None
     ctx.exit(0)
 
 
+def _keys_app_callback(ctx: click.Context, param: Any, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    profile_name = ctx.params.get("profile", None)
+    if profile_name == "None":
+        profile_name = None
+    app = HarlequinKeys(
+        theme=ctx.params.get("theme", None),
+        config_path=ctx.params.get("config_path", None),
+        profile_name=profile_name,
+        keymap_name=ctx.params.get("keymap_name", None),
+    )
+    app.run()
+    ctx.exit(0)
+
+
 def build_cli() -> click.Command:
     """
     Loads installed adapters and constructs a click Command that includes options
@@ -125,7 +144,7 @@ def build_cli() -> click.Command:
 
     Returns: click.Command
     """
-    adapters = load_plugins()
+    adapters = load_adapter_plugins()
 
     @click.command()
     @click.version_option(package_name="harlequin", message=_version_option())
@@ -210,6 +229,17 @@ def build_cli() -> click.Command:
         ),
     )
     @click.option(
+        "--keymap-name",
+        help=(
+            "The name of a keymap plugin to load. Repeat this option to load "
+            "multiple keymaps. Keymaps listed last will override earlier ones. "
+            "For example, to tweak the default keymap, use '--keymap-name vscode "
+            "--keymap-name my_keys'"
+        ),
+        multiple=True,
+        default=DEFAULT_KEYMAP_NAMES,
+    )
+    @click.option(
         "--config",
         help=(
             "Run the configuration wizard to create or update a Harlequin "
@@ -218,7 +248,15 @@ def build_cli() -> click.Command:
         is_flag=True,
         callback=_config_wizard_callback,
         expose_value=True,
-        # is_eager=True,
+    )
+    @click.option(
+        "--keys",
+        help=(
+            "Run the key binding config app to create or update a Harlequin " "keymap."
+        ),
+        is_flag=True,
+        callback=_keys_app_callback,
+        expose_value=True,
     )
     @click.option(
         "--locale",
@@ -251,7 +289,9 @@ def build_cli() -> click.Command:
         """
         # load config from any config files
         try:
-            config = get_config_for_profile(config_path=config_path, profile=profile)
+            config, user_defined_keymaps = get_config_for_profile(
+                config_path=config_path, profile_name=profile
+            )
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -261,7 +301,7 @@ def build_cli() -> click.Command:
         for k in params:
             if (
                 ctx.get_parameter_source(k)
-                == click.core.ParameterSource.DEFAULT  # type: ignore
+                == click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
             ):
                 kwargs.pop(k)
             # conn_str is an arg, not an option, so get_paramter_source is always CLI
@@ -269,7 +309,7 @@ def build_cli() -> click.Command:
                 kwargs.pop(k)
 
         # merge the config and the cli options
-        config.update(kwargs)
+        config.update(kwargs)  # type: ignore[typeddict-item]
 
         # detect and install (if necessary) a tzdatabase on Windows
         if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
@@ -281,7 +321,7 @@ def build_cli() -> click.Command:
 
         # set the locale so we display numbers properly. Empty string uses system
         # default
-        locale_config: str = config.pop("locale", "")  # type: ignore
+        locale_config: str = config.pop("locale", "")
         try:
             set_locale(locale_config)
         except HarlequinLocaleError as e:
@@ -289,12 +329,15 @@ def build_cli() -> click.Command:
             ctx.exit(2)
 
         # remove the harlequin config from the options passed to the adapter
-        conn_str: Sequence[str] = config.pop("conn_str", tuple())  # type: ignore
+        conn_str: Sequence[str] = config.pop("conn_str", tuple())
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
-        max_results: str | int = config.pop("limit", DEFAULT_LIMIT)  # type: ignore
-        theme: str = config.pop("theme", DEFAULT_THEME)  # type: ignore
-        show_files: Path | str | None = config.pop("show_files", None)  # type: ignore
+        max_results: str | int = config.pop("limit", DEFAULT_LIMIT)
+        theme: str = config.pop("theme", DEFAULT_THEME)
+        keymap_names: list[str] = config.pop("keymap_name", DEFAULT_KEYMAP_NAMES)
+        if isinstance(keymap_names, str):
+            keymap_names = [keymap_names]
+        show_files: Path | str | None = config.pop("show_files", None)
         if show_files is not None:
             try:
                 show_files = Path(show_files)
@@ -303,19 +346,21 @@ def build_cli() -> click.Command:
                     HarlequinConfigError(msg=str(e), title="Harlequin Config Error")
                 )
                 ctx.exit(2)
-        show_s3: str | None = config.pop("show_s3", None)  # type: ignore
+        show_s3: str | None = config.pop("show_s3", None)
 
         # load and instantiate the adapter
-        adapter: str = config.pop("adapter", DEFAULT_ADAPTER)  # type: ignore
+        adapter: str = config.pop("adapter", DEFAULT_ADAPTER)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]
         try:
-            adapter_instance = adapter_cls(conn_str=conn_str, **config)
+            adapter_instance = adapter_cls(conn_str=conn_str, **config)  # type: ignore[misc]
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
 
         tui = Harlequin(
             adapter=adapter_instance,
+            keymap_names=keymap_names,
+            user_defined_keymaps=user_defined_keymaps,
             connection_hash=get_connection_hash(conn_str, config),
             max_results=max_results,
             theme=theme,
@@ -345,7 +390,7 @@ def build_cli() -> click.Command:
 
     fn = inner_cli
     for option in options.values():
-        fn = option.to_click()(fn)  # type: ignore
+        fn = option.to_click()(fn)  # type: ignore[assignment]
 
     return fn
 

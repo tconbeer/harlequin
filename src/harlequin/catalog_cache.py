@@ -6,7 +6,7 @@ import pickle
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from platformdirs import user_cache_dir
 
@@ -52,7 +52,7 @@ class CatalogCache:
         return self.s3.get(cache_key, None)
 
 
-def get_connection_hash(conn_str: Sequence[str], config: dict[str, Any]) -> str:
+def get_connection_hash(conn_str: Sequence[str], config: Mapping[str, Any]) -> str:
     return (
         hashlib.md5(
             json.dumps(

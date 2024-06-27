@@ -123,6 +123,7 @@ async def test_transaction_button(
         assert app.connection.transaction_mode.label == "Auto"
         snap_results.append(await app_snapshot(app, "Initialize with Tx: Auto"))
         await pilot.click("#transaction_button")
+        await pilot.wait_for_animation()
         assert app.connection.transaction_mode
         assert app.connection.transaction_mode.label == "Manual"
         assert app.connection.transaction_mode.commit is not None

@@ -1,0 +1,330 @@
+/* VARIABLES */
+$border-color-nofocus: $panel;
+$border-title-color-nofocus: $panel;
+$border-color-focus: $primary;
+$border-title-color-focus: $primary;
+
+
+Static#instructions {
+    background: $background;
+    width: 1fr;
+    height: auto;
+    padding: 0 2;
+}
+
+Input {
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+Input:focus {
+    border: round $border-color-focus;
+}
+
+DataTable {
+    height: 1fr;
+    width: 100%;
+    border: round $border-color-nofocus;
+}
+DataTable:focus{
+    border: round $border-color-focus;
+}
+DataTable > .datatable--header {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+DataTable > .datatable--cursor {
+    background: $panel;
+    color: auto;
+}
+
+DataTable:focus > .datatable--cursor {
+    background: $secondary;
+}
+
+DataTable > .datatable--header-hover {
+    text-style: bold;
+    background: $background;
+    color: $primary;
+}
+
+DataTable > .datatable--hover {
+    color: $text;
+    background: $boost;
+}
+
+/* EditModal */
+
+EditModal {
+    align: center middle;
+    padding: 0;
+}
+
+EditModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    height: auto;
+    max-height: 30;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 60;
+    overflow-y: auto
+}
+
+EditModal Static#instructions {
+    padding: 0 3 2 3;
+}
+
+EditModal Horizontal.option_row {
+    height: 3;
+    margin: 0 1 0 0;
+    padding: 0 2;
+}
+
+EditModal Horizontal.option_row NoFocusLabel {
+    height: 1;
+    text-align: right;
+    width: 12;
+    margin: 1 2 0 1;
+}
+
+EditModal Horizontal.option_row Input {
+    width: 1fr;
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+EditModal Horizontal.option_row Input:focus {
+    border: round $secondary;
+}
+
+EditModal Horizontal.option_row EditButton {
+    background: $background;
+    border: none;
+    border: round $border-color-nofocus;
+    # padding: 1 1;
+    margin: 0 2;
+    min-width: 20;
+    text-style: none;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+
+EditModal Horizontal.option_row AddButton {
+    background: $background;
+    border: round $border-color-nofocus;
+    # padding: 1 1;
+    margin: 0 2;
+    min-width: 20;
+    text-style: none;
+    color: $panel;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+        color: $secondary;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+        color: $secondary;
+    }
+}
+
+
+EditModal Horizontal.option_row RemoveButton {
+    background: $background;
+    border: none;
+    border: round $border-color-nofocus;
+    # padding: 1 1;
+    margin: 0 2;
+    min-width: 3;
+    text-style: none;
+    color: $error;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+/* Save and Cancel buttons */
+
+EditModal Horizontal#button_row {
+    height: auto;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+EditModal Horizontal#button_row Button {
+    background: $primary;
+    height: 3;
+    margin: 0 6;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+EditModal Horizontal#button_row Button#cancel{
+    background: $panel;
+    &:hover {
+        background: $secondary;
+    }
+}
+
+
+/* InputModal */
+
+InputModal {
+    align: center middle;
+    padding: 0;
+}
+
+InputModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    align: center middle;
+    height: 7;
+    padding: 1 2;
+    max-width: 48;
+}
+
+/* QuitModal */
+
+QuitModal {
+    align: center middle;
+    padding: 0;
+}
+
+QuitModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    height: auto;
+    max-height: 30;
+    max-width: 88;
+}
+
+QuitModal Horizontal.option_row {
+    height: 4;
+    margin: 1 1 0 0;
+    padding: 0 2;
+}
+
+QuitModal Horizontal.option_row NoFocusLabel {
+    height: 1;
+    text-align: right;
+    width: 12;
+    margin: 1 2 0 1;
+}
+
+QuitModal Horizontal.option_row Label.validation-label {
+    color: $error;
+}
+
+QuitModal Horizontal.option_row Input {
+    width: 1fr;
+    border: round $border-color-nofocus;
+    background: transparent;
+}
+
+QuitModal Horizontal.option_row Input:focus {
+    border: round $secondary;
+}
+
+QuitModal Horizontal.option_row EditButton, 
+QuitModal Horizontal.option_row AddButton {
+    background: $background;
+    border: none;
+    padding: 1 1;
+    margin: 0 2;
+    min-width: 20;
+    text-style: none;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+
+
+QuitModal Horizontal.option_row RemoveButton {
+    background: $background;
+    border: none;
+    padding: 1 1;
+    margin: 0 2;
+    min-width: 3;
+    text-style: none;
+    color: $error;
+    &:hover {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+    &:focus {
+        border: round $secondary;
+        padding: 0 0;
+        text-style: bold;
+    }
+}
+/* Save and Cancel buttons */
+
+QuitModal Horizontal#button_row {
+    height: auto;
+    align: center bottom;
+    margin: 2 0 1 0;
+}
+
+QuitModal Horizontal#button_row Button {
+    background: $primary;
+    height: 3;
+    margin: 0 6;
+    padding: 0 1;
+    min-width: 16;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+QuitModal Horizontal#button_row Button#discard{
+    background: $error;
+    &:hover {
+        background: $secondary;
+    }
+}
+
+QuitModal Horizontal#button_row Button#cancel{
+    background: $panel;
+    &:hover {
+        background: $secondary;
+    }
+}

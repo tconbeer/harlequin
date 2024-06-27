@@ -25,7 +25,9 @@ def no_use_catalog_cache(
 
 @pytest.fixture(autouse=True)
 def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("harlequin.cli.get_config_for_profile", lambda **_: dict())
+    monkeypatch.setattr(
+        "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
+    )
 
 
 @pytest.fixture

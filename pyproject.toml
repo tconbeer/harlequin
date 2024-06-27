@@ -11,6 +11,7 @@ packages = [
     { include = "harlequin", from = "src" },
     { include = "harlequin_duckdb", from = "src" },
     { include = "harlequin_sqlite", from = "src" },
+    { include = "harlequin_vscode", from = "src" },
 ]
 
 [build-system]
@@ -34,7 +35,6 @@ duckdb = ">=0.8.0"
 shandy-sqlfmt = ">=0.19.0"
 platformdirs = ">=3.10,<5.0"
 importlib_metadata = { version = ">=4.6.0", python = "<3.10.0" }
-tomli = { version = "^2.0.1", python = "<3.11.0" }
 tomlkit = "^0.12.3"
 questionary = "^2.0.1"
 
@@ -103,6 +103,9 @@ nebulagraph = ["harlequin-nebulagraph"]
 duckdb = "harlequin_duckdb:DuckDbAdapter"
 sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 
+[tool.poetry.plugins."harlequin.keymap"]
+vscode = "harlequin_vscode:VSCODE"
+
 [tool.poetry.plugins."pygments.styles"]
 harlequin = "harlequin.colors:HarlequinPygmentsStyle"
 
@@ -118,7 +121,7 @@ files = [
     "src/**/*.py",
     "tests/**/*.py",
 ]
-mypy_path = "src:stubs"
+mypy_path = "stubs"
 
 show_column_numbers = true
 

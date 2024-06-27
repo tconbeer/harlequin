@@ -10,6 +10,7 @@ from harlequin.config import (
     load_config,
 )
 from harlequin.exception import HarlequinConfigError
+from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
@@ -23,27 +24,75 @@ def test_load_config(data_dir: Path, filename: str) -> None:
     expected_profiles = ["my-duckdb-profile", "local-postgres"]
     assert all(name in good_config["profiles"] for name in expected_profiles)
     assert all(
-        isinstance(good_config["profiles"][name], dict) for name in expected_profiles  # type: ignore
+        isinstance(good_config["profiles"][name], dict) for name in expected_profiles
     )
-    assert good_config["profiles"]["my-duckdb-profile"]["limit"] == 200_000  # type: ignore
+    assert good_config["profiles"]["my-duckdb-profile"]["limit"] == 200_000
+
+
+def test_load_keymap(data_dir: Path) -> None:
+    good_config_path = data_dir / "unit_tests" / "config" / "keymaps.toml"
+    keymap_name = "more_arrows"
+    good_config = load_config(config_path=good_config_path)
+    assert isinstance(good_config, dict)
+    assert "keymaps" in good_config
+    assert isinstance(good_config["keymaps"], dict)
+    assert keymap_name in good_config["keymaps"]
+    assert isinstance(good_config["keymaps"][keymap_name], list)
+    assert isinstance(good_config["keymaps"][keymap_name][0], dict)
+    assert all(
+        [
+            k in good_config["keymaps"][keymap_name][0]
+            for k in ["keys", "action", "key_display"]
+        ]
+    )
+
+    _, keymaps = get_config_for_profile(config_path=good_config_path, profile_name=None)
+    assert len(keymaps) == 1
+    assert isinstance(keymaps[0], HarlequinKeyMap)
+    assert keymaps[0].name == keymap_name
+    assert len(keymaps[0].bindings) == 4
+    assert isinstance(keymaps[0].bindings[0], HarlequinKeyBinding)
+
+
+@pytest.mark.parametrize(
+    "filename,key_words",
+    [
+        ("keymaps_bad_binding.toml", ["Key bindings", "foo"]),
+    ],
+)
+def test_load_bad_keymap_raises(
+    data_dir: Path,
+    filename: str,
+    key_words: list[str],
+) -> None:
+    config_path = data_dir / "unit_tests" / "config" / filename
+    with pytest.raises(HarlequinConfigError) as exc_info:
+        _ = get_config_for_profile(config_path=config_path, profile_name=None)
+    err = exc_info.value
+    print(err)
+    assert isinstance(err, HarlequinConfigError)
+    assert "keymap" in err.title
+    assert all([w in err.msg for w in key_words])
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
 def test_load_named_profile(data_dir: Path, filename: str) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / filename
-    config = get_config_for_profile(
-        config_path=good_config_path, profile="local-postgres"
+    profile, keymaps = get_config_for_profile(
+        config_path=good_config_path, profile_name="local-postgres"
     )
-    assert config["port"] == 5432
-    assert config["theme"] == "fruity"
+    assert profile["port"] == 5432  # type: ignore[typeddict-item]
+    assert profile["theme"] == "fruity"
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
 def test_load_default_profile(data_dir: Path, filename: str) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / filename
-    config = get_config_for_profile(config_path=good_config_path, profile=None)
-    assert config["adapter"] == "duckdb"
-    assert config["theme"] == "monokai"
+    profile, keymaps = get_config_for_profile(
+        config_path=good_config_path, profile_name=None
+    )
+    assert profile["adapter"] == "duckdb"
+    assert profile["theme"] == "monokai"
 
 
 @pytest.mark.parametrize(
@@ -52,10 +101,11 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
         ("default_no_exist.toml", ["default_profile", "foo"]),
         ("extra_key.toml", ["unexpected key"]),
         ("none_profile.toml", ["None", "not allowed"]),
-        ("not_toml.toml", ["TOML"]),
+        ("not_toml.toml", ["Attempted to load"]),
         ("profiles_not_table.toml", ["profiles", "key", "table"]),
         ("profile_not_table.toml", ["members", "profiles", "table"]),
         ("bad_option_name.toml", ["option", "invalid", "read-only", "read_only"]),
+        ("keymaps_not_array.toml", ["keymaps", "array"]),
     ],
 )
 def test_bad_config_raises(
