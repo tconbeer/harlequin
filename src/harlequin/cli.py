@@ -79,10 +79,16 @@ click.rich_click.OPTION_GROUPS = {
                 "--theme",
                 "--keymap-name",
                 "--limit",
-                "--config",
                 "--config-path",
                 "--locale",
                 "--no-download-tzdata",
+            ],
+        },
+        {
+            "name": "Mini Apps",
+            "options": [
+                "--config",
+                "--keys",
                 "--version",
                 "--help",
             ],
