@@ -113,6 +113,14 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         else:
             self.text_input.selection = old_selection
 
+    def action_focus_results_viewer(self) -> None:
+        if hasattr(self.app, "action_focus_results_viewer"):
+            self.app.action_focus_results_viewer()
+
+    def action_focus_data_catalog(self) -> None:
+        if hasattr(self.app, "action_focus_data_catalog"):
+            self.app.action_focus_data_catalog()
+
     @property
     def _semicolons(self) -> list[tuple[int, int]]:
         semicolons: list[tuple[int, int]] = []

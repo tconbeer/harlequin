@@ -187,6 +187,13 @@ HARLEQUIN_ACTIONS = {
     "code_editor.delete_to_end_of_line": Action(
         target=TextAreaPlus, action="delete_to_end_of_line"
     ),
+    # Scoped duplicates of app actions
+    "code_editor.focus_results_viewer": Action(
+        target=EditorCollection, action="focus_results_viewer"
+    ),
+    "code_editor.focus_data_catalog": Action(
+        target=EditorCollection, action="focus_data_catalog"
+    ),
     # TODO: ADD AUTOCOMPLETE BINDINGS
     #######################################################
     # DataCatalog ACTIONS
@@ -207,6 +214,13 @@ HARLEQUIN_ACTIONS = {
     "data_catalog.toggle_node": Action(target=HarlequinTree, action="toggle_node"),
     "data_catalog.cursor_up": Action(target=HarlequinTree, action="cursor_up"),
     "data_catalog.cursor_down": Action(target=HarlequinTree, action="cursor_down"),
+    # Scoped duplicates of app actions
+    "data_catalog.focus_query_editor": Action(
+        target=DataCatalog, action="focus_query_editor"
+    ),
+    "data_catalog.focus_results_viewer": Action(
+        target=DataCatalog, action="focus_results_viewer"
+    ),
     #######################################################
     # ResultsViewer ACTIONS
     #######################################################
@@ -287,6 +301,13 @@ HARLEQUIN_ACTIONS = {
         target=ResultsTable, action="cursor_table_end(True)"
     ),
     "results_viewer.select_all": Action(target=ResultsTable, action="select_all"),
+    # Scoped duplicates of app actions
+    "results_viewer.focus_query_editor": Action(
+        target=ResultsViewer, action="focus_query_editor"
+    ),
+    "results_viewer.focus_data_catalog": Action(
+        target=ResultsViewer, action="focus_data_catalog"
+    ),
     #######################################################
     # HistoryScreen ACTIONS
     #######################################################

@@ -277,7 +277,7 @@ class EditModal(ModalScreen):
                 ),
                 id="instructions",
             )
-            for key in self.binding.keys.split(","):
+            for key in [key for key in self.binding.keys.split(",") if key]:
                 with Horizontal(classes="option_row"):
                     yield NoFocusLabel("Key:")
                     yield EditButton(key=key).focus()

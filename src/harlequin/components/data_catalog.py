@@ -174,6 +174,14 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.active = f"tab-{new_tab_number}"
         self.focus()
 
+    def action_focus_results_viewer(self) -> None:
+        if hasattr(self.app, "action_focus_results_viewer"):
+            self.app.action_focus_results_viewer()
+
+    def action_focus_query_editor(self) -> None:
+        if hasattr(self.app, "action_focus_query_editor"):
+            self.app.action_focus_query_editor()
+
 
 class HarlequinTree(Tree, inherit_bindings=False):
 

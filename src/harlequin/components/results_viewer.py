@@ -151,6 +151,14 @@ class ResultsViewer(TabbedContent, can_focus=True):
         self.active = f"tab-{new_tab_number}"
         self._focus_on_visible_table()
 
+    def action_focus_data_catalog(self) -> None:
+        if hasattr(self.app, "action_focus_data_catalog"):
+            self.app.action_focus_data_catalog()
+
+    def action_focus_query_editor(self) -> None:
+        if hasattr(self.app, "action_focus_query_editor"):
+            self.app.action_focus_query_editor()
+
     def _focus_on_visible_table(self) -> None:
         maybe_table = self.get_visible_table()
         if maybe_table is not None:
