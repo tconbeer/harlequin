@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Type, Union
 
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import DOMQuery
 from textual.dom import DOMNode
@@ -140,10 +139,6 @@ class Harlequin(AppBase):
     """
 
     CSS_PATH = ["global.tcss", "app.tcss"]
-
-    BINDINGS = [
-        Binding("ctrl+q", "quit", "Quit", priority=True),
-    ]
 
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
@@ -669,12 +664,14 @@ class Harlequin(AppBase):
         Binds the action/key pairs in the keymaps to the currently-mounted
         widgets in Harlequin.
         """
+        required_bindings = {"quit": "ctrl+q"}
         self.keymap_names = keymap_names
         for keymap_name in keymap_names:
             keymap = self._get_keymap(keymap_name=keymap_name)
             if keymap is None:
                 continue
             for binding in keymap.bindings:
+                required_bindings.pop(binding.action, None)
                 action = HARLEQUIN_ACTIONS[binding.action]
                 if action.target is not None:
                     targets: DOMQuery[Widget] | list[App] = self.query(action.target)
@@ -698,6 +695,21 @@ class Harlequin(AppBase):
                     except HarlequinBindingError as e:
                         pretty_print_error(e)
                         self.exit(return_code=2)
+        for action_name, key in required_bindings.items():
+            action = HARLEQUIN_ACTIONS[action_name]
+            try:
+                bind(
+                    target=self,
+                    keys=key,
+                    action=action.action,
+                    description=action.description,
+                    show=action.show,
+                    key_display=None,
+                    priority=action.priority,
+                )
+            except HarlequinBindingError as e:
+                pretty_print_error(e)
+                self.exit(return_code=2)
 
     def action_export(self) -> None:
         show_export_error = partial(

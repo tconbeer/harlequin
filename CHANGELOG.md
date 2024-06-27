@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin no longer hard-codes the `ctrl+q` binding to the Quit action (previously this could not be changed with a keymap). If your keymap does not define a binding for Quit, Harlequin will use `ctrl+q` so that you can always exit the app, even with a bad keymap.
+
 ## [1.22.0] - 2024-06-27
 
 ### Features
