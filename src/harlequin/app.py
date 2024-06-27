@@ -575,6 +575,8 @@ class Harlequin(AppBase):
         """
         for keymap_name in self.keymap_names:
             keymap = self._get_keymap(keymap_name=keymap_name)
+            if keymap is None:
+                continue
             for binding in keymap.bindings:
                 action = HARLEQUIN_ACTIONS[binding.action]
                 if action.target is not None and isinstance(
@@ -670,6 +672,8 @@ class Harlequin(AppBase):
         self.keymap_names = keymap_names
         for keymap_name in keymap_names:
             keymap = self._get_keymap(keymap_name=keymap_name)
+            if keymap is None:
+                continue
             for binding in keymap.bindings:
                 action = HARLEQUIN_ACTIONS[binding.action]
                 if action.target is not None:
@@ -1026,7 +1030,7 @@ class Harlequin(AppBase):
                 self.notify(f"Transaction rolled back in {elapsed:.2f} seconds.")
                 self.update_schema_data()
 
-    def _get_keymap(self, keymap_name: str) -> "HarlequinKeyMap":
+    def _get_keymap(self, keymap_name: str) -> "HarlequinKeyMap" | None:
         try:
             keymap = self.all_keymaps[keymap_name]
         except KeyError as e:
@@ -1036,11 +1040,13 @@ class Harlequin(AppBase):
                     HarlequinConfigError(
                         title="Could not bind keymap",
                         msg=(
-                            "Harlequin could not find an installed keymap plug-in "
-                            f"named {e}. You may need to install it before "
-                            "specifying it as an option."
+                            f"Harlequin could not find a keymap named {e}, "
+                            f"either as a plug-in or user-defined keymap. You may "
+                            "need to install it before specifying it as an option."
                         ),
                     )
                 ),
             )
+            # for some reason this doesn't exit right away...
+            keymap = None
         return keymap

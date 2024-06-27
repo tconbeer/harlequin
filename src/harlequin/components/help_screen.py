@@ -14,9 +14,8 @@ class VerticalSuppressClicks(Vertical):
 
 class HelpScreen(ModalScreen):
     header_text = """
-        Harlequin supports a number of key bindings ("shortcuts"). The list below
-        includes all of the bindings supported by components of the app.
-        You can also view this list at https://harlequin.sh/docs/bindings
+        Welcome to Harlequin! This screen contains a small subset of the online
+        docs, available at https://harlequin.sh/docs/getting-started
     """.split()
 
     def compose(self) -> ComposeResult:
@@ -34,7 +33,7 @@ class HelpScreen(ModalScreen):
 
     def on_mount(self) -> None:
         container = self.query_one("#help_outer")
-        container.border_title = "Harlequin Key Binding Reference"
+        container.border_title = "Harlequin Help"
         self.body = self.query_one("#help_inner")
 
     def on_key(self, event: events.Key) -> None:

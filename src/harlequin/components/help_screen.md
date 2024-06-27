@@ -1,114 +1,78 @@
-### General Bindings
+### Using Harlequin with DuckDB
 
-- ctrl+q: Quit Harlequin
-- F1: Show this screen.
-- F2: Focus on the Query Editor.
-- F5: Focus on the Results Viewer.
-- F6: Focus on the Data Catalog.
-- F8: Show the Query History Viewer.
-- F9, ctrl+b: Toggle the sidebar.
-- F10: Toggle full screen mode for the current widget.
-- ctrl+e: Write the returned data to a CSV, Parquet, or JSON file.
-- ctrl+r: Refresh the Data Catalog.
+Harlequin defaults to using its DuckDB database adapter.
 
+From any shell, to open one or more DuckDB database files:
 
-### Query Editor Bindings
+```bash
+harlequin "path/to/duck.db" "another_duck.db"
+```
 
-#### Actions
+To open an in-memory DuckDB session, run Harlequin with no arguments:
 
-- F4: Format the query.
-- ctrl+enter, ctrl+j: Run the query.
+```bash
+harlequin
+```
 
-- ctrl+o: Open a text file in the Query Editor.
-- ctrl+s: Save the contents of the Query Editor to a file.
+If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/duckdb-version-mismatch) page.
 
-- ctrl+n: Create a new buffer (editor tab).
-- ctrl+w: Close the current buffer (editor tab).
-- ctrl+k: View the next buffer (editor tab).
+### Using Harlequin with SQLite and Other Adapters
 
-- ctrl+g: Go to line
-- ctrl+f: Find
-- F3: Find next (like Find, but uses previous value).
+Harlequin also ships with a SQLite3 adapter. You can open one or more SQLite database files with:
 
-#### Editing Text
+```bash
+harlequin -a sqlite "path/to/sqlite.db" "another_sqlite.db"
+```
 
-- ctrl+a: Select all, move the cursor to the end of the query.
-- ctrl+x: Cut selected text.
-- ctrl+c: Copy selected text.
-- ctrl+v, ctrl+u, shift+insert: Paste selected text.
-- ctrl+z: Undo.
-- ctrl+y: Redo.
-- ctrl+/, ctrl+_: Toggle comments on selected line(s).
-- tab: Insert spaces at cursor to move the cursor to the next tab stop, or indent the selected line(s) to the next tab stop.
-- shift+tab: Dedent the selected line(s) to the next tab stop.
-- shift+delete: Delete the current line.
+Like DuckDB, you can also open an in-memory database by omitting the paths:
 
-#### Using Autocomplete
+```bash
+harlequin -a sqlite
+```
 
-*With the autocomplete list open:*
-- up,down,PgUp,PgDn: Select a different item in the list.
-- tab,enter: Place the current selection in the Query Editor.
-- escape: Dismiss the autocomplete list.
-
-#### Moving the Cursor
-
-- up,down,left,right: Move the cursor one position.
-- home: Move the cursor to the start of the line.
-- end: Move the cursor to the end of the line.
-- ctrl+home: Move the cursor to the start of the query.
-- ctrl+end: Move the cursor to the end of the query.
-- PgUp: Move the cursor up one screen.
-- PgDn: Move the cursor down one screen.
-- ctrl+up: Scroll up one line.
-- ctrl+down: Scroll down one line.
-- ctrl+left: Move the cursor to the start of the current token.
-- ctrl+right: Move the cursor to the end of the current token.
-- shift+[any]: Select text while moving the cursor.
+Other adapters can be installed using `pip install <adapter package>` or `pipx inject harlequin <adapter package>`, depending on how you installed Harlequin. Several adapters are under active development; for a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page.
 
 
-### Results Viewer Bindings
+### Getting Help
 
-- ctrl+c: Copy selected data to the clipboard.
+To view all command-line options for Harlequin and all installed adapters, after installation, simply type:
 
-#### Switching Tabs
+```bash
+harlequin --help
+```
 
-- j: Switch to the previous tab.
-- k: Switch to the next tab.
+See the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/index) guide for help with key bindings, appearance issues, copy-paste, etc.
 
-#### Moving the Cursor
+[GitHub Issues](https://github.com/tconbeer/harlequin/issues) are the best place to report bugs.
 
-- up,down,left,right: Move the cursor one cell.
-- tab: Move the cursor to the next cell in the table.
-- shift+tab: Move the cursor to the previous cell in the table.
-- home, ctrl+up: Move the cursor to the top of the current column.
-- end, ctrl+down: Move the cursor to the bottom of the current column.
-- ctrl+left: Move the cursor to the start of the current row.
-- ctrl+right: Move the cursor to the end of the current row.
-- ctrl+home: Move the cursor to the start of the table.
-- ctrl+end: Move the cursor to the end of the table.
-- PgUp: Move the cursor up one screen.
-- PgDn: Move the cursor down one screen.
-- shift+[any]: Select range while moving the cursor.
+[GitHub Discussions](https://github.com/tconbeer/harlequin/discussions) are a good place to start with other issues, feature requests, etc.
 
+### Viewing Files
 
-### Data Catalog Bindings
+Harlequin's Data Catalog will show local files in a second tab in the Data Catalog if Harlequin is initialized with the `--show-files` option (alias `-f`). `--show-files` takes an absolute or relative file path to a directory as its argument:
 
-- ctrl+enter, ctrl+j: Insert the current name into the Query Editor.
-- ctrl+c: Copy the current name to the clipboard.
+For example, an absolute path:
 
-#### Switching Tabs
+```bash
+harlequin --show-files /path/to/my/data
+```
 
-- j: Switch to the previous tab.
-- k: Switch to the next tab.
+For the current working directory:
 
-#### Moving the Cursor
+```bash
+harlequin -f .
+```
 
-- up,down: Move the cursor one row.
-- enter,space: Toggle the expand/collapsed state of the current item.
+Harlequin can also show remote objects in S3 or a similar service. For more information, see https://harlequin.sh/docs/files/remote
 
-### Query History Viewer Bindings
+### Using Config Files
 
-- up,down,PgUp,PgDn: Change selection and scroll.
-- tab: Change focus between the history list and the query preview pane.
-- enter: Create a new Editor buffer and insert the highlighted query.
-- escape: Return to the main screen.
+Any command-line options for Harlequin can be loaded as a profile from TOML config files. For more information, see https://harlequin.sh/docs/config-file
+
+### Changing Key Bindings
+
+Harlequin can load sets of key bindings, called keymaps, either from plug-ins or from TOML config files. This allows you to extend or replace Harlequin's default key bindings. For more information, see https://harlequin.sh/docs/keymaps
+
+### Managing Transactions
+
+Different adapters handle transactions differently; many choose to auto-commit each executed query. However, some adapters define multiple Transaction Modes that allow you to fine-tune the transaction handling of the commands you run in Harlequin. For more information, see https://harlequin.sh/docs/transactions

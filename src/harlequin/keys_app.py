@@ -272,7 +272,8 @@ class EditModal(ModalScreen):
                 (
                     f"[b]Action: {format_action(self.binding.action)}[/b]\n\n"
                     "[dim][i]Use the buttons below to replace, remove, or add "
-                    "bindings for this action.[/i][/dim]"
+                    "bindings for this action.[/i]\n"
+                    "[b]Enter[/b]: Select Button; [b]Tab[/b]: Next Button[/dim]"
                 ),
                 id="instructions",
             )

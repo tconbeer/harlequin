@@ -335,6 +335,8 @@ def build_cli() -> click.Command:
         max_results: str | int = config.pop("limit", DEFAULT_LIMIT)
         theme: str = config.pop("theme", DEFAULT_THEME)
         keymap_names: list[str] = config.pop("keymap_name", DEFAULT_KEYMAP_NAMES)
+        if isinstance(keymap_names, str):
+            keymap_names = [keymap_names]
         show_files: Path | str | None = config.pop("show_files", None)
         if show_files is not None:
             try:
