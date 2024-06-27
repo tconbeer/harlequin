@@ -5,6 +5,7 @@ from typing import Awaitable, Callable
 
 import pytest
 from harlequin import HarlequinKeys
+from textual.widgets import Input
 
 USER_CONFIG_PATH = Path("/tmp") / "harlequin"
 
@@ -69,6 +70,9 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
+        input_widgets = app.query(Input)
+        for widget in input_widgets:
+            widget.cursor_blink = False  # prevent flaky tests
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Quit modal"))
 

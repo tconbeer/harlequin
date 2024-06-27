@@ -497,7 +497,7 @@ class HarlequinKeys(AppBase):
                     .union(set(binding.keys.split(",")))
                     .difference(set([""]))
                 )
-                merged_action.keys = ",".join(deduped_keys)
+                merged_action.keys = ",".join(sorted(deduped_keys))
                 if binding.key_display:
                     merged_action.key_display = binding.key_display
 
