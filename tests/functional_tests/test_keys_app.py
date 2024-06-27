@@ -49,12 +49,15 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Initialization"))
 
         await pilot.press("down", "down", "down", "down", "enter")
+        await pilot.pause()
         snap_results.append(await app_snapshot(app, "Edit Modal"))
 
         await pilot.press("enter")
+        await pilot.pause()
         snap_results.append(await app_snapshot(app, "Enter Key Modal"))
 
         await pilot.press("f3")
+        await pilot.pause()
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3"))
 
@@ -64,14 +67,17 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Edit Modal: f3 and f4"))
 
         await pilot.press("shift+tab", "enter")
+        await pilot.pause()
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Edit Modal: f4 removed"))
 
         await pilot.press("tab", "tab", "tab", "tab", "enter")
+        await pilot.pause()
         await pilot.wait_for_animation()
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
+        await pilot.pause()
         # the quit modal should now be visible. We make some tweaks so tests
         # pass consistently
         input_widgets = app.query(Input)
