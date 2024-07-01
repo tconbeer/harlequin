@@ -1626,13 +1626,13 @@ mysql-connector-python = ">=8.2.0,<9.0.0"
 
 [[package]]
 name = "harlequin-nebulagraph"
-version = "0.1.0"
+version = "0.4.0"
 description = "A Harlequin adapter for NebulaGraph."
 optional = true
 python-versions = "<4.0,>=3.8.1"
 files = [
-    {file = "harlequin_nebulagraph-0.1.0-py3-none-any.whl", hash = "sha256:9a7e63b9622e1f898c1a1b629b6e682874ba07b18dd926490ab65fc0cd72b007"},
-    {file = "harlequin_nebulagraph-0.1.0.tar.gz", hash = "sha256:1beb44324299d176fed08180280e0ba78180abde7fdf602c4b50e0a45bf45472"},
+    {file = "harlequin_nebulagraph-0.4.0-py3-none-any.whl", hash = "sha256:ebd67d193da6768a2c50ae9c7b1979ed0aaa89c0547af70ac275c16aa1ecc6d4"},
+    {file = "harlequin_nebulagraph-0.4.0.tar.gz", hash = "sha256:672060d9128a68d614e89ecb3ababacbeee8d55ba8677cc952021d273286d57a"},
 ]
 
 [package.dependencies]
@@ -3772,7 +3772,7 @@ test = ["coverage", "pytest", "pytest-cov"]
 name = "urllib3"
 version = "1.26.19"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
-optional = false
+optional = true
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7"
 files = [
     {file = "urllib3-1.26.19-py2.py3-none-any.whl", hash = "sha256:37a0344459b199fce0e80b0d3569837ec6b6937435c5244e7fd73fa6006830f3"},
@@ -3948,4 +3948,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "ce2ba374857b56faa358154cbfd3234bbdf6a0adcfa0c77158197b9d7a1b24f2"
+content-hash = "76e489011799b83e058e03e8c3c104e3dee3d7e44a87418446083c65baab2261"
