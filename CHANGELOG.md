@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Improves support for system clipboard on Wayland ([#585](https://github.com/tconbeer/harlequin/issues/585) - thank you [@SalmanFarooqShiekh](https://github.com/SalmanFarooqShiekh)!).
+
 ## [1.22.1] - 2024-06-28
 
 ### Bug Fixes
