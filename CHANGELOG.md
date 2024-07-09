@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.22.2] - 2024-07-09
+
 ### Bug Fixes
 
 - Improves support for system clipboard on Wayland ([#585](https://github.com/tconbeer/harlequin/issues/585) - thank you [@SalmanFarooqShiekh](https://github.com/SalmanFarooqShiekh)!).
@@ -668,7 +670,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.22.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.22.2...HEAD
+[1.22.2]: https://github.com/tconbeer/harlequin/compare/1.22.1...1.22.2
 [1.22.1]: https://github.com/tconbeer/harlequin/compare/1.22.0...1.22.1
 [1.22.0]: https://github.com/tconbeer/harlequin/compare/1.21.0...1.22.0
 [1.21.0]: https://github.com/tconbeer/harlequin/compare/1.20.0...1.21.0
