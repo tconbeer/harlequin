@@ -1643,7 +1643,7 @@ nebula3-python = ">=3.8.0,<4.0.0"
 name = "harlequin-odbc"
 version = "0.1.1"
 description = "A Harlequin adapter for ODBC drivers."
-optional = false
+optional = true
 python-versions = ">=3.8.1,<4.0"
 files = [
     {file = "harlequin_odbc-0.1.1-py3-none-any.whl", hash = "sha256:7c5554dec9ef0bedad5acb040b7346ae60257e8b907f6254398ba6beec0cde21"},
@@ -2917,7 +2917,7 @@ types = ["typing-extensions"]
 name = "pyodbc"
 version = "5.1.0"
 description = "DB API module for ODBC"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "pyodbc-5.1.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:02fe9821711a2d14415eaeb4deab471d2c8b7034b107e524e414c0e133c42248"},
@@ -3948,4 +3948,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "7fec803f0d15ab1d34af5c80ab9c859d0b8ba21cc34c914b0f3081ff59c579f0"
+content-hash = "8477539a3b7e033a5dcc7c5b3cdda4b91f466ba1e4116c82996152e5b8da09ab"
