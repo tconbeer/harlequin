@@ -62,7 +62,6 @@ class ResultsViewer(TabbedContent, can_focus=True):
             try:
                 return tables.first(ResultsTable)
             except NoMatches:
-                self.log("NO TABLES FOUND")
                 return None
 
     async def push_table(

@@ -9,6 +9,7 @@ from sqlfmt.exception import SqlfmtError
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
+from textual.widgets.text_area import Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
@@ -233,8 +234,8 @@ class EditorCollection(TabbedContent):
         self.current_editor.focus()
 
     async def insert_buffer_with_text(self, query_text: str) -> None:
-        new_editor = await self.action_new_buffer()
-        new_editor.text = query_text
+        state = BufferState(selection=Selection(), text=query_text)
+        new_editor = await self.action_new_buffer(state=state)
         new_editor.focus()
 
     async def action_new_buffer(
