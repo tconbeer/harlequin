@@ -18,7 +18,6 @@ from harlequin.messages import WidgetMounted
 
 
 class CodeEditor(TextEditor, inherit_bindings=False):
-
     class Submitted(Message, bubble=True):
         """Posted when user runs the query.
 
@@ -131,7 +130,6 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
 
 class EditorCollection(TabbedContent):
-
     BORDER_TITLE = "Query Editor"
 
     class EditorSwitched(Message):

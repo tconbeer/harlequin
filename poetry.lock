@@ -3331,13 +3331,13 @@ pytest = ">=7.0.0,<9.0.0"
 
 [[package]]
 name = "textual"
-version = "0.60.1"
+version = "0.72.0"
 description = "Modern Text User Interface framework"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "textual-0.60.1-py3-none-any.whl", hash = "sha256:701715dfe000396c226dccaedd52fd0f56071bbdef2a1497a4f0211063ceba19"},
-    {file = "textual-0.60.1.tar.gz", hash = "sha256:258565923f55487876b48b53c1104ad660355e1853af60381ef6b10b3ed3723e"},
+    {file = "textual-0.72.0-py3-none-any.whl", hash = "sha256:a9886eb96bd6391b8795244d2b8fe592204556c42264ea7513a1211584e17366"},
+    {file = "textual-0.72.0.tar.gz", hash = "sha256:14174ce8d49016a85aa6c0669d0881b5419e98cf46d429f263314295409ed262"},
 ]
 
 [package.dependencies]
@@ -3390,15 +3390,17 @@ name = "textual-textarea"
 version = "0.13.1"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
-python-versions = "<4.0,>=3.8"
-files = [
-    {file = "textual_textarea-0.13.1-py3-none-any.whl", hash = "sha256:638f96ce81e29eb7609385630e6f3d896efbaf8510ed2e3d45dacbf9f300d6fc"},
-    {file = "textual_textarea-0.13.1.tar.gz", hash = "sha256:c94033e845ea3a012d693a4f527aa2972fa2a23e91e5ebf3a44af04b08d63cda"},
-]
+python-versions = "^3.8"
+files = []
+develop = true
 
 [package.dependencies]
-pyperclip = ">=1.9.0,<2.0.0"
-textual = {version = ">=0.60,<0.61", extras = ["syntax"]}
+pyperclip = "^1.9.0"
+textual = {version = ">=0.72", extras = ["syntax"]}
+
+[package.source]
+type = "directory"
+url = "../textual-textarea"
 
 [[package]]
 name = "thrift"
@@ -3948,4 +3950,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "8477539a3b7e033a5dcc7c5b3cdda4b91f466ba1e4116c82996152e5b8da09ab"
+content-hash = "02f77f9dba4f36fce7cf0ded7d5c008d7326b245b586a0bb5b73871b24d724da"

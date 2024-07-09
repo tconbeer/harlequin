@@ -184,7 +184,6 @@ class DataCatalog(TabbedContent, can_focus=True):
 
 
 class HarlequinTree(Tree, inherit_bindings=False):
-
     double_click: int | None = None
 
     async def on_click(self, event: Click) -> None:

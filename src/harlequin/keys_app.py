@@ -125,7 +125,6 @@ class KeymapNameValidator(Validator):
 
 
 class QuitModal(ModalScreen[Tuple[bool, Union[Path, None], Union[str, None]]]):
-
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
         Binding("up,left", "focus_previous", "focus_previous", show=False),
@@ -237,7 +236,6 @@ class QuitModal(ModalScreen[Tuple[bool, Union[Path, None], Union[str, None]]]):
 
 
 class InputModal(ModalScreen[str], inherit_bindings=False):
-
     def __init__(self, source_button: Widget) -> None:
         super().__init__()
         self.source_button = source_button
@@ -355,7 +353,6 @@ class EditModal(ModalScreen):
 
 
 class HarlequinKeys(AppBase):
-
     BINDINGS = [Binding("ctrl+q", "quit", "Quit")]
     CSS_PATH = ["global.tcss", "keys_app.tcss"]
 
@@ -507,7 +504,6 @@ class HarlequinKeys(AppBase):
         )
 
     async def action_quit(self) -> None:
-
         if (
             (not self.active_keymap_names)
             or self.bindings is None
@@ -587,7 +583,7 @@ def format_action(action: str) -> str:
 
 
 def format_bindings_for_table(
-    displayed_bindings: dict[str, HarlequinKeyBinding]
+    displayed_bindings: dict[str, HarlequinKeyBinding],
 ) -> list[tuple[str, str, str]]:
     table_data: list[tuple[str, str, str]] = []
     for formatted_name, binding in displayed_bindings.items():

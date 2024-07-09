@@ -67,6 +67,8 @@ from harlequin.plugins import load_keymap_plugins
 from harlequin.transaction_mode import HarlequinTransactionMode
 
 if TYPE_CHECKING:
+    from textual.await_complete import AwaitComplete
+
     from harlequin.keymap import HarlequinKeyMap
 
 
@@ -245,7 +247,7 @@ class Harlequin(AppBase):
             wait_for_dismiss=wait_for_dismiss,
         )
 
-    def pop_screen(self) -> Screen[object]:
+    def pop_screen(self) -> "AwaitComplete":
         new_screen = super().pop_screen()
         if (
             len(self.screen_stack) == 1

@@ -61,6 +61,6 @@ jobs:
 
       - name: Run analysis
         run: |
-          poetry run black . --check
+          poetry run ruff format .
           poetry run ruff check .
           poetry run mypy

@@ -306,8 +306,7 @@ def build_cli() -> click.Command:
         params = list(kwargs.keys())
         for k in params:
             if (
-                ctx.get_parameter_source(k)
-                == click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
+                ctx.get_parameter_source(k) == click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
             ):
                 kwargs.pop(k)
             # conn_str is an arg, not an option, so get_paramter_source is always CLI

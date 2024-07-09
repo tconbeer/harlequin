@@ -27,7 +27,6 @@ class HistoryList(OptionList):
 
 
 class HistoryScreen(Screen[str]):
-
     def __init__(
         self,
         history: History,
