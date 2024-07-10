@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Harlequin now supports an additional [theme](https://harlequin.sh/docs/themes), [`coffee`](https://pygments.org/styles/#coffee).
+
+### Changes
+
+- Harlequin's Footer has been re-designed. In the footer, `CTRL+` key presses are now represented by a carat, `^`. For example, instead of `CTRL+Q Quit` the footer now reads `^q Quit`.
+
 ## [1.22.2] - 2024-07-09
 
 ### Bug Fixes

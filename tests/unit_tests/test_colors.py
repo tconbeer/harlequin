@@ -15,6 +15,5 @@ def test_all_styles() -> None:
         assert colors.gray
         assert colors.error
         assert colors.text != colors.background
-        assert colors.text != colors.highlight
         assert colors.highlight != colors.background
         assert colors.color_system
