@@ -3352,18 +3352,18 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.7.1"
+version = "0.8.0"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
-python-versions = ">=3.8,<4.0"
+python-versions = "<4.0,>=3.8"
 files = [
-    {file = "textual_fastdatatable-0.7.1-py3-none-any.whl", hash = "sha256:fe632c9329c0660f199800d58e55fc9903bcb71a20291087b16228d6a1683b81"},
-    {file = "textual_fastdatatable-0.7.1.tar.gz", hash = "sha256:02d929ddd755e7d23936ea8090c549090816e9eca63cc14a06ac2a82a556b763"},
+    {file = "textual_fastdatatable-0.8.0-py3-none-any.whl", hash = "sha256:30a4391581eb6946e7bbffb582ef47b0e91db546c98b8cf12ad4ceaf01bb4d39"},
+    {file = "textual_fastdatatable-0.8.0.tar.gz", hash = "sha256:cb2d5793afa4443255e0e17da4c57748cd7a753ee1b1fbd84a01eecc3f350e76"},
 ]
 
 [package.dependencies]
 pyarrow = ">=7.0.0"
-pytz = {version = ">=2023,<2024", markers = "python_full_version < \"3.9.0\""}
+pytz = {version = ">=2023,<2025", markers = "python_full_version < \"3.9.0\""}
 textual = ">=0.41.0"
 tzdata = {version = ">=2023", markers = "sys_platform == \"win32\""}
 
@@ -3947,4 +3947,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "b97863bd64a8ee04bf9debe17048ae6c67d88d825122ec645d0ea571d8163f65"
+content-hash = "00b6768955129d7e4f5fc3eed90c75c9db443fedf9c63b2659e49279dfa17cee"

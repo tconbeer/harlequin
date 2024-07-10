@@ -11,10 +11,12 @@ All notable changes to this project will be documented in this file.
 ### Changes
 
 - Harlequin's Footer has been re-designed. In the footer, `CTRL+` key presses are now represented by a carat, `^`. For example, instead of `CTRL+Q Quit` the footer now reads `^q Quit`.
+- The tooltip for overflowing data cells has been improved to better format the data contained in the cell.
 
 ### Bug Fixes
 
 - Fixed a bug where the main panel would resize while the code editor was being mounted at app start-up.
+- Fixed a bug that could cause a crash if data table cell contents contained a string that could be interpreted as bad Rich Markup ([#569](https://github.com/tconbeer/harlequin/issues/569) - thank you [@cmdkev](https://github.com/cmdkev)!)
 
 ## [1.22.2] - 2024-07-09
 

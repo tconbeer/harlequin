@@ -74,12 +74,12 @@ async def test_select_1(
         "select 1 where false",
         "select 1 union all select 'hi'",
         "select 'hi' union all select 1",
+        """select '[/foo]' as "[/bar]" """.strip(),
     ],
 )
 async def test_queries_do_not_crash_all_adapters(
     app_all_adapters: Harlequin,
     query: str,
-    app_snapshot: Callable[..., Awaitable[bool]],
 ) -> None:
     app = app_all_adapters
     messages: list[Message] = []
