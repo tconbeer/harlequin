@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Type, Union
 
 from textual.app import App
-from textual.binding import Binding
+from textual.binding import ActiveBinding
 from textual.css.stylesheet import Stylesheet
-from textual.dom import DOMNode
 from textual.driver import Driver
+from textual.screen import Screen
 from textual.types import CSSPathType
 
 from harlequin.colors import HarlequinColors
@@ -14,6 +14,18 @@ from harlequin.exception import (
     HarlequinThemeError,
     pretty_error_message,
 )
+
+
+class ScreenBase(Screen):
+    @property
+    def active_bindings(self) -> dict[str, ActiveBinding]:
+        def sort_key(binding_pair: tuple[str, ActiveBinding]) -> int:
+            return 0 if binding_pair[1].node == self.app else 1
+
+        binding_map = {
+            k: v for k, v in sorted(super().active_bindings.items(), key=sort_key)
+        }
+        return binding_map
 
 
 class AppBase(App, inherit_bindings=False):
@@ -39,16 +51,8 @@ class AppBase(App, inherit_bindings=False):
             self.design = self.app_colors.design_system
             self.stylesheet = Stylesheet(variables=self.get_css_variables())
 
-    @property
-    def namespace_bindings(self) -> dict[str, tuple[DOMNode, Binding]]:
+    def get_default_screen(self) -> Screen:
         """
-        Re-order bindings so they appear in the footer with the global bindings first.
+        Changes the default screen to re-order bindings, with global bindings first.
         """
-
-        def sort_key(item: tuple[str, tuple[DOMNode, Binding]]) -> int:
-            return 0 if item[1][0] == self else 1
-
-        binding_map = {
-            k: v for k, v in sorted(super().namespace_bindings.items(), key=sort_key)
-        }
-        return binding_map
+        return ScreenBase(id="_default")

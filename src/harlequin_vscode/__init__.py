@@ -21,7 +21,7 @@ VSCODE_EDITOR_BINDINGS = [
     HarlequinKeyBinding(
         "ctrl+enter,ctrl+j",
         "code_editor.run_query",
-        key_display="CTRL+ENTER / CTRL+J",
+        key_display="^⏎ or ^j",
     ),
     HarlequinKeyBinding("f4", "code_editor.format_buffer"),
     HarlequinKeyBinding("ctrl+s", "code_editor.save_buffer"),
@@ -70,7 +70,7 @@ VSCODE_DATA_CATALOG_BINDINGS = [
     HarlequinKeyBinding(
         "ctrl+enter,ctrl+j",
         "data_catalog.insert_name",
-        key_display="CTRL+ENTER / CTRL+J",
+        key_display="^⏎ or ^j",
     ),
     HarlequinKeyBinding("ctrl+c", "data_catalog.copy_name"),
     HarlequinKeyBinding("enter", "data_catalog.select_cursor"),

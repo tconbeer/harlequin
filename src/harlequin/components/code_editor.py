@@ -9,6 +9,7 @@ from sqlfmt.exception import SqlfmtError
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
+from textual.widgets.text_area import Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
@@ -18,7 +19,6 @@ from harlequin.messages import WidgetMounted
 
 
 class CodeEditor(TextEditor, inherit_bindings=False):
-
     class Submitted(Message, bubble=True):
         """Posted when user runs the query.
 
@@ -131,7 +131,6 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
 
 class EditorCollection(TabbedContent):
-
     BORDER_TITLE = "Query Editor"
 
     class EditorSwitched(Message):
@@ -163,6 +162,7 @@ class EditorCollection(TabbedContent):
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
+        self.startup_cache = load_cache()
 
     @property
     def current_editor(self) -> CodeEditor:
@@ -208,9 +208,8 @@ class EditorCollection(TabbedContent):
             pass
 
     async def on_mount(self) -> None:
-        cache = load_cache()
-        if cache is not None:
-            for _i, buffer in enumerate(cache.buffers):
+        if self.startup_cache is not None:
+            for _i, buffer in enumerate(self.startup_cache.buffers):
                 await self.action_new_buffer(state=buffer)
                 # we can't load the focus state here, since Tabs
                 # really wants to activate the first tab when it's
@@ -220,6 +219,7 @@ class EditorCollection(TabbedContent):
         self.query_one(Tabs).can_focus = False
         self.current_editor.word_completer = self.word_completer
         self.current_editor.member_completer = self.member_completer
+        self.remove_class("premount")
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
@@ -235,8 +235,8 @@ class EditorCollection(TabbedContent):
         self.current_editor.focus()
 
     async def insert_buffer_with_text(self, query_text: str) -> None:
-        new_editor = await self.action_new_buffer()
-        new_editor.text = query_text
+        state = BufferState(selection=Selection(), text=query_text)
+        new_editor = await self.action_new_buffer(state=state)
         new_editor.focus()
 
     async def action_new_buffer(

@@ -47,8 +47,6 @@ Toast .toast--title {
 Footer {
     background: $background;
     color: $secondary;
-    dock: bottom;
-    height: 1;
 }
 
 Footer:disabled {
@@ -58,19 +56,19 @@ Footer:disabled {
     border: none;
 }
 
-Footer > .footer--highlight {
-    background: $boost;
-    color: $secondary;
-}
-
-Footer > .footer--highlight-key {
-    background: $boost;
-    color: $primary;
-    text-style: none;
-}
-
-Footer > .footer--key {
+FooterKey {
     text-style: none;
     background: $background;
     color: $primary;
+    .footer-key--key {
+        color: $secondary;
+        background: $background;
+        text-style: bold;
+    }
+    &:hover {
+        background: $boost;
+        .footer-key--key {
+            background: $boost;
+        }
+    }
 }

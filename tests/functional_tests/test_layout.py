@@ -11,7 +11,7 @@ async def test_toggle_sidebar(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
-        while app.editor is None:
+        while app.editor is None or app.data_catalog.database_tree.loading:
             await pilot.pause()
         # initialization
         sidebar = app.data_catalog

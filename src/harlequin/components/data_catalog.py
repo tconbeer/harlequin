@@ -184,13 +184,11 @@ class DataCatalog(TabbedContent, can_focus=True):
 
 
 class HarlequinTree(Tree, inherit_bindings=False):
-
     double_click: int | None = None
 
     async def on_click(self, event: Click) -> None:
         meta = event.style.meta
         click_line: Union[int, None] = meta.get("line", None)
-        self.log(meta, click_line, self.double_click)
         if (
             self.double_click is not None
             and click_line is not None
@@ -448,7 +446,6 @@ class S3Tree(HarlequinTree, Tree[str], inherit_bindings=False):
         else:
             buckets = [s3.Bucket(self.bucket)]
         for bucket in buckets:
-            self.log(f"building tree for {bucket.name}")
             data[bucket.name] = recursive_dict()
             object_gen = (
                 bucket.objects.filter(Prefix=self.prefix)
@@ -456,7 +453,6 @@ class S3Tree(HarlequinTree, Tree[str], inherit_bindings=False):
                 else bucket.objects.all()
             )
             for obj in object_gen:
-                self.log(f"inserting {obj.key} into tree {bucket.name}")
                 key_parts = obj.key.split("/")
                 target = data[bucket.name]
                 for part in key_parts:

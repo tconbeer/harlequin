@@ -187,7 +187,10 @@ class HarlequinColors:
             prop_name: [
                 extract_color(style.styles.get(token_type, ""))
                 for token_type in token_type_list
-                if extract_color(style.styles.get(token_type, ""))
+                if (
+                    extract_color(style.styles.get(token_type, ""))
+                    and extract_color(style.styles.get(token_type, "")) != background
+                )
             ]
             for prop_name, token_type_list in cls.MAPPING.items()
         }
