@@ -162,6 +162,7 @@ class EditorCollection(TabbedContent):
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
+        self.startup_cache = load_cache()
 
     @property
     def current_editor(self) -> CodeEditor:
@@ -207,9 +208,8 @@ class EditorCollection(TabbedContent):
             pass
 
     async def on_mount(self) -> None:
-        cache = load_cache()
-        if cache is not None:
-            for _i, buffer in enumerate(cache.buffers):
+        if self.startup_cache is not None:
+            for _i, buffer in enumerate(self.startup_cache.buffers):
                 await self.action_new_buffer(state=buffer)
                 # we can't load the focus state here, since Tabs
                 # really wants to activate the first tab when it's
@@ -219,6 +219,7 @@ class EditorCollection(TabbedContent):
         self.query_one(Tabs).can_focus = False
         self.current_editor.word_completer = self.word_completer
         self.current_editor.member_completer = self.member_completer
+        self.remove_class("premount")
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:

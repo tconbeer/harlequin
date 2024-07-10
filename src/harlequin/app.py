@@ -211,6 +211,7 @@ class Harlequin(AppBase):
         self.editor_collection = EditorCollection(
             language="sql", theme=self.theme, classes="hide-tabs"
         )
+        self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None
         editor_placeholder = Lazy(widget=self.editor_collection)
         editor_placeholder.border_title = self.editor_collection.border_title

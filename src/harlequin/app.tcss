@@ -89,9 +89,17 @@ DataCatalog * .directory-tree--hidden {
     width: 3fr;
 }
 
-CodeEditor,
 EditorCollection {
     height: 1fr;
+    width: 100%;
+}
+EditorCollection.premount {
+    height: 0;
+    border: none;
+}
+
+CodeEditor {
+    height: 100%;
     width: 100%;
 }
 
@@ -247,8 +255,7 @@ RunQueryBar.non-responsive Input {
 }
 
 /* RESULTS VIEWER */
-
-TabbedContent,
+ResultsViewer,
 TabPane {
     height: 1fr;
     width: 1fr;
