@@ -148,6 +148,8 @@ Tooltip {
     border: round $border-color-focus;
     background: $background;
     padding: 0 1;
+    max-height: 95vh;
+    max-width: 40%;
 }
 
 RunQueryBar Button {
