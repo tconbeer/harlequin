@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.23.1] - 2024-07-23
 
+### Bug Fixes
+
+- Harlequin no longer crashes when attempting to display negative datetime values ([#568](https://github.com/tconbeer/harlequin/issues/568)). 
+
 ## [1.23.0] - 2024-07-11
 
 ### Features
