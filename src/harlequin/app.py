@@ -530,7 +530,7 @@ class Harlequin(AppBase):
             table = await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
-                data=data,  # type: ignore
+                data=data,
             )
             self.append_to_history(
                 query_text=query_text,

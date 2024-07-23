@@ -49,7 +49,7 @@ class DuckDbCursor(HarlequinCursor):
             raise HarlequinQueryError(
                 msg=str(e), title="DuckDB raised an error when running your query:"
             ) from e
-        return result  # type: ignore
+        return result
 
 
 class DuckDbConnection(HarlequinConnection):
