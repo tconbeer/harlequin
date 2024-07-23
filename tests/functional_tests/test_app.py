@@ -131,6 +131,7 @@ async def test_queries_do_not_crash_all_adapters(
         "SELECT ['duck', 'goose', NULL, 'heron'];",  # list
         "SELECT [['duck', 'goose', 'heron'], NULL, ['frog', 'toad'], []];",  # list
         "set timezone = 'America/New_York'; select '2024-01-01'::timestamptz;",
+        "select '1-1-1T00:00:00Z'::timestamptz",
     ],
 )
 async def test_queries_do_not_crash(

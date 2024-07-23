@@ -40,7 +40,7 @@ def _export_csv(
     if kwargs.get("quoting"):
         kwargs["quoting"] = "ALL"
     try:
-        relation = duckdb.arrow(table.backend.source_data)  # type: ignore
+        relation = duckdb.arrow(table.backend.source_data)
         relation.write_csv(file_name=dest_path, **kwargs)
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
@@ -59,7 +59,7 @@ def _export_parquet(
     assert table and table.backend
 
     try:
-        relation = duckdb.arrow(table.backend.source_data)  # type: ignore
+        relation = duckdb.arrow(table.backend.source_data)
         relation.write_parquet(
             file_name=dest_path, compression=kwargs.get("compression")
         )
