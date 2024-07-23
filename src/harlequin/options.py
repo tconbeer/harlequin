@@ -162,12 +162,22 @@ class TextOption(AbstractOption):
         placeholder = self.placeholder or getattr(other, "placeholder", None)
 
         def merge_validator(raw: str) -> tuple[bool, str | None]:
+            """
+            The merged validator must return true if either validator
+            accepts the input; if the other Option does not have
+            a validator, it accepts all inputs, so the merged validator
+            must also.
+            """
             if (
                 self.validator is not None
                 and isinstance(other, TextOption)
                 and other.validator is not None
             ):
-                return self.validator(raw) or other.validator(raw)
+                result = self.validator(raw)
+                if result[0]:
+                    return result
+                else:
+                    return other.validator(raw)
             else:
                 return True, None
 

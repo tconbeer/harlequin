@@ -332,7 +332,7 @@ class S3Tree(HarlequinTree, Tree[str], inherit_bindings=False):
             "Root", data, name=name, id=id, classes=classes, disabled=disabled
         )
 
-    render_label = DirectoryTree.render_label  # type: ignore[assigment]
+    render_label = DirectoryTree.render_label
 
     def on_mount(self) -> None:
         self.guide_depth = 3
