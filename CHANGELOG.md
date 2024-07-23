@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.23.1] - 2024-07-23
+
 ## [1.23.0] - 2024-07-11
 
 ### Features
@@ -686,7 +688,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.23.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.23.1...HEAD
+[1.23.1]: https://github.com/tconbeer/harlequin/compare/1.23.0...1.23.1
 [1.23.0]: https://github.com/tconbeer/harlequin/compare/1.22.2...1.23.0
 [1.22.2]: https://github.com/tconbeer/harlequin/compare/1.22.1...1.22.2
 [1.22.1]: https://github.com/tconbeer/harlequin/compare/1.22.0...1.22.1
