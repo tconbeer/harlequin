@@ -3255,13 +3255,13 @@ test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "importlib-metadata
 
 [[package]]
 name = "shandy-sqlfmt"
-version = "0.21.4"
+version = "0.23.2"
 description = "sqlfmt formats your dbt SQL files so you don't have to."
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "shandy_sqlfmt-0.21.4-py3-none-any.whl", hash = "sha256:992f1a7d9b50c4dfdb95a5601b67010ffc274591b10304163c9aad4e38b52099"},
-    {file = "shandy_sqlfmt-0.21.4.tar.gz", hash = "sha256:165c96d1c2d13043ab7fb5555910dadc40d80c31c6bc968b1584988c660d1544"},
+    {file = "shandy_sqlfmt-0.23.2-py3-none-any.whl", hash = "sha256:31181541982cfbd3fccc2c8e033e8cb079197d41bf00f788341f5f0910f3361c"},
+    {file = "shandy_sqlfmt-0.23.2.tar.gz", hash = "sha256:dd141c363ac57ffd2deb904e4d470fd69bc85fb8b51d9df2b204c95199af5034"},
 ]
 
 [package.dependencies]
