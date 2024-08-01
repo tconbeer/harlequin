@@ -3313,13 +3313,13 @@ pytest = ">=7.0.0,<9.0.0"
 
 [[package]]
 name = "textual"
-version = "0.72.0"
+version = "0.75.0"
 description = "Modern Text User Interface framework"
 optional = false
-python-versions = "<4.0,>=3.8"
+python-versions = "<4.0.0,>=3.8.1"
 files = [
-    {file = "textual-0.72.0-py3-none-any.whl", hash = "sha256:a9886eb96bd6391b8795244d2b8fe592204556c42264ea7513a1211584e17366"},
-    {file = "textual-0.72.0.tar.gz", hash = "sha256:14174ce8d49016a85aa6c0669d0881b5419e98cf46d429f263314295409ed262"},
+    {file = "textual-0.75.0-py3-none-any.whl", hash = "sha256:46902a900ada635b315db8ded35776d413e3297c611196832fe77d82bef9830c"},
+    {file = "textual-0.75.0.tar.gz", hash = "sha256:1bcff456bdc00c45ae0c0c61571f113b569f67e9b68b5ece5144e4089fd780a5"},
 ]
 
 [package.dependencies]
@@ -3950,4 +3950,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "dadfaca9c83e91f7b5e1123464648b1ffa0438dad744ef6d16da761343840c85"
+content-hash = "8c5e841ab67a57e1f87e7b7ebe182092c9f118fde4a8900d4e1ffb7caf51efda"
