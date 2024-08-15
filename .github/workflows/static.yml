@@ -61,6 +61,6 @@ jobs:
 
       - name: Run analysis
         run: |
-          poetry run ruff format .
+          poetry run ruff format . --diff
           poetry run ruff check .
           poetry run mypy --no-incremental
