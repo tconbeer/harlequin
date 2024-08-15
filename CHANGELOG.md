@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.23.2] - 2024-08-15
+
 ### Bug Fixes
 
 - Fixes an issue where uncommenting a line using the uncomment action could indent the line by an additional space ([#616](https://github.com/tconbeer/harlequin/issues/616) - thank you [@harrymconner](https://github.com/harrymconner)!).
@@ -697,7 +699,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.23.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.23.2...HEAD
+[1.23.2]: https://github.com/tconbeer/harlequin/compare/1.23.1...1.23.2
 [1.23.1]: https://github.com/tconbeer/harlequin/compare/1.23.0...1.23.1
 [1.23.0]: https://github.com/tconbeer/harlequin/compare/1.22.2...1.23.0
 [1.22.2]: https://github.com/tconbeer/harlequin/compare/1.22.1...1.22.2
