@@ -70,7 +70,7 @@ harlequin-mysql = "^0.1.1"
 pyinstrument = "^4.6.2"
 
 [tool.poetry.group.static.dependencies]
-ruff = "^0.5"
+ruff = ">=0.5,<0.7"
 mypy = "^1.11.0"
 types-pygments = "^2.16.0.0"
 pandas-stubs = "^2"
