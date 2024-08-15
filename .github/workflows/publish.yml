@@ -37,6 +37,10 @@ jobs:
           path: ~/.local
           key: ${{ runner.os }}-poetry-171  # increment to reset cache
 
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1

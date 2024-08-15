@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes an issue where uncommenting a line using the uncomment action could indent the line by an additional space ([#616](https://github.com/tconbeer/harlequin/issues/616) - thank you [@harrymconner](https://github.com/harrymconner)!).
+
 ## [1.23.1] - 2024-07-23
 
 ### Bug Fixes
