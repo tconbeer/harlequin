@@ -563,7 +563,8 @@ class Harlequin(AppBase):
             self.results_viewer.show_table(did_run=False)
         else:
             self.results_viewer.show_table(did_run=True)
-            self.results_viewer.focus()
+            if message.data:
+                self.results_viewer.focus()
 
     @on(WidgetMounted)
     def bind_keys(self, message: WidgetMounted) -> None:

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - Fixes an issue where uncommenting a line using the uncomment action could indent the line by an additional space ([#616](https://github.com/tconbeer/harlequin/issues/616) - thank you [@harrymconner](https://github.com/harrymconner)!).
+- The (empty) results viewer will no longer be focused after executing only DDL queries (queries that do not return any data) ([#609](https://github.com/tconbeer/harlequin/issues/609)).
 
 ## [1.23.1] - 2024-07-23
 
