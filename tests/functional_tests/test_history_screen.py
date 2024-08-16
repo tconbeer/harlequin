@@ -5,9 +5,10 @@ from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
+from rich.console import COLOR_SYSTEMS
+
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
-from rich.console import COLOR_SYSTEMS
 
 
 @pytest.fixture

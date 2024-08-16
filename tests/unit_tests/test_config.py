@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from harlequin.config import (
     _find_config_files,
     get_config_for_profile,

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConfigError, HarlequinConnectionError
 from harlequin_sqlite import HarlequinSqliteAdapter

@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
-from harlequin import HarlequinKeys
 from textual.widgets import Input
+
+from harlequin import HarlequinKeys
 
 USER_CONFIG_PATH = Path("/tmp") / "harlequin"
 

@@ -4,8 +4,9 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
-from harlequin import Harlequin
 from textual.widgets.text_area import Selection
+
+from harlequin import Harlequin
 
 
 def transaction_button_visible(app: Harlequin) -> bool:

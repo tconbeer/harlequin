@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError
 from harlequin_duckdb.adapter import DuckDbAdapter

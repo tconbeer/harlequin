@@ -1,6 +1,7 @@
 from typing import Awaitable, Callable, List
 
 import pytest
+
 from harlequin import Harlequin
 
 

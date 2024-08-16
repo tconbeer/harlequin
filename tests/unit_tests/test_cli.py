@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
+
 from harlequin import Harlequin
 from harlequin.cli import DEFAULT_KEYMAP_NAMES, DEFAULT_LIMIT, DEFAULT_THEME, build_cli
 from harlequin.config import Config

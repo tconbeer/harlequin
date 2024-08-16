@@ -323,7 +323,9 @@ class EditModal(ModalScreen):
     def handle_button_press(self, message: Button.Pressed) -> None:
         if isinstance(message.button, EditButton):
 
-            def edit_button(new_key: str) -> None:
+            def edit_button(new_key: str | None) -> None:
+                if new_key is None:
+                    return
                 assert isinstance(message.button, EditButton)
                 message.button.label = new_key
                 message.button.key = new_key
@@ -333,7 +335,9 @@ class EditModal(ModalScreen):
 
         elif isinstance(message.button, AddButton):
 
-            def add_button(key: str) -> None:
+            def add_button(key: str | None) -> None:
+                if key is None:
+                    return
                 row = Horizontal(
                     NoFocusLabel("Key:"),
                     EditButton(key=key),
@@ -389,7 +393,9 @@ class HarlequinKeys(AppBase):
         yield Footer()
 
     def push_edit_modal(self, binding: HarlequinKeyBinding, cursor_row: int) -> None:
-        def update_binding(new_binding: HarlequinKeyBinding) -> None:
+        def update_binding(new_binding: HarlequinKeyBinding | None) -> None:
+            if new_binding is None:
+                return
             assert self.bindings is not None
             assert self.table is not None
             k = format_action(new_binding.action)
@@ -524,7 +530,11 @@ class HarlequinKeys(AppBase):
             await super().action_quit()
             return  # for mypy
 
-        def maybe_save(screen_data: tuple[bool, Path | None, str | None]) -> None:
+        def maybe_save(
+            screen_data: tuple[bool, Path | None, str | None] | None,
+        ) -> None:
+            if screen_data is None:
+                return
             do_quit, config_path, keymap_name = screen_data
             if not do_quit:
                 return

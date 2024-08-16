@@ -6,6 +6,8 @@ from typing import Any, Sequence
 
 import duckdb
 from duckdb.typing import DuckDBPyType
+from textual_fastdatatable.backend import AutoBackendType
+
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog, CatalogItem
@@ -14,8 +16,6 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinQueryError,
 )
-from textual_fastdatatable.backend import AutoBackendType
-
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
