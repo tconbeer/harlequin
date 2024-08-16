@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin no longer constrains the version of the adapter when the adapter is installed as an extra; Harlequin will install the latest available version that does not conflict with other dependencies.
+
 ## [1.23.2] - 2024-08-15
 
 ### Bug Fixes
