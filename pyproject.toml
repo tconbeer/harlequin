@@ -52,7 +52,7 @@ numpy = [
 ]
 
 # database adapters (optional installs for extras)
-harlequin-postgres = { version = "^0.2", optional = true }
+harlequin-postgres = { version = ">=0.2,<0.4", optional = true }
 harlequin-mysql = { version = "^0.1", optional = true }
 harlequin-odbc = { version = "^0.1", optional = true }
 harlequin-bigquery = { version = "^1.0", optional = true }
@@ -65,7 +65,7 @@ harlequin-nebulagraph = { version = "^0.1", python = ">=3.9.0", optional = true 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.3.1"
 textual-dev = "^1.0.1"
-harlequin-postgres = "^0.2"
+harlequin-postgres = ">=0.2,<0.4"
 harlequin-mysql = "^0.1.1"
 pyinstrument = "^4.6.2"
 

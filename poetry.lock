@@ -1619,17 +1619,17 @@ pyodbc = ">=5.0,<6.0"
 
 [[package]]
 name = "harlequin-postgres"
-version = "0.2.2"
+version = "0.3.0"
 description = "A Harlequin adapter for Postgres."
 optional = false
-python-versions = ">=3.8.1,<4.0"
+python-versions = "<4.0,>=3.8.1"
 files = [
-    {file = "harlequin_postgres-0.2.2-py3-none-any.whl", hash = "sha256:72fa3d49cfa794cde2242eba2b34d5e931158ef3c069c526cf48f0b2ec5bee88"},
-    {file = "harlequin_postgres-0.2.2.tar.gz", hash = "sha256:205f2e7aa623c1a1bd2354b8fa1d38b33e2962923183168586ca4688fb1acb81"},
+    {file = "harlequin_postgres-0.3.0-py3-none-any.whl", hash = "sha256:99e5221315cdb70ba7b37f2b5a90e2f4e7b4438ed6e47210d10d022070009655"},
+    {file = "harlequin_postgres-0.3.0.tar.gz", hash = "sha256:cc1b5582a05459a56339d7165c05f32466afb50f4eef18074331b0d0c38e9c15"},
 ]
 
 [package.dependencies]
-harlequin = ">=1.7,<2.0"
+harlequin = ">=1.20,<2.0"
 psycopg2-binary = ">=2.9.9,<3.0.0"
 
 [[package]]
@@ -3923,4 +3923,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "726b638a8cf70027dcd9ccf5a50bbbb526433f447665080e82bd06418c7065ed"
+content-hash = "5532609cb895d891727eca4151216304ffb474f4bd02bc5a79b8024135494d5f"
