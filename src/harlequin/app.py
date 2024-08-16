@@ -317,13 +317,13 @@ class Harlequin(AppBase):
 
     @on(CatalogCacheLoaded)
     def build_trees(self, message: CatalogCacheLoaded) -> None:
-        if self.connection_hash is not None and (
+        if self.connection_hash and (
             cached_db := message.cache.get_db(self.connection_hash)
         ):
             self.post_message(NewCatalog(catalog=cached_db))
         if self.show_s3 is not None:
             self.data_catalog.load_s3_tree_from_cache(message.cache)
-        if self.connection_hash is not None:
+        if self.connection_hash:
             history = message.cache.get_history(self.connection_hash)
             self.history = history if history is not None else History.blank()
 

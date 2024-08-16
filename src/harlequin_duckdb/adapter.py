@@ -19,6 +19,8 @@ from harlequin.exception import (
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
+IN_MEMORY_CONN_STR = (":memory:",)
+
 
 class DuckDbCursor(HarlequinCursor):
     def __init__(
@@ -281,7 +283,9 @@ class DuckDbAdapter(HarlequinAdapter):
         **_: Any,
     ) -> None:
         try:
-            self.conn_str = conn_str if conn_str else (":memory:",)
+            self.conn_str = (
+                conn_str if conn_str and conn_str != ("",) else IN_MEMORY_CONN_STR
+            )
             self.init_path = (
                 Path(init_path).resolve()
                 if init_path is not None
@@ -300,6 +304,14 @@ class DuckDbAdapter(HarlequinAdapter):
                 msg=f"DuckDB adapter received bad config value: {e}",
                 title="Harlequin could not initialize the selected adapter.",
             ) from e
+
+    @property
+    def connection_id(self) -> str | None:
+        if self.conn_str == IN_MEMORY_CONN_STR:
+            return ""
+        return ",".join(
+            [Path(conn).resolve().as_posix() for conn in sorted(self.conn_str)]
+        )
 
     def connect(self) -> DuckDbConnection:
         primary_db, *other_dbs = self.conn_str

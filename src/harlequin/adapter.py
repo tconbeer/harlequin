@@ -234,6 +234,23 @@ class HarlequinAdapter(ABC):
         pass
 
     @property
+    def connection_id(self) -> str | None:
+        """
+        Returns a unique ID for this connection, typically a fully-hydrated connection
+        string or similar. This Unique ID is used by Harlequin to cache the data
+        catalog and query history and persist them across invocations of Harlequin.
+
+        If None is returned, Harlequin will attempt to compute a unique ID from the
+        arguments used to initialize the adapter.
+
+        If the empty string is returned, Harlequin will not attempt to load the
+        catalog or buffers from the cache.
+
+        Returns: str | None
+        """
+        return None
+
+    @property
     def implements_copy(self) -> bool:
         """
         True if the adapter's connection implements the copy() method. Adapter must

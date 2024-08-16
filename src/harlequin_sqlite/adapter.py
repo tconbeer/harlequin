@@ -22,6 +22,8 @@ from harlequin.transaction_mode import HarlequinTransactionMode
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
 
+IN_MEMORY_CONN_STR = (":memory:",)
+
 
 class HarlequinSqliteCursor(HarlequinCursor):
     def __init__(self, conn: HarlequinSqliteConnection, cur: sqlite3.Cursor) -> None:
@@ -265,7 +267,11 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         **_: Any,
     ) -> None:
         try:
-            self.conn_str = conn_str if conn_str else (":memory:",)
+            self.conn_str = (
+                conn_str
+                if conn_str and conn_str != ("",) and connection_mode != "memory"
+                else IN_MEMORY_CONN_STR
+            )
             self.init_path = (
                 Path(init_path).resolve()
                 if init_path is not None
@@ -297,6 +303,14 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                     "https://harlequin.sh/docs/sqlite/extensions"
                 ),
             )
+
+    @property
+    def connection_id(self) -> str | None:
+        if self.conn_str == IN_MEMORY_CONN_STR:
+            return ""
+        return ",".join(
+            [Path(conn).resolve().as_posix() for conn in sorted(self.conn_str)]
+        )
 
     def connect(self) -> HarlequinSqliteConnection:
         if (

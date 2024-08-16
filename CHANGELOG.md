@@ -4,9 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adapters may now implement a `connection_id` property to improve Harlequin's ability to persist the data catalog and query history across Harlequin invocations ([#410](https://github.com/tconbeer/harlequin/issues/410)).
+
 ### Bug Fixes
 
 - Harlequin no longer constrains the version of the adapter when the adapter is installed as an extra; Harlequin will install the latest available version that does not conflict with other dependencies.
+- The DuckDB and SQLite adapters now use only the resolved file path to the database file to load the data catalog and query history from disk (ignoring other connection options). This should improve cache hits. They will no longer attempt to load a cached catalog or history for in-memory connections.
 
 ## [1.23.2] - 2024-08-15
 

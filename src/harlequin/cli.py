@@ -362,11 +362,17 @@ def build_cli() -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
+        connection_id = (
+            adapter_instance.connection_id
+            if adapter_instance.connection_id is not None
+            else get_connection_hash(conn_str, config)
+        )
+
         tui = Harlequin(
             adapter=adapter_instance,
             keymap_names=keymap_names,
             user_defined_keymaps=user_defined_keymaps,
-            connection_hash=get_connection_hash(conn_str, config),
+            connection_hash=connection_id,
             max_results=max_results,
             theme=theme,
             show_files=show_files,
