@@ -1,10 +1,11 @@
 import asyncio
 from unittest.mock import patch
 
+from textual.widgets.text_area import Selection
+
 from harlequin import Harlequin
 from harlequin.editor_cache import BufferState, Cache
 from harlequin_duckdb import DuckDbAdapter
-from textual.widgets.text_area import Selection
 
 
 async def load_lots_of_buffers() -> None:

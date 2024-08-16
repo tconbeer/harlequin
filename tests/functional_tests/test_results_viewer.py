@@ -5,10 +5,11 @@ from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
-from harlequin import Harlequin
-from harlequin.components.results_viewer import ResultsViewer
 from textual.message import Message
 from textual_fastdatatable import DataTable
+
+from harlequin import Harlequin
+from harlequin.components.results_viewer import ResultsViewer
 
 
 def transaction_button_visible(app: Harlequin) -> bool:

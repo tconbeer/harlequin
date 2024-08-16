@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import List
 
 import pytest
+from textual.widgets.text_area import Selection
+
 from harlequin import Harlequin
 from harlequin.editor_cache import (
     BufferState,
@@ -11,7 +13,6 @@ from harlequin.editor_cache import (
     load_cache,
     write_cache,
 )
-from textual.widgets.text_area import Selection
 
 
 @pytest.fixture

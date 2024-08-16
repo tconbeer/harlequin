@@ -6,7 +6,15 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -234,15 +242,17 @@ class Harlequin(AppBase):
                 yield self.results_viewer
         yield self.footer
 
-    def push_screen(  # type: ignore
+    # this is some kind of mypy bug; the types are literally copied from the
+    # parent impl
+    def push_screen(  # type: ignore[override]
         self,
-        screen: Union[Screen[ScreenResultType], str],
-        callback: Union[ScreenResultCallbackType[ScreenResultType], None] = None,
+        screen: Screen[ScreenResultType] | str,
+        callback: ScreenResultCallbackType[ScreenResultType] | None = None,
         wait_for_dismiss: bool = False,
-    ) -> Union[AwaitMount, asyncio.Future[ScreenResultType]]:
+    ) -> AwaitMount | asyncio.Future[ScreenResultType]:
         if self.editor is not None and self.editor._has_focus_within:
             self.editor.text_input._pause_blink(visible=True)
-        return super().push_screen(  # type: ignore
+        return super().push_screen(  # type: ignore[no-any-return,call-overload]
             screen,
             callback=callback,
             wait_for_dismiss=wait_for_dismiss,
@@ -745,10 +755,12 @@ class Harlequin(AppBase):
         )
 
     def action_show_query_history(self) -> None:
-        async def history_callback(screen_data: str) -> None:
+        async def history_callback(screen_data: str | None) -> None:
             """
             Insert the selected query into a new buffer.
             """
+            if screen_data is None:
+                return
             await self.editor_collection.insert_buffer_with_text(query_text=screen_data)
 
         if self.history is None:

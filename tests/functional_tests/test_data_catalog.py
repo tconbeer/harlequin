@@ -4,9 +4,10 @@ from typing import Awaitable, Callable, List, NamedTuple, Type
 from unittest.mock import MagicMock
 
 import pytest
+from textual.geometry import Offset
+
 from harlequin import Harlequin
 from harlequin_duckdb.adapter import DuckDbAdapter
-from textual.geometry import Offset
 
 
 class MockS3Object(NamedTuple):

@@ -1,5 +1,6 @@
-from harlequin.colors import HarlequinColors
 from pygments.styles import get_all_styles
+
+from harlequin.colors import HarlequinColors
 
 
 def test_all_styles() -> None:

@@ -1,8 +1,9 @@
 import asyncio
 
+from pygments.styles import get_all_styles
+
 from harlequin import Harlequin
 from harlequin_duckdb import DuckDbAdapter
-from pygments.styles import get_all_styles
 
 TEXT = """
 select

@@ -4,8 +4,9 @@ from textwrap import dedent
 from unittest.mock import MagicMock
 
 import pytest
-from harlequin import Harlequin
 from textual.css.query import NoMatches
+
+from harlequin import Harlequin
 
 QUERY = dedent(
     """

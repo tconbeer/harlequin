@@ -4,6 +4,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+
 from harlequin import Harlequin, HarlequinAdapter
 from harlequin.config import get_config_for_profile
 

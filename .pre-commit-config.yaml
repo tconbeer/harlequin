@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.1
+    rev: v0.6.0
     hooks:
       - id: ruff-format
       - id: ruff
@@ -13,7 +13,7 @@ repos:
           - click
           - duckdb>=0.8.0
           - shandy-sqlfmt[jinjafmt]
-          - textual>=0.72.0
+          - textual>=0.76.0
           - textual-textarea>=0.14.0
           - textual-fastdatatable>=0.9.0
           - pytest

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.locale_manager import set_locale

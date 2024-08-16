@@ -4,8 +4,9 @@ import sys
 from typing import Awaitable, Callable
 
 import pytest
-from harlequin import Harlequin
 from textual.message import Message
+
+from harlequin import Harlequin
 
 
 def transaction_button_visible(app: Harlequin) -> bool:
