@@ -1,5 +1,3 @@
-import hashlib
-import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -75,11 +73,7 @@ def test_default(
     mock_adapter.assert_called_once_with(conn_str=expected_conn_str)
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
-        connection_hash=hashlib.md5(
-            json.dumps({"conn_str": expected_conn_str}).encode("utf-8")
-        )
-        .digest()
-        .hex(),
+        connection_hash=mock_adapter.return_value.connection_id,
         max_results=DEFAULT_LIMIT,
         keymap_names=DEFAULT_KEYMAP_NAMES,
         user_defined_keymaps=[],
