@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Adapters may now implement a `connection_id` property to improve Harlequin's ability to persist the data catalog and query history across Harlequin invocations.
+- Adapters may now implement a `connection_id` property to improve Harlequin's ability to persist the data catalog and query history across Harlequin invocations ([#410](https://github.com/tconbeer/harlequin/issues/410)).
 
 ### Bug Fixes
 
