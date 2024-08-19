@@ -160,14 +160,30 @@ RunQueryBar Button {
 RunQueryBar Button#run_query {
     background: $primary;
     margin: 0 0 0 4;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+    &.hidden {
+        display: none;
+    }
 }
 
-RunQueryBar Button#run_query:hover {
-    background: $secondary;
-}
-
-RunQueryBar Button#run_query:focus {
-    text-style: reverse;
+RunQueryBar Button#cancel_query {
+    background: $error;
+    margin: 0 0 0 4;
+    text-style: bold;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+    &.hidden {
+        display: none;
+    }
 }
 
 RunQueryBar Button#transaction_button,
@@ -202,10 +218,6 @@ RunQueryBar Button#transaction_button:hover,
 RunQueryBar Button#commit_button:hover,
 RunQueryBar Button#rollback_button:hover, {
     color: $secondary;
-}
-
-RunQueryBar Button#run_query:focus {
-    text-style: reverse;
 }
 
 RunQueryBar Checkbox {

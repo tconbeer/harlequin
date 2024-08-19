@@ -19,8 +19,10 @@ class RunQueryBar(Horizontal):
         classes: Union[str, None] = None,
         disabled: bool = False,
         max_results: int = 10_000,
+        show_cancel_button: bool = False,
     ) -> None:
         self.max_results = max_results
+        self.show_cancel_button = show_cancel_button
         super().__init__(
             *children, name=name, id=id, classes=classes, disabled=disabled
         )
@@ -49,6 +51,8 @@ class RunQueryBar(Horizontal):
             ),
         )
         self.run_button = Button("Run Query", id="run_query")
+        self.cancel_button = Button("Cancel Query", id="cancel_query")
+        self.cancel_button.add_class("hidden")
         with Horizontal(id="transaction_buttons"):
             yield self.transaction_button
             yield self.commit_button
@@ -57,6 +61,7 @@ class RunQueryBar(Horizontal):
             yield self.limit_checkbox
             yield self.limit_input
             yield self.run_button
+            yield self.cancel_button
 
     def on_mount(self) -> None:
         if self.app.is_headless:
@@ -87,6 +92,14 @@ class RunQueryBar(Horizontal):
 
     def set_not_responsive(self) -> None:
         self.add_class("non-responsive")
+        if self.show_cancel_button:
+            with self.app.batch_update():
+                self.run_button.add_class("hidden")
+                self.cancel_button.remove_class("hidden")
 
     def set_responsive(self) -> None:
         self.remove_class("non-responsive")
+        if self.show_cancel_button:
+            with self.app.batch_update():
+                self.run_button.remove_class("hidden")
+                self.cancel_button.add_class("hidden")

@@ -91,6 +91,15 @@ class HarlequinConnection(ABC):
         """
         pass
 
+    def cancel(self) -> None:
+        """
+        Cancels/interrupts all in-flight queries previously executed with `execute`.
+
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_CANCEL to True to show the cancel button in the Harlequin UI.
+        """
+        return None
+
     @abstractmethod
     def get_catalog(self) -> Catalog:
         """
@@ -203,6 +212,7 @@ class HarlequinAdapter(ABC):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = None
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
+    IMPLEMENTS_CANCEL = False
 
     @abstractmethod
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:

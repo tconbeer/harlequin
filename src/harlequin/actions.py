@@ -79,6 +79,10 @@ HARLEQUIN_ACTIONS = {
     "refresh_catalog": Action(
         target=None, action="refresh_catalog", description="Refresh Data Catalog"
     ),
+    "run_query": Action(target=None, action="run_query", description="Run Query"),
+    "cancel_query": Action(
+        target=None, action="cancel_query", description="Cancel Query"
+    ),
     #######################################################
     # CodeEditor ACTIONS
     #######################################################

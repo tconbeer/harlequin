@@ -30,7 +30,10 @@ class HarlequinSqliteCursor(HarlequinCursor):
         self.conn = conn
         self.cur = cur
         self._limit: int | None = None
-        _first_row = cur.fetchone()
+        try:
+            _first_row = cur.fetchone()
+        except sqlite3.Error:  # maybe canceled query here
+            _first_row = None
         self.has_records = _first_row is not None
         self._first_row: tuple[Any, ...] = _first_row or tuple(
             [None] * len(cur.description)
@@ -50,11 +53,21 @@ class HarlequinSqliteCursor(HarlequinCursor):
 
     def fetchall(self) -> AutoBackendType | None:
         if self.has_records:
-            remaining_rows = (
-                self.cur.fetchall()
-                if self._limit is None
-                else self.cur.fetchmany(self._limit - 1)
-            )
+            try:
+                remaining_rows = (
+                    self.cur.fetchall()
+                    if self._limit is None
+                    else self.cur.fetchmany(self._limit - 1)
+                )
+            except sqlite3.OperationalError:  # maybe canceled here
+                return None
+            except sqlite3.Error as e:
+                raise HarlequinQueryError(
+                    msg=str(e),
+                    title=(
+                        "SQLite raised an error when fetching results for your query:"
+                    ),
+                ) from e
             return [self._first_row, *remaining_rows]
         else:
             return None
@@ -108,6 +121,9 @@ class HarlequinSqliteConnection(HarlequinConnection):
             return HarlequinSqliteCursor(conn=self, cur=cur)
         else:
             return None
+
+    def cancel(self) -> None:
+        self.conn.interrupt()
 
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
@@ -251,6 +267,7 @@ class HarlequinSqliteConnection(HarlequinConnection):
 class HarlequinSqliteAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = SQLITE_OPTIONS
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
+    IMPLEMENTS_CANCEL = True
 
     def __init__(
         self,

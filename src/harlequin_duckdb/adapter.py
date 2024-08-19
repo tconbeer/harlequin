@@ -47,6 +47,8 @@ class DuckDbCursor(HarlequinCursor):
     def fetchall(self) -> AutoBackendType | None:
         try:
             result = self.relation.fetch_arrow_table()
+        except duckdb.InterruptException:
+            return None
         except duckdb.Error as e:
             raise HarlequinQueryError(
                 msg=str(e), title="DuckDB raised an error when running your query:"
@@ -105,6 +107,8 @@ class DuckDbConnection(HarlequinConnection):
     def execute(self, query: str) -> DuckDbCursor | None:
         try:
             rel = self.conn.sql(query)
+        except duckdb.InterruptException:
+            return None
         except duckdb.Error as e:
             raise HarlequinQueryError(
                 msg=str(e),
@@ -115,6 +119,9 @@ class DuckDbConnection(HarlequinConnection):
             return DuckDbCursor(conn=self, relation=rel)
         else:
             return None
+
+    def cancel(self) -> None:
+        self.conn.interrupt()
 
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
@@ -267,6 +274,7 @@ class DuckDbConnection(HarlequinConnection):
 class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
     COPY_FORMATS = None
+    IMPLEMENTS_CANCEL = True
 
     def __init__(
         self,
