@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- For adapters that support canceling queries, Harlequin will now display a "Cancel Query" button while queries are running.
+- Two new Actions are available for key bindings: `run_query`  (with a global app scope, in addition to the existing `code_editor.run_query` action) and `cancel_query`.
 - Adapters may now implement a `connection_id` property to improve Harlequin's ability to persist the data catalog and query history across Harlequin invocations ([#410](https://github.com/tconbeer/harlequin/issues/410)).
+- Adapters may now implement a `HarlequinConnection.cancel()` method to cancel all in-flight queries ([#333](https://github.com/tconbeer/harlequin/issues/333)).
+- Queries can now be canceled when using the DuckDB or SQLite adapters.
 
 ### Bug Fixes
 

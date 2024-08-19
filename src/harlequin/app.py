@@ -122,6 +122,10 @@ class QueriesExecuted(Message):
         self.ddl_queries = ddl_queries
 
 
+class QueriesCanceled(Message):
+    pass
+
+
 class ResultsFetched(Message):
     def __init__(
         self,
@@ -229,7 +233,9 @@ class Harlequin(AppBase):
             type_color=self.app_colors.gray,
         )
         self.run_query_bar = RunQueryBar(
-            max_results=self.max_results, classes="non-responsive"
+            max_results=self.max_results,
+            classes="non-responsive",
+            show_cancel_button=self.adapter.IMPLEMENTS_CANCEL,
         )
         self.footer = Footer()
 
@@ -293,6 +299,11 @@ class Harlequin(AppBase):
                 limit=self.run_query_bar.limit_value,
             )
         )
+
+    @on(Button.Pressed, "#cancel_query")
+    def cancel_query(self, message: Button.Pressed) -> None:
+        message.stop()
+        self.action_cancel_query()
 
     @on(Button.Pressed, "#transaction_button")
     def handle_transaction_button_press(self, message: Button.Pressed) -> None:
@@ -534,6 +545,12 @@ class Harlequin(AppBase):
             )
             self.update_schema_data()
 
+    @on(QueriesCanceled)
+    def reset_after_cancel(self) -> None:
+        self.run_query_bar.set_responsive()
+        self.results_viewer.show_table(did_run=False)
+        self.notify("Queries canceled.", severity="error")
+
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
         for id_, (cols, data, query_text) in message.data.items():
@@ -725,6 +742,14 @@ class Harlequin(AppBase):
                 pretty_print_error(e)
                 self.exit(return_code=2)
 
+    async def action_run_query(self) -> None:
+        if self.editor is None:
+            return
+        await self.editor.action_submit()
+
+    def action_cancel_query(self) -> None:
+        self._cancel_query()
+
     def action_export(self) -> None:
         show_export_error = partial(
             self._push_error_modal,
@@ -896,6 +921,19 @@ class Harlequin(AppBase):
             )
         )
 
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=True,
+        group="query_cancellers",
+        description="Cancelling queries.",
+    )
+    def _cancel_query(self) -> None:
+        if self.connection is None or not self.adapter.IMPLEMENTS_CANCEL:
+            return
+        self.connection.cancel()
+        self.post_message(QueriesCanceled())
+
     def _get_query_text(self) -> str:
         if self.editor is None:
             return ""
@@ -935,7 +973,7 @@ class Harlequin(AppBase):
         for id_, (cur, q) in cursors.items():
             try:
                 cur_data = cur.fetchall()
-            except HarlequinQueryError as e:
+            except BaseException as e:
                 errors.append((e, q))
             else:
                 data[id_] = (cur.columns(), cur_data, q)
