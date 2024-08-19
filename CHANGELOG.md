@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.24.0] - 2024-08-19
+
 ### Features
 
 - For adapters that support canceling queries, Harlequin will now display a "Cancel Query" button while queries are running.
@@ -712,7 +714,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.23.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.24.0...HEAD
+[1.24.0]: https://github.com/tconbeer/harlequin/compare/1.23.2...1.24.0
 [1.23.2]: https://github.com/tconbeer/harlequin/compare/1.23.1...1.23.2
 [1.23.1]: https://github.com/tconbeer/harlequin/compare/1.23.0...1.23.1
 [1.23.0]: https://github.com/tconbeer/harlequin/compare/1.22.2...1.23.0
