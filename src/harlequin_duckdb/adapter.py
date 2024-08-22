@@ -16,6 +16,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinQueryError,
 )
+from harlequin_duckdb.catalog import DatabaseCatalogItem
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
@@ -124,6 +125,13 @@ class DuckDbConnection(HarlequinConnection):
         self.conn.interrupt()
 
     def get_catalog(self) -> Catalog:
+        catalog_items: list[CatalogItem] = []
+        databases = self._get_databases()
+        for (database_label,) in databases:
+            catalog_items.append(DatabaseCatalogItem.from_label(database_label))
+        return Catalog(items=catalog_items)
+
+    def get_catalog_old(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
         databases = self._get_databases()
         for (database,) in databases:
