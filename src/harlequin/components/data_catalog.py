@@ -43,8 +43,6 @@ def insert_name_at_cursor(
 
 
 class ContextMenu(OptionList):
-    # TODO: BINDINGS!
-
     class ExecuteInteraction(Message):
         def __init__(self, interaction: "Interaction", item: CatalogItem) -> None:
             self.interaction = interaction
@@ -93,6 +91,9 @@ class ContextMenu(OptionList):
             self.ExecuteInteraction(interaction=interaction, item=self.item)
         )
         self.remove_class("open")
+
+    def on_blur(self) -> None:
+        self.action_hide()
 
     def action_hide(self) -> None:
         self.remove_class("open")
@@ -312,6 +313,15 @@ class HarlequinTree(Tree, inherit_bindings=False):
     def action_copy(self) -> None:
         if self.cursor_node is not None:
             self.post_message(DataCatalog.NodeCopied(node=self.cursor_node))
+
+    def action_show_context_menu(self) -> None:
+        if self.cursor_node is not None and isinstance(
+            self.cursor_node.data, CatalogItem
+        ):
+            self.post_message(DataCatalog.ShowContextMenu(node=self.cursor_node))
+
+    def action_hide_context_menu(self) -> None:
+        self.post_message(DataCatalog.HideContextMenu())
 
 
 class DatabaseTree(HarlequinTree, Tree[CatalogItem], inherit_bindings=False):

@@ -15,6 +15,7 @@ from harlequin.components import (
     ResultsTable,
     ResultsViewer,
 )
+from harlequin.components.data_catalog import ContextMenu
 
 if TYPE_CHECKING:
     from textual.widget import Widget
@@ -225,6 +226,10 @@ HARLEQUIN_ACTIONS = {
     "data_catalog.focus_results_viewer": Action(
         target=DataCatalog, action="focus_results_viewer"
     ),
+    "data_catalog.show_context_menu": Action(
+        target=HarlequinTree, action="show_context_menu", show=True
+    ),
+    "data_catalog.hide_context_menu": Action(target=ContextMenu, action="hide"),
     #######################################################
     # ResultsViewer ACTIONS
     #######################################################
