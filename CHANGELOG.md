@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Harlequin's Data Catalog is now Interactive! Adapters can define interactions on catalog nodes, which can be selected via a context menu by right-clicking on nodes in the context menu or pressing `.` (this binding is configurable via the `data_catalog.show_context_menu` action).
+
 ## [1.24.1] - 2024-09-25
 
 ### Bug Fixes

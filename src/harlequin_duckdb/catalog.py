@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from harlequin.catalog import InteractiveCatalogItem
-from harlequin_duckdb.interactions import execute_use_statement
+from harlequin_duckdb.interactions import (
+    execute_drop_database_statement,
+    execute_use_statement,
+)
 
 if TYPE_CHECKING:
     from harlequin_duckdb.adapter import DuckDbConnection
@@ -146,9 +149,10 @@ class SchemaCatalogItem(InteractiveCatalogItem):
         return children
 
 
-class DatabaseCatalogItem(InteractiveCatalogItem):
+class DatabaseCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     INTERACTIONS = [
         ("Switch Editor Context (USE)", execute_use_statement),
+        ("Drop Database", execute_drop_database_statement),
     ]
 
     @classmethod

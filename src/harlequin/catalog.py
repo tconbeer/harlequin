@@ -41,15 +41,18 @@ class CatalogItem:
     children: list["CatalogItem"] = field(default_factory=list)
 
 
+TCatalogItem_contra = TypeVar(
+    "TCatalogItem_contra", bound=CatalogItem, contravariant=True
+)
 TAdapterConnection_contra = TypeVar(
     "TAdapterConnection_contra", bound="HarlequinConnection", contravariant=True
 )
 
 
-class Interaction(Protocol[TAdapterConnection_contra]):
+class Interaction(Protocol[TCatalogItem_contra, TAdapterConnection_contra]):
     def __call__(
         self,
-        item: "InteractiveCatalogItem",
+        item: TCatalogItem_contra,
         connection: TAdapterConnection_contra,
         driver: "HarlequinDriver",
     ) -> None: ...

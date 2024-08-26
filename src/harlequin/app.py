@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Callable,
     Dict,
     List,
     Optional,
@@ -39,7 +40,13 @@ from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
 from harlequin.bindings import bind
-from harlequin.catalog import Catalog, NewCatalog
+from harlequin.catalog import (
+    Catalog,
+    Interaction,
+    NewCatalog,
+    TAdapterConnection_contra,
+    TCatalogItem_contra,
+)
 from harlequin.catalog_cache import (
     CatalogCache,
     get_catalog_cache,
@@ -57,7 +64,10 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.data_catalog import ContextMenu
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
+from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import BufferState, Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
@@ -199,6 +209,7 @@ class Harlequin(AppBase):
             )
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
+        self.harlequin_driver = HarlequinDriver(app=self)
 
         if keymap_names is None:
             keymap_names = ("vscode",)
@@ -390,6 +401,48 @@ class Harlequin(AppBase):
             else:
                 self.notify("Selected label copied to clipboard.")
 
+    @on(HarlequinDriver.InsertTextAtSelection)
+    def driver_insert_text_into_editor(
+        self, message: HarlequinDriver.InsertTextAtSelection
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            # recycle message while editor loads
+            self.post_message(message=message)
+            return
+        self.editor.insert_text_at_selection(text=message.text)
+        self.editor.focus()
+
+    @on(HarlequinDriver.InsertTextInNewBuffer)
+    async def driver_insert_text_in_new_buffer(
+        self, message: HarlequinDriver.InsertTextInNewBuffer
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            # recycle message while editor loads
+            self.post_message(message=message)
+            return
+        await self.editor_collection.insert_buffer_with_text(query_text=message.text)
+
+    @on(HarlequinDriver.ConfirmAndExecute)
+    def driver_confirm_and_execute(
+        self, message: HarlequinDriver.ConfirmAndExecute
+    ) -> None:
+        message.stop()
+
+        def screen_callback(dismiss_value: bool | None) -> None:
+            if dismiss_value:
+                self._execute_callback(callback=message.callback)
+
+        self.push_screen(
+            ConfirmModal(prompt=message.instructions), callback=screen_callback
+        )
+
+    @on(HarlequinDriver.Notify)
+    def driver_notify(self, message: HarlequinDriver.Notify) -> None:
+        message.stop()
+        self.notify(message=message.notify_message, severity=message.severity)
+
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched
@@ -516,6 +569,19 @@ class Harlequin(AppBase):
             title="Query Error",
             header=header,
             error=message.error,
+        )
+
+    @on(ContextMenu.ExecuteInteraction)
+    def execute_interaction_in_thread(
+        self, message: ContextMenu.ExecuteInteraction
+    ) -> None:
+        if self.connection is None:
+            return
+        self._execute_interaction(
+            interaction=message.interaction,
+            item=message.item,
+            connection=self.connection,
+            driver=self.harlequin_driver,
         )
 
     @on(NewCatalog)
@@ -1095,6 +1161,53 @@ class Harlequin(AppBase):
                 elapsed = time.monotonic() - started_at
                 self.notify(f"Transaction rolled back in {elapsed:.2f} seconds.")
                 self.update_schema_data()
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="interactions",
+    )
+    def _execute_interaction(
+        self,
+        interaction: Interaction,
+        item: TCatalogItem_contra,
+        connection: TAdapterConnection_contra,
+        driver: HarlequinDriver,
+    ) -> None:
+        try:
+            interaction(item=item, connection=connection, driver=driver)
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Data Catalog Interaction Error",
+                header=(
+                    "Harlequin could not execute an interaction from your data catalog."
+                ),
+                error=e,
+            )
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="interactions",
+    )
+    def _execute_callback(
+        self,
+        callback: Callable[[], None],
+    ) -> None:
+        try:
+            callback()
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Data Catalog Interaction Error",
+                header=(
+                    "Harlequin could not execute an interaction from your data catalog."
+                ),
+                error=e,
+            )
 
     def _get_keymap(self, keymap_name: str) -> "HarlequinKeyMap" | None:
         try:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Generic, List, Set, Tuple, Union
+from typing import TYPE_CHECKING, ClassVar, Generic, List, Sequence, Set, Tuple, Union
 from urllib.parse import urlsplit
 
 from rich.text import TextType
@@ -11,6 +11,7 @@ from textual.events import Click
 from textual.message import Message
 from textual.widgets import (
     DirectoryTree,
+    OptionList,
     TabbedContent,
     TabPane,
     Tabs,
@@ -20,14 +21,81 @@ from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import EventTreeDataType, TreeNode
 from textual.worker import Worker, WorkerState
 
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.catalog_cache import CatalogCache, recursive_dict
 from harlequin.messages import WidgetMounted
+
+if TYPE_CHECKING:
+    from harlequin.adapter import HarlequinConnection
+    from harlequin.catalog import Interaction
+    from harlequin.driver import HarlequinDriver
 
 try:
     import boto3
 except ImportError:
     boto3 = None  # type: ignore
+
+
+def insert_name_at_cursor(
+    item: CatalogItem, connection: "HarlequinConnection", driver: HarlequinDriver
+) -> None:
+    driver.insert_text_at_selection(text=item.query_name)
+
+
+class ContextMenu(OptionList):
+    # TODO: BINDINGS!
+
+    class ExecuteInteraction(Message):
+        def __init__(self, interaction: "Interaction", item: CatalogItem) -> None:
+            self.interaction = interaction
+            self.item = item
+            super().__init__()
+
+    DEFAULT_INTERACTIONS: list[tuple[str, "Interaction"]] = [
+        ("Insert Name at Cursor", insert_name_at_cursor)
+    ]
+
+    def __init__(self) -> None:
+        self.interactions: list[tuple[str, "Interaction"]] = self.DEFAULT_INTERACTIONS
+        self.item: CatalogItem | None = None
+        super().__init__()
+
+    def reload(self, node: TreeNode) -> None:
+        self.clear_options()
+
+        if not isinstance(node.data, CatalogItem):
+            return
+
+        self.item = node.data
+
+        other_interactions: Sequence[tuple[str, "Interaction"]] = []
+
+        if isinstance(node.data, InteractiveCatalogItem):
+            if node.data.INTERACTIONS is not None:
+                other_interactions = node.data.INTERACTIONS
+
+        self.interactions = [*self.DEFAULT_INTERACTIONS, *other_interactions]
+
+        for label, _ in self.interactions:
+            self.add_option(label)
+
+        self.styles.offset = (0, node.line + 1)
+        self.add_class("open")
+        self.highlighted = 0
+        self.focus()
+
+    @on(OptionList.OptionSelected)
+    def execute_interaction(self, event: OptionList.OptionSelected) -> None:
+        if event.option_list is not self or self.item is None:
+            return
+        _, interaction = self.interactions[event.option_index]
+        self.post_message(
+            self.ExecuteInteraction(interaction=interaction, item=self.item)
+        )
+        self.remove_class("open")
+
+    def action_hide(self) -> None:
+        self.remove_class("open")
 
 
 class DataCatalog(TabbedContent, can_focus=True):
@@ -71,6 +139,14 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.error = error
             super().__init__()
 
+    class ShowContextMenu(Message):
+        def __init__(self, node: TreeNode) -> None:
+            self.node = node
+            super().__init__()
+
+    class HideContextMenu(Message):
+        pass
+
     def __init__(
         self,
         *titles: TextType,
@@ -97,7 +173,10 @@ class DataCatalog(TabbedContent, can_focus=True):
 
     def on_mount(self) -> None:
         self.database_tree = DatabaseTree(type_color=self.type_color)
-        self.add_pane(TabPane("Databases", self.database_tree))
+        self.database_context_menu = ContextMenu()
+        self.add_pane(
+            TabPane("Databases", self.database_tree, self.database_context_menu)
+        )
         if self.show_files is not None:
             self.file_tree: FileTree | None = FileTree(path=self.show_files)
             self.add_pane(TabPane("Files", self.file_tree))
@@ -138,6 +217,16 @@ class DataCatalog(TabbedContent, can_focus=True):
     @on(TabbedContent.TabActivated)
     def focus_on_widget_in_active_pane(self) -> None:
         self.focus()
+
+    @on(HideContextMenu)
+    def hide_context_menu(self, event: HideContextMenu) -> None:
+        event.stop()
+        self.database_context_menu.remove_class("open")
+
+    @on(ShowContextMenu)
+    def load_interactions_and_show_context_menu(self, event: ShowContextMenu) -> None:
+        event.stop()
+        self.database_context_menu.reload(node=event.node)
 
     def update_database_tree(self, catalog: Catalog) -> None:
         self.database_tree.update_tree(catalog)
@@ -189,21 +278,29 @@ class HarlequinTree(Tree, inherit_bindings=False):
     async def on_click(self, event: Click) -> None:
         meta = event.style.meta
         click_line: Union[int, None] = meta.get("line", None)
-        if (
-            self.double_click is not None
-            and click_line is not None
-            and self.double_click == click_line
-        ):
-            event.prevent_default()
+        if event.button == 1:  # left button click
+            self.post_message(DataCatalog.HideContextMenu())
+            if (
+                self.double_click is not None
+                and click_line is not None
+                and self.double_click == click_line
+            ):
+                event.prevent_default()
+                node = self.get_node_at_line(click_line)
+                if node is not None:
+                    self.post_message(DataCatalog.NodeSubmitted(node=node))
+                    node.expand()
+            else:
+                self.double_click = click_line
+                self.set_timer(
+                    delay=0.5,
+                    callback=self._clear_double_click,
+                    name="double_click_timer",
+                )
+        elif event.button == 3 and click_line is not None:  # right click
             node = self.get_node_at_line(click_line)
-            if node is not None:
-                self.post_message(DataCatalog.NodeSubmitted(node=node))
-                node.expand()
-        else:
-            self.double_click = click_line
-            self.set_timer(
-                delay=0.5, callback=self._clear_double_click, name="double_click_timer"
-            )
+            if node is not None and isinstance(node.data, CatalogItem):
+                self.post_message(DataCatalog.ShowContextMenu(node=node))
 
     def _clear_double_click(self) -> None:
         self.double_click = None
