@@ -65,6 +65,7 @@ from harlequin.components import (
 )
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
+from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import BufferState, Cache
@@ -371,8 +372,8 @@ class Harlequin(AppBase):
             self.notify("Database Connected.")
         self.update_schema_data()
 
-    @on(DataCatalog.NodeSubmitted)
-    def insert_node_into_editor(self, message: DataCatalog.NodeSubmitted) -> None:
+    @on(HarlequinTree.NodeSubmitted)
+    def insert_node_into_editor(self, message: HarlequinTree.NodeSubmitted) -> None:
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
@@ -381,8 +382,8 @@ class Harlequin(AppBase):
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
-    @on(DataCatalog.NodeCopied)
-    def copy_node_name(self, message: DataCatalog.NodeCopied) -> None:
+    @on(HarlequinTree.NodeCopied)
+    def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
         if self.editor is None:
             # recycle message while we wait for the editor to load
@@ -539,8 +540,8 @@ class Harlequin(AppBase):
             )
             self.exit(return_code=2, message=pretty_error_message(error))
 
-    @on(DataCatalog.CatalogError)
-    def handle_catalog_error(self, message: DataCatalog.CatalogError) -> None:
+    @on(HarlequinTree.CatalogError)
+    def handle_catalog_error(self, message: HarlequinTree.CatalogError) -> None:
         self._push_error_modal(
             title=f"Catalog Error: {message.catalog_type}",
             header=f"Could not populate the {message.catalog_type} data catalog",

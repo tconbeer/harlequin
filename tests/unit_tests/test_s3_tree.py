@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from harlequin.components.data_catalog import S3Tree
+from harlequin.components.data_catalog.s3_tree import S3Tree
 
 
 @pytest.mark.parametrize(
