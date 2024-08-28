@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class ColumnCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
+class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     parent: "RelationCatalogItem" | None = None
 
     @classmethod
@@ -37,7 +37,7 @@ class ColumnCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
 
 
 @dataclass
-class RelationCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
+class RelationCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     parent: "SchemaCatalogItem" | None = None
 
     def fetch_children(self) -> list[ColumnCatalogItem]:
@@ -114,7 +114,7 @@ class TempTableCatalogItem(TableCatalogItem):
 
 
 @dataclass
-class SchemaCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
+class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     parent: "DatabaseCatalogItem" | None = None
 
     @classmethod
@@ -164,7 +164,7 @@ class SchemaCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
         return children
 
 
-class DatabaseCatalogItem(InteractiveCatalogItem[DuckDbConnection]):
+class DatabaseCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     INTERACTIONS = [
         ("Switch Editor Context (USE)", execute_use_statement),
         ("Drop Database", execute_drop_database_statement),
