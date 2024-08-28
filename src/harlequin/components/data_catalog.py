@@ -26,7 +26,6 @@ from harlequin.catalog_cache import CatalogCache, recursive_dict
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
-    from harlequin.adapter import HarlequinConnection
     from harlequin.catalog import Interaction
     from harlequin.driver import HarlequinDriver
 
@@ -36,9 +35,7 @@ except ImportError:
     boto3 = None  # type: ignore
 
 
-def insert_name_at_cursor(
-    item: CatalogItem, connection: "HarlequinConnection", driver: HarlequinDriver
-) -> None:
+def insert_name_at_cursor(item: CatalogItem, driver: HarlequinDriver) -> None:
     driver.insert_text_at_selection(text=item.query_name)
 
 
@@ -152,9 +149,9 @@ class DataCatalog(TabbedContent, can_focus=True):
         self,
         *titles: TextType,
         initial: str = "",
-        name: Union[str, None] = None,
-        id: Union[str, None] = None,  # noqa: A002
-        classes: Union[str, None] = None,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
         disabled: bool = False,
         show_files: Path | None = None,
         show_s3: str | None = None,
@@ -368,6 +365,8 @@ class DatabaseTree(HarlequinTree, Tree[CatalogItem], inherit_bindings=False):
         expanded_nodes: Set[str],
     ) -> None:
         for item in items:
+            if isinstance(item, InteractiveCatalogItem):
+                item.children = list(item.fetch_children())
             if item.children:
                 new_node = parent.add(
                     label=self._build_item_label(item.label, item.type_label),

@@ -49,11 +49,10 @@ TAdapterConnection_contra = TypeVar(
 )
 
 
-class Interaction(Protocol[TCatalogItem_contra, TAdapterConnection_contra]):
+class Interaction(Protocol[TCatalogItem_contra]):
     def __call__(
         self,
         item: TCatalogItem_contra,
-        connection: TAdapterConnection_contra,
         driver: "HarlequinDriver",
     ) -> None: ...
 
@@ -74,11 +73,10 @@ class InteractiveCatalogItem(CatalogItem, Generic[TAdapterConnection_contra]):
     a confirmation modal, and display a notification (toast).
     """
 
+    connection: TAdapterConnection_contra | None = None
     INTERACTIONS: ClassVar[Sequence[tuple[str, Interaction]] | None] = None
 
-    def fetch_children(
-        self, connection: TAdapterConnection_contra
-    ) -> Sequence[CatalogItem]:
+    def fetch_children(self) -> Sequence[CatalogItem]:
         """
         Returns a list of CatalogItems (or subclass instances, like other
         InteractiveCatalogItems) to be shown under this item in the catalog

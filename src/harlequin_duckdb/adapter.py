@@ -128,7 +128,9 @@ class DuckDbConnection(HarlequinConnection):
         catalog_items: list[CatalogItem] = []
         databases = self._get_databases()
         for (database_label,) in databases:
-            catalog_items.append(DatabaseCatalogItem.from_label(database_label))
+            catalog_items.append(
+                DatabaseCatalogItem.from_label(label=database_label, connection=self)
+            )
         return Catalog(items=catalog_items)
 
     def get_catalog_old(self) -> Catalog:

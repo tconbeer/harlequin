@@ -44,7 +44,6 @@ from harlequin.catalog import (
     Catalog,
     Interaction,
     NewCatalog,
-    TAdapterConnection_contra,
     TCatalogItem_contra,
 )
 from harlequin.catalog_cache import (
@@ -575,12 +574,9 @@ class Harlequin(AppBase):
     def execute_interaction_in_thread(
         self, message: ContextMenu.ExecuteInteraction
     ) -> None:
-        if self.connection is None:
-            return
         self._execute_interaction(
             interaction=message.interaction,
             item=message.item,
-            connection=self.connection,
             driver=self.harlequin_driver,
         )
 
@@ -1172,11 +1168,10 @@ class Harlequin(AppBase):
         self,
         interaction: Interaction,
         item: TCatalogItem_contra,
-        connection: TAdapterConnection_contra,
         driver: HarlequinDriver,
     ) -> None:
         try:
-            interaction(item=item, connection=connection, driver=driver)
+            interaction(item=item, driver=driver)
         except Exception as e:
             self.call_from_thread(
                 self._push_error_modal,
