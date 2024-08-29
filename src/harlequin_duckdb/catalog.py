@@ -33,6 +33,7 @@ class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
             type_label=type_label,
             connection=parent.connection,
             parent=parent,
+            loaded=True,
         )
 
 

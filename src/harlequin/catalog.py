@@ -73,8 +73,13 @@ class InteractiveCatalogItem(CatalogItem, Generic[TAdapterConnection_contra]):
     a confirmation modal, and display a notification (toast).
     """
 
-    connection: TAdapterConnection_contra | None = None
     INTERACTIONS: ClassVar[Sequence[tuple[str, Interaction]] | None] = None
+    loaded: bool = False
+    """
+    Harlequin will set loaded to True after calling fetch_children. You
+    can prevent calls to fetch_children by initializing loaded=True.
+    """
+    connection: TAdapterConnection_contra | None = None
 
     def fetch_children(self) -> Sequence[CatalogItem]:
         """

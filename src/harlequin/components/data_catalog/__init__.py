@@ -181,7 +181,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.database_context_menu.reload(node=event.node)
 
     def update_database_tree(self, catalog: Catalog) -> None:
-        self.database_tree.update_tree(catalog)
+        self.database_tree.catalog = catalog
 
     def update_file_tree(self) -> None:
         if self.file_tree is not None:
