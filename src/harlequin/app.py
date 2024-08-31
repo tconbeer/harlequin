@@ -1164,6 +1164,7 @@ class Harlequin(AppBase):
         exclusive=True,
         exit_on_error=False,
         group="interactions",
+        description="_execute_interaction",
     )
     def _execute_interaction(
         self,
