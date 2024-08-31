@@ -332,6 +332,11 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         if node.data is None:
             return
         if isinstance(node.data, InteractiveCatalogItem) and not node.data.loaded:
-            # if this node isn't loaded yet, add it to the front of the
-            # queue
+            # if this node isn't loaded yet, add it to the front of the queue
             await self._add_to_load_queue(node, priority=0)  # type: ignore[arg-type]
+        if (
+            isinstance(node.data, CatalogItem)
+            and node.data.children
+            and not node.children
+        ):
+            self._populate_node(node, content=node.data.children)
