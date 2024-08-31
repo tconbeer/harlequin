@@ -56,6 +56,17 @@ class DuckDbCursor(HarlequinCursor):
             ) from e
         return result
 
+    def fetchone(self) -> tuple | None:
+        try:
+            result = self.relation.fetchone()
+        except duckdb.InterruptException:
+            return None
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error when running your query:"
+            ) from e
+        return result
+
 
 class DuckDbConnection(HarlequinConnection):
     RELATION_TYPE_MAPPING = {

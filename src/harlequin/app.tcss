@@ -88,23 +88,30 @@ DataCatalog * .directory-tree--hidden {
 DataCatalog ContextMenu {
     layer: overlay;
     display: none;
-    padding: 0 1;
-    margin: 0 0 0 3;
-    border: $border-color-nofocus vkey;
-    width: auto;
+    padding: 1 1;
+    border: none;
+    color: $text;
+    margin: 0 2;
+    overflow: hidden auto;
+    width: 1fr;
     max-width: 100%;
-    max-height: 8;
+    max-height: 10;
     background: $background-lighten-2 ;
     &.open {
         display: block;
     }
     &:focus{
-        border: $border-color-focus vkey;
+        background: $secondary ;
     }
-    &>.option-list--option-highlighted {
-        color: $text;
+    &>.option-list--option-hover {
+        color: $background;
         background: $secondary;
         text-style: bold;
+    }
+    &>.option-list--option-highlighted {
+        color: $background;
+        background: $secondary;
+        text-style: reverse bold;
     }
 }
 
@@ -590,19 +597,23 @@ ConfirmModal {
 ConfirmModal Vertical#outer {
     border: round $border-color-focus;
     background: $background;
-    margin: 2 4;
-    padding: 1 2;
+    margin: 2 0;
+    padding: 1 1;
     height: auto;
     max-height: 30;
+    width: auto;
     max-width: 88;
 }
 
 ConfirmModal Label {
+    width: 100%;
+    text-align: center;
 
 }
 
 ConfirmModal Horizontal#button_row {
     height: auto;
+    width: auto;
     align: center bottom;
     margin: 2 0 1 0;
 }
@@ -610,7 +621,7 @@ ConfirmModal Horizontal#button_row {
 ConfirmModal Horizontal#button_row Button {
     background: $primary;
     height: 3;
-    margin: 0 6;
+    margin: 0 4;
     padding: 0 1;
     min-width: 16;
     border: none;

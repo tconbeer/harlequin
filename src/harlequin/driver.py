@@ -49,7 +49,7 @@ class HarlequinDriver:
         """
         self.app.post_message(self.InsertTextAtSelection(text=text))
 
-    async def insert_text_in_new_buffer(self, text: str) -> None:
+    def insert_text_in_new_buffer(self, text: str) -> None:
         """
         Create a new buffer (tab) in Harlequin's editor and insert the text.
         """

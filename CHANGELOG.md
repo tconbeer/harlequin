@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Harlequin's Data Catalog is now interactive! Adapters can define interactions on catalog nodes, which can be selected via a context menu by right-clicking on nodes in the context menu or pressing `.` (this binding is configurable via the `data_catalog.show_context_menu` action).
 - For adapters that support it, Harlequin's Data Catalog now loads lazily. This should dramatically improve Data Catalog load time for catalogs with thousands of nodes. The Data Catalog is no longer cached.
-- The DuckDB and SQLite adapters now support lazy-loading and a wide range of interactions.
+- The DuckDB and SQLite adapters now support lazy-loading and a wide range of interactions, including `use`ing database and schemas, previewing data, dropping objects, and showing DDL for objects.
 
 
 

@@ -263,7 +263,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             if isinstance(child, InteractiveCatalogItem):
                 self._add_to_load_queue(child)
 
-    @work(thread=True, exit_on_error=False)
+    @work(thread=True, exit_on_error=False, description="_load_children")
     def _load_children(self, node: TreeNode[CatalogItem]) -> list[CatalogItem]:
         """Load the children for a given node.
 

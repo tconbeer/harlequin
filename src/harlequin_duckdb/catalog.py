@@ -5,8 +5,17 @@ from typing import TYPE_CHECKING
 
 from harlequin.catalog import InteractiveCatalogItem
 from harlequin_duckdb.interactions import (
-    execute_drop_database_statement,
+    execute_drop_schema_statement,
+    execute_drop_table_statement,
+    execute_drop_view_statement,
     execute_use_statement,
+    insert_columns_at_cursor,
+    show_describe_relation,
+    show_export_database,
+    show_select_star,
+    show_summarize_relation,
+    show_table_ddl,
+    show_view_ddl,
 )
 
 if TYPE_CHECKING:
@@ -39,6 +48,12 @@ class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
 
 @dataclass
 class RelationCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
+    INTERACTIONS = [
+        ("Insert Columns at Cursor", insert_columns_at_cursor),
+        ("Preview Data", show_select_star),
+        ("Describe", show_describe_relation),
+        ("Summarize", show_summarize_relation),
+    ]
     parent: "SchemaCatalogItem" | None = None
 
     def fetch_children(self) -> list[ColumnCatalogItem]:
@@ -58,6 +73,11 @@ class RelationCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
 
 
 class ViewCatalogItem(RelationCatalogItem):
+    INTERACTIONS = RelationCatalogItem.INTERACTIONS + [
+        ("Show DDL", show_view_ddl),
+        ("Drop View", execute_drop_view_statement),
+    ]
+
     @classmethod
     def from_parent(
         cls,
@@ -77,6 +97,11 @@ class ViewCatalogItem(RelationCatalogItem):
 
 
 class TableCatalogItem(RelationCatalogItem):
+    INTERACTIONS = RelationCatalogItem.INTERACTIONS + [
+        ("Show DDL", show_table_ddl),
+        ("Drop Table", execute_drop_table_statement),
+    ]
+
     @classmethod
     def from_parent(
         cls,
@@ -96,6 +121,11 @@ class TableCatalogItem(RelationCatalogItem):
 
 
 class TempTableCatalogItem(TableCatalogItem):
+    INTERACTIONS = RelationCatalogItem.INTERACTIONS + [
+        ("Drop Table", execute_drop_table_statement),
+        ("Show DDL", show_table_ddl),
+    ]
+
     @classmethod
     def from_parent(
         cls,
@@ -116,6 +146,10 @@ class TempTableCatalogItem(TableCatalogItem):
 
 @dataclass
 class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
+    INTERACTIONS = [
+        ("Switch Editor Context (Use)", execute_use_statement),
+        ("Drop Schema", execute_drop_schema_statement),
+    ]
     parent: "DatabaseCatalogItem" | None = None
 
     @classmethod
@@ -167,8 +201,8 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
 
 class DatabaseCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     INTERACTIONS = [
-        ("Switch Editor Context (USE)", execute_use_statement),
-        ("Drop Database", execute_drop_database_statement),
+        ("Switch Editor Context (Use)", execute_use_statement),
+        ("Export Database", show_export_database),
     ]
 
     @classmethod

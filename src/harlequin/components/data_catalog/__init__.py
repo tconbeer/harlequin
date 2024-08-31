@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Sequence
 
+from rich.markup import escape
 from rich.text import TextType
 from textual import on
 from textual.css.query import NoMatches
@@ -45,7 +46,7 @@ class ContextMenu(OptionList):
             super().__init__()
 
     DEFAULT_INTERACTIONS: list[tuple[str, "Interaction"]] = [
-        ("Insert Name at Cursor", insert_name_at_cursor)
+        ("Insert Name at Cursor", insert_name_at_cursor),
     ]
 
     def __init__(self) -> None:
@@ -70,9 +71,17 @@ class ContextMenu(OptionList):
         self.interactions = [*self.DEFAULT_INTERACTIONS, *other_interactions]
 
         for label, _ in self.interactions:
-            self.add_option(label)
+            self.add_option(escape(label))
 
-        self.styles.offset = (0, node.line + 1)
+        assert isinstance(self.parent, TabPane)
+        parent_height = self.parent.scrollable_content_region.height
+        context_menu_height = self.option_count + 2
+        scroll_offset = node.tree.scroll_offset.y
+        if (node.line - scroll_offset + context_menu_height) < parent_height:
+            self.styles.offset = (0, node.line - scroll_offset + 1)
+        else:
+            self.styles.offset = (0, node.line - scroll_offset - context_menu_height)
+
         self.add_class("open")
         self.highlighted = 0
         self.focus()
