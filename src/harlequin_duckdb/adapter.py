@@ -295,7 +295,7 @@ class DuckDbAdapter(HarlequinAdapter):
                 conn_str if conn_str and conn_str != ("",) else IN_MEMORY_CONN_STR
             )
             self.init_path = (
-                Path(init_path).resolve()
+                Path(init_path).expanduser().resolve()
                 if init_path is not None
                 else Path.home() / ".duckdbrc"
             )

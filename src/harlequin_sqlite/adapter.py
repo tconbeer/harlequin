@@ -290,7 +290,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                 else IN_MEMORY_CONN_STR
             )
             self.init_path = (
-                Path(init_path).resolve()
+                Path(init_path).expanduser().resolve()
                 if init_path is not None
                 else Path.home() / ".sqliterc"
             )

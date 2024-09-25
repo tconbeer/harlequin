@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- DuckDB & SQLite adapters: fix bug to properly resolve initialization script paths starting with `~` (i.e. user's home dir) supplied to `--init-path` ([#646](https://github.com/tconbeer/harlequin/pull/646)).
+
 ## [1.24.0] - 2024-08-19
 
 ### Features
