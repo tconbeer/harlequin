@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.24.1] - 2024-09-25
+
 ### Bug Fixes
 
 - DuckDB & SQLite adapters: fix bug to properly resolve initialization script paths starting with `~` (i.e. user's home dir) supplied to `--init-path` ([#646](https://github.com/tconbeer/harlequin/pull/646)).
@@ -718,7 +720,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.24.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.24.1...HEAD
+[1.24.1]: https://github.com/tconbeer/harlequin/compare/1.24.0...1.24.1
 [1.24.0]: https://github.com/tconbeer/harlequin/compare/1.23.2...1.24.0
 [1.23.2]: https://github.com/tconbeer/harlequin/compare/1.23.1...1.23.2
 [1.23.1]: https://github.com/tconbeer/harlequin/compare/1.23.0...1.23.1
