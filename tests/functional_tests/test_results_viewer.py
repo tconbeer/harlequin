@@ -21,21 +21,23 @@ def transaction_button_visible(app: Harlequin) -> bool:
 
 @pytest.mark.asyncio
 async def test_dupe_column_names(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "dupe columns")
@@ -45,6 +47,7 @@ async def test_dupe_column_names(
 async def test_copy_data(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
 ) -> None:
     app = app_all_adapters
@@ -52,16 +55,16 @@ async def test_copy_data(
     expected = "3	rosberg	6	ROS	Nico	Rosberg	1985-06-27	German	http://en.wikipedia.org/wiki/Nico_Rosberg"
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
 
         assert app.results_viewer._has_focus_within
@@ -87,21 +90,23 @@ async def test_copy_data(
 
 @pytest.mark.asyncio
 async def test_data_truncated_with_tooltip(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     query = "select 'supercalifragilisticexpialidocious'"
     async with app.run_test(tooltips=True) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+j")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
 
         await pilot.hover(ResultsViewer, (2, 2))

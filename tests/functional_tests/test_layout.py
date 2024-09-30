@@ -7,11 +7,13 @@ from harlequin import Harlequin
 
 @pytest.mark.asyncio
 async def test_toggle_sidebar(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None or app.data_catalog.database_tree.loading:
             await pilot.pause()
         # initialization
@@ -44,11 +46,13 @@ async def test_toggle_sidebar(
 
 @pytest.mark.asyncio
 async def test_toggle_full_screen(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         # initialization; all visible

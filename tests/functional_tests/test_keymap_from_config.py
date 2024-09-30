@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from textwrap import dedent
+from typing import Awaitable, Callable
 
 import pytest
 
@@ -28,7 +29,9 @@ QUERY = dedent(
 
 @pytest.mark.asyncio
 async def test_results_viewer_bindings(
-    duckdb_adapter: type[HarlequinAdapter], data_dir: Path
+    duckdb_adapter: type[HarlequinAdapter],
+    data_dir: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     config_path = (
         data_dir / "functional_tests" / "test_keymap_from_config" / "config.toml"
@@ -42,7 +45,7 @@ async def test_results_viewer_bindings(
         user_defined_keymaps=my_keymaps,
     )
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
 

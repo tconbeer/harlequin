@@ -18,13 +18,15 @@ def transaction_button_visible(app: Harlequin) -> bool:
 
 @pytest.mark.asyncio
 async def test_run_query_bar(
-    app_all_adapters_small_db: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters_small_db: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters_small_db
     snap_results: list[bool] = []
     messages: list[Message] = []
     async with app.run_test(size=(120, 36), message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         # initialization
@@ -38,11 +40,11 @@ async def test_run_query_bar(
         assert app.editor is not None
         app.editor.text = "select * from drivers"
         await pilot.click("#run_query")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
@@ -55,11 +57,11 @@ async def test_run_query_bar(
         assert bar.limit_checkbox.value is True
         assert bar.limit_value == 500
         await pilot.click("#run_query")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
@@ -90,11 +92,11 @@ async def test_run_query_bar(
 
         # run the query with a smaller limit
         await pilot.click("#run_query")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
@@ -111,12 +113,14 @@ async def test_run_query_bar(
 )
 @pytest.mark.asyncio
 async def test_transaction_button(
-    app_small_sqlite: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_small_sqlite: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_small_sqlite
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None or app.connection is None:
             await pilot.pause()
 

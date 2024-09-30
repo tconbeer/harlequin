@@ -20,12 +20,14 @@ def transaction_button_visible(app: Harlequin) -> bool:
 
 @pytest.mark.asyncio
 async def test_select_1(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         assert app.title == "Harlequin"
@@ -41,14 +43,14 @@ async def test_select_1(
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
         assert query_submitted_message.query_text == q
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [query_executed_message] = [
             m for m in messages if isinstance(m, QueriesExecuted)
         ]
         assert query_executed_message.query_count == 1
         assert query_executed_message.cursors
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [results_fetched_message] = [
             m for m in messages if isinstance(m, ResultsFetched)
@@ -80,12 +82,13 @@ async def test_select_1(
 )
 async def test_queries_do_not_crash_all_adapters(
     app_all_adapters: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query: str,
 ) -> None:
     app = app_all_adapters
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = query
@@ -97,7 +100,7 @@ async def test_queries_do_not_crash_all_adapters(
                 m for m in messages if isinstance(m, QuerySubmitted)
             ]
             assert query_submitted_message.query_text == query
-            await app.workers.wait_for_complete()
+            await wait_for_workers(app)
             await pilot.pause()
             [query_executed_message] = [
                 m for m in messages if isinstance(m, QueriesExecuted)
@@ -105,7 +108,7 @@ async def test_queries_do_not_crash_all_adapters(
             assert query_executed_message.cursors
         if query and query != "select 1 where false":
             await pilot.pause()
-            await app.workers.wait_for_complete()
+            await wait_for_workers(app)
             table = app.results_viewer.get_visible_table()
             assert table is not None
             assert table.row_count >= 1
@@ -136,20 +139,23 @@ async def test_queries_do_not_crash_all_adapters(
     ],
 )
 async def test_queries_do_not_crash(
-    app: Harlequin, query: str, app_snapshot: Callable[..., Awaitable[bool]]
+    app: Harlequin,
+    query: str,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = query
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         table = app.results_viewer.get_visible_table()
         assert table is not None
@@ -158,13 +164,15 @@ async def test_queries_do_not_crash(
 
 @pytest.mark.asyncio
 async def test_multiple_queries(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     snap_results: list[bool] = []
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         q = "select 1; select 2"
@@ -172,7 +180,7 @@ async def test_multiple_queries(
         await pilot.press("ctrl+j")
 
         # should only run one query
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
@@ -182,7 +190,7 @@ async def test_multiple_queries(
         assert table
         assert table.row_count == table.source_row_count == 1
         assert "hide-tabs" in app.results_viewer.classes
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "One query"))
 
@@ -190,7 +198,7 @@ async def test_multiple_queries(
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
         # should run both queries
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         [_, query_submitted_message] = [
@@ -199,7 +207,7 @@ async def test_multiple_queries(
         assert query_submitted_message.query_text == "select 1; select 2"
         assert app.results_viewer.tab_count == 2
         assert "hide-tabs" not in app.results_viewer.classes
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Both queries"))
         assert app.results_viewer.active == "tab-2"
@@ -223,11 +231,12 @@ async def test_multiple_queries(
 @pytest.mark.asyncio
 async def test_single_query_terminated_with_semicolon(
     app_all_adapters: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         q = "select 1;    \n\t\n"
@@ -235,7 +244,7 @@ async def test_single_query_terminated_with_semicolon(
         await pilot.press("ctrl+j")
 
         # should only run current query
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
@@ -249,7 +258,7 @@ async def test_single_query_terminated_with_semicolon(
 
         # should not run whitespace query, even though included
         # in selection.
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [_, query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
@@ -262,7 +271,7 @@ async def test_single_query_terminated_with_semicolon(
         await pilot.press("ctrl+j")
         # should run previous query
         assert not app.editor.current_query
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         [*_, query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
@@ -286,18 +295,19 @@ async def test_query_errors(
     app_all_adapters: Harlequin,
     bad_query: str,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = bad_query
 
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         assert len(app.screen_stack) == 2
         assert isinstance(app.screen, ErrorModal)

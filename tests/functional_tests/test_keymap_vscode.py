@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from textwrap import dedent
+from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,9 +28,13 @@ QUERY = dedent(
 
 
 @pytest.mark.asyncio
-async def test_editor_bindings(app: Harlequin, mock_pyperclip: MagicMock) -> None:
+async def test_editor_bindings(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    mock_pyperclip: MagicMock,
+) -> None:
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
 
@@ -163,10 +168,12 @@ async def test_editor_bindings(app: Harlequin, mock_pyperclip: MagicMock) -> Non
 
 @pytest.mark.asyncio
 async def test_results_viewer_bindings(
-    app: Harlequin, mock_pyperclip: MagicMock
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    mock_pyperclip: MagicMock,
 ) -> None:
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
 

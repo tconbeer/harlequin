@@ -27,6 +27,7 @@ def mock_time(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_history_screen(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_time: None,
 ) -> None:
     snap_results: list[bool] = []
@@ -40,12 +41,12 @@ async def test_history_screen(
             await pilot.pause()
         app.post_message(QuerySubmitted(query_text=q, limit=None))
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         # run a bad query
         app.post_message(QuerySubmitted(query_text="sel;", limit=None))
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.press("space")
 
@@ -64,6 +65,7 @@ async def test_history_screen(
 async def test_history_screen_crash(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_time: None,
 ) -> None:
     async with app.run_test() as pilot:
@@ -72,7 +74,7 @@ async def test_history_screen_crash(
             await pilot.pause()
         app.post_message(QuerySubmitted(query_text=q, limit=None))
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
 
         # https://github.com/tconbeer/harlequin/issues/485

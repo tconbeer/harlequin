@@ -38,12 +38,13 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_data_catalog(
     app_multi_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
@@ -158,6 +159,7 @@ async def test_file_tree(
 async def test_s3_tree(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
     mock_boto3: None,
 ) -> None:
@@ -167,7 +169,7 @@ async def test_s3_tree(
         show_s3="my-bucket",
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         catalog = app.data_catalog
         assert catalog.s3_tree is not None
@@ -193,12 +195,13 @@ async def test_s3_tree(
 async def test_s3_tree_does_not_crash_without_boto3(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = Harlequin(
         duckdb_adapter((":memory:",)),
         show_s3="my-bucket",
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         assert await app_snapshot(app, "Error visible")

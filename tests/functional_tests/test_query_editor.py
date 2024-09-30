@@ -17,9 +17,12 @@ def transaction_button_visible(app: Harlequin) -> bool:
 
 
 @pytest.mark.asyncio
-async def test_query_formatting(app: Harlequin) -> None:
+async def test_query_formatting(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = "select\n\n1 FROM\n\n foo"
@@ -30,11 +33,13 @@ async def test_query_formatting(app: Harlequin) -> None:
 
 @pytest.mark.asyncio
 async def test_multiple_buffers(
-    app: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         assert app.editor_collection
@@ -115,51 +120,53 @@ async def test_multiple_buffers(
 )
 @pytest.mark.asyncio
 async def test_word_autocomplete(
-    app_all_adapters: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_all_adapters: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None or app.editor_collection.word_completer is None:
             await pilot.pause()
 
         await pilot.press("s")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "s"))
 
         await pilot.press("e")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se"))
 
         await pilot.press("l")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "sel"))
 
         await pilot.press("backspace")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se again"))
 
         await pilot.press("l")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         await pilot.press("enter")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "submitted"))
@@ -173,12 +180,14 @@ async def test_word_autocomplete(
 )
 @pytest.mark.asyncio
 async def test_member_autocomplete(
-    app_small_duck: Harlequin, app_snapshot: Callable[..., Awaitable[bool]]
+    app_small_duck: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None or app.editor_collection.member_completer is None:
             await pilot.pause()
         app.editor.text = '"drivers"'
@@ -186,21 +195,21 @@ async def test_member_autocomplete(
 
         await pilot.press("full_stop")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "driver members"))
 
         await pilot.press("quotation_mark")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "with quote"))
 
         await pilot.press("enter")
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "submitted"))

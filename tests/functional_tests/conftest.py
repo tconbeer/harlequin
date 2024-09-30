@@ -1,6 +1,9 @@
+from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
+
+from harlequin.app import Harlequin
 
 
 @pytest.fixture(autouse=True)
@@ -42,3 +45,15 @@ def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     monkeypatch.setattr("textual_textarea.text_editor.pyperclip", mock)
 
     return mock
+
+
+@pytest.fixture
+def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
+    async def wait_for_filtered_workers(app: Harlequin) -> None:
+        filtered_workers = [
+            w for w in app.workers if w.name != "_database_tree_background_loader"
+        ]
+        if filtered_workers:
+            await app.workers.wait_for_complete(filtered_workers)
+
+    return wait_for_filtered_workers

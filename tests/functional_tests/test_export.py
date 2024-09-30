@@ -29,19 +29,20 @@ async def test_export(
     tmp_path: Path,
     filename: str,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
         app.editor.text = "select 1 as a"
         await pilot.press("ctrl+j")  # run query
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         assert len(app.screen_stack) == 1
 
@@ -59,12 +60,12 @@ async def test_export(
         app.screen.file_input.value = str(export_path)  # type: ignore
         await pilot.pause()
         await pilot.press("enter")
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
 
         assert export_path.is_file()
         assert len(app.screen_stack) == 1
-        await app.workers.wait_for_complete()
+        await wait_for_workers(app)
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "After Export"))
 
