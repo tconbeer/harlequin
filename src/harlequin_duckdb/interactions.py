@@ -45,6 +45,7 @@ def execute_drop_schema_statement(
             raise
         else:
             driver.notify(f"Dropped schema {item.label}")
+            driver.refresh_catalog()
 
     if item.children or item.fetch_children():
         driver.confirm_and_execute(callback=_drop_schema)
@@ -69,6 +70,7 @@ def execute_drop_relation_statement(
             raise
         else:
             driver.notify(f"Dropped {relation_type} {item.label}")
+            driver.refresh_catalog()
 
     driver.confirm_and_execute(callback=_drop_relation)
 

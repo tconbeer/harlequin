@@ -443,6 +443,11 @@ class Harlequin(AppBase):
         message.stop()
         self.notify(message=message.notify_message, severity=message.severity)
 
+    @on(HarlequinDriver.Refreshcatalog)
+    def driver_refresh_catalog(self, message: HarlequinDriver.Refreshcatalog) -> None:
+        message.stop()
+        self.update_schema_data()
+
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched

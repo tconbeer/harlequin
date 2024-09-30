@@ -11,7 +11,6 @@ All notable changes to this project will be documented in this file.
 - The DuckDB and SQLite adapters now support lazy-loading and a wide range of interactions, including `use`ing database and schemas, previewing data, dropping objects, and showing DDL for objects.
 
 
-
 ## [1.24.1] - 2024-09-25
 
 ### Bug Fixes
