@@ -7,6 +7,7 @@ import pytest
 from textual.geometry import Offset
 
 from harlequin import Harlequin
+from harlequin.catalog import InteractiveCatalogItem
 from harlequin_duckdb.adapter import DuckDbAdapter
 
 
@@ -32,6 +33,7 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_bucket.objects.filter.return_value = objects
 
     monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
+    monkeypatch.setattr("harlequin.components.data_catalog.s3_tree.boto3", mock_boto3)
 
 
 @pytest.mark.asyncio
@@ -62,6 +64,10 @@ async def test_data_catalog(
         assert dbs[0].is_expanded is False
 
         # the small db has two schemas, but you can't see them yet
+        # pause while the children are loaded
+        assert isinstance(dbs[0].data, InteractiveCatalogItem)
+        while not dbs[0].data.loaded:
+            await pilot.pause(0.1)
         assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
 

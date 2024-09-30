@@ -70,6 +70,10 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         assert isinstance(self.root.data, CatalogItem)
         self.root.data.children = catalog.items if catalog is not None else []
         await self.reload()
+        # add the root's children to the prefetch queue
+        for child in self.root.children:
+            if isinstance(child.data, InteractiveCatalogItem) and not child.data.loaded:
+                self._add_to_load_queue(child)  # type: ignore[arg-type]
         self.loading = False
 
     def _add_to_load_queue(
@@ -102,7 +106,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self._load_queue = PriorityQueue()
         # ... reset the root node ...
         processed = self.reload_node(self.root)
-        # ...and replace the old loader with a new one.
+        # ... and replace the old loader with a new one.
         self._loader()
         return processed
 
