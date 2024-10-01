@@ -108,3 +108,10 @@ class NewCatalog(Message):
     def __init__(self, catalog: Catalog) -> None:
         self.catalog = catalog
         super().__init__()
+
+
+class NewCatalogItems(Message):
+    def __init__(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+        self.parent = parent
+        self.items = items
+        super().__init__()

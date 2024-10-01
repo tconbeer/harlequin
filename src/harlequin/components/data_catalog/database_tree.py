@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from asyncio import PriorityQueue
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator, Iterable, TypeVar
 
@@ -11,7 +12,12 @@ from textual.reactive import var
 from textual.widgets._tree import Tree, TreeNode
 from textual.worker import WorkerCancelled, WorkerFailed, get_current_worker
 
-from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    InteractiveCatalogItem,
+    NewCatalogItems,
+)
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.messages import WidgetMounted
 
@@ -33,8 +39,14 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         disabled: bool = False,
     ) -> None:
         self._load_queue: PriorityQueue[
-            tuple[int, TreeNode[InteractiveCatalogItem]]
+            tuple[int, str, int, TreeNode[InteractiveCatalogItem]]
         ] = PriorityQueue()
+        """
+        _load_queue is a priority queue, ordered by a priority int,
+        then the string label of the node, then the id of the node,
+        which should prevent any comparisons between TreeNodes, which
+        do not implement cmp operators.
+        """
         self.type_color = type_color
         super().__init__(
             label="Root",
@@ -79,12 +91,13 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
     def _add_to_load_queue(
         self, node: TreeNode[InteractiveCatalogItem], priority: int = 100
     ) -> AwaitComplete:
-        """Add the given node to the load queue.
+        """Add the given node to the load priority queue.
 
         The return value can optionally be awaited until the queue is empty.
 
         Args:
             node: The node to add to the load queue.
+            priority: An order for this node to be loaded; lowest first.
 
         Returns:
             An optionally awaitable object that can be awaited until the
@@ -92,7 +105,10 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """
         assert node.data is not None
         if not node.data.loaded:
-            self._load_queue.put_nowait((priority, node))
+            with suppress(TypeError):
+                # typeError will be raised if this node already exists in the queue,
+                # since TreeNodes do not implement cmp operators.
+                self._load_queue.put_nowait((priority, str(node.label), id(node), node))
 
         return AwaitComplete(self._load_queue.join())
 
@@ -258,14 +274,11 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """
         node.remove_children()
         for item in content:
-            child = node.add(
+            node.add(
                 self._build_item_label(item.label, item.type_label),
                 data=item,
                 allow_expand=bool(item.children) or not getattr(item, "loaded", True),
             )
-            # pre-fetch the node's grandchildren
-            if isinstance(child, InteractiveCatalogItem):
-                self._add_to_load_queue(child)
 
     @work(thread=True, exit_on_error=False, description="_load_children")
     def _load_children(self, node: TreeNode[CatalogItem]) -> list[CatalogItem]:
@@ -284,10 +297,13 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             and not node.data.loaded
         ):
             try:
-                node.data.children = list(node.data.fetch_children())
+                children = list(node.data.fetch_children())
             except BaseException as e:
                 self.post_message(self.CatalogError(catalog_type="database", error=e))
                 return []
+            else:
+                node.data.children = children
+                self.post_message(NewCatalogItems(parent=node.data, items=children))
             finally:
                 node.data.loaded = True
                 node.allow_expand = bool(node.data.children)
@@ -304,7 +320,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         while not worker.is_cancelled:
             # Get the next node that needs loading off the queue. Note that
             # this blocks if the queue is empty.
-            _, node = await self._load_queue.get()
+            *_, node = await self._load_queue.get()
             content: list[Path] = []
             async with self.lock:
                 try:
@@ -344,3 +360,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             and not node.children
         ):
             self._populate_node(node, content=node.data.children)
+        # pre-fetch the node's grandchildren
+        for child in node.children:
+            if isinstance(child.data, InteractiveCatalogItem):
+                self._add_to_load_queue(child)  # type: ignore[arg-type]

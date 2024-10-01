@@ -39,11 +39,14 @@ from harlequin.actions import HARLEQUIN_ACTIONS
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
+from harlequin.autocomplete.completers import MemberCompleter, WordCompleter
 from harlequin.bindings import bind
 from harlequin.catalog import (
     Catalog,
+    CatalogItem,
     Interaction,
     NewCatalog,
+    NewCatalogItems,
     TCatalogItem_contra,
 )
 from harlequin.catalog_cache import (
@@ -157,6 +160,15 @@ class TransactionModeChanged(Message):
         self.new_mode = new_mode
 
 
+class CompletersReady(Message):
+    def __init__(
+        self, word_completer: WordCompleter, member_completer: MemberCompleter
+    ) -> None:
+        super().__init__()
+        self.word_completer = word_completer
+        self.member_completer = member_completer
+
+
 class Harlequin(AppBase):
     """
     The SQL IDE for your Terminal.
@@ -190,7 +202,6 @@ class Harlequin(AppBase):
         )
         self.adapter = adapter
         self.connection_hash = connection_hash
-        self.catalog: Catalog | None = None
         self.history: History | None = None
         self.theme = theme
         self.show_files = show_files
@@ -587,10 +598,20 @@ class Harlequin(AppBase):
         )
 
     @on(NewCatalog)
-    def update_tree_and_completers(self, message: NewCatalog) -> None:
-        self.catalog = message.catalog
+    def handle_new_catalog(self, message: NewCatalog) -> None:
         self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
+
+    @on(NewCatalogItems)
+    def handle_new_catalog_item(self, message: NewCatalogItems) -> None:
+        if (
+            self.editor_collection.word_completer is not None
+            and self.editor_collection.member_completer is not None
+        ):
+            self.extend_completers(parent=message.parent, items=message.items)
+        else:
+            # recycle message while completers are built
+            self.post_message(message=message)
 
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
@@ -752,6 +773,11 @@ class Harlequin(AppBase):
             self.run_query_bar.commit_button.add_class("hidden")
             self.run_query_bar.rollback_button.add_class("hidden")
 
+    @on(CompletersReady)
+    def update_editor_completers(self, message: CompletersReady) -> None:
+        self.editor_collection.word_completer = message.word_completer
+        self.editor_collection.member_completer = message.member_completer
+
     def action_noop(self) -> None:
         """
         A no-op action to unmap keys.
@@ -898,7 +924,7 @@ class Harlequin(AppBase):
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
         update_catalog_cache(
             connection_hash=self.connection_hash,
-            catalog=self.catalog,
+            catalog=None,  # TODO: cache completions instead.
             s3_tree=self.data_catalog.s3_tree,
             history=self.history,
         )
@@ -1050,13 +1076,18 @@ class Harlequin(AppBase):
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
         )
 
-    @work(
-        thread=True,
-        exclusive=True,
-        exit_on_error=True,
-        group="completer_builders",
-        description="building completers",
-    )
+    def extend_completers(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+        if (
+            self.editor_collection.word_completer is not None
+            and self.editor_collection.member_completer is not None
+        ):
+            self.editor_collection.word_completer.extend_catalog(
+                parent=parent, items=items
+            )
+            self.editor_collection.member_completer.extend_catalog(
+                parent=parent, items=items
+            )
+
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:
             return
@@ -1067,14 +1098,28 @@ class Harlequin(AppBase):
             self.editor_collection.word_completer.update_catalog(catalog=catalog)
             self.editor_collection.member_completer.update_catalog(catalog=catalog)
         else:
-            extra_completions = self.connection.get_completions()
-            word_completer, member_completer = completer_factory(
-                catalog=catalog,
-                extra_completions=extra_completions,
-                type_color=self.app_colors.gray,
+            self._build_completers(catalog)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=True,
+        group="completer_builders",
+        description="building completers",
+    )
+    def _build_completers(self, catalog: Catalog) -> None:
+        assert self.connection is not None
+        extra_completions = self.connection.get_completions()
+        word_completer, member_completer = completer_factory(
+            catalog=catalog,
+            extra_completions=extra_completions,
+            type_color=self.app_colors.gray,
+        )
+        self.post_message(
+            CompletersReady(
+                word_completer=word_completer, member_completer=member_completer
             )
-            self.editor_collection.word_completer = word_completer
-            self.editor_collection.member_completer = member_completer
+        )
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:

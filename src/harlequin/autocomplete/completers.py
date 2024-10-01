@@ -62,6 +62,18 @@ class WordCompleter:
             self._extra_completions,
         )
 
+    def extend_catalog(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+        # TODO: dedupe/merge on the parent's unique key, so we can load items from
+        # a cache and update them later when they are lazy-loaded.
+        new_completions = _build_children_completions(items=items, context=parent.label)
+        self._catalog_completions.extend(new_completions)
+        self.completions = self._merge_completions(
+            self._keyword_completions,
+            self._function_completions,
+            self._catalog_completions,
+            self._extra_completions,
+        )
+
     @staticmethod
     def _merge_completions(
         *completion_lists: list[HarlequinCompletion],
@@ -154,6 +166,9 @@ def completer_factory(
     )
 
 
+# TODO: MOVE THIS SOMEWHERE IN SHARED SCOPE WHERE WE CAN EASILY UPDATE
+# IT WITH NEW CATALOG ITEMS AS THEY ARE LAZILY LOADED. MAYBE THAT MEANS
+# PASSING A CALLBACK TO THE CATALOG? MESSAGE PASSING TOO SLOW/CLUNKY?
 def build_catalog_completions(catalog: Catalog) -> list[HarlequinCompletion]:
     return _build_children_completions(catalog.items)
 
