@@ -233,3 +233,66 @@ async def test_member_autocomplete(
         snap_results.append(await app_snapshot(app, "submitted"))
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_context_menu(
+    app_small_duck: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    app = app_small_duck
+    snap_results: List[bool] = []
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        # we need to expand the data catalog to load items into the completer
+        while (
+            app.data_catalog.database_tree.loading
+            or not app.data_catalog.database_tree.root.children
+        ):
+            await pilot.pause()
+        for db_node in app.data_catalog.database_tree.root.children:
+            db_node.expand()
+            while not db_node.children:
+                if getattr(db_node.data, "loaded", True):
+                    break
+                await pilot.pause()
+            for schema_node in db_node.children:
+                schema_node.expand()
+
+        app.data_catalog.focus()
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "db context menu expanded"))
+
+        await pilot.press("enter")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "db name inserted"))
+
+        app.data_catalog.focus()
+        await pilot.press("down")
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "schema context menu expanded"))
+
+        await pilot.press("escape")
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "table context menu expanded"))
+
+        assert all(snap_results)

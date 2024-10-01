@@ -122,8 +122,8 @@ class TableCatalogItem(RelationCatalogItem):
 
 class TempTableCatalogItem(TableCatalogItem):
     INTERACTIONS = RelationCatalogItem.INTERACTIONS + [
-        ("Drop Table", execute_drop_table_statement),
         ("Show DDL", show_table_ddl),
+        ("Drop Table", execute_drop_table_statement),
     ]
 
     @classmethod

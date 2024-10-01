@@ -64,6 +64,10 @@ class HarlequinTree(Tree[TTreeNode], inherit_bindings=False):
     class HideContextMenu(Message):
         pass
 
+    def on_focus(self) -> None:
+        if self.cursor_line < 0:
+            self.cursor_line = 0
+
     async def on_click(self, event: Click) -> None:
         meta = event.style.meta
         click_line: Union[int, None] = meta.get("line", None)
