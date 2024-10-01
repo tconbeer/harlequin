@@ -1,7 +1,9 @@
+from contextlib import suppress
 from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
+from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 
@@ -54,6 +56,7 @@ def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
             w for w in app.workers if w.name != "_database_tree_background_loader"
         ]
         if filtered_workers:
-            await app.workers.wait_for_complete(filtered_workers)
+            with suppress(WorkerCancelled):
+                await app.workers.wait_for_complete(filtered_workers)
 
     return wait_for_filtered_workers
