@@ -166,9 +166,6 @@ def completer_factory(
     )
 
 
-# TODO: MOVE THIS SOMEWHERE IN SHARED SCOPE WHERE WE CAN EASILY UPDATE
-# IT WITH NEW CATALOG ITEMS AS THEY ARE LAZILY LOADED. MAYBE THAT MEANS
-# PASSING A CALLBACK TO THE CATALOG? MESSAGE PASSING TOO SLOW/CLUNKY?
 def build_catalog_completions(catalog: Catalog) -> list[HarlequinCompletion]:
     return _build_children_completions(catalog.items)
 

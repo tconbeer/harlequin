@@ -188,6 +188,24 @@ async def test_member_autocomplete(
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
+
+        # we need to expand the data catalog to load items into the completer
+        while (
+            app.data_catalog.database_tree.loading
+            or not app.data_catalog.database_tree.root.children
+        ):
+            await pilot.pause()
+        for db_node in app.data_catalog.database_tree.root.children:
+            db_node.expand()
+            while not db_node.children:
+                if getattr(db_node.data, "loaded", True):
+                    break
+                await pilot.pause()
+            for schema_node in db_node.children:
+                schema_node.expand()
+        await pilot.pause(1)
+
+        # now the completer should be populated
         while app.editor is None or app.editor_collection.member_completer is None:
             await pilot.pause()
         app.editor.text = '"drivers"'

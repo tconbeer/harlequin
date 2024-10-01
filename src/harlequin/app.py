@@ -388,7 +388,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
@@ -398,7 +399,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle message while we wait for the editor to load
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         self.editor.text_input.clipboard = message.copy_name
         if (
@@ -419,7 +421,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         self.editor.insert_text_at_selection(text=message.text)
         self.editor.focus()
@@ -431,7 +434,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         await self.editor_collection.insert_buffer_with_text(query_text=message.text)
 
@@ -509,7 +513,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle the message while we wait for the editor to load
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
@@ -611,7 +616,8 @@ class Harlequin(AppBase):
             self.extend_completers(parent=message.parent, items=message.items)
         else:
             # recycle message while completers are built
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.5, callback=callback)
 
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
