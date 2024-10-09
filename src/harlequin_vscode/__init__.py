@@ -77,6 +77,8 @@ VSCODE_DATA_CATALOG_BINDINGS = [
     HarlequinKeyBinding("space", "data_catalog.toggle_node"),
     HarlequinKeyBinding("up", "data_catalog.cursor_up"),
     HarlequinKeyBinding("down", "data_catalog.cursor_down"),
+    HarlequinKeyBinding("full_stop", "data_catalog.show_context_menu"),
+    HarlequinKeyBinding("escape", "data_catalog.hide_context_menu"),
 ]
 VSCODE_RESULTS_VIEWER_BINDINGS = [
     HarlequinKeyBinding("j", "results_viewer.previous_tab"),

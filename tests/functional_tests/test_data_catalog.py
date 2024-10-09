@@ -7,6 +7,7 @@ import pytest
 from textual.geometry import Offset
 
 from harlequin import Harlequin
+from harlequin.catalog import InteractiveCatalogItem
 from harlequin_duckdb.adapter import DuckDbAdapter
 
 
@@ -32,19 +33,22 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_bucket.objects.filter.return_value = objects
 
     monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
+    monkeypatch.setattr("harlequin.components.data_catalog.s3_tree.boto3", mock_boto3)
 
 
 @pytest.mark.asyncio
 async def test_data_catalog(
     app_multi_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
         snap_results.append(await app_snapshot(app, "Initialization"))
@@ -61,6 +65,10 @@ async def test_data_catalog(
         assert dbs[0].is_expanded is False
 
         # the small db has two schemas, but you can't see them yet
+        # pause while the children are loaded
+        assert isinstance(dbs[0].data, InteractiveCatalogItem)
+        while not dbs[0].data.loaded:
+            await pilot.pause(0.1)
         assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
 
@@ -136,7 +144,8 @@ async def test_file_tree(
         show_files=test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert catalog.file_tree is not None
 
@@ -158,6 +167,7 @@ async def test_file_tree(
 async def test_s3_tree(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
     mock_boto3: None,
 ) -> None:
@@ -167,8 +177,9 @@ async def test_s3_tree(
         show_s3="my-bucket",
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert catalog.s3_tree is not None
 
@@ -193,12 +204,79 @@ async def test_s3_tree(
 async def test_s3_tree_does_not_crash_without_boto3(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     app = Harlequin(
         duckdb_adapter((":memory:",)),
         show_s3="my-bucket",
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
         assert await app_snapshot(app, "Error visible")
+
+
+@pytest.mark.asyncio
+async def test_context_menu(
+    app_small_duck: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    app = app_small_duck
+    snap_results: List[bool] = []
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        # we need to expand the data catalog to load items into the completer
+        while (
+            app.data_catalog.database_tree.loading
+            or not app.data_catalog.database_tree.root.children
+        ):
+            await pilot.pause()
+        for db_node in app.data_catalog.database_tree.root.children:
+            db_node.expand()
+            while not db_node.children:
+                if getattr(db_node.data, "loaded", True):
+                    break
+                await pilot.pause()
+            for schema_node in db_node.children:
+                schema_node.expand()
+
+        app.data_catalog.focus()
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "db context menu expanded"))
+
+        await pilot.press("enter")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "db name inserted"))
+
+        app.data_catalog.focus()
+        await pilot.press("down")
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "schema context menu expanded"))
+
+        await pilot.press("escape")
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("full_stop")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        snap_results.append(await app_snapshot(app, "table context menu expanded"))
+
+        assert all(snap_results)

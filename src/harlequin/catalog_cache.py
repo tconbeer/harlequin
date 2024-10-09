@@ -41,8 +41,8 @@ class CatalogCache:
     history: dict[str, History]
 
     def get_db(self, connection_hash: str) -> Catalog | None:
-        if connection_hash:
-            return self.databases.get(connection_hash, None)
+        # if connection_hash:
+        #     return self.databases.get(connection_hash, None)
         return None
 
     def get_history(self, connection_hash: str) -> History | None:
@@ -84,8 +84,8 @@ def update_catalog_cache(
     cache = _load_cache()
     if cache is None:
         cache = CatalogCache(databases={}, s3={}, history={})
-    if catalog is not None and connection_hash:
-        cache.databases[connection_hash] = catalog
+    # if catalog is not None and connection_hash:
+    #     cache.databases[connection_hash] = catalog
     if s3_tree is not None and s3_tree.catalog_data is not None:
         cache.s3[s3_tree.cache_key] = s3_tree.catalog_data
     if history is not None and connection_hash:

@@ -8,6 +8,14 @@ from harlequin.editor_cache import BufferState, Cache
 from harlequin_duckdb import DuckDbAdapter
 
 
+async def wait_for_filtered_workers(app: Harlequin) -> None:
+    filtered_workers = [
+        w for w in app.workers if w.name != "_database_tree_background_loader"
+    ]
+    if filtered_workers:
+        await app.workers.wait_for_complete(filtered_workers)
+
+
 async def load_lots_of_buffers() -> None:
     with patch("harlequin.components.code_editor.load_cache") as mock_load_cache:
         buff = BufferState(
@@ -21,7 +29,7 @@ async def load_lots_of_buffers() -> None:
         app = Harlequin(adapter=adapter)
 
         async with app.run_test() as pilot:
-            await app.workers.wait_for_complete()
+            await wait_for_filtered_workers(app)
             await pilot.pause()
         app.exit()
 

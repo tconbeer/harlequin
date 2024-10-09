@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Callable,
     Dict,
     List,
     Optional,
@@ -38,8 +39,16 @@ from harlequin.actions import HARLEQUIN_ACTIONS
 from harlequin.adapter import HarlequinAdapter, HarlequinCursor
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
+from harlequin.autocomplete.completers import MemberCompleter, WordCompleter
 from harlequin.bindings import bind
-from harlequin.catalog import Catalog, NewCatalog
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    Interaction,
+    NewCatalog,
+    NewCatalogItems,
+    TCatalogItem_contra,
+)
 from harlequin.catalog_cache import (
     CatalogCache,
     get_catalog_cache,
@@ -57,7 +66,11 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.data_catalog import ContextMenu
+from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
+from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import BufferState, Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
@@ -147,6 +160,15 @@ class TransactionModeChanged(Message):
         self.new_mode = new_mode
 
 
+class CompletersReady(Message):
+    def __init__(
+        self, word_completer: WordCompleter, member_completer: MemberCompleter
+    ) -> None:
+        super().__init__()
+        self.word_completer = word_completer
+        self.member_completer = member_completer
+
+
 class Harlequin(AppBase):
     """
     The SQL IDE for your Terminal.
@@ -180,7 +202,6 @@ class Harlequin(AppBase):
         )
         self.adapter = adapter
         self.connection_hash = connection_hash
-        self.catalog: Catalog | None = None
         self.history: History | None = None
         self.theme = theme
         self.show_files = show_files
@@ -199,6 +220,7 @@ class Harlequin(AppBase):
             )
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
+        self.harlequin_driver = HarlequinDriver(app=self)
 
         if keymap_names is None:
             keymap_names = ("vscode",)
@@ -361,22 +383,24 @@ class Harlequin(AppBase):
             self.notify("Database Connected.")
         self.update_schema_data()
 
-    @on(DataCatalog.NodeSubmitted)
-    def insert_node_into_editor(self, message: DataCatalog.NodeSubmitted) -> None:
+    @on(HarlequinTree.NodeSubmitted)
+    def insert_node_into_editor(self, message: HarlequinTree.NodeSubmitted) -> None:
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
-    @on(DataCatalog.NodeCopied)
-    def copy_node_name(self, message: DataCatalog.NodeCopied) -> None:
+    @on(HarlequinTree.NodeCopied)
+    def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
         if self.editor is None:
             # recycle message while we wait for the editor to load
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         self.editor.text_input.clipboard = message.copy_name
         if (
@@ -389,6 +413,55 @@ class Harlequin(AppBase):
                 self.notify("Error copying data to system clipboard.", severity="error")
             else:
                 self.notify("Selected label copied to clipboard.")
+
+    @on(HarlequinDriver.InsertTextAtSelection)
+    def driver_insert_text_into_editor(
+        self, message: HarlequinDriver.InsertTextAtSelection
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            # recycle message while editor loads
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
+            return
+        self.editor.insert_text_at_selection(text=message.text)
+        self.editor.focus()
+
+    @on(HarlequinDriver.InsertTextInNewBuffer)
+    async def driver_insert_text_in_new_buffer(
+        self, message: HarlequinDriver.InsertTextInNewBuffer
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            # recycle message while editor loads
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
+            return
+        await self.editor_collection.insert_buffer_with_text(query_text=message.text)
+
+    @on(HarlequinDriver.ConfirmAndExecute)
+    def driver_confirm_and_execute(
+        self, message: HarlequinDriver.ConfirmAndExecute
+    ) -> None:
+        message.stop()
+
+        def screen_callback(dismiss_value: bool | None) -> None:
+            if dismiss_value:
+                self._execute_callback(callback=message.callback)
+
+        self.push_screen(
+            ConfirmModal(prompt=message.instructions), callback=screen_callback
+        )
+
+    @on(HarlequinDriver.Notify)
+    def driver_notify(self, message: HarlequinDriver.Notify) -> None:
+        message.stop()
+        self.notify(message=message.notify_message, severity=message.severity)
+
+    @on(HarlequinDriver.Refreshcatalog)
+    def driver_refresh_catalog(self, message: HarlequinDriver.Refreshcatalog) -> None:
+        message.stop()
+        self.update_schema_data()
 
     @on(EditorCollection.EditorSwitched)
     def update_internal_editor_state(
@@ -440,7 +513,8 @@ class Harlequin(AppBase):
         message.stop()
         if self.editor is None:
             # recycle the message while we wait for the editor to load
-            self.post_message(message=message)
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.1, callback=callback)
             return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
@@ -487,8 +561,8 @@ class Harlequin(AppBase):
             )
             self.exit(return_code=2, message=pretty_error_message(error))
 
-    @on(DataCatalog.CatalogError)
-    def handle_catalog_error(self, message: DataCatalog.CatalogError) -> None:
+    @on(HarlequinTree.CatalogError)
+    def handle_catalog_error(self, message: HarlequinTree.CatalogError) -> None:
         self._push_error_modal(
             title=f"Catalog Error: {message.catalog_type}",
             header=f"Could not populate the {message.catalog_type} data catalog",
@@ -518,11 +592,32 @@ class Harlequin(AppBase):
             error=message.error,
         )
 
+    @on(ContextMenu.ExecuteInteraction)
+    def execute_interaction_in_thread(
+        self, message: ContextMenu.ExecuteInteraction
+    ) -> None:
+        self._execute_interaction(
+            interaction=message.interaction,
+            item=message.item,
+            driver=self.harlequin_driver,
+        )
+
     @on(NewCatalog)
-    def update_tree_and_completers(self, message: NewCatalog) -> None:
-        self.catalog = message.catalog
+    def handle_new_catalog(self, message: NewCatalog) -> None:
         self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
+
+    @on(NewCatalogItems)
+    def handle_new_catalog_item(self, message: NewCatalogItems) -> None:
+        if (
+            self.editor_collection.word_completer is not None
+            and self.editor_collection.member_completer is not None
+        ):
+            self.extend_completers(parent=message.parent, items=message.items)
+        else:
+            # recycle message while completers are built
+            callback = partial(self.post_message, message)
+            self.set_timer(delay=0.5, callback=callback)
 
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
@@ -684,6 +779,11 @@ class Harlequin(AppBase):
             self.run_query_bar.commit_button.add_class("hidden")
             self.run_query_bar.rollback_button.add_class("hidden")
 
+    @on(CompletersReady)
+    def update_editor_completers(self, message: CompletersReady) -> None:
+        self.editor_collection.word_completer = message.word_completer
+        self.editor_collection.member_completer = message.member_completer
+
     def action_noop(self) -> None:
         """
         A no-op action to unmap keys.
@@ -830,7 +930,7 @@ class Harlequin(AppBase):
         write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
         update_catalog_cache(
             connection_hash=self.connection_hash,
-            catalog=self.catalog,
+            catalog=None,  # TODO: cache completions instead.
             s3_tree=self.data_catalog.s3_tree,
             history=self.history,
         )
@@ -982,13 +1082,18 @@ class Harlequin(AppBase):
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
         )
 
-    @work(
-        thread=True,
-        exclusive=True,
-        exit_on_error=True,
-        group="completer_builders",
-        description="building completers",
-    )
+    def extend_completers(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+        if (
+            self.editor_collection.word_completer is not None
+            and self.editor_collection.member_completer is not None
+        ):
+            self.editor_collection.word_completer.extend_catalog(
+                parent=parent, items=items
+            )
+            self.editor_collection.member_completer.extend_catalog(
+                parent=parent, items=items
+            )
+
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:
             return
@@ -999,14 +1104,28 @@ class Harlequin(AppBase):
             self.editor_collection.word_completer.update_catalog(catalog=catalog)
             self.editor_collection.member_completer.update_catalog(catalog=catalog)
         else:
-            extra_completions = self.connection.get_completions()
-            word_completer, member_completer = completer_factory(
-                catalog=catalog,
-                extra_completions=extra_completions,
-                type_color=self.app_colors.gray,
+            self._build_completers(catalog)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=True,
+        group="completer_builders",
+        description="building completers",
+    )
+    def _build_completers(self, catalog: Catalog) -> None:
+        assert self.connection is not None
+        extra_completions = self.connection.get_completions()
+        word_completer, member_completer = completer_factory(
+            catalog=catalog,
+            extra_completions=extra_completions,
+            type_color=self.app_colors.gray,
+        )
+        self.post_message(
+            CompletersReady(
+                word_completer=word_completer, member_completer=member_completer
             )
-            self.editor_collection.word_completer = word_completer
-            self.editor_collection.member_completer = member_completer
+        )
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:
@@ -1095,6 +1214,53 @@ class Harlequin(AppBase):
                 elapsed = time.monotonic() - started_at
                 self.notify(f"Transaction rolled back in {elapsed:.2f} seconds.")
                 self.update_schema_data()
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="interactions",
+        description="_execute_interaction",
+    )
+    def _execute_interaction(
+        self,
+        interaction: Interaction,
+        item: TCatalogItem_contra,
+        driver: HarlequinDriver,
+    ) -> None:
+        try:
+            interaction(item=item, driver=driver)
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Data Catalog Interaction Error",
+                header=(
+                    "Harlequin could not execute an interaction from your data catalog."
+                ),
+                error=e,
+            )
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="interactions",
+    )
+    def _execute_callback(
+        self,
+        callback: Callable[[], None],
+    ) -> None:
+        try:
+            callback()
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Data Catalog Interaction Error",
+                header=(
+                    "Harlequin could not execute an interaction from your data catalog."
+                ),
+                error=e,
+            )
 
     def _get_keymap(self, keymap_name: str) -> "HarlequinKeyMap" | None:
         try:

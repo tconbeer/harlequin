@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError
 from harlequin_duckdb.adapter import DuckDbAdapter
 
@@ -224,7 +224,33 @@ def test_get_catalog(tiny_duck: Path, small_duck: Path) -> None:
             ),
         ]
     )
-    assert conn.get_catalog() == expected
+    catalog = conn.get_catalog()
+    assert [item.label for item in catalog.items] == [
+        item.label for item in expected.items
+    ]
+    for i, database_item in enumerate(catalog.items):
+        assert isinstance(database_item, InteractiveCatalogItem)
+        assert database_item.children == []
+        schema_items = database_item.fetch_children()
+        assert [item.label for item in schema_items] == [
+            item.label for item in expected.items[i].children
+        ]
+        for j, schema_item in enumerate(schema_items):
+            assert isinstance(schema_item, InteractiveCatalogItem)
+            assert schema_item.children == []
+            relation_items = schema_item.fetch_children()
+            assert [(item.label, item.type_label) for item in relation_items] == [
+                (item.label, item.type_label)
+                for item in expected.items[i].children[j].children
+            ]
+            for k, relation_item in enumerate(relation_items):
+                assert isinstance(relation_item, InteractiveCatalogItem)
+                assert relation_item.children == []
+                column_items = relation_item.fetch_children()
+                assert [(item.label, item.type_label) for item in column_items] == [
+                    (item.label, item.type_label)
+                    for item in expected.items[i].children[j].children[k].children
+                ]
 
 
 def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:

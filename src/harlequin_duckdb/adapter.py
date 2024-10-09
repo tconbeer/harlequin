@@ -16,6 +16,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinQueryError,
 )
+from harlequin_duckdb.catalog import DatabaseCatalogItem
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
@@ -47,6 +48,17 @@ class DuckDbCursor(HarlequinCursor):
     def fetchall(self) -> AutoBackendType | None:
         try:
             result = self.relation.fetch_arrow_table()
+        except duckdb.InterruptException:
+            return None
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error when running your query:"
+            ) from e
+        return result
+
+    def fetchone(self) -> tuple | None:
+        try:
+            result = self.relation.fetchone()
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:
@@ -126,52 +138,9 @@ class DuckDbConnection(HarlequinConnection):
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
         databases = self._get_databases()
-        for (database,) in databases:
-            database_identifier = f'"{database}"'
-            schemas = self._get_schemas(database)
-            schema_items: list[CatalogItem] = []
-            for (schema,) in schemas:
-                schema_identifier = f'{database_identifier}."{schema}"'
-                tables = self._get_tables(database, schema)
-                table_items: list[CatalogItem] = []
-                for table, kind in tables:
-                    table_identifier = f'{schema_identifier}."{table}"'
-                    columns = self._get_columns(database, schema, table)
-                    column_items = [
-                        CatalogItem(
-                            qualified_identifier=f'{table_identifier}."{col[0]}"',
-                            query_name=f'"{col[0]}"',
-                            label=col[0],
-                            type_label=self._short_column_type(col[1]),
-                        )
-                        for col in columns
-                    ]
-                    table_items.append(
-                        CatalogItem(
-                            qualified_identifier=table_identifier,
-                            query_name=table_identifier,
-                            label=table,
-                            type_label=self._short_relation_type(kind),
-                            children=column_items,
-                        )
-                    )
-                schema_items.append(
-                    CatalogItem(
-                        qualified_identifier=schema_identifier,
-                        query_name=schema_identifier,
-                        label=schema,
-                        type_label="sch",
-                        children=table_items,
-                    )
-                )
+        for (database_label,) in databases:
             catalog_items.append(
-                CatalogItem(
-                    qualified_identifier=database_identifier,
-                    query_name=database_identifier,
-                    label=database,
-                    type_label="db",
-                    children=schema_items,
-                )
+                DatabaseCatalogItem.from_label(label=database_label, connection=self)
             )
         return Catalog(items=catalog_items)
 

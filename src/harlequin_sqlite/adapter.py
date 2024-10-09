@@ -19,6 +19,7 @@ from harlequin.exception import (
 )
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
+from harlequin_sqlite.catalog import DatabaseCatalogItem
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
 
@@ -71,6 +72,9 @@ class HarlequinSqliteCursor(HarlequinCursor):
             return [self._first_row, *remaining_rows]
         else:
             return None
+
+    def fetchone(self) -> tuple | None:
+        return self._first_row
 
 
 class HarlequinSqliteConnection(HarlequinConnection):
@@ -128,39 +132,9 @@ class HarlequinSqliteConnection(HarlequinConnection):
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
         databases = self._get_databases()
-        for db_name in databases:
-            relations = self._get_relations(db_name=db_name)
-            db_identifier = f'"{db_name}"'
-            rel_items: list[CatalogItem] = []
-            for rel_name, rel_type in relations:
-                rel_identifier = f'{db_identifier}."{rel_name}"'
-                cols = self._get_columns(db_name=db_name, rel_name=rel_name)
-                col_items = [
-                    CatalogItem(
-                        qualified_identifier=f'{rel_identifier}."{col_name}"',
-                        query_name=f'"{col_name}"',
-                        label=col_name,
-                        type_label=self._short_column_type(col_type),
-                    )
-                    for _, col_name, col_type, *_ in cols
-                ]
-                rel_items.append(
-                    CatalogItem(
-                        qualified_identifier=rel_identifier,
-                        query_name=rel_identifier,
-                        label=rel_name,
-                        type_label=self._short_relation_type(rel_type),
-                        children=col_items,
-                    )
-                )
+        for database_label in databases:
             catalog_items.append(
-                CatalogItem(
-                    qualified_identifier=db_identifier,
-                    query_name=db_identifier,
-                    label=db_name,
-                    type_label="db",
-                    children=rel_items,
-                )
+                DatabaseCatalogItem.from_label(label=database_label, connection=self)
             )
         return Catalog(items=catalog_items)
 

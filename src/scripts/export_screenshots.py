@@ -20,13 +20,21 @@ order by avg_standing asc
 """.strip()
 
 
+async def wait_for_filtered_workers(app: Harlequin) -> None:
+    filtered_workers = [
+        w for w in app.workers if w.name != "_database_tree_background_loader"
+    ]
+    if filtered_workers:
+        await app.workers.wait_for_complete(filtered_workers)
+
+
 async def save_all_screenshots() -> None:
     adapter = DuckDbAdapter(("f1.db",), no_init=True)
     for theme in get_all_styles():
         print(f"Screenshotting {theme}")
         app = Harlequin(adapter=adapter, theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
+            await wait_for_filtered_workers(app)
             await pilot.pause()
             if app.editor is None:
                 await pilot.pause(0.2)

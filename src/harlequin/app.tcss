@@ -54,6 +54,7 @@ Lazy {
 DataCatalog {
     height: 1fr;
     width: 1fr;
+    layers: main overlay;
 }
 
 DataCatalog DatabaseTree,
@@ -83,6 +84,37 @@ DataCatalog * .directory-tree--hidden {
     text-style: italic;
     color: $text-muted;
 }
+
+DataCatalog ContextMenu {
+    layer: overlay;
+    display: none;
+    padding: 1 1;
+    border: none;
+    color: $text;
+    margin: 0 2;
+    overflow: hidden auto;
+    width: 1fr;
+    max-width: 100%;
+    max-height: 10;
+    background: $background-lighten-2 ;
+    &.open {
+        display: block;
+    }
+    &:focus{
+        background: $secondary ;
+    }
+    &>.option-list--option-hover {
+        color: $background;
+        background: $secondary;
+        text-style: bold;
+    }
+    &>.option-list--option-highlighted {
+        color: $background;
+        background: $secondary;
+        text-style: reverse bold;
+    }
+}
+
 
 /* RIGHT HAND CONTAINER */
 #main_panel {
@@ -552,4 +584,58 @@ HistoryScreen OptionList > .option-list--option-hover-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;
+}
+
+
+/* ConfirmModal */
+
+ConfirmModal {
+    align: center middle;
+    padding: 0;
+}
+
+ConfirmModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 0;
+    padding: 1 1;
+    height: auto;
+    max-height: 30;
+    width: auto;
+    max-width: 88;
+}
+
+ConfirmModal Label {
+    width: 100%;
+    text-align: center;
+
+}
+
+ConfirmModal Horizontal#button_row {
+    height: auto;
+    width: auto;
+    align: center bottom;
+    margin: 2 0 1 0;
+}
+
+ConfirmModal Horizontal#button_row Button {
+    background: $primary;
+    height: 3;
+    margin: 0 4;
+    padding: 0 1;
+    min-width: 16;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+ConfirmModal Horizontal#button_row Button#no{
+    background: $error;
+    &:hover {
+        background: $secondary;
+    }
 }
