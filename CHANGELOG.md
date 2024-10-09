@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.25.0] - 2024-10-09
+
 ### Features
 
 - Harlequin's Data Catalog is now interactive! Adapters can define interactions on catalog nodes, which can be selected via a context menu by right-clicking on nodes in the context menu or pressing `.` (this binding is configurable via the `data_catalog.show_context_menu` action) ([#213](https://github.com/tconbeer/harlequin/issues/213)).
@@ -732,7 +734,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.24.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.0...HEAD
+[1.25.0]: https://github.com/tconbeer/harlequin/compare/1.24.1...1.25.0
 [1.24.1]: https://github.com/tconbeer/harlequin/compare/1.24.0...1.24.1
 [1.24.0]: https://github.com/tconbeer/harlequin/compare/1.23.2...1.24.0
 [1.23.2]: https://github.com/tconbeer/harlequin/compare/1.23.1...1.23.2
