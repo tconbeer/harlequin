@@ -3345,13 +3345,13 @@ polars = ["polars (>=0.20.0)"]
 
 [[package]]
 name = "textual-textarea"
-version = "0.14.2"
+version = "0.14.3"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "textual_textarea-0.14.2-py3-none-any.whl", hash = "sha256:58c567ee3e37fb633da057ffeed34e1596aa5dbee5c2aa548138199df4dd8256"},
-    {file = "textual_textarea-0.14.2.tar.gz", hash = "sha256:00953b041a1ebfaa41acb86f6df17823b97e13c6273b98c20f9388b0d7fa356d"},
+    {file = "textual_textarea-0.14.3-py3-none-any.whl", hash = "sha256:e853ebe5d32aabd4158e9e7db0ab39ba8541e59d5f5510ae49d9f31340a44e18"},
+    {file = "textual_textarea-0.14.3.tar.gz", hash = "sha256:5bfc75371c1eae4a0fd1e11543b01025d8fe225e93d5c7f4f0186dbc85a7e7c6"},
 ]
 
 [package.dependencies]
@@ -3923,4 +3923,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "2955d5bd4bc3a97e2179cef9577fba738f3271813e5be9c7b241d284e5490589"
+content-hash = "d0adc4970195fd8e214d15fc7786fc11e80ef79bd022118830b4a0d98ab04966"
