@@ -47,7 +47,8 @@ async def test_data_catalog(
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
         snap_results.append(await app_snapshot(app, "Initialization"))
@@ -143,7 +144,8 @@ async def test_file_tree(
         show_files=test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert catalog.file_tree is not None
 
@@ -176,7 +178,8 @@ async def test_s3_tree(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         catalog = app.data_catalog
         assert catalog.s3_tree is not None
 
@@ -209,7 +212,8 @@ async def test_s3_tree_does_not_crash_without_boto3(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        await pilot.pause()
+        while app.editor is None:
+            await pilot.pause()
         assert await app_snapshot(app, "Error visible")
 
 
@@ -223,6 +227,8 @@ async def test_context_menu(
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
 
         # we need to expand the data catalog to load items into the completer
         while (
