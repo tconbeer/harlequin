@@ -40,7 +40,10 @@ def check_and_install_tzdata() -> None:
             try:
                 # tz database is missing. We need to install it.
                 response = urlopen(
-                    "https://www.iana.org/time-zones/repository/tzdata-latest.tar.gz"
+                    # "https://www.iana.org/time-zones/repository/tzdata-latest.tar.gz"
+                    # see #652
+                    # TODO: unpin this.
+                    "https://data.iana.org/time-zones/releases/tzdata2024a.tar.gz"
                 )
                 with TemporaryDirectory() as tmpdir:
                     tar_path = Path(tmpdir) / "tzdata.tar.gz"
