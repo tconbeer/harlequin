@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 - Fixes a crash on Windows caused by automatically downloading the 2024b tzdata file from IANA, which includes a single poorly-formatted date that breaks PyArrow's upstream tzdata parser ([#652](https://github.com/tconbeer/harlequin/issues/652) - thank you [@paulrobello](https://github.com/paulrobello) and [@alexmalins](https://github.com/alexmalins)!).
 - Fixes a crash caused by pressing `ctrl+g` when the goto input was already open ([#654](https://github.com/tconbeer/harlequin/issues/654)).
+- Fixes a crash caused by copying or pasting on certain systems where Pyperclip doesn't properly catch and reraise errors ([#649](https://github.com/tconbeer/harlequin/issues/649)).
 
 ## [1.24.1] - 2024-09-25
 
