@@ -1574,13 +1574,13 @@ harlequin = ">=1.17,<2.0"
 
 [[package]]
 name = "harlequin-mysql"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Harlequin adapter for MySQL."
 optional = false
 python-versions = "<4.0,>=3.8.1"
 files = [
-    {file = "harlequin_mysql-0.2.0-py3-none-any.whl", hash = "sha256:571d0c70adaf890e38e0093338923771cc6adb4aeebdd91fe3951adf040a6f05"},
-    {file = "harlequin_mysql-0.2.0.tar.gz", hash = "sha256:f184ed95c09777a9dbf4110cd5ac5ee06fd5b275fb1e30011500804713d7204b"},
+    {file = "harlequin_mysql-0.3.0-py3-none-any.whl", hash = "sha256:c4f3e76f13c23f73f2d59ec1162a023e6da999700da669e4bd406a391183cbb7"},
+    {file = "harlequin_mysql-0.3.0.tar.gz", hash = "sha256:46ef42c5b658568f5340ee53c241cb1333f3e04914807c1f83741e83517878b3"},
 ]
 
 [package.dependencies]
@@ -3955,4 +3955,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "ca6af3b80056469471addb9cc4d35d17cf07a0f93de2f9124414f7471554fc6d"
+content-hash = "12a44e063558cdd04eaec1dc8d232d9a0d68e8a818d7a200ad68423764329bdf"
