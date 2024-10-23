@@ -46,12 +46,11 @@ class WordCompleter:
         exact_matches = [
             (_label(c), c.value) for c in self.completions if c.match_val == match_val
         ]
-        matches = [
-            (_label(c), c.value)
-            for c in self.completions
-            if c.match_val.startswith(match_val)
+        fuzzy_matches = [
+            (_label(c), c.value) for c in self._fuzzy_match(match_val, self.completions)
         ]
-        return self._dedupe_labels((*exact_matches, *matches))
+
+        return self._dedupe_labels((*exact_matches, *fuzzy_matches))
 
     def update_catalog(self, catalog: Catalog) -> None:
         self._catalog_completions = build_catalog_completions(catalog=catalog)
@@ -73,6 +72,16 @@ class WordCompleter:
             self._catalog_completions,
             self._extra_completions,
         )
+
+    @staticmethod
+    def _fuzzy_match(
+        match_val: str, completions: list[HarlequinCompletion]
+    ) -> list[HarlequinCompletion]:
+        regex_base = ".{0,2}?".join(f"({re.escape(c)})" for c in match_val)
+        regex = "^.*" + regex_base + ".*$"
+        match_regex = re.compile(regex, re.IGNORECASE)
+        matches = [c for c in completions if match_regex.match(c.match_val)]
+        return matches
 
     @staticmethod
     def _merge_completions(
@@ -114,23 +123,28 @@ class MemberCompleter(WordCompleter):
         value_prefix = "".join(
             f"{w}{sep}" for w, sep in zip([*others, context], separators)
         )
+
+        context_completions = [
+            c for c in self.completions if c.context == match_context
+        ]
+
         exact_matches = [
             (
                 f"{value_prefix}{quote_char}{_label(c)}",
                 f"{value_prefix}{quote_char}{c.value}",
             )
-            for c in self.completions
-            if c.match_val == match_val and c.context == match_context
+            for c in context_completions
+            if c.match_val == match_val
         ]
-        matches = [
+        fuzzy_matches = [
             (
                 f"{value_prefix}{quote_char}{_label(c)}",
                 f"{value_prefix}{quote_char}{c.value}",
             )
-            for c in self.completions
-            if c.match_val.startswith(match_val) and c.context == match_context
+            for c in self._fuzzy_match(match_val, context_completions)
         ]
-        return self._dedupe_labels((*exact_matches, *matches))
+
+        return self._dedupe_labels((*exact_matches, *fuzzy_matches))
 
     @staticmethod
     def _merge_completions(
