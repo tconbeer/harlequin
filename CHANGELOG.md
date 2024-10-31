@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.25.2] - 2024-10-31
+
 ### Bug Fixes
 
 - Fixes a bug where string data was rendered as Rich Markup ([#647](https://github.com/tconbeer/harlequin/issues/647) - thank you [@burncitiesburn](https://github.com/burncitiesburn)!).
@@ -746,7 +748,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.2...HEAD
+[1.25.2]: https://github.com/tconbeer/harlequin/compare/1.25.1...1.25.2
 [1.25.1]: https://github.com/tconbeer/harlequin/compare/1.25.0...1.25.1
 [1.25.0]: https://github.com/tconbeer/harlequin/compare/1.24.1...1.25.0
 [1.24.1]: https://github.com/tconbeer/harlequin/compare/1.24.0...1.24.1
