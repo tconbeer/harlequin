@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a hang and crash caused by an upstream bug in rendering zero-width containers ([#659](https://github.com/tconbeer/harlequin/issues/659), [#668](https://github.com/tconbeer/harlequin/issues/668), [#672](https://github.com/tconbeer/harlequin/issues/672)).
+
 ## [1.25.0] - 2024-10-09
 
 ### Features
