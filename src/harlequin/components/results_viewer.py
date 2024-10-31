@@ -82,6 +82,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             cursor_type="range",
             max_column_content_width=self.max_col_width,
             null_rep="[dim]∅ null[/]",
+            render_markup=False,
         )
         n = self.tab_count + 1
         if n > 1:

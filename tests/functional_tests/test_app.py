@@ -324,3 +324,24 @@ async def test_query_errors(
 
         if not transaction_button_visible(app):
             assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_rich_markup(
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause(0.1)
+
+        q = "select '[some text]', '[red]some text[/]'"
+        app.editor.text = q
+        await pilot.press("ctrl+j")  # alias for ctrl+enter
+
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        assert await app_snapshot(app, "select markup")
