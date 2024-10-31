@@ -138,10 +138,11 @@ async def test_file_tree(
     mock_pyperclip: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
-    test_dir = (data_dir / "functional_tests" / "files").relative_to(Path.cwd())
+    test_dir = data_dir / "functional_tests" / "files"
+    relative_test_dir = test_dir.relative_to(Path.cwd())
     app = Harlequin(
         duckdb_adapter((":memory:",)),
-        show_files=test_dir,
+        show_files=relative_test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
         while app.editor is None:
