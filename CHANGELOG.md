@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.25.1] - 2024-10-31
+
 ### Bug Fixes
 
 - Fixes a hang and crash caused by an upstream bug in rendering zero-width containers ([#659](https://github.com/tconbeer/harlequin/issues/659), [#668](https://github.com/tconbeer/harlequin/issues/668), [#672](https://github.com/tconbeer/harlequin/issues/672)).
@@ -738,7 +740,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.1...HEAD
+[1.25.1]: https://github.com/tconbeer/harlequin/compare/1.25.0...1.25.1
 [1.25.0]: https://github.com/tconbeer/harlequin/compare/1.24.1...1.25.0
 [1.24.1]: https://github.com/tconbeer/harlequin/compare/1.24.0...1.24.1
 [1.24.0]: https://github.com/tconbeer/harlequin/compare/1.23.2...1.24.0
