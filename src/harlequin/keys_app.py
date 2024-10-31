@@ -390,7 +390,7 @@ class HarlequinKeys(AppBase):
         self.loading_indicator: LoadingIndicator | None = LoadingIndicator()
         yield self.loading_indicator
         # yield self.search_input
-        yield Footer()
+        yield Footer(show_command_palette=False)
 
     def push_edit_modal(self, binding: HarlequinKeyBinding, cursor_row: int) -> None:
         def update_binding(new_binding: HarlequinKeyBinding | None) -> None:

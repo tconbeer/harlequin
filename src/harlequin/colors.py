@@ -1,4 +1,6 @@
-from typing import Dict, Type, Union
+from __future__ import annotations
+
+from typing import Dict, Type
 
 from pygments.style import Style as PygmentsStyle
 from pygments.styles import get_style_by_name
@@ -84,19 +86,20 @@ class HarlequinColorSystem(ColorSystem):
     def __init__(
         self,
         primary: str,
-        secondary: Union[str, None] = None,
-        warning: Union[str, None] = None,
-        error: Union[str, None] = None,
-        success: Union[str, None] = None,
-        accent: Union[str, None] = None,
-        background: Union[str, None] = None,
-        surface: Union[str, None] = None,
-        panel: Union[str, None] = None,
-        boost: Union[str, None] = None,
+        secondary: str | None = None,
+        warning: str | None = None,
+        error: str | None = None,
+        success: str | None = None,
+        accent: str | None = None,
+        foreground: str | None = None,
+        background: str | None = None,
+        surface: str | None = None,
+        panel: str | None = None,
+        boost: str | None = None,
         dark: bool = False,
         luminosity_spread: float = 0.15,
         text_alpha: float = 0.95,
-        text: Union[str, None] = None,
+        text: str | None = None,
     ):
         super().__init__(
             primary,
@@ -105,6 +108,7 @@ class HarlequinColorSystem(ColorSystem):
             error,
             success,
             accent,
+            foreground,
             background,
             surface,
             panel,

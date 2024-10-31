@@ -259,7 +259,7 @@ class Harlequin(AppBase):
             classes="non-responsive",
             show_cancel_button=self.adapter.IMPLEMENTS_CANCEL,
         )
-        self.footer = Footer()
+        self.footer = Footer(show_command_palette=False)
 
         # lay out the widgets
         with Horizontal():
