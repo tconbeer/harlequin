@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Fixes a bug where string data was rendered as Rich Markup ([#647](https://github.com/tconbeer/harlequin/issues/647) - thank you [@burncitiesburn](https://github.com/burncitiesburn)!).
 - Fixes a bug where `None` could be inconsistently displayed as `"None"` or the correct `∅ null` ([#658](https://github.com/tconbeer/harlequin/issues/658), [#655](https://github.com/tconbeer/harlequin/issues/655) - thank you, [@sgpeter1](https://github.com/sgpeter1)!).
+- `harlequin --config` now supports the `NO_COLOR` environment variable (the rest of the app already supported it) ([#552](https://github.com/tconbeer/harlequin/issues/552) - thank you [@glujan](https://github.com/glujan)!).
 
 ## [1.25.1] - 2024-10-31
 
