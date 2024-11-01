@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence, TypedDict
+from typing import Sequence, TypedDict, cast
 
 from platformdirs import user_config_path
 from tomlkit.exceptions import TOMLKitError
@@ -63,10 +63,11 @@ class ConfigFile:
         or pyproject.toml file at path. Raises HarlequinConfigError
         if there is a problem with the file.
         """
-        relevant_config: Config = (
+        relevant_config: Config = cast(
+            Config,
             self.toml_doc.unwrap()
             if not self.is_pyproject
-            else self.toml_doc.unwrap().get("tool", {}).get("harlequin", {})
+            else self.toml_doc.unwrap().get("tool", {}).get("harlequin", {}),
         )
         return relevant_config
 
