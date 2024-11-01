@@ -67,7 +67,7 @@ pre-commit = "^3.3.1"
 textual-dev = "^1.0.1"
 harlequin-postgres = ">=0.3,<0.5"
 harlequin-mysql = ">=0.2,<0.4"
-pyinstrument = "^4.6.2"
+pyinstrument = ">=4.6.2,<6.0.0"
 
 [tool.poetry.group.static.dependencies]
 ruff = "^0.6"
