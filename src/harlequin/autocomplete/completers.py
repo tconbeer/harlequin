@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import re
+from collections.abc import Callable
 from typing import Iterable
 
 from harlequin.autocomplete.completion import HarlequinCompletion
@@ -42,15 +43,26 @@ class WordCompleter:
             return f"{c.label} [{self.type_color}]{c.type_label}[/]"
 
         match_val = prefix.lower()
+        matches: list[tuple[str, str]] = []
 
-        exact_matches = [
+        # Add exact matches
+        matches.extend(
             (_label(c), c.value) for c in self.completions if c.match_val == match_val
-        ]
-        fuzzy_matches = [
-            (_label(c), c.value) for c in self._fuzzy_match(match_val, self.completions)
-        ]
+        )
+        # Add prefix matches
+        matches.extend(
+            (_label(c), c.value)
+            for c in self.completions
+            if c.match_val.startswith(match_val)
+        )
+        # Only add fuzzy matches if there are not enough exact matches
+        if len(matches) < 20:
+            matches.extend(
+                (_label(c), c.value)
+                for c in self._fuzzy_match(match_val, self.completions)
+            )
 
-        return self._dedupe_labels((*exact_matches, *fuzzy_matches))
+        return self._dedupe_labels(matches)
 
     def update_catalog(self, catalog: Catalog) -> None:
         self._catalog_completions = build_catalog_completions(catalog=catalog)
@@ -81,6 +93,11 @@ class WordCompleter:
         regex = "^.*" + regex_base + ".*$"
         match_regex = re.compile(regex, re.IGNORECASE)
         matches = [c for c in completions if match_regex.match(c.match_val)]
+
+        # Sort in ascending length.
+        # I am assuming here that more insertions are less likely to be
+        # the "right" match.
+        matches.sort(key=lambda c: len(c.match_val), reverse=True)
         return matches
 
     @staticmethod
@@ -128,23 +145,41 @@ class MemberCompleter(WordCompleter):
             c for c in self.completions if c.context == match_context
         ]
 
-        exact_matches = [
-            (
-                f"{value_prefix}{quote_char}{_label(c)}",
-                f"{value_prefix}{quote_char}{c.value}",
-            )
+        matches: list[tuple[str, str]] = []
+        # Add exact matches
+        matches.extend(
+            self.format_completion(c, quote_char, value_prefix, _label)
             for c in context_completions
             if c.match_val == match_val
-        ]
-        fuzzy_matches = [
-            (
-                f"{value_prefix}{quote_char}{_label(c)}",
-                f"{value_prefix}{quote_char}{c.value}",
-            )
-            for c in self._fuzzy_match(match_val, context_completions)
-        ]
+        )
 
-        return self._dedupe_labels((*exact_matches, *fuzzy_matches))
+        # Add prefix matches
+        matches.extend(
+            self.format_completion(c, quote_char, value_prefix, _label)
+            for c in context_completions
+            if c.match_val.startswith(match_val)
+        )
+
+        # Only add fuzzy matches if there are not enough exact matches
+        if len(matches) < 20:
+            matches.extend(
+                self.format_completion(c, quote_char, value_prefix, _label)
+                for c in self._fuzzy_match(match_val, context_completions)
+            )
+
+        return self._dedupe_labels(matches)
+
+    @staticmethod
+    def format_completion(
+        completion: HarlequinCompletion,
+        quote_char: str,
+        value_prefix: str,
+        label_fn: Callable,
+    ) -> tuple[str, str]:
+        return (
+            f"{value_prefix}{quote_char}{label_fn(completion)}",
+            f"{value_prefix}{quote_char}{completion.value}",
+        )
 
     @staticmethod
     def _merge_completions(
