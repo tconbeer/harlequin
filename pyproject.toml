@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "harlequin"
-version = "1.25.0"
+version = "1.25.2"
 description = "The SQL IDE for Your Terminal."
 authors = ["Ted Conbeer <tconbeer@users.noreply.github.com>"]
 license = "MIT"
@@ -22,8 +22,8 @@ build-backend = "poetry.core.masonry.api"
 python = ">=3.8.1,<4.0.0"
 
 # textual and component libraries
-textual = "==0.76.0"
-textual-fastdatatable = "==0.9.0"
+textual = "==0.85.1"
+textual-fastdatatable = "==0.10.0"
 textual-textarea = "==0.14.4"
 
 # click

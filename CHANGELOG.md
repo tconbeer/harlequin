@@ -7,6 +7,20 @@ All notable changes to this project will be documented in this file.
 ### Features
 - Fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671))
 
+## [1.25.2] - 2024-10-31
+
+### Bug Fixes
+
+- Fixes a bug where string data was rendered as Rich Markup ([#647](https://github.com/tconbeer/harlequin/issues/647) - thank you [@burncitiesburn](https://github.com/burncitiesburn)!).
+- Fixes a bug where `None` could be inconsistently displayed as `"None"` or the correct `∅ null` ([#658](https://github.com/tconbeer/harlequin/issues/658), [#655](https://github.com/tconbeer/harlequin/issues/655) - thank you, [@sgpeter1](https://github.com/sgpeter1)!).
+- `harlequin --config` now supports the `NO_COLOR` environment variable (the rest of the app already supported it) ([#552](https://github.com/tconbeer/harlequin/issues/552) - thank you [@glujan](https://github.com/glujan)!).
+
+## [1.25.1] - 2024-10-31
+
+### Bug Fixes
+
+- Fixes a hang and crash caused by an upstream bug in rendering zero-width containers ([#659](https://github.com/tconbeer/harlequin/issues/659), [#668](https://github.com/tconbeer/harlequin/issues/668), [#672](https://github.com/tconbeer/harlequin/issues/672)).
+
 ## [1.25.0] - 2024-10-09
 
 ### Features
@@ -737,7 +751,9 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.2...HEAD
+[1.25.2]: https://github.com/tconbeer/harlequin/compare/1.25.1...1.25.2
+[1.25.1]: https://github.com/tconbeer/harlequin/compare/1.25.0...1.25.1
 [1.25.0]: https://github.com/tconbeer/harlequin/compare/1.24.1...1.25.0
 [1.24.1]: https://github.com/tconbeer/harlequin/compare/1.24.0...1.24.1
 [1.24.0]: https://github.com/tconbeer/harlequin/compare/1.23.2...1.24.0

@@ -1,4 +1,7 @@
-from typing import Dict, Type, Union
+from __future__ import annotations
+
+import os
+from typing import Dict, Type
 
 from pygments.style import Style as PygmentsStyle
 from pygments.styles import get_style_by_name
@@ -56,19 +59,36 @@ class HarlequinPygmentsStyle(PygmentsStyle):
     highlight_color = DARK_GRAY
 
 
-HARLEQUIN_QUESTIONARY_STYLE = QuestionaryStyle(
-    [
-        ("qmark", f"fg:{GREEN} bold"),
-        ("question", "bold"),
-        ("answer", f"fg:{YELLOW} bold"),
-        ("pointer", f"fg:{YELLOW} bold"),
-        ("highlighted", f"fg:{YELLOW} bold"),
-        ("selected", f"fg:{YELLOW} noreverse bold"),
-        ("separator", f"fg:{PURPLE}"),
-        ("instruction", "fg:#858585 italic"),
-        ("text", ""),
-        ("disabled", "fg:#858585 italic"),
-    ]
+HARLEQUIN_QUESTIONARY_STYLE = (
+    QuestionaryStyle(
+        [
+            ("qmark", "fg:ansidefault bold"),
+            ("question", "fg:ansidefault nobold"),
+            ("answer", "fg:ansidefault bold"),
+            ("pointer", "fg:ansidefault bold"),
+            ("highlighted", "fg:ansidefault bold"),
+            ("selected", "fg:ansidefault noreverse bold"),
+            ("separator", "fg:ansidefault"),
+            ("instruction", "fg:ansidefault italic"),
+            ("text", ""),
+            ("disabled", "fg:ansidefault italic"),
+        ]
+    )
+    if os.getenv("NO_COLOR")
+    else QuestionaryStyle(
+        [
+            ("qmark", f"fg:{GREEN} bold"),
+            ("question", "bold"),
+            ("answer", f"fg:{YELLOW} bold"),
+            ("pointer", f"fg:{YELLOW} bold"),
+            ("highlighted", f"fg:{YELLOW} bold"),
+            ("selected", f"fg:{YELLOW} noreverse bold"),
+            ("separator", f"fg:{PURPLE}"),
+            ("instruction", "fg:#858585 italic"),
+            ("text", ""),
+            ("disabled", "fg:#858585 italic"),
+        ]
+    )
 )
 
 
@@ -84,19 +104,20 @@ class HarlequinColorSystem(ColorSystem):
     def __init__(
         self,
         primary: str,
-        secondary: Union[str, None] = None,
-        warning: Union[str, None] = None,
-        error: Union[str, None] = None,
-        success: Union[str, None] = None,
-        accent: Union[str, None] = None,
-        background: Union[str, None] = None,
-        surface: Union[str, None] = None,
-        panel: Union[str, None] = None,
-        boost: Union[str, None] = None,
+        secondary: str | None = None,
+        warning: str | None = None,
+        error: str | None = None,
+        success: str | None = None,
+        accent: str | None = None,
+        foreground: str | None = None,
+        background: str | None = None,
+        surface: str | None = None,
+        panel: str | None = None,
+        boost: str | None = None,
         dark: bool = False,
         luminosity_spread: float = 0.15,
         text_alpha: float = 0.95,
-        text: Union[str, None] = None,
+        text: str | None = None,
     ):
         super().__init__(
             primary,
@@ -105,6 +126,7 @@ class HarlequinColorSystem(ColorSystem):
             error,
             success,
             accent,
+            foreground,
             background,
             surface,
             panel,

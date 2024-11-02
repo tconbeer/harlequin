@@ -51,12 +51,15 @@ def _load_plugins(
     group: str,
 ) -> dict[str, HarlequinKeyMap] | dict[str, type[HarlequinAdapter]]:
     eps = entry_points(group=group)
-    try:
-        plugins: dict[str, HarlequinKeyMap] | dict[str, type[HarlequinAdapter]] = {
-            ep.name: ep.load() for ep in eps
-        }
-    except ImportError as e:
-        print(
-            f"Harlequin could not load the installed plug-in named {e.name}." f"\n\n{e}"
-        )
+    plugins: dict[str, HarlequinKeyMap] | dict[str, type[HarlequinAdapter]] = {}
+    for ep in eps:
+        try:
+            ep_class = ep.load()
+        except ImportError as e:
+            print(
+                f"Harlequin could not load the installed plug-in named {e.name}."
+                f"\n\n{e}"
+            )
+        else:
+            plugins[ep.name] = ep_class
     return plugins

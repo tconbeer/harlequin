@@ -6,14 +6,14 @@ repos:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.0
+    rev: v1.13.0
     hooks:
       - id: mypy
         additional_dependencies:
           - click
           - duckdb>=0.8.0
           - shandy-sqlfmt[jinjafmt]
-          - textual>=0.76.0
+          - textual>=0.85.0
           - textual-textarea>=0.14.0
           - textual-fastdatatable>=0.9.0
           - pytest
