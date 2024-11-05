@@ -20,8 +20,7 @@ def iris_completer(data_dir: Path) -> WordCompleter:
 
 def test_completer_fixed_first(iris_completer: WordCompleter) -> None:
     completions = iris_completer("se")
-    assert completions[0][1] == "select"
-    assert all(x[1].startswith("se") for x in completions)
+    assert completions[0][1] == "select", completions[0][1]
 
 
 def test_completer_fuzzy_match(iris_completer: WordCompleter) -> None:

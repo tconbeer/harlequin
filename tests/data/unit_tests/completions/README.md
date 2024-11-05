@@ -39,5 +39,6 @@ print("First 5 rows:", result)
 con.close()
 ```
 Essentially the database was created and then sunk the data in the completions
-to json using `dataclasses.asdict` and `json.dumps`.
+to json using `dataclasses.asdict` and `json.dumps`. Proceeded with some manual
+deletion to make the file smaller.
 

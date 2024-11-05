@@ -97,7 +97,7 @@ class WordCompleter:
         # Sort in ascending length.
         # I am assuming here that more insertions are less likely to be
         # the "right" match.
-        matches.sort(key=lambda c: len(c.match_val), reverse=True)
+        matches.sort(key=lambda c: len(c.match_val))
         return matches
 
     @staticmethod
