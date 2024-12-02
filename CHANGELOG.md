@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- Fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671))
+
 ## [1.25.2] - 2024-10-31
 
 ### Bug Fixes
