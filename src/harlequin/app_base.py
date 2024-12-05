@@ -9,7 +9,7 @@ from textual.driver import Driver
 from textual.screen import Screen
 from textual.types import CSSPathType
 
-from harlequin.colors import HarlequinColors
+from harlequin.colors import HarlequinColors, HARLEQUIN_TEXTUAL_THEME
 from harlequin.exception import (
     HarlequinThemeError,
     pretty_error_message,
@@ -44,6 +44,9 @@ class AppBase(App, inherit_bindings=False):
         super().__init__(driver_class, css_path, watch_css)
         try:
             theme = theme or "harlequin"
+            if theme == "harlequin":
+                self.register_theme(HARLEQUIN_TEXTUAL_THEME)
+            self.theme = theme
             self.app_colors = HarlequinColors.from_theme(theme)
         except HarlequinThemeError as e:
             self.exit(return_code=2, message=pretty_error_message(e))

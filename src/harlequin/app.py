@@ -203,7 +203,6 @@ class Harlequin(AppBase):
         self.adapter = adapter
         self.connection_hash = connection_hash
         self.history: History | None = None
-        self.theme = theme
         self.show_files = show_files
         self.show_s3 = show_s3 or None
         try:

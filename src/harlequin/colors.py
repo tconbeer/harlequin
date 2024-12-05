@@ -20,6 +20,7 @@ from pygments.token import (
 from pygments.util import ClassNotFound
 from questionary import Style as QuestionaryStyle
 from textual.design import ColorSystem
+from textual.theme import Theme as TextualTheme
 
 from harlequin.exception import HarlequinThemeError
 
@@ -32,6 +33,24 @@ DARK_GRAY = "#555555"
 BLACK = "#0C0C0C"
 WHITE = "#DDDDDD"
 
+HARLEQUIN_TEXTUAL_THEME = TextualTheme(
+    name="harlequin",
+    primary=YELLOW,
+    secondary=GREEN,
+    # warning: str | None = None,
+    error=PINK,
+    # success: str | None = None,
+    # accent: str | None = None,
+    # foreground: str | None = None,
+    # background: str | None = None,
+    # surface: str | None = None,
+    # panel: str | None = None,
+    # boost: str | None = None,
+    # dark: bool = True,
+    # luminosity_spread: float = 0.15,
+    # text_alpha: float = 0.95,
+    # variables = {}
+)
 
 class HarlequinPygmentsStyle(PygmentsStyle):
     styles = {
