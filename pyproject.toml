@@ -109,9 +109,6 @@ sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 [tool.poetry.plugins."harlequin.keymap"]
 vscode = "harlequin_vscode:VSCODE"
 
-[tool.poetry.plugins."pygments.styles"]
-harlequin = "harlequin.colors:HarlequinPygmentsStyle"
-
 [tool.ruff]
 target-version = "py38"
 

@@ -237,22 +237,18 @@ class Harlequin(AppBase):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         self.data_catalog = DataCatalog(
-            type_color=self.app_colors.gray,
             show_files=self.show_files,
             show_s3=self.show_s3,
         )
         self.editor_collection = EditorCollection(
-            language="sql", theme=self.theme, classes="hide-tabs"
-        )
+            language="sql", classes="hide-tabs"
+        ).data_bind(Harlequin.theme)
         self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None
         editor_placeholder = Lazy(widget=self.editor_collection)
         editor_placeholder.border_title = self.editor_collection.border_title
         editor_placeholder.loading = True
-        self.results_viewer = ResultsViewer(
-            max_results=self.max_results,
-            type_color=self.app_colors.gray,
-        )
+        self.results_viewer = ResultsViewer(max_results=self.max_results)
         self.run_query_bar = RunQueryBar(
             max_results=self.max_results,
             classes="non-responsive",
@@ -277,7 +273,11 @@ class Harlequin(AppBase):
         callback: ScreenResultCallbackType[ScreenResultType] | None = None,
         wait_for_dismiss: bool = False,
     ) -> AwaitMount | asyncio.Future[ScreenResultType]:
-        if self.editor is not None and self.editor._has_focus_within:
+        if (
+            self.editor is not None
+            and self.editor.text_input is not None
+            and self.editor._has_focus_within
+        ):
             self.editor.text_input._pause_blink(visible=True)
         return super().push_screen(  # type: ignore[no-any-return,call-overload]
             screen,
@@ -290,6 +290,7 @@ class Harlequin(AppBase):
         if (
             len(self.screen_stack) == 1
             and self.editor is not None
+            and self.editor.text_input is not None
             and self.editor._has_focus_within
         ):
             self.editor.text_input._restart_blink()
@@ -396,7 +397,7 @@ class Harlequin(AppBase):
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
-        if self.editor is None:
+        if self.editor is None or self.editor.text_input is None:
             # recycle message while we wait for the editor to load
             callback = partial(self.post_message, message)
             self.set_timer(delay=0.1, callback=callback)
@@ -489,9 +490,7 @@ class Harlequin(AppBase):
             message.input.tooltip = None
         elif message.validation_result:
             failures = "\n".join(message.validation_result.failure_descriptions)
-            message.input.tooltip = (
-                f"[{self.app_colors.error}]Validation Error:[/]\n{failures}"
-            )
+            message.input.tooltip = f"Validation Error:\n{failures}"
 
     @on(Input.Submitted, "#limit_input")
     def submit_query_if_limit_valid(self, message: Input.Submitted) -> None:
@@ -511,7 +510,7 @@ class Harlequin(AppBase):
     @on(DataTable.SelectionCopied)
     def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
         message.stop()
-        if self.editor is None:
+        if self.editor is None or self.editor.text_input is None:
             # recycle the message while we wait for the editor to load
             callback = partial(self.post_message, message)
             self.set_timer(delay=0.1, callback=callback)
@@ -1119,7 +1118,6 @@ class Harlequin(AppBase):
         word_completer, member_completer = completer_factory(
             catalog=catalog,
             extra_completions=extra_completions,
-            type_color=self.app_colors.gray,
         )
         self.post_message(
             CompletersReady(

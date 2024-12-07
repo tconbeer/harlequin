@@ -5,7 +5,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator, Iterable, TypeVar
 
-from rich.text import TextType
+from rich.style import Style
+from rich.text import Text, TextType
 from textual import work
 from textual.await_complete import AwaitComplete
 from textual.reactive import var
@@ -32,7 +33,6 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
 
     def __init__(
         self,
-        type_color: str = "#888888",
         name: str | None = None,
         id: str | None = None,  # noqa: A002
         classes: str | None = None,
@@ -47,7 +47,6 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         which should prevent any comparisons between TreeNodes, which
         do not implement cmp operators.
         """
-        self.type_color = type_color
         super().__init__(
             label="Root",
             data=CatalogItem(
@@ -70,8 +69,10 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self.root.expand()
         self.post_message(WidgetMounted(widget=self))
 
-    def _build_item_label(self, label: str, type_label: str) -> str:
-        return f"{label} [{self.type_color}]{type_label}[/]" if type_label else label
+    def _build_item_label(self, label: str, type_label: str) -> Text:
+        type_label_style = self.get_component_rich_style("harlequin-tree--type-label")
+        type_label_fg_style = Style(color=type_label_style.color)
+        return Text.assemble(label, " ", (type_label, type_label_fg_style))
 
     async def watch_catalog(self, catalog: Catalog | None) -> None:
         """Watch for changes to the `catalog` of the database tree.

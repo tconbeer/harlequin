@@ -22,8 +22,7 @@ DataCatalog:focus-within,
 EditorCollection:focus-within,
 ResultsViewer:focus-within,
 HistoryScreen VerticalScroll:focus,
-HistoryScreen OptionList:focus,
- {
+HistoryScreen OptionList:focus {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
@@ -62,6 +61,13 @@ DataCatalog FileTree,
 DataCatalog S3Tree {
     background: $background;
     padding: 0 1;
+    &:focus {
+        background-tint: $background;
+    }
+}
+
+DataCatalog * .harlequin-tree--type-label {
+    color: $foreground-muted;
 }
 
 DataCatalog * .tree--guides {
@@ -191,6 +197,7 @@ RunQueryBar Button {
 
 RunQueryBar Button#run_query {
     background: $primary;
+    color: $background;
     margin: 0 0 0 4;
     &:hover {
         background: $secondary;
@@ -205,6 +212,7 @@ RunQueryBar Button#run_query {
 
 RunQueryBar Button#cancel_query {
     background: $error;
+    color: $background;
     margin: 0 0 0 4;
     text-style: bold;
     &:hover {
@@ -256,10 +264,13 @@ RunQueryBar Checkbox {
     border: none;
     padding: 0;
     background: $background;
+    background-tint: $background;
 }
 
 RunQueryBar Checkbox:focus > .toggle--label {
     text-style: none;
+    background: $background;
+    background-tint: $background;
 }
 
 RunQueryBar Checkbox > .toggle--button {
@@ -275,12 +286,13 @@ RunQueryBar Checkbox:hover > .toggle--button {
     background: $secondary;
 }
 
-RunQueryBar Checkbox.-on > .toggle--button {    
-    color: $accent;
+RunQueryBar Checkbox.-on > .toggle--button {
+    color: $primary;
     background: $background-lighten-1
 }
 
 RunQueryBar Checkbox.-on:hover > .toggle--button {
+    color: $primary;
     background: $secondary;
 }
 
@@ -309,6 +321,10 @@ TabPane {
 
 .hide-tabs Tabs {
     height: 0;
+}
+
+ResultsViewer .results-viewer--type-label {
+    color: $foreground-muted;
 }
 
 TabPane {

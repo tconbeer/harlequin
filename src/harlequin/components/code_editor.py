@@ -8,6 +8,7 @@ from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
 from textual.css.query import NoMatches
 from textual.message import Message
+from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual.widgets.text_area import Selection
 from textual_textarea import TextAreaSaved, TextEditor
@@ -33,6 +34,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
     @property
     def current_query(self) -> str:
+        if self.text_input is None:
+            return ""
         semicolons = self._semicolons
 
         if not semicolons:
@@ -55,6 +58,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
     @property
     def previous_query(self) -> str:
+        if self.text_input is None:
+            return ""
         semicolons = self._semicolons
 
         if not semicolons:
@@ -98,6 +103,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self.post_message(self.Submitted(self.text))
 
     def action_format(self) -> None:
+        if self.text_input is None:
+            return
         old_selection = self.text_input.selection
 
         try:
@@ -132,6 +139,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
 class EditorCollection(TabbedContent):
     BORDER_TITLE = "Query Editor"
+    theme: reactive[str] = reactive("harlequin")
 
     class EditorSwitched(Message):
         def __init__(self, active_editor: Union[CodeEditor, None]) -> None:
@@ -179,8 +187,11 @@ class EditorCollection(TabbedContent):
 
     @property
     def all_editors(self) -> List[CodeEditor]:
-        content = self.query_one(ContentSwitcher)
-        all_editors = content.query(CodeEditor)
+        try:
+            content = self.query_one(ContentSwitcher)
+            all_editors = content.query(CodeEditor)
+        except NoMatches:
+            return []
         return list(all_editors)
 
     @property
@@ -233,6 +244,10 @@ class EditorCollection(TabbedContent):
         self.current_editor.word_completer = self.word_completer
         self.current_editor.member_completer = self.member_completer
         self.current_editor.focus()
+
+    def watch_theme(self, theme: str) -> None:
+        for editor in self.all_editors:
+            editor.theme = theme
 
     async def insert_buffer_with_text(self, query_text: str) -> None:
         state = BufferState(selection=Selection(), text=query_text)

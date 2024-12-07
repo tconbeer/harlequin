@@ -1,6 +1,10 @@
-from typing import List, Tuple, Union
+from __future__ import annotations
+
+from typing import ClassVar
 
 from rich.markup import escape
+from rich.style import Style
+from rich.text import Text
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -28,15 +32,16 @@ class ResultsTable(DataTable, inherit_bindings=False):
 
 class ResultsViewer(TabbedContent, can_focus=True):
     BORDER_TITLE = "Query Results"
+    COMPONENT_CLASSES: ClassVar[set[str]] = {
+        "results-viewer--type-label",
+    }
 
     def __init__(
         self,
         max_results: int = 10_000,
-        type_color: str = "#888888",
     ) -> None:
         super().__init__()
         self.max_results = max_results
-        self.type_color = type_color
 
     def on_mount(self) -> None:
         self.query_one(Tabs).can_focus = False
@@ -48,7 +53,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         self.clear_panes()
         self.add_class("hide-tabs")
 
-    def get_visible_table(self) -> Union[ResultsTable, None]:
+    def get_visible_table(self) -> ResultsTable | None:
         content = self.query_one(ContentSwitcher)
         active_tab_id = self.active
         if active_tab_id:
@@ -67,7 +72,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
     async def push_table(
         self,
         table_id: str,
-        column_labels: List[Tuple[str, str]],
+        column_labels: list[tuple[str, str]],
         data: AutoBackendType,
     ) -> ResultsTable:
         formatted_labels = [
@@ -87,9 +92,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
         n = self.tab_count + 1
         if n > 1:
             self.remove_class("hide-tabs")
-        pane = TabPane(f"Result {n}", table)
+        pane = TabPane(f"Result {n}", table, id=f"result-{n}")
         await self.add_pane(pane)
-        self.active = f"tab-{n}"
         # need to manually refresh the table, since activating the tab
         # doesn't consistently cause a new layout calc.
         table.refresh(repaint=True, layout=True)
@@ -140,7 +144,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
     def action_switch_tab(self, offset: int) -> None:
         if not self.active:
             return
-        tab_number = int(self.active.split("-")[1])
+        name_prefix, _, tab_number_str = self.active.rpartition("-")
+        tab_number = int(tab_number_str)
         unsafe_tab_number = tab_number + offset
         if unsafe_tab_number < 1:
             new_tab_number = self.tab_count
@@ -148,7 +153,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             new_tab_number = 1
         else:
             new_tab_number = unsafe_tab_number
-        self.active = f"tab-{new_tab_number}"
+        self.active = f"{name_prefix}-{new_tab_number}"
         self._focus_on_visible_table()
 
     def action_focus_data_catalog(self) -> None:
@@ -170,8 +175,13 @@ class ResultsViewer(TabbedContent, can_focus=True):
         else:
             return f"({total_rows:,} Records)"
 
-    def _format_column_label(self, col_name: str, col_type: str) -> str:
-        return f"{escape(col_name)} [{self.type_color}]{escape(col_type)}[/]"
+    def _format_column_label(self, col_name: str, col_type: str) -> Text:
+        type_label_style = self.get_component_rich_style("results-viewer--type-label")
+        type_label_fg_style = Style(color=type_label_style.color)
+        label = Text.assemble(
+            escape(col_name), " ", (escape(col_type), type_label_fg_style)
+        )
+        return label
 
     def _get_max_col_width(self) -> int:
         SMALLEST_MAX_WIDTH = 20
