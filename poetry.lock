@@ -2746,7 +2746,7 @@ description = "Snapshot testing for Textual apps"
 optional = false
 python-versions = "^3.8"
 files = []
-develop = false
+develop = true
 
 [package.dependencies]
 jinja2 = ">=3.0.0"
@@ -2756,10 +2756,15 @@ syrupy = ">=3.0.0"
 textual = ">=0.28.0"
 
 [package.source]
+<<<<<<< HEAD
 type = "git"
 url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
 reference = "HEAD"
 resolved_reference = "af694dfa0c2641d28d86bf939fb5dc6389b09ef2"
+=======
+type = "directory"
+url = "../pytest-textual-snapshot"
+>>>>>>> 5ef7988 (wip: update snapshots)
 
 [[package]]
 name = "python-dateutil"
@@ -3870,4 +3875,8 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.14.0"
+<<<<<<< HEAD
 content-hash = "63732cc381154d9f3a5b45f61057f0e73759b7190f6bfb5cc39682387ce2e652"
+=======
+content-hash = "60554b4eec89929a055708779ab583033c42e3003eecddce68d3b195b75a0190"
+>>>>>>> 5ef7988 (wip: update snapshots)

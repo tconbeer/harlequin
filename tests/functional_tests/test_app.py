@@ -211,19 +211,19 @@ async def test_multiple_queries(
         await pilot.pause(0.5)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Both queries"))
-        assert app.results_viewer.active == "tab-1"
+        assert app.results_viewer.active == "result-1"
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
-        assert app.results_viewer.active == "tab-2"
+        assert app.results_viewer.active == "result-2"
         snap_results.append(await app_snapshot(app, "Both queries, tab 2"))
         await pilot.press("k")
         await pilot.wait_for_scheduled_animations()
-        assert app.results_viewer.active == "tab-1"
+        assert app.results_viewer.active == "result-1"
         snap_results.append(await app_snapshot(app, "Both queries, tab 1"))
         await pilot.press("j")
-        assert app.results_viewer.active == "tab-2"
+        assert app.results_viewer.active == "result-2"
         await pilot.press("j")
-        assert app.results_viewer.active == "tab-1"
+        assert app.results_viewer.active == "result-1"
 
         if not transaction_button_visible(app):
             assert all(snap_results)

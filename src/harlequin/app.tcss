@@ -96,28 +96,28 @@ DataCatalog ContextMenu {
     display: none;
     padding: 1 1;
     border: none;
-    color: $text;
+    color: $background;
     margin: 0 2;
     overflow: hidden auto;
     width: 1fr;
     max-width: 100%;
     max-height: 10;
-    background: $background-lighten-2 ;
-    &.open {
-        display: block;
-    }
+    background: $panel ;
     &:focus{
         background: $secondary ;
+        &>.option-list--option-hover {
+            color: $background;
+            background: $secondary;
+            text-style: bold;
+        }
+        &>.option-list--option-highlighted {
+            color: $secondary;
+            background: $background;
+            text-style: bold;
+        }
     }
-    &>.option-list--option-hover {
-        color: $background;
-        background: $secondary;
-        text-style: bold;
-    }
-    &>.option-list--option-highlighted {
-        color: $background;
-        background: $secondary;
-        text-style: reverse bold;
+    &.open {
+        display: block;
     }
 }
 
