@@ -1,0 +1,793 @@
+[
+  {
+    "label": "all",
+    "type_label": "kw",
+    "value": "all",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "alter",
+    "type_label": "kw",
+    "value": "alter",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "analyse",
+    "type_label": "kw",
+    "value": "analyse",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "analyze",
+    "type_label": "kw",
+    "value": "analyze",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "and",
+    "type_label": "kw",
+    "value": "and",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "and",
+    "type_label": "kw",
+    "value": "and",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "any",
+    "type_label": "kw",
+    "value": "any",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "array",
+    "type_label": "kw",
+    "value": "array",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "as",
+    "type_label": "kw",
+    "value": "as",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "as",
+    "type_label": "kw",
+    "value": "as",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "asc",
+    "type_label": "kw",
+    "value": "asc",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "asymmetric",
+    "type_label": "kw",
+    "value": "asymmetric",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "between",
+    "type_label": "kw",
+    "value": "between",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "both",
+    "type_label": "kw",
+    "value": "both",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "by",
+    "type_label": "kw",
+    "value": "by",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "cascade",
+    "type_label": "kw",
+    "value": "cascade",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "case",
+    "type_label": "kw",
+    "value": "case",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "case",
+    "type_label": "kw",
+    "value": "case",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "cast",
+    "type_label": "kw",
+    "value": "cast",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "check",
+    "type_label": "kw",
+    "value": "check",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "collate",
+    "type_label": "kw",
+    "value": "collate",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "column",
+    "type_label": "kw",
+    "value": "column",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "distinct",
+    "type_label": "kw",
+    "value": "distinct",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "distinct",
+    "type_label": "kw",
+    "value": "distinct",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "do",
+    "type_label": "kw",
+    "value": "do",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "drop",
+    "type_label": "kw",
+    "value": "drop",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "else",
+    "type_label": "kw",
+    "value": "else",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "end",
+    "type_label": "kw",
+    "value": "end",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "end",
+    "type_label": "kw",
+    "value": "end",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "except",
+    "type_label": "kw",
+    "value": "except",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "except",
+    "type_label": "kw",
+    "value": "except",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "exclude",
+    "type_label": "kw",
+    "value": "exclude",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "exists",
+    "type_label": "kw",
+    "value": "exists",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "false",
+    "type_label": "kw",
+    "value": "false",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "false",
+    "type_label": "kw",
+    "value": "false",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "fetch",
+    "type_label": "kw",
+    "value": "fetch",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "filter",
+    "type_label": "kw",
+    "value": "filter",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "following",
+    "type_label": "kw",
+    "value": "following",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "for",
+    "type_label": "kw",
+    "value": "for",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "foreign",
+    "type_label": "kw",
+    "value": "foreign",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "from",
+    "type_label": "kw",
+    "value": "from",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "from",
+    "type_label": "kw",
+    "value": "from",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "full",
+    "type_label": "kw",
+    "value": "full",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "function",
+    "type_label": "kw",
+    "value": "function",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "grant",
+    "type_label": "kw",
+    "value": "grant",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "grant",
+    "type_label": "kw",
+    "value": "grant",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "group",
+    "type_label": "kw",
+    "value": "group",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "group",
+    "type_label": "kw",
+    "value": "group",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "having",
+    "type_label": "kw",
+    "value": "having",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "having",
+    "type_label": "kw",
+    "value": "having",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "if",
+    "type_label": "kw",
+    "value": "if",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "ilike",
+    "type_label": "kw",
+    "value": "ilike",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "in",
+    "type_label": "kw",
+    "value": "in",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "initially",
+    "type_label": "kw",
+    "value": "initially",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "inner",
+    "type_label": "kw",
+    "value": "inner",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "insert",
+    "type_label": "kw",
+    "value": "insert",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "intersect",
+    "type_label": "kw",
+    "value": "intersect",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "intersect",
+    "type_label": "kw",
+    "value": "intersect",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "into",
+    "type_label": "kw",
+    "value": "into",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "join",
+    "type_label": "kw",
+    "value": "join",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "lateral",
+    "type_label": "kw",
+    "value": "lateral",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "lateral",
+    "type_label": "kw",
+    "value": "lateral",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "leading",
+    "type_label": "kw",
+    "value": "leading",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "left",
+    "type_label": "kw",
+    "value": "left",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "like",
+    "type_label": "kw",
+    "value": "like",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "limit",
+    "type_label": "kw",
+    "value": "limit",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "limit",
+    "type_label": "kw",
+    "value": "limit",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "merge",
+    "type_label": "kw",
+    "value": "merge",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "natural",
+    "type_label": "kw",
+    "value": "natural",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "not",
+    "type_label": "kw",
+    "value": "not",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "not",
+    "type_label": "kw",
+    "value": "not",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "null",
+    "type_label": "kw",
+    "value": "null",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "offset",
+    "type_label": "kw",
+    "value": "offset",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "offset",
+    "type_label": "kw",
+    "value": "offset",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "on",
+    "type_label": "kw",
+    "value": "on",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "on",
+    "type_label": "kw",
+    "value": "on",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "rows",
+    "type_label": "kw",
+    "value": "rows",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "schema",
+    "type_label": "kw",
+    "value": "schema",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "select",
+    "type_label": "kw",
+    "value": "select",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "select",
+    "type_label": "kw",
+    "value": "select",
+    "priority": 100,
+    "context": null
+  },
+  {
+    "label": "iris",
+    "type_label": "db",
+    "value": "iris",
+    "priority": 500,
+    "context": null
+  },
+  {
+    "label": "iris",
+    "type_label": "t",
+    "value": "iris",
+    "priority": 500,
+    "context": "main"
+  },
+  {
+    "label": "iris",
+    "type_label": "t",
+    "value": "iris",
+    "priority": 500,
+    "context": "main"
+  },
+  {
+    "label": "main",
+    "type_label": "sch",
+    "value": "main",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "main",
+    "type_label": "sch",
+    "value": "main",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "petal_length",
+    "type_label": "#.#",
+    "value": "petal_length",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "petal_width",
+    "type_label": "#.#",
+    "value": "petal_width",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "sepal_length",
+    "type_label": "#.#",
+    "value": "sepal_length",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "sepal_width",
+    "type_label": "#.#",
+    "value": "sepal_width",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "species",
+    "type_label": "s",
+    "value": "species",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "target",
+    "type_label": "#",
+    "value": "target",
+    "priority": 500,
+    "context": "iris"
+  },
+  {
+    "label": "main",
+    "type_label": "sch",
+    "value": "main",
+    "priority": 501,
+    "context": "iris"
+  },
+  {
+    "label": "__internal_compress_string_hugeint",
+    "type_label": "fn",
+    "value": "__internal_compress_string_hugeint",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "__internal_compress_string_ubigint",
+    "type_label": "fn",
+    "value": "__internal_compress_string_ubigint",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "__internal_compress_string_uinteger",
+    "type_label": "fn",
+    "value": "__internal_compress_string_uinteger",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "__internal_compress_string_usmallint",
+    "type_label": "fn",
+    "value": "__internal_compress_string_usmallint",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "__internal_decompress_integral_usmallint",
+    "type_label": "fn",
+    "value": "__internal_decompress_integral_usmallint",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "__internal_decompress_string",
+    "type_label": "fn",
+    "value": "__internal_decompress_string",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "abort",
+    "type_label": "kw",
+    "value": "abort",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "abs",
+    "type_label": "fn",
+    "value": "abs",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "absolute",
+    "type_label": "kw",
+    "value": "absolute",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "access",
+    "type_label": "kw",
+    "value": "access",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json",
+    "type_label": "macro",
+    "value": "json",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_array",
+    "type_label": "fn",
+    "value": "json_array",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_array_length",
+    "type_label": "fn",
+    "value": "json_array_length",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_contains",
+    "type_label": "fn",
+    "value": "json_contains",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_deserialize_sql",
+    "type_label": "fn",
+    "value": "json_deserialize_sql",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_execute_serialized_sql",
+    "type_label": "pragma",
+    "value": "json_execute_serialized_sql",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "json_execute_serialized_sql",
+    "type_label": "fn->T",
+    "value": "json_execute_serialized_sql",
+    "priority": 1000,
+    "context": null
+  },
+  {
+    "label": "user",
+    "type_label": "set",
+    "value": "user",
+    "priority": 2000,
+    "context": null
+  },
+  {
+    "label": "username",
+    "type_label": "set",
+    "value": "username",
+    "priority": 2000,
+    "context": null
+  },
+  {
+    "label": "wal_autocheckpoint",
+    "type_label": "set",
+    "value": "wal_autocheckpoint",
+    "priority": 2000,
+    "context": null
+  },
+  {
+    "label": "worker_threads",
+    "type_label": "set",
+    "value": "worker_threads",
+    "priority": 2000,
+    "context": null
+  }
+]

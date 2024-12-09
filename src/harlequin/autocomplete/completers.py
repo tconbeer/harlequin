@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import re
+from collections.abc import Callable
 from typing import Iterable
 
 from harlequin.autocomplete.completion import HarlequinCompletion
@@ -42,16 +43,26 @@ class WordCompleter:
             return f"{c.label} [{self.type_color}]{c.type_label}[/]"
 
         match_val = prefix.lower()
+        matches: list[tuple[str, str]] = []
 
-        exact_matches = [
+        # Add exact matches
+        matches.extend(
             (_label(c), c.value) for c in self.completions if c.match_val == match_val
-        ]
-        matches = [
+        )
+        # Add prefix matches
+        matches.extend(
             (_label(c), c.value)
             for c in self.completions
             if c.match_val.startswith(match_val)
-        ]
-        return self._dedupe_labels((*exact_matches, *matches))
+        )
+        # Only add fuzzy matches if there are not enough exact matches
+        if len(matches) < 20:
+            matches.extend(
+                (_label(c), c.value)
+                for c in self._fuzzy_match(match_val, self.completions)
+            )
+
+        return self._dedupe_labels(matches)
 
     def update_catalog(self, catalog: Catalog) -> None:
         self._catalog_completions = build_catalog_completions(catalog=catalog)
@@ -73,6 +84,21 @@ class WordCompleter:
             self._catalog_completions,
             self._extra_completions,
         )
+
+    @staticmethod
+    def _fuzzy_match(
+        match_val: str, completions: list[HarlequinCompletion]
+    ) -> list[HarlequinCompletion]:
+        regex_base = ".{0,2}?".join(f"({re.escape(c)})" for c in match_val)
+        regex = "^.*" + regex_base + ".*$"
+        match_regex = re.compile(regex, re.IGNORECASE)
+        matches = [c for c in completions if match_regex.match(c.match_val)]
+
+        # Sort in ascending length.
+        # I am assuming here that more insertions are less likely to be
+        # the "right" match.
+        matches.sort(key=lambda c: len(c.match_val))
+        return matches
 
     @staticmethod
     def _merge_completions(
@@ -114,23 +140,46 @@ class MemberCompleter(WordCompleter):
         value_prefix = "".join(
             f"{w}{sep}" for w, sep in zip([*others, context], separators)
         )
-        exact_matches = [
-            (
-                f"{value_prefix}{quote_char}{_label(c)}",
-                f"{value_prefix}{quote_char}{c.value}",
-            )
-            for c in self.completions
-            if c.match_val == match_val and c.context == match_context
+
+        context_completions = [
+            c for c in self.completions if c.context == match_context
         ]
-        matches = [
-            (
-                f"{value_prefix}{quote_char}{_label(c)}",
-                f"{value_prefix}{quote_char}{c.value}",
+
+        matches: list[tuple[str, str]] = []
+        # Add exact matches
+        matches.extend(
+            self.format_completion(c, quote_char, value_prefix, _label)
+            for c in context_completions
+            if c.match_val == match_val
+        )
+
+        # Add prefix matches
+        matches.extend(
+            self.format_completion(c, quote_char, value_prefix, _label)
+            for c in context_completions
+            if c.match_val.startswith(match_val)
+        )
+
+        # Only add fuzzy matches if there are not enough exact matches
+        if len(matches) < 20:
+            matches.extend(
+                self.format_completion(c, quote_char, value_prefix, _label)
+                for c in self._fuzzy_match(match_val, context_completions)
             )
-            for c in self.completions
-            if c.match_val.startswith(match_val) and c.context == match_context
-        ]
-        return self._dedupe_labels((*exact_matches, *matches))
+
+        return self._dedupe_labels(matches)
+
+    @staticmethod
+    def format_completion(
+        completion: HarlequinCompletion,
+        quote_char: str,
+        value_prefix: str,
+        label_fn: Callable,
+    ) -> tuple[str, str]:
+        return (
+            f"{value_prefix}{quote_char}{label_fn(completion)}",
+            f"{value_prefix}{quote_char}{completion.value}",
+        )
 
     @staticmethod
     def _merge_completions(
