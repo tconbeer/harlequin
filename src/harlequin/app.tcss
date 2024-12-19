@@ -70,6 +70,16 @@ DataCatalog * .harlequin-tree--type-label {
     color: $foreground-muted;
 }
 
+DataCatalog * .tree--cursor {
+    text-style: bold;
+    color: auto;
+    background: $secondary-muted;
+}
+
+DataCatalog *:focus .tree--cursor {
+    background: $secondary;
+}
+
 DataCatalog * .tree--guides {
     color: $primary;
 }
@@ -342,8 +352,12 @@ ResultsTable > .datatable--header {
 }
 
 ResultsTable > .datatable--cursor {
-    background: $secondary;
+    background: $secondary-muted;
     color: auto;
+}
+
+ResultsTable:focus > .datatable--cursor {
+    background: $secondary;
 }
 
 ResultsTable > .datatable--header-hover {

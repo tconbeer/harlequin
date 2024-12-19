@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from questionary import Style as QuestionaryStyle
+from textual.theme import BUILTIN_THEMES
 from textual.theme import Theme as TextualTheme
 
 GREEN = "#45FFCA"
@@ -28,6 +29,10 @@ HARLEQUIN_TEXTUAL_THEME = TextualTheme(
     panel=DARK_GRAY,
     dark=True,
 )
+
+VALID_THEMES = BUILTIN_THEMES
+VALID_THEMES.pop("textual-ansi")
+VALID_THEMES.update({"harlequin": HARLEQUIN_TEXTUAL_THEME})
 
 HARLEQUIN_QUESTIONARY_STYLE = (
     QuestionaryStyle(

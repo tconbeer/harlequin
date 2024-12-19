@@ -1,8 +1,11 @@
 import asyncio
 
-from pygments.styles import get_all_styles
+from textual.widgets.text_area import Selection
+from textual.widgets.tree import TreeNode
 
 from harlequin import Harlequin
+from harlequin.catalog import CatalogItem
+from harlequin.colors import VALID_THEMES
 from harlequin_duckdb import DuckDbAdapter
 
 TEXT = """
@@ -30,7 +33,7 @@ async def wait_for_filtered_workers(app: Harlequin) -> None:
 
 async def save_all_screenshots() -> None:
     adapter = DuckDbAdapter(("f1.db",), no_init=True)
-    for theme in get_all_styles():
+    for theme in VALID_THEMES:
         print(f"Screenshotting {theme}")
         app = Harlequin(adapter=adapter, theme=theme)
         async with app.run_test(size=(120, 36)) as pilot:
@@ -40,17 +43,23 @@ async def save_all_screenshots() -> None:
                 await pilot.pause(0.2)
             assert app.editor is not None
             app.editor.text = TEXT
-            app.editor.cursor = (9, 16)  # type: ignore
-            app.editor.selection_anchor = (9, 0)  # type: ignore
+            app.editor.selection = Selection((9, 0), (9, 16))
+
+            async def _expand_and_wait(node: TreeNode[CatalogItem]) -> None:
+                node.expand()
+                while not node.children:
+                    if getattr(node.data, "loaded", True):
+                        break
+                    await pilot.pause()
+
             app.data_catalog.database_tree.root.expand()
-            for child in app.data_catalog.database_tree.root.children:
-                print("here!")
-                child.expand()
-                for grandchild in child.children:
-                    grandchild.expand()
-                    for great in grandchild.children:
-                        if str(great.label).startswith("drivers"):
-                            great.expand()
+            for db_node in app.data_catalog.database_tree.root.children:
+                await _expand_and_wait(db_node)
+                for schema_node in db_node.children:
+                    await _expand_and_wait(schema_node)
+                    for table_node in schema_node.children:
+                        if str(table_node.label).startswith("drivers"):
+                            await _expand_and_wait(table_node)
             app.data_catalog.database_tree.cursor_line = 7
             await pilot.press("ctrl+j")
             app.save_screenshot(filename=f"{theme}.svg", path="./static/themes/")
