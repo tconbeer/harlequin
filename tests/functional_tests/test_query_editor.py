@@ -5,8 +5,10 @@ from typing import Awaitable, Callable, List
 
 import pytest
 from textual.widgets.text_area import Selection
+from textual.widgets.tree import TreeNode
 
 from harlequin import Harlequin
+from harlequin.catalog import CatalogItem
 
 
 def transaction_button_visible(app: Harlequin) -> bool:
@@ -194,6 +196,13 @@ async def test_member_autocomplete(
     async with app.run_test() as pilot:
         await wait_for_workers(app)
 
+        async def _expand_and_wait(node: TreeNode[CatalogItem]) -> None:
+            node.expand()
+            while not node.children:
+                if getattr(node.data, "loaded", True):
+                    break
+                await pilot.pause()
+
         # we need to expand the data catalog to load items into the completer
         while (
             app.data_catalog.database_tree.loading
@@ -201,13 +210,9 @@ async def test_member_autocomplete(
         ):
             await pilot.pause()
         for db_node in app.data_catalog.database_tree.root.children:
-            db_node.expand()
-            while not db_node.children:
-                if getattr(db_node.data, "loaded", True):
-                    break
-                await pilot.pause()
+            await _expand_and_wait(db_node)
             for schema_node in db_node.children:
-                schema_node.expand()
+                await _expand_and_wait(schema_node)
         await pilot.pause(1)
 
         # now the completer should be populated
