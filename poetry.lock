@@ -2746,7 +2746,7 @@ description = "Snapshot testing for Textual apps"
 optional = false
 python-versions = "^3.8"
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 jinja2 = ">=3.0.0"
@@ -2756,8 +2756,10 @@ syrupy = ">=3.0.0"
 textual = ">=0.28.0"
 
 [package.source]
-type = "directory"
-url = "../pytest-textual-snapshot"
+type = "git"
+url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
+reference = "main"
+resolved_reference = "8d514995792dcb388ea507485c9a0634b45d9e75"
 
 [[package]]
 name = "python-dateutil"
@@ -3560,32 +3562,6 @@ files = [
 ]
 
 [[package]]
-name = "types-docutils"
-version = "0.21.0.20240724"
-description = "Typing stubs for docutils"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "types-docutils-0.21.0.20240724.tar.gz", hash = "sha256:29ff7e27660f4fe76ea61d7e54d05ca3ce3b733ca9e8e8721e0fa587dbc10489"},
-    {file = "types_docutils-0.21.0.20240724-py3-none-any.whl", hash = "sha256:bf51c6c488d23c0412f9b3ba10686fb1a6cb0b957ef04b45128d8a55c79ebb00"},
-]
-
-[[package]]
-name = "types-pygments"
-version = "2.18.0.20240506"
-description = "Typing stubs for Pygments"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "types-Pygments-2.18.0.20240506.tar.gz", hash = "sha256:4b4c37812c87bbde687dbf27adf5bac593745a321e57f678dbc311571ba2ac9d"},
-    {file = "types_Pygments-2.18.0.20240506-py3-none-any.whl", hash = "sha256:11c90bc1737c9af55e5569558b88df7c2233e12325cb516215f722271444e91d"},
-]
-
-[package.dependencies]
-types-docutils = "*"
-types-setuptools = "*"
-
-[[package]]
 name = "types-pytz"
 version = "2024.1.0.20240417"
 description = "Typing stubs for pytz"
@@ -3605,17 +3581,6 @@ python-versions = "<4.0,>=3.8"
 files = [
     {file = "types_s3transfer-0.10.1-py3-none-any.whl", hash = "sha256:49a7c81fa609ac1532f8de3756e64b58afcecad8767933310228002ec7adff74"},
     {file = "types_s3transfer-0.10.1.tar.gz", hash = "sha256:02154cce46528287ad76ad1a0153840e0492239a0887e8833466eccf84b98da0"},
-]
-
-[[package]]
-name = "types-setuptools"
-version = "71.1.0.20240813"
-description = "Typing stubs for setuptools"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "types-setuptools-71.1.0.20240813.tar.gz", hash = "sha256:94ff4f0af18c7c24ac88932bcb0f5655fb7187a001b7c61e53a1bfdaf9877b54"},
-    {file = "types_setuptools-71.1.0.20240813-py3-none-any.whl", hash = "sha256:d9d9ba2936f5d3b47b59ae9bf65942a60063ac1d6bbee180a8a79fbb43f22ce5"},
 ]
 
 [[package]]
@@ -3868,4 +3833,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.14.0"
-content-hash = "60554b4eec89929a055708779ab583033c42e3003eecddce68d3b195b75a0190"
+content-hash = "83a05620ab6ebb67e30d090a7ca4666671f0e127957c93bf3a1e967595da29f7"
