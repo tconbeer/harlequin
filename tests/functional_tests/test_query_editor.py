@@ -114,10 +114,6 @@ async def test_multiple_buffers(
         assert all(snap_results)
 
 
-@pytest.mark.xfail(
-    sys.platform in ("win32", "darwin"),
-    reason="Scroll bar is a different size.",
-)
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin,
@@ -130,6 +126,15 @@ async def test_word_autocomplete(
         await wait_for_workers(app)
         while app.editor is None or app.editor_collection.word_completer is None:
             await pilot.pause()
+
+        # we need to let the data catalog load the root's children
+        while (
+            app.data_catalog.database_tree.loading
+            or not app.data_catalog.database_tree.root.children
+        ):
+            await pilot.pause()
+
+        app.editor.focus()
 
         await pilot.press("s")
         await pilot.pause()
@@ -208,8 +213,10 @@ async def test_member_autocomplete(
         # now the completer should be populated
         while app.editor is None or app.editor_collection.member_completer is None:
             await pilot.pause()
+
         app.editor.text = '"drivers"'
         app.editor.selection = Selection((0, 9), (0, 9))
+        app.editor.focus()
 
         await pilot.press("full_stop")
         await pilot.pause()
