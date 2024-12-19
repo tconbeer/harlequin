@@ -97,6 +97,7 @@ async def test_editor_bindings(
         # cut/copy/paste
         await pilot.press("ctrl+c")
         assert app.editor.text == QUERY
+        assert app.editor.text_input is not None
         assert app.editor.text_input.clipboard == QUERY
         assert app.editor.selection.start == (0, 0)
         assert app.editor.selection.end == (11, 18)
@@ -251,4 +252,5 @@ async def test_results_viewer_bindings(
 
         # copy
         await pilot.press("ctrl+c")
+        assert app.editor.text_input is not None
         assert app.editor.text_input.clipboard.startswith("1\t2\t3")

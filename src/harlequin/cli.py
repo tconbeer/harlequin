@@ -9,7 +9,7 @@ import rich_click as click
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.catalog_cache import get_connection_hash
-from harlequin.colors import GREEN, PINK, PURPLE, YELLOW
+from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import get_config_for_profile
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
@@ -33,6 +33,7 @@ else:
 DEFAULT_ADAPTER = "duckdb"
 DEFAULT_LIMIT = 100_000
 DEFAULT_THEME = "harlequin"
+ALL_THEMES = ", ".join(VALID_THEMES.keys())
 DEFAULT_KEYMAP_NAMES = ["vscode"]
 
 # configure the rich click interface (mostly --help options)
@@ -192,8 +193,8 @@ def build_cli() -> click.Command:
         show_default=True,
         help=(
             "Set the theme (colors) of the Harlequin IDE. "
-            "Must be the name of a Pygments style; see "
-            "https://pygments.org/styles/"
+            "Must be `harlequin` or the name of a Textual theme: "
+            f"{ALL_THEMES}"
         ),
     )
     @click.option(

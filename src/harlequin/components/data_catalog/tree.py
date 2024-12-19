@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar, Union
+from typing import ClassVar, Generic, TypeVar, Union
 
 from textual.events import Click
 from textual.message import Message
@@ -16,6 +16,9 @@ TTreeNode = TypeVar("TTreeNode")
 
 
 class HarlequinTree(Tree[TTreeNode], inherit_bindings=False):
+    COMPONENT_CLASSES: ClassVar[set[str]] = {
+        "harlequin-tree--type-label",
+    }
     double_click: int | None = None
 
     class CatalogError(Message):

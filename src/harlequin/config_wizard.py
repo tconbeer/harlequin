@@ -5,11 +5,10 @@ from typing import Any
 
 import questionary
 import tomlkit
-from pygments.styles import get_all_styles
 from rich import print as rich_print
 from rich.markup import escape
 from rich.panel import Panel
-from rich.syntax import Syntax
+from textual.theme import BUILTIN_THEMES
 
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
@@ -67,7 +66,7 @@ def _wizard(config_path: Path | None) -> None:
 
     theme = questionary.select(
         message="What theme should this profile use?",
-        choices=sorted(get_all_styles()),
+        choices=sorted(BUILTIN_THEMES.keys()),
         default=selected_profile.get("theme", "harlequin"),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
@@ -280,7 +279,7 @@ def _confirm_profile_generation(
     rich_print("[italic] We generated the following profile:[/]")
     rich_print(
         Panel.fit(
-            Syntax(code=new_config_toml, lexer="toml", theme="harlequin"),
+            escape(new_config_toml),
             border_style=YELLOW,
         )
     )

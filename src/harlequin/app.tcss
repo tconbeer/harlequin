@@ -21,9 +21,8 @@ LoadingIndicator {
 DataCatalog:focus-within,
 EditorCollection:focus-within,
 ResultsViewer:focus-within,
-HistoryScreen VerticalScroll:focus,
-HistoryScreen OptionList:focus,
- {
+HistoryScreen TextArea:focus,
+HistoryScreen OptionList:focus {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
@@ -62,6 +61,23 @@ DataCatalog FileTree,
 DataCatalog S3Tree {
     background: $background;
     padding: 0 1;
+    &:focus {
+        background-tint: $background;
+    }
+}
+
+DataCatalog * .harlequin-tree--type-label {
+    color: $foreground-muted;
+}
+
+DataCatalog * .tree--cursor {
+    text-style: bold;
+    color: auto;
+    background: $secondary-muted;
+}
+
+DataCatalog *:focus .tree--cursor {
+    background: $secondary;
 }
 
 DataCatalog * .tree--guides {
@@ -90,28 +106,28 @@ DataCatalog ContextMenu {
     display: none;
     padding: 1 1;
     border: none;
-    color: $text;
+    color: $background;
     margin: 0 2;
     overflow: hidden auto;
     width: 1fr;
     max-width: 100%;
     max-height: 10;
-    background: $background-lighten-2 ;
-    &.open {
-        display: block;
-    }
+    background: $panel ;
     &:focus{
         background: $secondary ;
+        &>.option-list--option-hover {
+            color: $background;
+            background: $secondary;
+            text-style: bold;
+        }
+        &>.option-list--option-highlighted {
+            color: $secondary;
+            background: $background;
+            text-style: bold;
+        }
     }
-    &>.option-list--option-hover {
-        color: $background;
-        background: $secondary;
-        text-style: bold;
-    }
-    &>.option-list--option-highlighted {
-        color: $background;
-        background: $secondary;
-        text-style: reverse bold;
+    &.open {
+        display: block;
     }
 }
 
@@ -191,6 +207,7 @@ RunQueryBar Button {
 
 RunQueryBar Button#run_query {
     background: $primary;
+    color: $background;
     margin: 0 0 0 4;
     &:hover {
         background: $secondary;
@@ -205,6 +222,7 @@ RunQueryBar Button#run_query {
 
 RunQueryBar Button#cancel_query {
     background: $error;
+    color: $background;
     margin: 0 0 0 4;
     text-style: bold;
     &:hover {
@@ -256,10 +274,13 @@ RunQueryBar Checkbox {
     border: none;
     padding: 0;
     background: $background;
+    background-tint: $background;
 }
 
 RunQueryBar Checkbox:focus > .toggle--label {
     text-style: none;
+    background: $background;
+    background-tint: $background;
 }
 
 RunQueryBar Checkbox > .toggle--button {
@@ -275,12 +296,13 @@ RunQueryBar Checkbox:hover > .toggle--button {
     background: $secondary;
 }
 
-RunQueryBar Checkbox.-on > .toggle--button {    
-    color: $accent;
+RunQueryBar Checkbox.-on > .toggle--button {
+    color: $primary;
     background: $background-lighten-1
 }
 
 RunQueryBar Checkbox.-on:hover > .toggle--button {
+    color: $primary;
     background: $secondary;
 }
 
@@ -311,6 +333,10 @@ TabPane {
     height: 0;
 }
 
+ResultsViewer .results-viewer--type-label {
+    color: $foreground-muted;
+}
+
 TabPane {
     padding: 0;
 }
@@ -326,8 +352,12 @@ ResultsTable > .datatable--header {
 }
 
 ResultsTable > .datatable--cursor {
-    background: $secondary;
+    background: $secondary-muted;
     color: auto;
+}
+
+ResultsTable:focus > .datatable--cursor {
+    background: $secondary;
 }
 
 ResultsTable > .datatable--header-hover {
@@ -546,24 +576,17 @@ ExportScreen Button:hover,
 
 /* HISTORY SCREEN */
 
-HistoryScreen VerticalScroll {
-    background: $background;
+HistoryScreen TextArea {
     border: round $border-color-nofocus;
-    width: 1fr;
+    width: 50%;
     height: 100%;
-}
-
-HistoryScreen VerticalScroll Static {
-    background: $background;
-    width: 100%;
-    height: auto;
-    padding: 0 1 0 0;
 }
 
 HistoryScreen OptionList {
     background: $background;
+    background-tint: $background;
     border: round $border-color-nofocus;
-    width: 1fr;
+    width: 50%;
     height: 100%;
     padding: 0;
 }
@@ -584,6 +607,11 @@ HistoryScreen OptionList > .option-list--option-hover-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;
+}
+
+HistoryScreen .history-screen--error-label {
+    color: $error;
+    text-style: bold italic;
 }
 
 

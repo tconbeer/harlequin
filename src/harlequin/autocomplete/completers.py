@@ -20,7 +20,6 @@ class WordCompleter:
         function_completions: list[HarlequinCompletion],
         catalog_completions: list[HarlequinCompletion],
         extra_completions: list[HarlequinCompletion] | None = None,
-        type_color: str = "#888888",
     ) -> None:
         self._keyword_completions = keyword_completions
         self._function_completions = function_completions
@@ -32,18 +31,17 @@ class WordCompleter:
             self._catalog_completions,
             self._extra_completions,
         )
-        self.type_color = type_color
 
-    def __call__(self, prefix: str) -> list[tuple[str, str]]:
+    def __call__(self, prefix: str) -> list[tuple[tuple[str, str], str]]:
         """
         Returns label, value pairs for matching completions.
         """
 
-        def _label(c: HarlequinCompletion) -> str:
-            return f"{c.label} [{self.type_color}]{c.type_label}[/]"
+        def _label(c: HarlequinCompletion) -> tuple[str, str]:
+            return (c.label, c.type_label)
 
         match_val = prefix.lower()
-        matches: list[tuple[str, str]] = []
+        matches: list[tuple[tuple[str, str], str]] = []
 
         # Add exact matches
         matches.extend(
@@ -107,21 +105,25 @@ class WordCompleter:
         return [c for c in sorted(itertools.chain(*completion_lists))]
 
     @staticmethod
-    def _dedupe_labels(matches: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
-        uniques: set[str] = set()
+    def _dedupe_labels(
+        matches: Iterable[tuple[tuple[str, str], str]],
+    ) -> list[tuple[tuple[str, str], str]]:
+        uniques: set[tuple[str, str]] = set()
         uniques_add = uniques.add
         deduped = [m for m in matches if not (m[0] in uniques or uniques_add(m[0]))]
         return deduped
 
 
 class MemberCompleter(WordCompleter):
-    def __call__(self, prefix: str) -> list[tuple[str, str]]:
+    def __call__(self, prefix: str) -> list[tuple[tuple[str, str], str]]:
         """
         Returns label, value pairs for matching completions.
         """
 
-        def _label(c: HarlequinCompletion) -> str:
-            return f"{c.label} [{self.type_color}]{c.type_label}[/]"
+        def _label(
+            c: HarlequinCompletion, value_prefix: str, quote_char: str
+        ) -> tuple[str, str]:
+            return (f"{value_prefix}{quote_char}{c.label}", c.type_label)
 
         try:
             *others, context, item_prefix = SEPARATOR_PROG.split(prefix)
@@ -145,7 +147,7 @@ class MemberCompleter(WordCompleter):
             c for c in self.completions if c.context == match_context
         ]
 
-        matches: list[tuple[str, str]] = []
+        matches: list[tuple[tuple[str, str], str]] = []
         # Add exact matches
         matches.extend(
             self.format_completion(c, quote_char, value_prefix, _label)
@@ -174,10 +176,10 @@ class MemberCompleter(WordCompleter):
         completion: HarlequinCompletion,
         quote_char: str,
         value_prefix: str,
-        label_fn: Callable,
-    ) -> tuple[str, str]:
+        label_fn: Callable[[HarlequinCompletion, str, str], tuple[str, str]],
+    ) -> tuple[tuple[str, str], str]:
         return (
-            f"{value_prefix}{quote_char}{label_fn(completion)}",
+            label_fn(completion, value_prefix, quote_char),
             f"{value_prefix}{quote_char}{completion.value}",
         )
 
@@ -195,7 +197,6 @@ class MemberCompleter(WordCompleter):
 def completer_factory(
     catalog: Catalog,
     extra_completions: list[HarlequinCompletion] | None = None,
-    type_color: str = "#888888",
 ) -> tuple[WordCompleter, MemberCompleter]:
     keyword_completions = get_keywords()
     function_completions = get_functions()
@@ -205,13 +206,11 @@ def completer_factory(
         function_completions=function_completions,
         catalog_completions=catalog_completions,
         extra_completions=extra_completions,
-        type_color=type_color,
     ), MemberCompleter(
         keyword_completions=keyword_completions,
         function_completions=function_completions,
         catalog_completions=catalog_completions,
         extra_completions=extra_completions,
-        type_color=type_color,
     )
 
 

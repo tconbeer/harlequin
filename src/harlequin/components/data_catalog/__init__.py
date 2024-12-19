@@ -116,7 +116,6 @@ class DataCatalog(TabbedContent, can_focus=True):
         disabled: bool = False,
         show_files: Path | None = None,
         show_s3: str | None = None,
-        type_color: str = "#888888",
     ):
         super().__init__(
             *titles,
@@ -128,10 +127,9 @@ class DataCatalog(TabbedContent, can_focus=True):
         )
         self.show_files = show_files
         self.show_s3 = show_s3
-        self.type_color = type_color
 
     def on_mount(self) -> None:
-        self.database_tree = DatabaseTree(type_color=self.type_color)
+        self.database_tree = DatabaseTree()
         self.database_context_menu = ContextMenu()
         self.add_pane(
             TabPane("Databases", self.database_tree, self.database_context_menu)

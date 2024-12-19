@@ -65,6 +65,11 @@ FooterKey {
         background: $background;
         text-style: bold;
     }
+    .footer-key--description {
+        padding: 0 1 0 0;
+        color: $primary;
+        background: $background;
+    }
     &:hover {
         background: $boost;
         .footer-key--key {
