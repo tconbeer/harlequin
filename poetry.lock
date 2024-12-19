@@ -3031,8 +3031,8 @@ textual = ">=0.28.0"
 [package.source]
 type = "git"
 url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
-reference = "main"
-resolved_reference = "855b21080e986d855d355f3c71bdd9fbe84cdaee"
+reference = "HEAD"
+resolved_reference = "af694dfa0c2641d28d86bf939fb5dc6389b09ef2"
 
 [[package]]
 name = "python-dateutil"
@@ -3967,4 +3967,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0.0"
-content-hash = "f6d40b9aed1af214fe1c92bfd7cfb9465b601d9b5b5650dcadb8b910e15aeaa0"
+content-hash = "4c92d6a36b31caf747b1407b2fd7dd8f841bcdffd8ea1e8816939acc740a238e"

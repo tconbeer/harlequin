@@ -79,7 +79,7 @@ boto3-stubs = "^1.34.23"
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.3.1,<9.0.0"
 pytest-asyncio = "^0.21.0"
-pytest-textual-snapshot = { git = "https://github.com/tconbeer/pytest-textual-snapshot.git", rev = "855b21080e986d855d355f3c71bdd9fbe84cdaee" }
+pytest-textual-snapshot = { git = "https://github.com/tconbeer/pytest-textual-snapshot.git" }
 # extension tests require consistent version of duckdb.
 duckdb = "1.0.0"
 
