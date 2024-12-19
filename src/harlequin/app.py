@@ -471,6 +471,7 @@ class Harlequin(AppBase):
             self.editor = message.active_editor
         else:
             self.editor = self.editor_collection.current_editor
+        self.editor.focus()
 
     def on_text_area_selection_changed(self) -> None:
         if self._validate_selection():
