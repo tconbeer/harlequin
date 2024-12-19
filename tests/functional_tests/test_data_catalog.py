@@ -51,7 +51,6 @@ async def test_data_catalog(
             await pilot.pause()
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
-        snap_results.append(await app_snapshot(app, "Initialization"))
 
         # this test app has two databases attached.
         dbs = catalog.database_tree.root.children
@@ -71,6 +70,7 @@ async def test_data_catalog(
             await pilot.pause(0.1)
         assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
+        snap_results.append(await app_snapshot(app, "Initialization"))
 
         assert str(dbs[1].label) == "tiny db"
         assert dbs[0].is_expanded is False
