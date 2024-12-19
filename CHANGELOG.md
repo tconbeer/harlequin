@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+- Drops support for Python 3.8.
+- Drops support for harlequin-databricks due to dependency compatibility issues.
+- Drops support for Pygments themes in favor of Textual themes.
+
 ### Features
 - Fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671))
 
