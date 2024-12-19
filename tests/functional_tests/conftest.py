@@ -35,6 +35,7 @@ def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
         "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
     )
 
+
 @pytest.fixture(autouse=True)
 def mock_completions(monkeypatch: pytest.MonkeyPatch) -> None:
     KEYWORDS = [
@@ -99,7 +100,7 @@ def mock_completions(monkeypatch: pytest.MonkeyPatch) -> None:
         "where",
         "window",
     ]
-    
+
     FUNCTIONS = [
         ("array_select", "fn"),
         ("count", "agg"),
@@ -124,18 +125,27 @@ def mock_completions(monkeypatch: pytest.MonkeyPatch) -> None:
         for label, type_label in FUNCTIONS
     ]
 
-    completions =[*keyword_completions, *function_completions]
+    completions = [*keyword_completions, *function_completions]
     duckdb_completions = [
-        (completion.label, completion.type_label, completion.priority, completion.context)
+        (
+            completion.label,
+            completion.type_label,
+            completion.priority,
+            completion.context,
+        )
         for completion in completions
     ]
     monkeypatch.setattr(
-        "harlequin_sqlite.adapter.get_completion_data", lambda *_: completions, raising=True
+        "harlequin_sqlite.adapter.get_completion_data",
+        lambda *_: completions,
+        raising=True,
     )
     monkeypatch.setattr(
-        "harlequin_duckdb.adapter.get_completion_data", lambda *_: duckdb_completions, raising=True
+        "harlequin_duckdb.adapter.get_completion_data",
+        lambda *_: duckdb_completions,
+        raising=True,
     )
-    
+
 
 @pytest.fixture
 def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
