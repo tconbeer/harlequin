@@ -66,7 +66,7 @@ jobs:
           name: Snapshot Report Windows 3.10
           path: ./snapshot_report.html
 
-  test:
+  test-three-nine:
     name: ${{ matrix.os }} - ${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     env:
@@ -81,11 +81,7 @@ jobs:
           - ubuntu-latest
           - MacOs-13
         py:
-          - "3.12"
-          - "3.11"
-          - "3.10"
           - "3.9"
-          - "3.8"
     steps:
       - name: Check out Repo
         uses: actions/checkout@v4
@@ -139,3 +135,74 @@ jobs:
           name: Snapshot Report ${{ matrix.os }} ${{ matrix.py }}
           path: ./snapshot_report.html
 
+  test:
+    name: ${{ matrix.os }} - ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    env:
+      motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
+      POETRY_VIRTUALENVS_IN_PROJECT: 1
+      POETRY_INSTALLER_PARALLEL: 1
+      POETRY_VIRTUALENVS_CREATE: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - MacOs-latest
+        py:
+          - "3.13"
+          - "3.12"
+          - "3.11"
+          - "3.10"
+    steps:
+      - name: Check out Repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.py }}
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+
+      - name: Load cached Poetry installation
+        id: cached-poetry-install
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-poetry-171
+
+      - name: Add cached Poetry to PATH
+        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Poetry
+        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install python dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: |
+          poetry env use ${{ steps.setup-python.outputs.python-version }}
+          poetry install --sync --no-interaction --only main,test
+
+      - name: Run tests
+        run: |
+          poetry run pytest -m "not online" --snapshot-warn-unused
+
+      - name: Store snapshot report on failure
+        uses: actions/upload-artifact@v4  
+        if: failure()
+        with:
+          name: Snapshot Report ${{ matrix.os }} ${{ matrix.py }}
+          path: ./snapshot_report.html
