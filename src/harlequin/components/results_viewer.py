@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from rich.markup import escape
 from rich.style import Style
 from rich.text import Text
 from textual.css.query import NoMatches
@@ -178,9 +177,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
     def _format_column_label(self, col_name: str, col_type: str) -> Text:
         type_label_style = self.get_component_rich_style("results-viewer--type-label")
         type_label_fg_style = Style(color=type_label_style.color)
-        label = Text.assemble(
-            escape(col_name), " ", (escape(col_type), type_label_fg_style)
-        )
+        label = Text.assemble(col_name, " ", (col_type, type_label_fg_style))
         return label
 
     def _get_max_col_width(self) -> int:
