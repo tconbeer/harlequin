@@ -3093,12 +3093,14 @@ typing-extensions = ">=4.4.0,<5.0.0"
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.10.0"
+version = "0.11.0"
 description = "A performance-focused reimplementation of Textual's DataTable widget, with a pluggable data storage backend."
 optional = false
-python-versions = ">=3.9,<3.14"
-files = []
-develop = true
+python-versions = "<3.14,>=3.9"
+files = [
+    {file = "textual_fastdatatable-0.11.0-py3-none-any.whl", hash = "sha256:23be3ee1748075a06aed7352067327de09179f791e16a1d1d6a01b1fcc1e3613"},
+    {file = "textual_fastdatatable-0.11.0.tar.gz", hash = "sha256:a2305f5745dc1ab4088a3f0d5c7dcfb8993d711a296954664c3492712fa5cc4b"},
+]
 
 [package.dependencies]
 pyarrow = ">=16.1.0"
@@ -3108,26 +3110,20 @@ tzdata = {version = ">=2023", markers = "sys_platform == \"win32\""}
 [package.extras]
 polars = ["polars (>=0.20.0)"]
 
-[package.source]
-type = "directory"
-url = "../textual-fastdatatable"
-
 [[package]]
 name = "textual-textarea"
-version = "0.14.4"
+version = "0.15.0"
 description = "A text area (multi-line input) with syntax highlighting for Textual"
 optional = false
-python-versions = ">=3.9,<3.14"
-files = []
-develop = true
+python-versions = "<3.14,>=3.9"
+files = [
+    {file = "textual_textarea-0.15.0-py3-none-any.whl", hash = "sha256:bdaee55bb3cb2544ad5723fe9c3fcf6e31bc572772f6e95ea769d384a00e76d9"},
+    {file = "textual_textarea-0.15.0.tar.gz", hash = "sha256:1343604a4dc3bac0337c58d926a02ddcf451956fb12532a3d5ade9219905f426"},
+]
 
 [package.dependencies]
-pyperclip = "^1.9.0"
+pyperclip = ">=1.9.0,<2.0.0"
 textual = {version = ">=0.89.1,<2.0", extras = ["syntax"]}
-
-[package.source]
-type = "directory"
-url = "../textual-textarea"
 
 [[package]]
 name = "tomli"
@@ -3833,4 +3829,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.14.0"
-content-hash = "83a05620ab6ebb67e30d090a7ca4666671f0e127957c93bf3a1e967595da29f7"
+content-hash = "4f9d6ee33bdea401f39eee89382991a4fd670f732ea5d6bf0c9b4abd19076934"
