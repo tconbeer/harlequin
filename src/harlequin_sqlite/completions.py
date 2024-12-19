@@ -4,6 +4,16 @@ import sqlite3
 
 from harlequin.autocomplete.completion import HarlequinCompletion
 
+def _get_functions(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    return conn.execute(
+        """
+        select distinct
+            name as label,
+            case when type = 'w' then 'agg' else 'fn' end as type_label
+        from pragma_function_list
+        order by name asc
+        """
+    ).fetchall()
 
 def get_completion_data(conn: sqlite3.Connection) -> list[HarlequinCompletion]:
     KEYWORDS = [
@@ -217,15 +227,7 @@ def get_completion_data(conn: sqlite3.Connection) -> list[HarlequinCompletion]:
         "wal_checkpoint",
     ]
 
-    function_data = conn.execute(
-        """
-        select distinct
-            name as label,
-            case when type = 'w' then 'agg' else 'fn' end as type_label
-        from pragma_function_list
-        order by name asc
-        """
-    ).fetchall()
+    function_data = _get_functions(conn)
 
     keyword_completions = [
         HarlequinCompletion(

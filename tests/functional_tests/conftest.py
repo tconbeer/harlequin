@@ -34,6 +34,18 @@ def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
         "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
     )
 
+@pytest.fixture(autouse=True)
+def mock_sqlite_completions(monkeypatch: pytest.MonkeyPatch) -> None:
+    functions = [
+        ("sum", "agg"),
+        ("count", "agg"),
+        ("least", "fn"),
+        ("greatest", "fn"),
+    ]
+    monkeypatch.setattr(
+        "harlequin_sqlite.completions._get_functions", lambda *_: functions
+    )
+    
 
 @pytest.fixture
 def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
