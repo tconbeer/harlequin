@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   static:
-    name: Static Analysis - 3.8
+    name: Static Analysis - 3.9
     runs-on: ubuntu-latest
     env:
       POETRY_VIRTUALENVS_IN_PROJECT: 1
@@ -22,11 +22,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python 3.8
+      - name: Set up Python 3.9
         uses: actions/setup-python@v5
         id: setup-python
         with:
-          python-version: "3.8"
+          python-version: "3.9"
 
       - name: Load cached Poetry installation
         id: cached-poetry-install
