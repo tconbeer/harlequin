@@ -3093,13 +3093,13 @@ crt = ["botocore[crt] (>=1.33.2,<2.0a.0)"]
 
 [[package]]
 name = "shandy-sqlfmt"
-version = "0.23.2"
+version = "0.24.0"
 description = "sqlfmt formats your dbt SQL files so you don't have to."
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "shandy_sqlfmt-0.23.2-py3-none-any.whl", hash = "sha256:31181541982cfbd3fccc2c8e033e8cb079197d41bf00f788341f5f0910f3361c"},
-    {file = "shandy_sqlfmt-0.23.2.tar.gz", hash = "sha256:dd141c363ac57ffd2deb904e4d470fd69bc85fb8b51d9df2b204c95199af5034"},
+    {file = "shandy_sqlfmt-0.24.0-py3-none-any.whl", hash = "sha256:9e8990a7ffe909dee6f2c2f301ca693fdc5c519a0e1b117c0f50e02a922af688"},
+    {file = "shandy_sqlfmt-0.24.0.tar.gz", hash = "sha256:ae34d34dc88ef4a2c97677d7d3d95d7f362908aa6f97e3fb0529cab4a96799ba"},
 ]
 
 [package.dependencies]
