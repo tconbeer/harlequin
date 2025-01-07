@@ -9,11 +9,12 @@ All notable changes to this project will be documented in this file.
 ### Breaking Changes
 
 - Drops support for Python 3.8.
-- Drops support for Pygments themes in favor of Textual themes.
+- Drops support for Pygments themes in favor of Textual themes. Use `harlequin --config` to update your config files with a new theme. The default theme, `harlequin`, remains unchanged.
 
 ### Features
 
-- Fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671))
+- Adds fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671)).
+- Adds support for Python 3.13.
 
 ## [1.25.2] - 2024-10-31
 
