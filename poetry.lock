@@ -3129,7 +3129,7 @@ textual = ">=0.28.0"
 type = "git"
 url = "https://github.com/tconbeer/pytest-textual-snapshot.git"
 reference = "main"
-resolved_reference = "8d514995792dcb388ea507485c9a0634b45d9e75"
+resolved_reference = "864837ebb15a7e1a9086f4f9692e015fd8d5206c"
 
 [[package]]
 name = "python-dateutil"
