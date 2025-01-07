@@ -6,7 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking Changes
 - Drops support for Python 3.8.
-- Drops support for harlequin-databricks due to dependency compatibility issues.
 - Drops support for Pygments themes in favor of Textual themes.
 
 ### Features
