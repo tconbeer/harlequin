@@ -107,13 +107,13 @@ sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 vscode = "harlequin_vscode:VSCODE"
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["A", "B", "E", "F", "I"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 files = [
     "src/**/*.py",
     "tests/**/*.py",
