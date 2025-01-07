@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-01-07
+
 ### Breaking Changes
+
 - Drops support for Python 3.8.
 - Drops support for Pygments themes in favor of Textual themes.
 
 ### Features
+
 - Fuzzy matching for autocomplete ([#671](https://github.com/tconbeer/harlequin/pull/671))
 
 ## [1.25.2] - 2024-10-31
@@ -755,7 +759,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/1.25.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/tconbeer/harlequin/compare/1.25.2...2.0.0
 [1.25.2]: https://github.com/tconbeer/harlequin/compare/1.25.1...1.25.2
 [1.25.1]: https://github.com/tconbeer/harlequin/compare/1.25.0...1.25.1
 [1.25.0]: https://github.com/tconbeer/harlequin/compare/1.24.1...1.25.0
