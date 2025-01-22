@@ -51,6 +51,7 @@ class AppBase(App, inherit_bindings=False):
             e = HarlequinThemeError(
                 (
                     f"No theme found with the name {theme}.\n"
+                    "Supported themes changed in Harlequin v2.0.0. "
                     "Theme must be `harlequin` or the name of a Textual Theme:\n"
                     f"{valid_themes}"
                 ),
