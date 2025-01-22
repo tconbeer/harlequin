@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\.local
-          key: ${{ runner.os }}-poetry-171
+          key: ${{ runner.os }}-poetry-184
 
       - name: Add cached Poetry to PATH
         if: steps.cached-poetry-install.outputs.cache-hit == 'true'
@@ -50,7 +50,7 @@ jobs:
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
-          version: 1.7.1
+          version: 1.8.4
 
       - name: Install python dependencies
         run: |
@@ -99,7 +99,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: ${{ runner.os }}-poetry-171
+          key: ${{ runner.os }}-poetry-184
 
       - name: Add cached Poetry to PATH
         if: steps.cached-poetry-install.outputs.cache-hit == 'true'
@@ -109,7 +109,7 @@ jobs:
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
-          version: 1.7.1
+          version: 1.8.4
 
       - name: Load cached venv
         id: cached-poetry-dependencies
@@ -171,7 +171,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: ${{ runner.os }}-poetry-171-1
+          key: ${{ runner.os }}-poetry-184
 
       - name: Add cached Poetry to PATH
         if: steps.cached-poetry-install.outputs.cache-hit == 'true'
@@ -181,7 +181,7 @@ jobs:
         if: steps.cached-poetry-install.outputs.cache-hit != 'true'
         uses: snok/install-poetry@v1
         with:
-          version: 1.7.1
+          version: 1.8.4
 
       - name: Load cached venv
         id: cached-poetry-dependencies
