@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 - Drops support for Python 3.8.
 - Drops support for Pygments themes in favor of Textual themes. Use `harlequin --config` to update your config files with a new theme. The default theme, `harlequin`, remains unchanged.
+- Removes the `cassandra` and `nebulagraph` extras, due to package compatibility issues.
 
 ### Features
 
