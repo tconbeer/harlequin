@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2025-01-29
+
 ### Extras
 
 - Adds back the `cassandra` extra (thank you [@vkhitrin](https://github.com/vkhitrin)!)
@@ -765,7 +767,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.1...HEAD
+[2.0.1]: https://github.com/tconbeer/harlequin/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/tconbeer/harlequin/compare/1.25.2...2.0.0
 [1.25.2]: https://github.com/tconbeer/harlequin/compare/1.25.1...1.25.2
 [1.25.1]: https://github.com/tconbeer/harlequin/compare/1.25.0...1.25.1
