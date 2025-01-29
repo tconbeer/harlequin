@@ -30,7 +30,7 @@ Like DuckDB, you can also open an in-memory database by omitting the paths:
 harlequin -a sqlite
 ```
 
-Other adapters can be installed using `pip install <adapter package>` or `pipx inject harlequin <adapter package>`, depending on how you installed Harlequin. Several adapters are under active development; for a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page.
+Other adapters must be installed into the same environment as Harlequin; instructions will depend on how you installed Harlequin. For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page.
 
 
 ### Getting Help

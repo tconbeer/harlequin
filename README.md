@@ -11,13 +11,57 @@ The SQL IDE for Your Terminal.
 
 ## Installing Harlequin
 
-After installing Python 3.8 or above, install Harlequin using `pip` or `pipx` with:
+Harlequin is a Python program, and there are many ways to install and run it. We strongly recommend using [uv](https://docs.astral.sh/uv):
+
+1. [Install uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer). From a POSIX shell, run:
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+    Or using Windows Powershell:
+
+    ```powershell
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+2. Install Harlequin as a tool (in an isolated environment) using `uv`:
+
+    ```bash
+    uv tool install harlequin
+    ```
+
+Alternatively, if you know what you're doing, after installing Python 3.9 or above, install Harlequin using `pip`, `pipx`, `poetry`, or any other program that can install Python packages from PyPI:
 
 ```bash
-pipx install harlequin
+pip install harlequin
+```
+
+## Installing Database Adapters
+
+Harlequin can connect to dozens of databases, using adapter plug-ins. Adapters are distributed as their own Python packages that need to be installed into the same environment as Harlequin.
+
+For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page in the docs.
+
+The adapter docs also include installation instructions. Some adapters can be installed as Harlequin extras, like `postgres`. If you used `uv` to install Harlequin:
+
+```bash
+uv tool install harlequin[postgres]
+```
+
+You can install multiple extras:
+
+```bash
+uv tool install harlequin[postgres,mysql,s3]
+```
+
+Some adapters are not available as extras, and have to be installed manually. You may also wish to do this to control the version of the adapter that Harlequin uses. You can add adapters to your installation using uv's `--with` option:
+
+```bash
+uv tool install harlequin --with harlequin-odbc
 ```
 
 ## Using Harlequin with DuckDB
+
+Harlequin ships with a DuckDB adapter, so no additional installation is required.
 
 From any shell, to open one or more DuckDB database files:
 
@@ -33,21 +77,27 @@ harlequin
 
 If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/duckdb-version-mismatch) page.
 
-## Using Harlequin with SQLite and Other Adapters
+## Using Harlequin with SQLite and Other Databases
 
 Harlequin also ships with a SQLite3 adapter. You can open one or more SQLite database files with:
 
 ```bash
-harlequin -a sqlite "path/to/sqlite.db" "another_sqlite.db"
+harlequin --adapter sqlite "path/to/sqlite.db" "another_sqlite.db"
 ```
 
-Like DuckDB, you can also open an in-memory database by omitting the paths:
+Like DuckDB, you can also open an in-memory database by omitting the paths; the `--adapter` option also has a shorter alias, `-a`:
 
 ```bash
 harlequin -a sqlite
 ```
 
-Other adapters can be installed using `pip install <adapter package>` or `pipx inject harlequin <adapter package>`, depending on how you installed Harlequin. For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page in the docs.
+You can follow the same pattern to connect to a database using a different adapter. Simply pass the adapter name as an option, followed by a connection string and any options. For example, a local Postgres database:
+
+```bash
+harlequin -a postgres "postgresql://localhost:5432/postgres" -u myuser
+```
+
+Many database adapters will read from the standard environment variables for connection parameters. For example, the Postgres adapter will read and use the `PGHOST`, `PGUSER`, and `PGPASSWORD` variables (and all the others).
 
 ## Getting Help
 
