@@ -61,7 +61,7 @@ harlequin-bigquery = { version = ">=1.0.3", optional = true }
 harlequin-trino = { version = ">=0.1", optional = true }
 harlequin-databricks = { version = ">=0.5.2", optional = true }
 harlequin-adbc = { version = ">=0.1", optional = true }
-# harlequin-cassandra = { version = ">=0.1", optional = true }
+harlequin-cassandra = { version = ">=0.1.2", optional = true }
 # harlequin-nebulagraph = { version = ">=0.1", optional = true }
 
 [tool.poetry.group.dev.dependencies]
@@ -96,7 +96,7 @@ bigquery = ["harlequin-bigquery"]
 trino = ["harlequin-trino"]
 databricks = ["harlequin-databricks"]
 adbc = ["harlequin-adbc"]
-# cassandra = ["harlequin-cassandra"]
+cassandra = ["harlequin-cassandra"]
 # nebulagraph = ["harlequin-nebulagraph"]
 
 [tool.poetry.plugins."harlequin.adapter"]

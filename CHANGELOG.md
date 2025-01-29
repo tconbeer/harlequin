@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Extras
+
+- Adds back the `cassandra` extra (thank you [@vkhitrin](https://github.com/vkhitrin)!)
+
 ## [2.0.0] - 2025-01-07
 
 ### Breaking Changes
