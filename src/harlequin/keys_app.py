@@ -584,7 +584,7 @@ class HarlequinKeys(AppBase):
 def format_action(action: str) -> str:
     component_name, _, action_name = action.rpartition(".")
     component_display_name = (
-        f'{" ".join(w.capitalize() for w in component_name.split("_"))}: '
+        f"{' '.join(w.capitalize() for w in component_name.split('_'))}: "
         if component_name
         else ""
     )

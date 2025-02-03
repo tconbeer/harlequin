@@ -57,8 +57,7 @@ def _load_plugins(
             ep_class = ep.load()
         except ImportError as e:
             print(
-                f"Harlequin could not load the installed plug-in named {e.name}."
-                f"\n\n{e}"
+                f"Harlequin could not load the installed plug-in named {e.name}.\n\n{e}"
             )
         else:
             plugins[ep.name] = ep_class

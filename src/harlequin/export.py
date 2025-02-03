@@ -45,7 +45,7 @@ def _export_csv(
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
             str(e),
-            title=("DuckDB raised an error when writing your query " "to a CSV file."),
+            title=("DuckDB raised an error when writing your query to a CSV file."),
         ) from e
 
 
@@ -66,9 +66,7 @@ def _export_parquet(
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
             str(e),
-            title=(
-                "DuckDB raised an error when writing your query " "to a Parquet file."
-            ),
+            title=("DuckDB raised an error when writing your query to a Parquet file."),
         ) from e
 
 
@@ -104,7 +102,7 @@ def _export_json(
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
             str(e),
-            title=("DuckDB raised an error when writing your query " "to a JSON file."),
+            title=("DuckDB raised an error when writing your query to a JSON file."),
         ) from e
 
 
