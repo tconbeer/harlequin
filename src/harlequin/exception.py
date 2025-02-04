@@ -49,9 +49,9 @@ class HarlequinLocaleError(HarlequinError):
 
 
 def pretty_print_error(error: HarlequinError) -> None:
-    from rich import print
+    from rich import print as rich_print
 
-    print(pretty_error_message(error))
+    rich_print(pretty_error_message(error))
 
 
 def pretty_error_message(error: HarlequinError) -> Panel:
@@ -64,11 +64,11 @@ def pretty_error_message(error: HarlequinError) -> Panel:
 
 
 def pretty_print_warning(title: str, message: str) -> None:
-    from rich import print
+    from rich import print as rich_print
 
     from harlequin.colors import GREEN
 
-    print(
+    rich_print(
         Panel.fit(
             message,
             title=title,

@@ -521,5 +521,5 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             return f"select load_extension('{args[0]}', '{args[1]}');"
         else:
             raise sqlite3.ProgrammingError(
-                "Could not execute .load with following args: " f"{args}"
+                f"Could not execute .load with following args: {args}"
             )

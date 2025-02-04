@@ -37,7 +37,7 @@ pip install harlequin
 
 ## Installing Database Adapters
 
-Harlequin can connect to dozens of databases, using adapter plug-ins. Adapters are distributed as their own Python packages that need to be installed into the same environment as Harlequin.
+Harlequin can connect to dozens of databases using adapter plug-ins. Adapters are distributed as their own Python packages that need to be installed into the same environment as Harlequin.
 
 For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page in the docs.
 

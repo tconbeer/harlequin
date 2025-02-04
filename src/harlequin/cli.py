@@ -223,8 +223,7 @@ def build_cli() -> click.Command:
         "-f",
         type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
         help=(
-            "The path to a directory to show in a file tree viewer "
-            "in the Data Catalog."
+            "The path to a directory to show in a file tree viewer in the Data Catalog."
         ),
     )
     @click.option(
@@ -249,8 +248,7 @@ def build_cli() -> click.Command:
     @click.option(
         "--config",
         help=(
-            "Run the configuration wizard to create or update a Harlequin "
-            "config file."
+            "Run the configuration wizard to create or update a Harlequin config file."
         ),
         is_flag=True,
         callback=_config_wizard_callback,
@@ -258,9 +256,7 @@ def build_cli() -> click.Command:
     )
     @click.option(
         "--keys",
-        help=(
-            "Run the key binding config app to create or update a Harlequin " "keymap."
-        ),
+        help=("Run the key binding config app to create or update a Harlequin keymap."),
         is_flag=True,
         callback=_keys_app_callback,
         expose_value=True,
