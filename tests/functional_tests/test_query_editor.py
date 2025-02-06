@@ -211,8 +211,10 @@ async def test_member_autocomplete(
             await pilot.pause()
         for db_node in app.data_catalog.database_tree.root.children:
             await _expand_and_wait(db_node)
+            await wait_for_workers(app)
             for schema_node in db_node.children:
                 await _expand_and_wait(schema_node)
+                await wait_for_workers(app)
         await pilot.pause(1)
 
         # now the completer should be populated
