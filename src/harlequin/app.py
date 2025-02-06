@@ -20,7 +20,7 @@ from typing import (
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.css.query import DOMQuery
+from textual.css.query import DOMQuery, NoMatches
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.lazy import Lazy
@@ -470,7 +470,17 @@ class Harlequin(AppBase):
         if message.active_editor is not None:
             self.editor = message.active_editor
         else:
-            self.editor = self.editor_collection.current_editor
+            try:
+                self.editor = self.editor_collection.current_editor
+            except NoMatches:
+                # This shouldn't happen, but sometimes on Windows we
+                # get into this state where we receive EditorSwitched
+                # but current_editor raises NoMatches because it
+                # can't find the ContentSwitcher. Recycle the event
+                # to try again.
+                callback = partial(self.post_message, message)
+                self.set_timer(delay=0.1, callback=callback)
+                return
         self.editor.focus()
 
     def on_text_area_selection_changed(self) -> None:
