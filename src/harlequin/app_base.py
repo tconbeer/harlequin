@@ -64,3 +64,13 @@ class AppBase(App, inherit_bindings=False):
         Changes the default screen to re-order bindings, with global bindings first.
         """
         return ScreenBase(id="_default")
+
+    def _handle_exception(self, error: Exception) -> None:
+        """
+        Prevents tracebacks from being printed due to exceptions that
+        occur after App.exit() is called.
+        See https://github.com/Textualize/textual/issues/5325
+        """
+        if self._exit:
+            return
+        return super()._handle_exception(error)
