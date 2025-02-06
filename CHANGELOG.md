@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Harlequin now supports `infinity` and `-infinity` timestamps (from Postgres and DuckDB), as well as other timestamps that may have previously overflowed Python's native types and been shown as `null` ([#690](https://github.com/tconbeer/harlequin/issues/690) - thank you [@yrashk](https://github.com/yrashk)!).
 - Harlequin will no longer show a traceback for exceptions that occur after App shutdown has started ([#745](https://github.com/tconbeer/harlequin/issues/745)).
 - Fixes a crash on Windows at start-up due to `NoMatches` on the `ContentSwitcher` ([#742](https://github.com/tconbeer/harlequin/issues/742)).
+- Harlequin once again uses the latest version of the IANA TZDATA database for its Windows installations ([#662](https://github.com/tconbeer/harlequin/issues/662)).
 
 ## [2.0.1] - 2025-01-29
 
