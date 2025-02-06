@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime
 from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
@@ -113,3 +114,37 @@ async def test_data_truncated_with_tooltip(
         await pilot.pause(0.5)
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "hover over truncated value")
+
+
+@pytest.mark.asyncio
+async def test_infinity_timestamp(
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    query = """
+        select
+            'infinity'::date,
+            'infinity'::timestamp,
+            '-infinity'::date,
+            '-infinity'::timestamp
+        """
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        results_table = app.results_viewer.get_visible_table()
+        assert results_table is not None
+        assert results_table.get_row_at(0) == [
+            date.max,
+            datetime.max,
+            date.min,
+            datetime.min,
+        ]
+
+        assert await app_snapshot(app, "hover over truncated value")

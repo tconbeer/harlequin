@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin now supports `infinity` and `-infinity` timestamps (from Postgres and DuckDB), as well as other timestamps that may have previously overflowed Python's native types and been shown as `null` ([#690](https://github.com/tconbeer/harlequin/issues/690) - thank you [@yrashk](https://github.com/yrashk)!).
+
 ## [2.0.1] - 2025-01-29
 
 ### Extras
