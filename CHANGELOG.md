@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Updates the `numpy` dependency pin to make it more likely that `uv tool install harlequin` never builds numpy from source ([#754](https://github.com/tconbeer/harlequin/issues/754)).
+
 ## [2.0.2] - 2025-02-07
 
 ### Bug Fixes
