@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.2] - 2025-02-07
+
 ### Bug Fixes
 
 - Harlequin now supports `infinity` and `-infinity` timestamps (from Postgres and DuckDB), as well as other timestamps that may have previously overflowed Python's native types and been shown as `null` ([#690](https://github.com/tconbeer/harlequin/issues/690) - thank you [@yrashk](https://github.com/yrashk)!).
@@ -774,7 +776,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.2...HEAD
+[2.0.2]: https://github.com/tconbeer/harlequin/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/tconbeer/harlequin/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/tconbeer/harlequin/compare/1.25.2...2.0.0
 [1.25.2]: https://github.com/tconbeer/harlequin/compare/1.25.1...1.25.2
