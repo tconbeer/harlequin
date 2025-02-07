@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.3] - 2025-02-07
+
 ### Dependencies
 
 - Updates the `numpy` dependency pin to make it more likely that `uv tool install harlequin` never builds numpy from source ([#754](https://github.com/tconbeer/harlequin/issues/754)).
@@ -780,7 +782,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.3...HEAD
+[2.0.3]: https://github.com/tconbeer/harlequin/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/tconbeer/harlequin/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/tconbeer/harlequin/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/tconbeer/harlequin/compare/1.25.2...2.0.0
