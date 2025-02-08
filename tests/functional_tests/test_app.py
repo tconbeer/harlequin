@@ -42,7 +42,7 @@ async def test_select_1(
         [query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == q
+        assert query_submitted_message.queries == [q]
         await wait_for_workers(app)
         await pilot.pause()
         [query_executed_message] = [
@@ -99,7 +99,7 @@ async def test_queries_do_not_crash_all_adapters(
             [query_submitted_message] = [
                 m for m in messages if isinstance(m, QuerySubmitted)
             ]
-            assert query_submitted_message.query_text == query
+            assert query_submitted_message.queries == [query]
             await wait_for_workers(app)
             await pilot.pause()
             [query_executed_message] = [
@@ -185,7 +185,7 @@ async def test_multiple_queries(
         [query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == "select 1;"
+        assert query_submitted_message.queries == ["select 1;"]
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.row_count == table.source_row_count == 1
@@ -204,7 +204,7 @@ async def test_multiple_queries(
         [_, query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == "select 1; select 2"
+        assert query_submitted_message.queries == ["select 1;", "select 2"]
         assert app.results_viewer.tab_count == 2
         assert "hide-tabs" not in app.results_viewer.classes
         await wait_for_workers(app)
@@ -250,7 +250,7 @@ async def test_single_query_terminated_with_semicolon(
         [query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == "select 1;"
+        assert query_submitted_message.queries == ["select 1;"]
         assert app.results_viewer.tab_count == 1
 
         app.editor.focus()
@@ -264,7 +264,7 @@ async def test_single_query_terminated_with_semicolon(
         [_, query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == "select 1;"
+        assert query_submitted_message.queries == ["select 1;"]
         assert app.results_viewer.tab_count == 1
 
         app.editor.focus()
@@ -277,7 +277,7 @@ async def test_single_query_terminated_with_semicolon(
         [*_, query_submitted_message] = [
             m for m in messages if isinstance(m, QuerySubmitted)
         ]
-        assert query_submitted_message.query_text == "select 1;"
+        assert query_submitted_message.queries == ["select 1;"]
         assert app.results_viewer.tab_count == 1
 
 

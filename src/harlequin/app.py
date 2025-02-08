@@ -113,9 +113,9 @@ class QueryError(Message):
 
 
 class QuerySubmitted(Message):
-    def __init__(self, query_text: str, limit: int | None) -> None:
+    def __init__(self, queries: list[str], limit: int | None) -> None:
         super().__init__()
-        self.query_text = query_text.strip()
+        self.queries = queries
         self.limit = limit
         self.submitted_at = time.monotonic()
 
@@ -317,7 +317,7 @@ class Harlequin(AppBase):
         message.stop()
         self.post_message(
             QuerySubmitted(
-                query_text=self._get_query_text(),
+                queries=self._get_selected_queries(),
                 limit=self.run_query_bar.limit_value,
             )
         )
@@ -365,7 +365,8 @@ class Harlequin(AppBase):
         message.stop()
         self.post_message(
             QuerySubmitted(
-                query_text=self._get_query_text(), limit=self.run_query_bar.limit_value
+                queries=self._get_selected_queries(),
+                limit=self.run_query_bar.limit_value,
             )
         )
 
@@ -512,7 +513,7 @@ class Harlequin(AppBase):
         ):
             self.post_message(
                 QuerySubmitted(
-                    query_text=self._get_query_text(),
+                    queries=self._get_selected_queries(),
                     limit=self.run_query_bar.limit_value,
                 )
             )
@@ -755,7 +756,7 @@ class Harlequin(AppBase):
     def execute_query(self, message: QuerySubmitted) -> None:
         if self.connection is None:
             return
-        if message.query_text:
+        if message.queries:
             self.full_screen = False
             self.run_query_bar.set_not_responsive()
             self.results_viewer.show_loading()
@@ -1005,7 +1006,7 @@ class Harlequin(AppBase):
         if self.connection is None:
             return
         cursors: Dict[str, tuple[HarlequinCursor, str]] = {}
-        queries = self._split_query_text(message.query_text)
+        queries = message.queries
         ddl_queries: list[str] = []
         for q in queries:
             try:
@@ -1043,14 +1044,10 @@ class Harlequin(AppBase):
         self.connection.cancel()
         self.post_message(QueriesCanceled())
 
-    def _get_query_text(self) -> str:
+    def _get_selected_queries(self) -> list[str]:
         if self.editor is None:
-            return ""
-        return (
-            self._validate_selection()
-            or self.editor.current_query
-            or self.editor.previous_query
-        )
+            return []
+        return self.editor.selected_queries()
 
     @staticmethod
     def _split_query_text(query_text: str) -> List[str]:
