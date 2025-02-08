@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin now uses a SQL parser to split the text editor's contents into distinct statements; this fixes a bug where queries could not contain a string literal with a semicolon (like `';'`) ([#348](https://github.com/tconbeer/harlequin/issues/348)).
+
 ## [2.0.3] - 2025-02-07
 
 ### Dependencies

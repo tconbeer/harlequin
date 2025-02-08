@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import List, Union
 
 from rich.text import TextType
@@ -20,6 +19,8 @@ from harlequin.messages import WidgetMounted
 
 
 class CodeEditor(TextEditor, inherit_bindings=False):
+    SEMICOLON_QUERY = '(";" @semicolon)'
+
     class Submitted(Message, bubble=True):
         """Posted when user runs the query.
 
@@ -32,11 +33,43 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             super().__init__()
             self.text = text
 
+    def selected_queries(self) -> list[str]:
+        """
+        Returns the list of queries that intersect
+        with the current selection.
+        """
+        if self.text_input is None:
+            return []
+
+        semicolons = self._query_semicolons()
+
+        if not semicolons:
+            return [self.text]
+
+        queries: list[str] = []
+        prev_query: str | None = None
+        query_start = (0, 0)
+        for query_end in [*semicolons, self.text_input.document.end]:
+            if query_start > self.selection.end:
+                break
+            q = self.text_input.get_text_range(start=query_start, end=query_end).strip()
+            if q and query_end >= self.selection.start:
+                queries.append(q)
+            elif q:
+                prev_query = q
+            query_start = query_end
+
+        if not queries and prev_query:
+            return [prev_query]
+
+        return queries
+
     @property
     def current_query(self) -> str:
         if self.text_input is None:
             return ""
-        semicolons = self._semicolons
+
+        semicolons = self._query_semicolons()
 
         if not semicolons:
             return self.text
@@ -60,7 +93,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
     def previous_query(self) -> str:
         if self.text_input is None:
             return ""
-        semicolons = self._semicolons
+
+        semicolons = self._query_semicolons()
 
         if not semicolons:
             return self.text
@@ -82,6 +116,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
         self.post_message(WidgetMounted(widget=self))
         self.has_shown_clipboard_error = False
+        self._semicolon_query = self.prepare_query(self.SEMICOLON_QUERY)
 
     def on_unmount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=None))
@@ -128,13 +163,10 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if hasattr(self.app, "action_focus_data_catalog"):
             self.app.action_focus_data_catalog()
 
-    @property
-    def _semicolons(self) -> list[tuple[int, int]]:
-        semicolons: list[tuple[int, int]] = []
-        for i, line in enumerate(self.text.splitlines()):
-            for pos in [m.span()[1] for m in re.finditer(";", line)]:
-                semicolons.append((i, pos))
-        return semicolons
+    def _query_semicolons(self) -> list[tuple[int, int]]:
+        assert self._semicolon_query is not None
+        query_result = self.query_syntax_tree(query=self._semicolon_query)
+        return [n.end_point for n in query_result.get("semicolon", [])]
 
 
 class EditorCollection(TabbedContent):

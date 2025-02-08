@@ -36,15 +36,15 @@ async def test_history_screen(
         # on the color system of the rich.console, which is different across different
         # GitHub action runners. Here we force everything to truecolor.
         app.console._color_system = COLOR_SYSTEMS["truecolor"]
-        q = "\n".join([f"select {i};" for i in range(15)])
+        q = [f"select {i};" for i in range(15)]
         while app.editor is None:
             await pilot.pause()
-        app.post_message(QuerySubmitted(query_text=q, limit=None))
+        app.post_message(QuerySubmitted(queries=q, limit=None))
         await pilot.pause()
         await wait_for_workers(app)
         await pilot.pause()
         # run a bad query
-        app.post_message(QuerySubmitted(query_text="sel;", limit=None))
+        app.post_message(QuerySubmitted(queries=["sel;"], limit=None))
         await pilot.pause()
         await wait_for_workers(app)
         await pilot.pause()
@@ -69,10 +69,10 @@ async def test_history_screen_crash(
     mock_time: None,
 ) -> None:
     async with app.run_test() as pilot:
-        q = "\n".join([f"select {i};" for i in range(15)])
+        q = [f"select {i};" for i in range(15)]
         while app.editor is None:
             await pilot.pause()
-        app.post_message(QuerySubmitted(query_text=q, limit=None))
+        app.post_message(QuerySubmitted(queries=q, limit=None))
         await pilot.pause()
         await wait_for_workers(app)
         await pilot.pause()
