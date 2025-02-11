@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.4] - 2025-02-11
+
 ### Bug Fixes
 
 - Harlequin now uses a SQL parser to split the text editor's contents into distinct statements; this fixes a bug where queries could not contain a string literal with a semicolon (like `';'`) ([#348](https://github.com/tconbeer/harlequin/issues/348)).
@@ -786,7 +788,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.3...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.4...HEAD
+[2.0.4]: https://github.com/tconbeer/harlequin/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/tconbeer/harlequin/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/tconbeer/harlequin/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/tconbeer/harlequin/compare/2.0.0...2.0.1
