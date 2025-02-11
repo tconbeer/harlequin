@@ -4,10 +4,13 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
+from textual.message import Message
+from textual.notifications import Notify
 from textual.widgets.text_area import Selection
 from textual.widgets.tree import TreeNode
 
 from harlequin import Harlequin
+from harlequin.app import QuerySubmitted
 from harlequin.catalog import CatalogItem
 
 
@@ -247,3 +250,52 @@ async def test_member_autocomplete(
         snap_results.append(await app_snapshot(app, "submitted"))
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_no_tree_sitter(
+    app: Harlequin,
+    monkeypatch: pytest.MonkeyPatch,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    import textual.document._syntax_aware_document
+    import textual.widgets._text_area
+
+    monkeypatch.setattr(textual.document._syntax_aware_document, "TREE_SITTER", False)
+    monkeypatch.setattr(textual.widgets._text_area, "TREE_SITTER", False)
+
+    messages: list[Message] = []
+    async with app.run_test(message_hook=messages.append) as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        assert app.editor is not None
+        assert app.editor.text_input is not None
+        app.editor.text = "select 1; select 2"
+
+        assert not app.editor.text_input.is_syntax_aware
+
+        await pilot.press("ctrl+a")
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+        await wait_for_workers(app)
+
+        submitted_msg = next(
+            iter(filter(lambda m: isinstance(m, QuerySubmitted), messages))
+        )
+        assert submitted_msg
+        assert isinstance(submitted_msg, QuerySubmitted)
+        assert len(submitted_msg.queries) == 2
+
+        text_area_warning = next(
+            iter(
+                filter(
+                    lambda m: isinstance(m, Notify)
+                    and m.notification.severity == "warning",
+                    messages,
+                )
+            )
+        )
+        assert text_area_warning

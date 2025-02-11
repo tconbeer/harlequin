@@ -271,7 +271,6 @@ async def test_single_query_terminated_with_semicolon(
         await pilot.press("ctrl+end")
         await pilot.press("ctrl+j")
         # should run previous query
-        assert not app.editor.current_query
         await wait_for_workers(app)
         await pilot.pause()
         [*_, query_submitted_message] = [

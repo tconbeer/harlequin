@@ -64,58 +64,11 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
         return queries
 
-    @property
-    def current_query(self) -> str:
-        if self.text_input is None:
-            return ""
-
-        semicolons = self._query_semicolons()
-
-        if not semicolons:
-            return self.text
-
-        before = (0, 0)
-        after: Union[None, tuple[int, int]] = None
-        for c in semicolons:
-            if c <= self.selection.end:
-                before = c
-            elif after is None and c > self.selection.end:
-                after = c
-                break
-        else:
-            lno = self.text_input.document.line_count - 1
-            after = (lno, len(self.text_input.document.get_line(lno)))
-        return self.text_input.get_text_range(
-            start=(before[0], before[1]), end=(after[0], after[1])
-        ).strip()
-
-    @property
-    def previous_query(self) -> str:
-        if self.text_input is None:
-            return ""
-
-        semicolons = self._query_semicolons()
-
-        if not semicolons:
-            return self.text
-
-        first = (0, 0)
-        second = (0, 0)
-        for c in semicolons:
-            if c <= self.selection.end:
-                first = second
-                second = c
-            elif c > self.selection.end:
-                break
-
-        return self.text_input.get_text_range(
-            start=(first[0], first[1]), end=(second[0], second[1])
-        ).strip()
-
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
         self.post_message(WidgetMounted(widget=self))
         self.has_shown_clipboard_error = False
+        self.has_shown_tree_sitter_error = False
         self._semicolon_query = self.prepare_query(self.SEMICOLON_QUERY)
 
     def on_unmount(self) -> None:
@@ -164,9 +117,32 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             self.app.action_focus_data_catalog()
 
     def _query_semicolons(self) -> list[tuple[int, int]]:
-        assert self._semicolon_query is not None
-        query_result = self.query_syntax_tree(query=self._semicolon_query)
-        return [n.end_point for n in query_result.get("semicolon", [])]
+        if self.text_input is None:
+            return []
+
+        if self.text_input.is_syntax_aware:
+            assert self._semicolon_query is not None
+            query_result = self.query_syntax_tree(query=self._semicolon_query)
+            return [n.end_point for n in query_result.get("semicolon", [])]
+        else:
+            # tree-sitter is not installed. naively split on semicolons and
+            # show a warning.
+            import re
+
+            if not self.has_shown_tree_sitter_error:
+                self.app.notify(
+                    "Tree-sitter is not installed. Syntax highlighting and query "
+                    "splitting may not work as expected.\n"
+                    "See https://harlequin.sh/docs/troubleshooting/tree-sitter",
+                    severity="warning",
+                    timeout=10,
+                )
+                self.has_shown_tree_sitter_error = True
+            semicolons: list[tuple[int, int]] = []
+            for i, line in enumerate(self.text.splitlines()):
+                for pos in [m.span()[1] for m in re.finditer(";", line)]:
+                    semicolons.append((i, pos))
+            return semicolons
 
 
 class EditorCollection(TabbedContent):
