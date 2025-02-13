@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pins the tree-sitter and tree-sitter-sql versions to avoid a crash caused by a mismatch between those versions.
+
 ## [2.0.4] - 2025-02-11
 
 ### Bug Fixes
