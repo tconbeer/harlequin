@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5] - 2025-02-13
+
 ### Bug Fixes
 
 - Pins the tree-sitter and tree-sitter-sql versions to avoid a crash caused by a mismatch between those versions.
@@ -792,7 +794,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.4...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.5...HEAD
+[2.0.5]: https://github.com/tconbeer/harlequin/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/tconbeer/harlequin/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/tconbeer/harlequin/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/tconbeer/harlequin/compare/2.0.1...2.0.2
