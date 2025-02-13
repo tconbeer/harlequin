@@ -4136,4 +4136,4 @@ trino = ["harlequin-trino"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.14.0"
-content-hash = "0e89ca7fc735145fd244d645650aa1c5bb0d68d7544d6a68e33dcb95184f86ff"
+content-hash = "c19cb007e3ace8a4a89809e5ec09a7ee9f7642074249893976d5e7537f99f85d"
