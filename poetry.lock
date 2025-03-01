@@ -1449,18 +1449,18 @@ protobuf = ">=5.26.1,<6.0dev"
 
 [[package]]
 name = "harlequin-adbc"
-version = "0.1.1"
+version = "0.1.2"
 description = "A Harlequin adapter for ADBC drivers."
 optional = true
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "harlequin_adbc-0.1.1-py3-none-any.whl", hash = "sha256:b58469bee392b983f89ef36dc7809db82e55f1134f0b7d37b61336d12ee4193a"},
-    {file = "harlequin_adbc-0.1.1.tar.gz", hash = "sha256:5c05373b0ce9a57f5b269167e6c925290af403a18330feefc3101adf00c587e6"},
+    {file = "harlequin_adbc-0.1.2-py3-none-any.whl", hash = "sha256:47ffbd7b75f32a837545c92c498d342da03a5808e64465574dfd325b761c4695"},
+    {file = "harlequin_adbc-0.1.2.tar.gz", hash = "sha256:203f19a78b36045cae482ef4c15c5079d2c9407f4d8738566857e1ebfcec6156"},
 ]
 
 [package.dependencies]
 adbc-driver-manager = ">=0.9.0"
-harlequin = ">=1.7"
+harlequin = ">=1.7,<3"
 pyarrow = ">=14.0.0"
 
 [package.extras]
