@@ -1550,13 +1550,13 @@ pyodbc = ">=5.0,<6.0"
 
 [[package]]
 name = "harlequin-postgres"
-version = "1.1.1"
+version = "1.2.0"
 description = "A Harlequin adapter for Postgres."
 optional = false
 python-versions = "<3.14,>=3.9"
 files = [
-    {file = "harlequin_postgres-1.1.1-py3-none-any.whl", hash = "sha256:927dd124962f8eca6b9ead49b45ce43c3c71c97f8e58b246d8f2f3f31f612201"},
-    {file = "harlequin_postgres-1.1.1.tar.gz", hash = "sha256:3ba0981b3b17aa72984bb36ea16dc1eac3398ade23c59fd14ac6f883e1ca369b"},
+    {file = "harlequin_postgres-1.2.0-py3-none-any.whl", hash = "sha256:fdbb68eb0931d754d062961e9d5cc6f606eec267aa0e5c4da1d3ab94533bcd70"},
+    {file = "harlequin_postgres-1.2.0.tar.gz", hash = "sha256:f544b469a5cfd85f9454cf69638dcaa67074e4a0b4fee0f1ae964060e27e451d"},
 ]
 
 [package.dependencies]
