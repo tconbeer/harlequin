@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Extras
+
+- Adds back the `nebulagraph` extra (thank you [@wey-gu](https://github.com/wey-gu)!)
+
 ## [2.0.5] - 2025-02-13
 
 ### Bug Fixes
