@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-03-10
+
 ### Extras
 
 - Adds back the `nebulagraph` extra (thank you [@wey-gu](https://github.com/wey-gu)!)
@@ -798,7 +800,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.0.5...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.0...HEAD
+[2.1.0]: https://github.com/tconbeer/harlequin/compare/2.0.5...2.1.0
 [2.0.5]: https://github.com/tconbeer/harlequin/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/tconbeer/harlequin/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/tconbeer/harlequin/compare/2.0.2...2.0.3
