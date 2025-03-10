@@ -64,7 +64,7 @@ harlequin-trino = { version = ">=0.1", optional = true }
 harlequin-databricks = { version = ">=0.5.2", optional = true }
 harlequin-adbc = { version = ">=0.1", optional = true }
 harlequin-cassandra = { version = ">=0.1.2", optional = true }
-# harlequin-nebulagraph = { version = ">=0.1", optional = true }
+harlequin-nebulagraph = { version = ">=0.4.1", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.3.1"
@@ -99,7 +99,7 @@ trino = ["harlequin-trino"]
 databricks = ["harlequin-databricks"]
 adbc = ["harlequin-adbc"]
 cassandra = ["harlequin-cassandra"]
-# nebulagraph = ["harlequin-nebulagraph"]
+nebulagraph = ["harlequin-nebulagraph"]
 
 [tool.poetry.plugins."harlequin.adapter"]
 duckdb = "harlequin_duckdb:DuckDbAdapter"
