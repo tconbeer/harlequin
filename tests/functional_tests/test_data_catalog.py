@@ -186,6 +186,8 @@ async def test_s3_tree(
             await pilot.pause()
         catalog = app.data_catalog
         assert catalog.s3_tree is not None
+        while not catalog.s3_tree.is_mounted:
+            await pilot.pause()
 
         await pilot.press("f6")  # focus catalog
         await pilot.press("k")  # show s3
