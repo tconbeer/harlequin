@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a crash caused by a missing `FILE_ICON` property of the S3Tree ([#786](https://github.com/tconbeer/harlequin/issues/786) - thank you [@nyc-de](https://github.com/nyc-de)!).
+
 ## [2.1.0] - 2025-03-10
 
 ### Extras
