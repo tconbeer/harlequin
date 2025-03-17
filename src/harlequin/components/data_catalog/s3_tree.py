@@ -49,6 +49,10 @@ class S3Tree(HarlequinTree[str], inherit_bindings=False):
             "Root", data, name=name, id=id, classes=classes, disabled=disabled
         )
 
+    ICON_NODE_EXPANDED = DirectoryTree.ICON_NODE_EXPANDED
+    ICON_NODE = DirectoryTree.ICON_NODE
+    ICON_FILE = DirectoryTree.ICON_FILE
+
     render_label = DirectoryTree.render_label  # type: ignore[assignment]
 
     def on_mount(self) -> None:
