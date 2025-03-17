@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.1] - 2025-03-17
+
 ### Bug Fixes
 
 - Fixes a crash caused by a missing `FILE_ICON` property of the S3Tree ([#786](https://github.com/tconbeer/harlequin/issues/786) - thank you [@nyc-de](https://github.com/nyc-de)!).
@@ -804,7 +806,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.1...HEAD
+[2.1.1]: https://github.com/tconbeer/harlequin/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/tconbeer/harlequin/compare/2.0.5...2.1.0
 [2.0.5]: https://github.com/tconbeer/harlequin/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/tconbeer/harlequin/compare/2.0.3...2.0.4
