@@ -1694,19 +1694,19 @@ nebula3-python = ">=3.8.0,<4.0.0"
 
 [[package]]
 name = "harlequin-odbc"
-version = "0.2.0"
+version = "0.3.1"
 description = "A Harlequin adapter for ODBC drivers."
 optional = true
 python-versions = "<3.14,>=3.9"
 groups = ["main"]
 markers = "extra == \"odbc\""
 files = [
-    {file = "harlequin_odbc-0.2.0-py3-none-any.whl", hash = "sha256:b36d1ba05bfc7a6ab98b09f74dbb0259c04569c7aef4ad5f67185bced1a7e167"},
-    {file = "harlequin_odbc-0.2.0.tar.gz", hash = "sha256:9a61e182959642af1399df38b16c5027aa177af5b0e555f221f74daaafc91397"},
+    {file = "harlequin_odbc-0.3.1-py3-none-any.whl", hash = "sha256:0056f00b7e8a3a67aeaa8671df09309bacde9348763c6557a6910c6935dfb8fe"},
+    {file = "harlequin_odbc-0.3.1.tar.gz", hash = "sha256:c12ea98101ba5dffe212df2d5fbe0aef2e786eaa58d03d911bc3bbf89491be01"},
 ]
 
 [package.dependencies]
-harlequin = ">=1.9.1,<3"
+harlequin = ">=1.25,<3"
 pyodbc = ">=5.0,<6.0"
 
 [[package]]
