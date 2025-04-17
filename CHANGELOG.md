@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - Fixes a bug in `harlequin --config` where connection strings containing spaces were improperly split into multiple strings ([#800](https://github.com/tconbeer/harlequin/issues/800) - thank you [@Bento-HS](https://github.com/Bento-HS)!).
+- Fixes a few bugs with headers for exported data: Harlequin will now use the column name as the export column name for all adapters; CSV export now respects setting the header option to False; and datasets with repeated column names can now be exported ([#779](https://github.com/tconbeer/harlequin/issues/779)).
 
 ## [2.1.1] - 2025-03-17
 

@@ -1,23 +1,46 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from harlequin.components.results_viewer import ResultsTable
+from textual_fastdatatable.backend import ArrowBackend
+
 from harlequin.exception import HarlequinCopyError
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
+    from harlequin.components.results_viewer import ResultsTable
 
 
 class ExporterCallable(Protocol):
-    def __call__(self, table: ResultsTable, dest_path: str, **kwargs: Any) -> None: ...
+    def __call__(self, data: "pa.Table", dest_path: str, **kwargs: Any) -> None: ...
 
 
 def copy(
-    table: ResultsTable, path: Path, format_name: str, options: dict[str, Any]
+    table: "ResultsTable", path: Path, format_name: str, options: dict[str, Any]
 ) -> None:
-    assert table.backend is not None
     if table.row_count == 0:
         raise HarlequinCopyError("Cannot export empty table.")
+
+    assert isinstance(table.backend, ArrowBackend)
+    if table.plain_column_labels:
+        # Arrow allows duplicate field names, but DuckDB will typically throw an error
+        # when trying to export CSV, JSON, or PQ files with those dupe field names.
+        export_names: list[str] = []
+        for label in table.plain_column_labels:
+            export_label = label
+            n = 0
+            while export_label in export_names:
+                export_label = f"{label}_{n}"
+                n += 1
+            export_names.append(export_label)
+        data = table.backend.source_data.rename_columns(export_names)
+    else:
+        data = table.backend.source_data
+
     dest_path = str(path.expanduser())
+    # only include options that aren't None/Empty
     kwargs = {k: v for k, v in options.items() if v}
     exporters: dict[str, ExporterCallable] = {
         "csv": _export_csv,
@@ -26,21 +49,22 @@ def copy(
         "orc": _export_orc,
         "feather": _export_feather,
     }
-    exporters[format_name](table, dest_path, **kwargs)
+    exporters[format_name](data, dest_path, **kwargs)
 
 
 def _export_csv(
-    table: ResultsTable,
+    data: "pa.Table",
     dest_path: str,
     **kwargs: Any,
 ) -> None:
     import duckdb
 
-    assert table and table.backend
     if kwargs.get("quoting"):
         kwargs["quoting"] = "ALL"
+    if "header" not in kwargs:
+        kwargs["header"] = False
     try:
-        relation = duckdb.arrow(table.backend.source_data)
+        relation = duckdb.arrow(data)  # type: ignore[arg-type]
         relation.write_csv(file_name=dest_path, **kwargs)
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
@@ -50,16 +74,14 @@ def _export_csv(
 
 
 def _export_parquet(
-    table: ResultsTable,
+    data: "pa.Table",
     dest_path: str,
     **kwargs: Any,
 ) -> None:
     import duckdb
 
-    assert table and table.backend
-
     try:
-        relation = duckdb.arrow(table.backend.source_data)
+        relation = duckdb.arrow(data)  # type: ignore[arg-type]
         relation.write_parquet(
             file_name=dest_path, compression=kwargs.get("compression")
         )
@@ -71,13 +93,11 @@ def _export_parquet(
 
 
 def _export_json(
-    table: ResultsTable,
+    data: "pa.Table",
     dest_path: str,
     **kwargs: Any,
 ) -> None:
     import duckdb
-
-    assert table and table.backend
 
     array = f"{', ARRAY TRUE' if kwargs.get('array') else ''}"
     compression = f", COMPRESSION {kwargs.get('compression')}"
@@ -92,9 +112,8 @@ def _export_json(
         else ""
     )
     try:
-        __export_table = table.backend.source_data
         duckdb.execute(
-            f"copy (select * from __export_table) to '{dest_path}' "
+            f"copy (select * from data) to '{dest_path}' "
             "(FORMAT JSON"
             f"{array}{compression}{date_format}{ts_format}"
             ")"
@@ -107,7 +126,7 @@ def _export_json(
 
 
 def _export_orc(
-    table: ResultsTable,
+    data: "pa.Table",
     dest_path: str,
     batch_size: int | str = 1024,
     stripe_size: int | str = 67108864,
@@ -121,8 +140,6 @@ def _export_orc(
 ) -> None:
     import pyarrow.lib as pl
     import pyarrow.orc as po
-
-    assert table and table.backend
 
     try:
         if bloom_filter_columns and isinstance(bloom_filter_columns, str):
@@ -141,7 +158,7 @@ def _export_orc(
         ) from e
     try:
         po.write_table(
-            table.backend.source_data,
+            data,
             dest_path,
             batch_size=batch_size,
             compression_block_size=compression_block_size,
@@ -161,7 +178,7 @@ def _export_orc(
 
 
 def _export_feather(
-    table: ResultsTable,
+    data: "pa.Table",
     dest_path: str,
     compression: str | None = None,
     compression_level: str | int | None = None,
@@ -170,8 +187,6 @@ def _export_feather(
 ) -> None:
     import pyarrow.feather as pf
     import pyarrow.lib as pl
-
-    assert table and table.backend
 
     try:
         compression_level = int(compression_level) if compression_level else None
@@ -184,7 +199,7 @@ def _export_feather(
 
     try:
         pf.write_feather(
-            table.backend.source_data,
+            data,
             dest_path,
             compression=compression,
             compression_level=compression_level,
