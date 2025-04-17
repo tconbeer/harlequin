@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rich.style import Style
 from rich.text import Text
@@ -16,6 +16,10 @@ from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.messages import WidgetMounted
 
+if TYPE_CHECKING:
+    from textual_fastdatatable.backend import DataTableBackend
+    from textual_fastdatatable.data_table import CursorType
+
 
 class ResultsTable(DataTable, inherit_bindings=False):
     DEFAULT_CSS = """
@@ -27,6 +31,63 @@ class ResultsTable(DataTable, inherit_bindings=False):
 
     def on_mount(self) -> None:
         self.post_message(WidgetMounted(widget=self))
+
+    def __init__(
+        self,
+        *,
+        backend: "DataTableBackend" | None = None,
+        data: Any | None = None,
+        column_labels: list[str | Text] | None = None,
+        plain_column_labels: list[str | Text] | None = None,
+        column_widths: list[int | None] | None = None,
+        max_column_content_width: int | None = None,
+        show_header: bool = True,
+        show_row_labels: bool = True,
+        max_rows: int | None = None,
+        fixed_rows: int = 0,
+        fixed_columns: int = 0,
+        zebra_stripes: bool = False,
+        header_height: int = 1,
+        show_cursor: bool = True,
+        cursor_foreground_priority: Literal["renderable", "css"] = "css",
+        cursor_background_priority: Literal["renderable", "css"] = "renderable",
+        cursor_type: "CursorType" = "cell",
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+        disabled: bool = False,
+        null_rep: str = "",
+        render_markup: bool = True,
+    ):
+        self.plain_column_labels: list[str] = (
+            [str(label) for label in plain_column_labels]
+            if plain_column_labels is not None
+            else []
+        )
+        super().__init__(
+            backend=backend,
+            data=data,
+            column_labels=column_labels,
+            column_widths=column_widths,
+            max_column_content_width=max_column_content_width,
+            show_header=show_header,
+            show_row_labels=show_row_labels,
+            max_rows=max_rows,
+            fixed_rows=fixed_rows,
+            fixed_columns=fixed_columns,
+            zebra_stripes=zebra_stripes,
+            header_height=header_height,
+            show_cursor=show_cursor,
+            cursor_foreground_priority=cursor_foreground_priority,
+            cursor_background_priority=cursor_background_priority,
+            cursor_type=cursor_type,
+            name=name,
+            id=id,
+            classes=classes,
+            disabled=disabled,
+            null_rep=null_rep,
+            render_markup=render_markup,
+        )
 
 
 class ResultsViewer(TabbedContent, can_focus=True):
@@ -81,6 +142,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         table = ResultsTable(
             id=table_id,
             column_labels=formatted_labels,  # type: ignore
+            plain_column_labels=[col_name for (col_name, _) in column_labels],
             data=data,
             max_rows=self.max_results,
             cursor_type="range",

@@ -531,17 +531,21 @@ ExportScreen Horizontal Input {
     width: 40;
 }
 
-ExportScreen Switch:hover {
-    border: tall transparent;
-}
-
-ExportScreen Switch:focus:hover {
-    border: tall $border-color-focus;
+ExportScreen Switch {
+    border: none;
+    padding: 1 2;
+    &:hover {
+        border: tall $border-color-focus;
+        padding: 0 1;
+    }
+    &:focus {
+        border: tall $border-color-focus;
+        padding: 0 1;
+    }
 }
 
 ExportScreen Switch.-on > .switch--slider {
     color: $primary;
-    border: tall transparent;
 }
 
 CopyOptionsMenu {
