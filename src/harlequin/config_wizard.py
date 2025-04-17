@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,7 @@ def _wizard(config_path: Path | None) -> None:
 
     conn_str = questionary.text(
         message="What connection string(s) should this profile use?",
-        instruction="Separate items by a space.",
+        instruction="Separate items by a space. Quote a single item containing spaces.",
         default=" ".join(selected_profile.get("conn_str", [])),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
@@ -143,7 +144,7 @@ def _wizard(config_path: Path | None) -> None:
 
     adapter_options = {}
     if conn_str:
-        adapter_options["conn_str"] = conn_str.split(" ")
+        adapter_options["conn_str"] = shlex.split(conn_str)
     _prompt_to_set_adapter_options(
         adapter_options=adapter_options,
         adapter_cls=adapter_cls,
