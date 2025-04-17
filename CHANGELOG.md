@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a bug in `harlequin --config` where connection strings containing spaces were improperly split into multiple strings ([#800](https://github.com/tconbeer/harlequin/issues/800) - thank you [@Bento-HS](https://github.com/Bento-HS)!).
+
 ## [2.1.1] - 2025-03-17
 
 ### Bug Fixes
