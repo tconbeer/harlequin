@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.2] - 2025-04-17
+
 ### Bug Fixes
 
 - Fixes a bug in `harlequin --config` where connection strings containing spaces were improperly split into multiple strings ([#800](https://github.com/tconbeer/harlequin/issues/800) - thank you [@Bento-HS](https://github.com/Bento-HS)!).
@@ -811,7 +813,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.2...HEAD
+[2.1.2]: https://github.com/tconbeer/harlequin/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/tconbeer/harlequin/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/tconbeer/harlequin/compare/2.0.5...2.1.0
 [2.0.5]: https://github.com/tconbeer/harlequin/compare/2.0.4...2.0.5
