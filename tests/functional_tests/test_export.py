@@ -25,18 +25,19 @@ from harlequin.components import ExportScreen
     ],
 )
 async def test_export(
-    app: Harlequin,
+    app_all_adapters: Harlequin,
     tmp_path: Path,
     filename: str,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
+    app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
         while app.editor is None:
             await pilot.pause()
-        app.editor.text = "select 1 as a"
+        app.editor.text = "select 1 as a, 2 as b"
         await pilot.press("ctrl+j")  # run query
         await wait_for_workers(app)
         await pilot.pause()
@@ -63,7 +64,14 @@ async def test_export(
         await wait_for_workers(app)
         await pilot.pause()
 
+        # test the written file
         assert export_path.is_file()
+        if export_path.suffix == ".json":
+            with export_path.open("r") as f:
+                line = f.readline()
+                assert line == '{"a":1,"b":2}\n'
+
+        # ensure we return to the main screen after export
         assert len(app.screen_stack) == 1
         await wait_for_workers(app)
         await pilot.pause()

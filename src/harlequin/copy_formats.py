@@ -42,6 +42,7 @@ csv = HarlequinCopyFormat(
             name="header",
             description="Switch on to include column name headers.",
             label="Header",
+            default=True,
         ),
         TextOption(
             name="sep",
