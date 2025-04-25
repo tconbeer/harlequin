@@ -84,6 +84,9 @@ HARLEQUIN_ACTIONS = {
     "cancel_query": Action(
         target=None, action="cancel_query", description="Cancel Query"
     ),
+    "show_adapter_details": Action(
+        target=None, action="show_adapter_details", description="Show Adapter Details"
+    ),
     #######################################################
     # CodeEditor ACTIONS
     #######################################################

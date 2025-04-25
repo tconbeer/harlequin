@@ -671,3 +671,39 @@ ConfirmModal Horizontal#button_row Button#no{
         background: $secondary;
     }
 }
+
+/* Adapter Details Screen */
+AdapterDetailsScreen {
+    align: center middle;
+    padding: 0;
+}
+
+#adapter_outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    max-width: 88;
+}
+
+#adapter_header {
+    dock: top;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+#adapter_inner {
+    border: round $border-color-nofocus;
+    padding: 0 0 0 0;
+}
+
+#adapter_info {
+    padding: 0 0 0 0;
+}
+
+#adapter_footer {
+    dock: bottom;
+    color: $text-muted;
+    margin: 1 0 0 0;
+    padding: 0 1;
+}
