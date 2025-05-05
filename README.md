@@ -55,7 +55,7 @@ brew install harlequin
 
 Harlequin can connect to dozens of databases using adapter plug-ins. Adapters are distributed as their own Python packages that need to be installed into the same environment as Harlequin.
 
-For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](adapters) page.
+For a list of known adapters provided either by the Harlequin maintainers or the broader community, see the [adapters](https://harlequin.sh/docs/adapters) page.
 
 The adapter docs also include installation instructions. Some adapters can be installed as Harlequin extras, like `postgres`. If you used `uv` to install Harlequin:
 
@@ -99,7 +99,7 @@ To open one or more DuckDB database files, pass in relative or absolute paths as
 harlequin "path/to/duck.db" "another_duck.db"
 ```
 
-If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](troubleshooting/duckdb-version-mismatch) page.
+If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/duckdb-version-mismatch) page.
 
 ## Using Harlequin with SQLite and Other Adapters
 
