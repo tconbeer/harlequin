@@ -242,6 +242,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = SQLITE_OPTIONS
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
+    ADAPTER_DETAILS: str | None = "Adapter: SQLite"
 
     def __init__(
         self,
@@ -278,6 +279,10 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             self.extensions = extension if extension is not None else []
             self.can_load_extensions = hasattr(
                 sqlite3.Connection, "enable_load_extension"
+            )
+            self.ADAPTER_DETAILS = (
+                self.ADAPTER_DETAILS
+                + f" Connection mode: {self.connection_mode}, connection string: {self.conn_str}"
             )
         except (ValueError, TypeError) as e:
             raise HarlequinConfigError(

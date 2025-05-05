@@ -64,6 +64,7 @@ from harlequin.components import (
     HistoryScreen,
     ResultsViewer,
     RunQueryBar,
+    AdapterDetailsScreen,
     export_callback,
 )
 from harlequin.components.confirm_modal import ConfirmModal
@@ -971,6 +972,16 @@ class Harlequin(AppBase):
         self.update_schema_data()
         self.data_catalog.update_file_tree()
         self.data_catalog.update_s3_tree()
+
+    def action_show_adapter_details(self) -> None:
+        if self.adapter.provides_details:
+            adapter_details = self.adapter.ADAPTER_DETAILS
+        else:
+            adapter_details = "Adapter did not provide any details."
+
+        self.push_screen(
+            AdapterDetailsScreen(id="adapter_details_screen", details=adapter_details)
+        )
 
     @work(
         thread=True,
