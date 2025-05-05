@@ -115,11 +115,11 @@ You can open one or more SQLite database files by passing in their paths as conn
 harlequin -a sqlite "path/to/sqlite.db" "another_sqlite.db"
 ```
 
-Other adapters can be installed as plug-ins; for more information, see the [installation guide](index#installing-database-adapters), and the guides for individual [adapters](../adapters). Each adapter can define its own options, which you can view using `harlequin --help`.
+Other adapters can be installed as plug-ins; for more information, see the [installation guide](https://harlequin.sh/docs/getting-started/index#installing-database-adapters), and the guides for individual [adapters](https://harlequin.sh/docs/adapters). Each adapter can define its own options, which you can view using `harlequin --help`.
 
 ## Configuring Harlequin
 
-Harlequin contains a large number of options that allow you to [set the theme](../themes), [customize key bindings](../keymaps/index), [show remote and local files](../files/index.md), set the locale for number formatting, and much more. These can always be entered at the command line, but it can be convenient to define a configuration as a profile instead. For more information on configuring Harlequin, see [Using Config Files](../config-file).
+Harlequin contains a large number of options that allow you to [set the theme](https://harlequin.sh/docs/themes), [customize key bindings](https://harlequin.sh/docs/keymaps/index), [show remote and local files](https://harlequin.sh/docs/files/index), set the locale for number formatting, and much more. These can always be entered at the command line, but it can be convenient to define a configuration as a profile instead. For more information on configuring Harlequin, see [Using Config Files](https://harlequin.sh/docs/config-file/index).
 
 ## Using Harlequin with Django
 
@@ -143,7 +143,7 @@ harlequin --help
 
 To view a subset of these docs (and a link back here) from within the app, press <Key>F1</Key>.
 
-See the [Troubleshooting](troubleshooting/index) guide for help with key bindings, appearance issues, copy-paste, etc.
+See the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/index) guide for help with key bindings, appearance issues, copy-paste, etc.
 
 [GitHub Discussions](https://github.com/tconbeer/harlequin/discussions) are a good place to ask questions, request features, and say hello.
 
