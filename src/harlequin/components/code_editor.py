@@ -96,7 +96,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         old_selection = self.text_input.selection
 
         try:
-            self.text = format_string(self.text, Mode())
+            self.text = format_string(self.text, Mode(dialect_name="clickhouse"))
         except SqlfmtError as e:
             self.app.push_screen(
                 ErrorModal(
