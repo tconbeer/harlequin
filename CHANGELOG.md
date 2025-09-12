@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3] - 2025-09-12
+
 ### Bug Fixes
 
 - Prevents a large number of `UserWarning` messages from being raised by Click (when multiple adapters are installed) by pinning Click to an earlier version that didn't show such warnings ([#829](https://github.com/tconbeer/harlequin/issues/829) - thank you, [@dusktreader](https://github.com/dusktreader)!).
@@ -817,7 +819,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.3...HEAD
+[2.1.3]: https://github.com/tconbeer/harlequin/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/tconbeer/harlequin/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/tconbeer/harlequin/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/tconbeer/harlequin/compare/2.0.5...2.1.0
