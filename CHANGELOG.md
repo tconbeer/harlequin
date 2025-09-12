@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Prevents a large number of `UserWarning` messages from being raised by Click (when multiple adapters are installed) by pinning Click to an earlier version that didn't show such warnings ([#829](https://github.com/tconbeer/harlequin/issues/829) - thank you, [@dusktreader](https://github.com/dusktreader)!).
+
 ## [2.1.2] - 2025-04-17
 
 ### Bug Fixes
