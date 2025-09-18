@@ -244,6 +244,7 @@ class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
     COPY_FORMATS = None
     IMPLEMENTS_CANCEL = True
+    ADAPTER_DETAILS = "This is a DuckDB adapter part of Harlequin core."
 
     def __init__(
         self,
@@ -360,6 +361,9 @@ class DuckDbAdapter(HarlequinAdapter):
                         f"from {self.init_path}"
                     )
 
+        self.ADAPTER_DRIVER_DETAILS = f"""
+Connected to database `{primary_db}`
+        """
         return DuckDbConnection(conn=connection, init_message=msg)
 
     @staticmethod

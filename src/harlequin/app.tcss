@@ -418,7 +418,9 @@ HelpScreen {
     padding: 0;
 }
 
-#help_outer {
+/* Shared Components */
+
+#modal_outer {
     border: round $border-color-focus;
     background: $background;
     margin: 2 4;
@@ -426,22 +428,22 @@ HelpScreen {
     max-width: 88;
 }
 
-#help_header {
+#modal_header {
     dock: top;
     margin: 0 0 1 0;
     padding: 0 1;
 }
 
-#help_inner {
+#modal_inner {
     border: round $border-color-nofocus;
     padding: 0 0 0 0;
 }
 
-#help_info {
+#modal_info {
     padding: 0 0 0 0;
 }
 
-#help_footer {
+#modal_footer {
     dock: bottom;
     color: $text-muted;
     margin: 1 0 0 0;
@@ -618,6 +620,12 @@ HistoryScreen .history-screen--error-label {
     text-style: bold italic;
 }
 
+/* DEBUG INFO SCREEN */
+
+DebugInfoScreen {
+    align: center middle;
+    padding: 0;
+}
 
 /* ConfirmModal */
 
