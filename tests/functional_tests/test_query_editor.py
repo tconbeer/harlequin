@@ -37,6 +37,23 @@ async def test_query_formatting(
 
 
 @pytest.mark.asyncio
+async def test_query_formatting_preserves_identifier_case(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        # Test case with mixed-case table and column names
+        app.editor.text = "SELECT FirstName, LastName FROM UserTable WHERE UserID = 123"
+
+        await pilot.press("f4")
+        # SQL keywords should be lowercase, but identifiers should preserve case
+        assert app.editor.text == "select FirstName, LastName from UserTable where UserID = 123\n"
+
+
+@pytest.mark.asyncio
 async def test_multiple_buffers(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
