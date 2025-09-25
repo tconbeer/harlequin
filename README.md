@@ -45,7 +45,7 @@ Alternatively, if you know what you're doing, after installing Python 3.9 or abo
 pip install harlequin
 ```
 
-There is also a [Homebrew formula](https://formulae.brew.sh/formula/harlequin) for Harlequin, although this is maintained by the community and is not as rigorously tested as the Python installations. Note that the formula includes several Harlequin adapter packages (Postgres, MySQL, and ODBC) and their dependencies, which is convenient but increases the application size.
+There is also a [Homebrew formula](https://formulae.brew.sh/formula/harlequin) for Harlequin, although this is maintained by the community and is not as rigorously tested as the Python installations. Note that the formula includes several Harlequin adapter packages (Postgres, MySQL/MariaDB, and ODBC) and their dependencies, which is convenient but increases the application size.
 
 ```bash
 brew install harlequin
