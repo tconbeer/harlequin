@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from textual_fastdatatable.backend import ArrowBackend
-
+from harlequin.data_prep import prepare_data
 from harlequin.exception import HarlequinCopyError
 
 if TYPE_CHECKING:
@@ -23,22 +22,7 @@ def copy(
     if table.row_count == 0:
         raise HarlequinCopyError("Cannot export empty table.")
 
-    assert isinstance(table.backend, ArrowBackend)
-    if table.plain_column_labels:
-        # Arrow allows duplicate field names, but DuckDB will typically throw an error
-        # when trying to export CSV, JSON, or PQ files with those dupe field names.
-        export_names: list[str] = []
-        for label in table.plain_column_labels:
-            export_label = label
-            n = 0
-            while export_label in export_names:
-                export_label = f"{label}_{n}"
-                n += 1
-            export_names.append(export_label)
-        data = table.backend.source_data.rename_columns(export_names)
-    else:
-        data = table.backend.source_data
-
+    data = prepare_data(table)
     dest_path = str(path.expanduser())
     # only include options that aren't None/Empty
     kwargs = {k: v for k, v in options.items() if v}
@@ -57,7 +41,7 @@ def _export_csv(
     dest_path: str,
     **kwargs: Any,
 ) -> None:
-    import duckdb
+    import duckdb  # type: ignore[import-untyped]
 
     if kwargs.get("quoting"):
         kwargs["quoting"] = "ALL"

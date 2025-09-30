@@ -10,6 +10,7 @@ VSCODE_APP_BINDINGS = [
     HarlequinKeyBinding("ctrl+b,f9", "toggle_sidebar"),
     HarlequinKeyBinding("f10", "toggle_full_screen"),
     HarlequinKeyBinding("ctrl+e", "show_data_exporter"),
+    HarlequinKeyBinding("ctrl+d", "show_data_plotter"),
     HarlequinKeyBinding("ctrl+r", "refresh_catalog"),
     HarlequinKeyBinding("tab", "focus_next"),
     HarlequinKeyBinding("shift+tab", "focus_previous"),
@@ -123,6 +124,10 @@ VSCODE_HISTORY_SCREEN_BINDINGS = [
     HarlequinKeyBinding("escape", "history_screen.cancel"),
 ]
 
+VSCODE_PLOT_SCREEN_BINDINGS = [
+    HarlequinKeyBinding("f10", "plot_screen.toggle_full_screen"),
+    HarlequinKeyBinding("escape", "plot_screen.back"),
+]
 
 VSCODE = HarlequinKeyMap(
     name="vscode",
@@ -132,5 +137,6 @@ VSCODE = HarlequinKeyMap(
         *VSCODE_DATA_CATALOG_BINDINGS,
         *VSCODE_RESULTS_VIEWER_BINDINGS,
         *VSCODE_HISTORY_SCREEN_BINDINGS,
+        *VSCODE_PLOT_SCREEN_BINDINGS,
     ],
 )

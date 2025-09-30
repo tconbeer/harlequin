@@ -16,6 +16,7 @@ from harlequin.components import (
     ResultsViewer,
 )
 from harlequin.components.data_catalog import ContextMenu
+from harlequin.components.plot_screen import PlotScreen
 
 if TYPE_CHECKING:
     from textual.widget import Widget
@@ -64,6 +65,7 @@ HARLEQUIN_ACTIONS = {
         target=None,
         action="toggle_sidebar",
     ),
+    "show_data_plotter": Action(target=None, action="plot", description="Show Plot"),
     "toggle_full_screen": Action(
         target=None,
         action="toggle_full_screen",
@@ -326,4 +328,11 @@ HARLEQUIN_ACTIONS = {
     "history_screen.cancel": Action(
         target=HistoryScreen, action="cancel", description="Cancel"
     ),
+    #######################################################
+    # PlotScreen ACTIONS
+    #######################################################
+    "plot_screen.toggle_full_screen": Action(
+        target=PlotScreen, action="toggle_full_screen", show=True
+    ),
+    "plot_screen.back": Action(target=PlotScreen, action="back", show=True),
 }
