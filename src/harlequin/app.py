@@ -909,7 +909,7 @@ class Harlequin(AppBase):
                     "Please wait a moment and try again."
                 ),
             )
-        elif self.screen.id != "history_screen":
+        else:
             self.push_screen(
                 HistoryScreen(
                     history=self.history,

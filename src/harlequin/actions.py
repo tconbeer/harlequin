@@ -321,9 +321,17 @@ HARLEQUIN_ACTIONS = {
     # HistoryScreen ACTIONS
     #######################################################
     "history_screen.select_query": Action(
-        target=HistoryScreen, action="select", description="Select Query"
+        target=HistoryScreen,
+        action="select",
+        description="Select Query",
+        priority=True,
+        show=True,
     ),
     "history_screen.cancel": Action(
-        target=HistoryScreen, action="cancel", description="Cancel"
+        target=HistoryScreen,
+        action="cancel",
+        description="Back",
+        priority=True,
+        show=True,
     ),
 }

@@ -10,8 +10,8 @@ from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal
-from textual.screen import Screen
-from textual.widgets import OptionList
+from textual.screen import ModalScreen
+from textual.widgets import Footer, OptionList
 from textual.widgets.option_list import Option
 from textual_textarea import TextEditor
 
@@ -78,10 +78,9 @@ class HistoryOption(Option):
 
 class HistoryList(OptionList):
     BORDER_TITLE = "Query History"
-    BORDER_SUBTITLE = "Enter or click to select; Escape to cancel"
 
 
-class HistoryScreen(Screen[str]):
+class HistoryScreen(ModalScreen[str]):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "history-screen--error-label",
     }
@@ -114,6 +113,7 @@ class HistoryScreen(Screen[str]):
         with Horizontal():
             yield self.list
             yield self.preview
+        yield Footer(show_command_palette=False)
 
     def on_mount(self) -> None:
         self.preview.border_title = "Highlighted Query Preview"
@@ -124,6 +124,13 @@ class HistoryScreen(Screen[str]):
 
     def action_select(self) -> None:
         self.list.action_select()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # We want select on the editor to work as expected for the editor. Instead
+        # we want the "History" behaviour when on the list
+        if (action == "select" or action == "cancel") and self.preview.has_focus_within:
+            return False
+        return True
 
     @on(OptionList.OptionSelected)
     def insert_query(self, message: OptionList.OptionSelected) -> None:
