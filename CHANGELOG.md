@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+- Slight changes to History keybindings and make it ModalScreen. [#850](https://github.com/tconbeer/harlequin/issues/850)
+
 ## [2.1.3] - 2025-09-12
 
 ### Bug Fixes
