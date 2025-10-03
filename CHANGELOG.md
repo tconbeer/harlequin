@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- Add Plotting capabilities [#848](https://github.com/tconbeer/harlequin/issues/848)
+
 ## [2.1.3] - 2025-09-12
 
 ### Bug Fixes

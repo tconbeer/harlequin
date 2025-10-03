@@ -69,6 +69,7 @@ from harlequin.components import (
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
+from harlequin.components.plot_screen import NUMBER_OF_PLOTS, PlotMetadata, PlotScreen
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import BufferState, Cache
@@ -233,6 +234,7 @@ class Harlequin(AppBase):
             )
         except HarlequinConfigError as e:
             self.exit(return_code=2, message=pretty_error_message(e))
+        self.plots_metadata = [PlotMetadata() for _ in range(NUMBER_OF_PLOTS)]
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -888,6 +890,35 @@ class Harlequin(AppBase):
             ),
             callback,
         )
+
+    def action_plot(self) -> None:
+        show_plot_error = partial(
+            self._push_error_modal,
+            "Plot Data Error",
+            "Could not plot data.",
+        )
+        table = self.results_viewer.get_visible_table()
+        if table is None:
+            show_plot_error(error=ValueError("You must execute a query first."))
+            return
+        notify = partial(self.notify, "Data plotted successfully.")
+        callback = partial(
+            export_callback,
+            table=table,
+            success_callback=notify,
+            error_callback=show_plot_error,
+        )
+        try:
+            self.app.push_screen(
+                PlotScreen(
+                    table=table,
+                    plots_metadata=self.plots_metadata,
+                    id="plot_screen",
+                ),
+                callback,
+            )
+        except Exception as e:
+            show_plot_error(e)
 
     def action_show_query_history(self) -> None:
         async def history_callback(screen_data: str | None) -> None:

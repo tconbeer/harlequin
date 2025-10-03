@@ -8,6 +8,7 @@ $border-title-color-focus: $primary;
 DataCatalog,
 EditorCollection,
 ResultsViewer,
+Plot,
 Lazy {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
@@ -21,6 +22,7 @@ LoadingIndicator {
 DataCatalog:focus-within,
 EditorCollection:focus-within,
 ResultsViewer:focus-within,
+Plot:focus-within,
 HistoryScreen TextArea:focus,
 HistoryScreen OptionList:focus {
     border: round $border-color-focus;
@@ -34,6 +36,7 @@ EditorCollection:disabled,
 ResultsViewer:disabled,
 ResultsTable:disabled,
 RunQueryBar:disabled,
+Plot:disabled,
 Vertical:disabled {
     width: 0;
     height: 0;
@@ -670,4 +673,25 @@ ConfirmModal Horizontal#button_row Button#no{
     &:hover {
         background: $secondary;
     }
+}
+
+Plot Button {
+    border: none;
+    height: 1;
+}
+
+Plot Horizontal {
+    border: none;
+    height: 1;
+}
+
+Plot Horizontal Input {
+    width: 1fr;
+    height: 1fr;
+    border: none;
+}
+
+Plot, PlotextPlot {
+    width: 1fr;
+    height: 1fr;
 }
