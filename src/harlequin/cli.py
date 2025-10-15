@@ -367,6 +367,7 @@ def build_cli() -> click.Command:
 
         tui = Harlequin(
             adapter=adapter_instance,
+            profile_name=profile,
             keymap_names=keymap_names,
             user_defined_keymaps=user_defined_keymaps,
             connection_hash=connection_id,

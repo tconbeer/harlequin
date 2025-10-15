@@ -242,6 +242,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = SQLITE_OPTIONS
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
+    ADAPTER_DETAILS = "This is an SQLite adapter part of Harlequin core."
 
     def __init__(
         self,
@@ -439,6 +440,9 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
                     f"Executed {count} {'command' if count == 1 else 'commands'} "
                     f"from {self.init_path}"
                 )
+        self.ADAPTER_DRIVER_DETAILS = f"""
+Connected to database `{primary_db}`
+        """
         return HarlequinSqliteConnection(conn=conn, init_message=init_msg)
 
     @staticmethod

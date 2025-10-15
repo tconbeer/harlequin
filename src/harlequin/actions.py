@@ -68,6 +68,11 @@ HARLEQUIN_ACTIONS = {
         target=None,
         action="toggle_full_screen",
     ),
+    "show_debug_info": Action(
+        target=None,
+        action="show_debug_info",
+        description="Debug Info",
+    ),
     "show_query_history": Action(
         target=None,
         action="show_query_history",
