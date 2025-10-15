@@ -66,4 +66,9 @@ async def save_all_screenshots() -> None:
         app.exit()
 
 
-asyncio.run(save_all_screenshots())
+def main() -> None:
+    asyncio.run(save_all_screenshots())
+
+
+if __name__ == "__main__":
+    main()
