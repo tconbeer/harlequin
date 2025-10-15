@@ -61,11 +61,11 @@ async def test_export(
         assert isinstance(app.screen, ExportScreen)
         snap_results.append(await app_snapshot(app, "Export Screen"))
 
-        app.screen.file_input.value = f"/tmp/foo-bar-static/{filename}"  # type: ignore
+        app.screen.file_input.value = f"/tmp/foo-bar-static/{filename}"
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Export with Path"))
         export_path = tmp_path / filename
-        app.screen.file_input.value = str(export_path)  # type: ignore
+        app.screen.file_input.value = str(export_path)
         await pilot.pause()
         await pilot.press("enter")
         await wait_for_workers(app)
