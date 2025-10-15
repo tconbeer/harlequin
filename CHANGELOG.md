@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds a "Debug Information" screen to make it possible to view Harlequin and Adapter config from within Harlequin by pressing `f12` ([#564](https://github.com/tconbeer/harlequin/discussions/564), [#807](https://github.com/tconbeer/harlequin/pull/807) - thank you, [@vkhitrin](https://github.com/vkhitrin)!).
+
 ## [2.1.3] - 2025-09-12
 
 ### Bug Fixes
