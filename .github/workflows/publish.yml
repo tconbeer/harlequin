@@ -12,10 +12,6 @@ jobs:
     if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v') }}
     runs-on: ubuntu-latest
     environment: publish
-    env:
-      POETRY_VIRTUALENVS_IN_PROJECT: 1
-      POETRY_INSTALLER_PARALLEL: 1
-      POETRY_VIRTUALENVS_CREATE: 1
     permissions:
       id-token: write
 
@@ -30,29 +26,17 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Load cached Poetry installation
-        id: cached-poetry-install
-        uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          path: ~/.local
-          key: ${{ runner.os }}-poetry-184
-
-      - name: Add cached Poetry to PATH
-        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-        with:
-          version: 1.8.4
+          version: "0.9.3"
 
       - name: Get harlequin Version
         id: harlequin_version
-        run: echo "harlequin_version=$(poetry version --short)" >> $GITHUB_OUTPUT
+        run: echo "harlequin_version=$(uv version --short)" >> $GITHUB_OUTPUT
 
       - name: Build package
-        run: poetry build --no-interaction
+        run: uv build --all-packages
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

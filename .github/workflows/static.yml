@@ -2,6 +2,7 @@ name: "Perform Static Analysis"
 
 on:
   pull_request:
+  workflow_dispatch:
 
 # will cancel previous workflows triggered by the same event and for the same ref for PRs or same SHA otherwise
 concurrency:
@@ -12,55 +13,26 @@ jobs:
   static:
     name: Static Analysis - 3.9
     runs-on: ubuntu-latest
-    env:
-      POETRY_VIRTUALENVS_IN_PROJECT: 1
-      POETRY_INSTALLER_PARALLEL: 1
-      POETRY_VIRTUALENVS_CREATE: 1
     steps:
       - name: Check out Repo
         uses: actions/checkout@v5
-        with:
-          persist-credentials: false
 
-      - name: Set up Python 3.9
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.3"
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         id: setup-python
         with:
-          python-version: "3.9"
-
-      - name: Load cached Poetry installation
-        id: cached-poetry-install
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: ${{ runner.os }}-poetry-184
-
-      - name: Add cached Poetry to PATH
-        if: steps.cached-poetry-install.outputs.cache-hit == 'true'
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cached-poetry-install.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-        with:
-          version: 1.8.4
-
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: static-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          python-version-file: ".python-version"
 
       - name: Install python dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: |
-          poetry env use ${{ steps.setup-python.outputs.python-version }}
-          poetry install --sync --no-interaction --without dev
-          poetry env info
+        run: uv sync --locked --group static --group test
 
       - name: Run analysis
         run: |
-          poetry run ruff format . --diff
-          poetry run ruff check .
-          poetry run mypy --no-incremental
+          uv run --no-sync ruff format . --diff
+          uv run --no-sync ruff check .
+          uv run --no-sync mypy --no-incremental
