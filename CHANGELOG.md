@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Adds a "Debug Information" screen to make it possible to view Harlequin and Adapter config from within Harlequin by pressing `f12` ([#564](https://github.com/tconbeer/harlequin/discussions/564), [#807](https://github.com/tconbeer/harlequin/pull/807) - thank you, [@vkhitrin](https://github.com/vkhitrin)!).
 
+### Development
+
+- This project is now built using [uv](https://docs.astral.sh/uv/) instead of Poetry. If you are just a user of Harlequin, this should make no difference -- you can still find this project on PyPI and install it however you like (although we recommend uv for that also).
+
 ## [2.1.3] - 2025-09-12
 
 ### Bug Fixes

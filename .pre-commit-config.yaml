@@ -6,16 +6,16 @@ repos:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v1.14.1
     hooks:
       - id: mypy
         additional_dependencies:
           - click
           - duckdb>=1.0.0
           - shandy-sqlfmt[jinjafmt]
-          - textual>=0.89.1
-          - textual-textarea>=0.15.0
-          - textual-fastdatatable>=0.11.0
+          - "textual==0.89.1"
+          - "textual-fastdatatable==0.12.0"
+          - "textual-textarea==0.15.0"
           - pytest
           - types-pygments
           - rich-click>=1.7.1
