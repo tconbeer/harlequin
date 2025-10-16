@@ -112,13 +112,23 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 
-[tool.hatch.build]
+[tool.hatch.build.targets.wheel]
 
 packages = [
     "src/harlequin",
     "src/harlequin_duckdb",
     "src/harlequin_sqlite",
     "src/harlequin_vscode",
+]
+
+[tool.hatch.build.targets.sdist]
+
+only-include = [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml"
 ]
 
 
