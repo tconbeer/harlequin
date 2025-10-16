@@ -288,6 +288,8 @@ class Harlequin(AppBase):
             and self.editor._has_focus_within
         ):
             self.editor.text_input._pause_blink(visible=True)
+
+        ## TODO: PREVENT DUPLICATE SCREENS HERE.
         return super().push_screen(  # type: ignore[no-any-return,call-overload]
             screen,
             callback=callback,
@@ -961,6 +963,11 @@ class Harlequin(AppBase):
         self.push_screen(HelpScreen(id="help_screen"))
 
     def action_show_debug_info(self) -> None:
+        SCREEN_ID = "debug_info_screen"
+        if self.screen.id == SCREEN_ID:
+            # already showing this screen.
+            return
+        
         config_path = get_highest_priority_existing_config_file()
         config = load_config(config_path)
         profile_name = self.profile_name
@@ -992,7 +999,7 @@ class Harlequin(AppBase):
             DebugInfoScreen(
                 harlequin_details=harlequin_info.parse_info(),
                 adapter_details=adapter_info.parse_info(),
-                id="debug_info_screen",
+                id=SCREEN_ID,
             )
         )
 
