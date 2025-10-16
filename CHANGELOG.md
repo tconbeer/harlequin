@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-10-16
+
 ### Features
 
 - Adds a "Debug Information" screen to make it possible to view Harlequin and Adapter config from within Harlequin by pressing `f12` ([#564](https://github.com/tconbeer/harlequin/discussions/564), [#807](https://github.com/tconbeer/harlequin/pull/807) - thank you, [@vkhitrin](https://github.com/vkhitrin)!).
@@ -827,7 +829,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.1.3...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.2.0...HEAD
+[2.2.0]: https://github.com/tconbeer/harlequin/compare/2.1.3...2.2.0
 [2.1.3]: https://github.com/tconbeer/harlequin/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/tconbeer/harlequin/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/tconbeer/harlequin/compare/2.1.0...2.1.1
