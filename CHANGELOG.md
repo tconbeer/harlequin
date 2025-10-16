@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.1] - 2025-10-16
+
 ### Bug Fixes
 
 - Fixes installation from an sdist, which was broken in 2.2.0 ([#863](https://github.com/tconbeer/harlequin/issues/863) - thank you [@xhochy](https://github.com/xhochy)!).
@@ -833,7 +835,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.2.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.2.1...HEAD
+[2.2.1]: https://github.com/tconbeer/harlequin/compare/2.2.0...2.2.1
 [2.2.0]: https://github.com/tconbeer/harlequin/compare/2.1.3...2.2.0
 [2.1.3]: https://github.com/tconbeer/harlequin/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/tconbeer/harlequin/compare/2.1.1...2.1.2
