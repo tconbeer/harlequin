@@ -1,0 +1,89 @@
+name: Test Build
+
+on:
+  schedule:
+    - cron: 0 7 * * *
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# will cancel previous workflows triggered by the same event and for the same ref for PRs or same SHA otherwise
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ contains(github.event_name, 'pull_request') && github.event.pull_request.head.ref || github.sha }}
+  cancel-in-progress: true
+
+  
+jobs:
+  test-build:
+    name: ${{ matrix.os }} - ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - MacOs-latest
+          - Windows-latest
+        py:
+          - "3.13"
+          - "3.12"
+          - "3.11"
+          - "3.10"
+          - "3.9"
+    steps:
+      - name: Check out Repo
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.py }}
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.py }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.3"
+          python-version: ${{ matrix.py }}
+
+      - name: Ensure package can be built
+        run: uv build --all-packages
+
+      - name: Ensure package can be installed from whl
+        if: matrix.os != 'Windows-latest'
+        shell: bash
+        run: |
+          uv venv .testwhl
+          source .testwhl/bin/activate
+          uv pip install dist/$(ls dist/ | grep ".whl")
+          deactivate
+
+      - name: Ensure package can be installed from sdist
+        if: matrix.os != 'Windows-latest'
+        shell: bash
+        run: |
+          uv venv .testsdist
+          source .testsdist/bin/activate
+          uv pip install dist/$(ls dist/ | grep ".tar.gz")
+          deactivate
+
+      - name: Ensure package can be installed from whl (Windows)
+        if: matrix.os == 'Windows-latest'
+        shell: pwsh
+        run: |
+          uv venv .testwhl
+          .testwhl\Scripts\activate
+          uv pip install (Get-Item dist\*.whl).FullName
+          deactivate
+
+      - name: Ensure package can be installed from sdist (Windows)
+        if: matrix.os == 'Windows-latest'
+        shell: pwsh
+        run: |
+          uv venv .testsdist
+          .testsdist\Scripts\activate
+          uv pip install (Get-Item dist\*.tar.gz).FullName
+          deactivate
