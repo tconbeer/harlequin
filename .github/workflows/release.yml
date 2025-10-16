@@ -30,6 +30,11 @@ jobs:
         with:
           version: "0.9.3"
 
+      - name: Create release branch
+        run: |
+          git checkout -b release/v${{ github.event.inputs.newVersion }}
+          git push --set-upstream origin release/v${{ github.event.inputs.newVersion }}
+
       - name: Bump version
         run: uv version ${{ github.event.inputs.newVersion }}
 
