@@ -1,6 +1,8 @@
-name: Test
+name: Test Build
 
 on:
+  schedule:
+    - cron: 0 7 * * *
   push:
     branches: [ main ]
   pull_request:
@@ -16,11 +18,9 @@ defaults:
     shell: bash
 
 jobs:
-  test:
+  test-build:
     name: ${{ matrix.os }} - ${{ matrix.py }}
     runs-on: ${{ matrix.os }}
-    env:
-      motherduck_token: ${{ secrets.HARLEQUIN_MOTHERDUCK_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -40,30 +40,30 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python ${{ matrix.py }}
+      - name: Set up Python 3.12
         id: setup-python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.py }}
+          python-version-file: ".python-version"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           version: "0.9.3"
-          python-version: ${{ matrix.py }}
-          enable-cache: true
 
-      - name: Install python dependencies
+      - name: Ensure package can be built
+        run: uv build --all-packages
+
+      - name: Ensure package can be installed from whl
         run: |
-          uv sync --locked --group test
+          uv venv .testwhl
+          source .testwhl/bin/activate
+          uv pip install dist/$(ls dist/ | grep ".whl")
+          deactivate
 
-      - name: Run tests
+      - name: Ensure package can be installed from sdist
         run: |
-          uv run --no-sync pytest -m "not online" ${{ matrix.os == 'Windows-latest' && '--force-flaky --max-runs=3' || '' }} --snapshot-warn-unused
-
-      - name: Store snapshot report on failure
-        uses: actions/upload-artifact@v4  
-        if: failure()
-        with:
-          name: Snapshot Report ${{ matrix.os }} ${{ matrix.py }}
-          path: ./snapshot_report.html
+          uv venv .testsdist
+          source .testsdist/bin/activate
+          uv pip install dist/$(ls dist/ | grep ".tar.gz")
+          deactivate
