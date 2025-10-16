@@ -13,10 +13,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ contains(github.event_name, 'pull_request') && github.event.pull_request.head.ref || github.sha }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    shell: bash
-
+  
 jobs:
   test-build:
     name: ${{ matrix.os }} - ${{ matrix.py }}
@@ -56,6 +53,8 @@ jobs:
         run: uv build --all-packages
 
       - name: Ensure package can be installed from whl
+        if: matrix.os != 'Windows-latest'
+        shell: bash
         run: |
           uv venv .testwhl
           source .testwhl/bin/activate
@@ -63,8 +62,28 @@ jobs:
           deactivate
 
       - name: Ensure package can be installed from sdist
+        if: matrix.os != 'Windows-latest'
+        shell: bash
         run: |
           uv venv .testsdist
           source .testsdist/bin/activate
           uv pip install dist/$(ls dist/ | grep ".tar.gz")
+          deactivate
+
+      - name: Ensure package can be installed from whl (Windows)
+        if: matrix.os == 'Windows-latest'
+        shell: pwsh
+        run: |
+          uv venv .testwhl
+          .testwhl\Scripts\activate
+          uv pip install (Get-Item dist\*.whl).FullName
+          deactivate
+
+      - name: Ensure package can be installed from sdist (Windows)
+        if: matrix.os == 'Windows-latest'
+        shell: pwsh
+        run: |
+          uv venv .testsdist
+          .testsdist\Scripts\activate
+          uv pip install (Get-Item dist\*.tar.gz).FullName
           deactivate
