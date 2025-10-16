@@ -967,7 +967,7 @@ class Harlequin(AppBase):
         if self.screen.id == SCREEN_ID:
             # already showing this screen.
             return
-        
+
         config_path = get_highest_priority_existing_config_file()
         config = load_config(config_path)
         profile_name = self.profile_name
