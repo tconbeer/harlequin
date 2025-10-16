@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes installation from an sdist, which was broken in 2.2.0 ([#863](https://github.com/tconbeer/harlequin/issues/863) - thank you [@xhochy](https://github.com/xhochy)!).
+
 ## [2.2.0] - 2025-10-16
 
 ### Features
