@@ -77,6 +77,7 @@ test = [
     "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
     # extension tests require consistent version of duckdb.
     "duckdb==1.1.1",
+    "flaky>=3.8.1",
 ]
 
 
@@ -169,5 +170,4 @@ strict_equality = true
 markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
     "use_cache: override the autouse fixture the disables the buffer cache",
-    "flaky_windows: likely to fail for no reason on windows."
 ]

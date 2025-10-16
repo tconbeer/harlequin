@@ -36,6 +36,7 @@ async def test_query_formatting(
         assert app.editor.text == "select 1 from foo\n"
 
 
+@pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_multiple_buffers(
     app: Harlequin,
@@ -119,6 +120,7 @@ async def test_multiple_buffers(
         assert all(snap_results)
 
 
+@pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin,
@@ -188,6 +190,7 @@ async def test_word_autocomplete(
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Initial snapshot very flaky on windows."
 )
+@pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_member_autocomplete(
     app_small_duck: Harlequin,

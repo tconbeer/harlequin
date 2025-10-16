@@ -59,7 +59,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest -m "not online" ${{ matrix.os == 'Windows-latest' && '-m "not flaky_windows"' || '' }} --snapshot-warn-unused
+          uv run --no-sync pytest -m "not online" ${{ matrix.os == 'Windows-latest' && '--force-flaky --max-runs=3' || '' }} --snapshot-warn-unused
 
       - name: Store snapshot report on failure
         uses: actions/upload-artifact@v4  
