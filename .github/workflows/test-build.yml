@@ -40,16 +40,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python 3.12
+      - name: Set up Python ${{ matrix.py }}
         id: setup-python
         uses: actions/setup-python@v6
         with:
-          python-version-file: ".python-version"
+          python-version: ${{ matrix.py }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           version: "0.9.3"
+          python-version: ${{ matrix.py }}
 
       - name: Ensure package can be built
         run: uv build --all-packages
