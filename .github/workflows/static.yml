@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   static:
-    name: Static Analysis - 3.9
+    name: Static Analysis
     runs-on: ubuntu-latest
     steps:
       - name: Check out Repo

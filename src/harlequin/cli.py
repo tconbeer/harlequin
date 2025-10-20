@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from importlib.metadata import entry_points, version
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -23,11 +24,6 @@ from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
-
-if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points, version
-else:
-    from importlib.metadata import entry_points, version
 
 # configure defaults
 DEFAULT_ADAPTER = "duckdb"
@@ -106,7 +102,9 @@ def _version_option() -> str:
     adapter_eps = entry_points(group="harlequin.adapter")
     adapter_versions: dict[str, str] = {}
     for ep in adapter_eps:
-        adapter_versions.update({ep.name: ep.dist.version})
+        adapter_versions.update(
+            {ep.name: ep.dist.version if ep.dist is not None else "unknown"}
+        )
 
     adapter_output = "\n".join(
         [f"  - {name}, version {version}" for name, version in adapter_versions.items()]

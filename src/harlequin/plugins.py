@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import sys
+from importlib.metadata import entry_points
 from typing import Literal, Sequence, overload
 
 from harlequin.adapter import HarlequinAdapter
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap
-
-if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points
-else:
-    from importlib.metadata import entry_points
 
 
 def load_adapter_plugins() -> dict[str, type[HarlequinAdapter]]:

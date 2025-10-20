@@ -33,7 +33,6 @@ jobs:
           - "3.12"
           - "3.11"
           - "3.10"
-          - "3.9"
     steps:
       - name: Check out Repo
         uses: actions/checkout@v5
