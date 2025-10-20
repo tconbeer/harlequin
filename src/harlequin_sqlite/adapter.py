@@ -374,7 +374,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         if hasattr(conn, "autocommit"):
             conn.autocommit = True
 
-        for uri, name in zip(other_dbs, db_names[1:]):
+        for uri, name in zip(other_dbs, db_names[1:], strict=False):
             try:
                 conn.execute(f"attach database '{uri}' as {name}")
             except sqlite3.Error as e:

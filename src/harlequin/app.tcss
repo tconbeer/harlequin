@@ -97,8 +97,7 @@ DataCatalog * .directory-tree--folder {
 }
 
 DataCatalog * .directory-tree--hidden {
-    text-style: italic;
-    color: $text-muted;
+    text-style: dim italic;
 }
 
 DataCatalog ContextMenu {

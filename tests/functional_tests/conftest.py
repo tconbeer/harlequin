@@ -1,3 +1,4 @@
+import sys
 from contextlib import suppress
 from typing import Awaitable, Callable
 from unittest.mock import MagicMock
@@ -172,3 +173,16 @@ def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
                 await app.workers.wait_for_complete(filtered_workers)
 
     return wait_for_filtered_workers
+
+
+@pytest.fixture
+def transaction_button_visible() -> Callable[[Harlequin], bool]:
+    def fn(app: Harlequin) -> bool:
+        """
+        Skip snapshot checks for versions of that app showing the autocommit button.
+        """
+        return (
+            sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
+        )
+
+    return fn

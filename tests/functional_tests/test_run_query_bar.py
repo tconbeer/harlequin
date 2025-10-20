@@ -9,18 +9,12 @@ from textual.message import Message
 from harlequin import Harlequin
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 async def test_run_query_bar(
     app_all_adapters_small_db: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters_small_db
     snap_results: list[bool] = []
@@ -108,6 +102,7 @@ async def test_run_query_bar(
             assert all(snap_results)
 
 
+@pytest.mark.py12
 @pytest.mark.skipif(
     sys.version_info < (3, 12), reason="SQLite in Python < 3.12 won't show txn button"
 )

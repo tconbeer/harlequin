@@ -8,13 +8,6 @@ from harlequin import Harlequin
 from harlequin.components import ExportScreen
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "filename",
@@ -37,6 +30,7 @@ async def test_export(
     filename: str,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []

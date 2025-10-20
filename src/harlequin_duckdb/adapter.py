@@ -35,6 +35,7 @@ class DuckDbCursor(HarlequinCursor):
             zip(
                 self.relation.columns,
                 map(self.conn._short_column_type, self.relation.dtypes),
+                strict=False,
             )
         )
 

@@ -13,7 +13,7 @@ class ClickableStatic(Static):
     def on_click(self, message: events.Click) -> None:
         message.stop()
         try:
-            pyperclip.copy(str(self.renderable))
+            pyperclip.copy(str(self.content))
         except pyperclip.PyperclipException:
             pass
         else:

@@ -14,13 +14,6 @@ from harlequin.app import QuerySubmitted
 from harlequin.catalog import CatalogItem
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 async def test_query_formatting(
     app: Harlequin,
@@ -126,6 +119,7 @@ async def test_word_autocomplete(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []

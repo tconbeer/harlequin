@@ -140,7 +140,7 @@ class MemberCompleter(WordCompleter):
             match_context = context.strip("'`\"").lower()
             separators = SEPARATOR_PROG.findall(prefix)
         value_prefix = "".join(
-            f"{w}{sep}" for w, sep in zip([*others, context], separators)
+            f"{w}{sep}" for w, sep in zip([*others, context], separators, strict=False)
         )
 
         context_completions = [
