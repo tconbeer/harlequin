@@ -12,9 +12,9 @@ readme = "README.md"
 keywords = ["sql", "tui", "ide", "textual", "harlequin"]
 dependencies = [
     # textual and component libraries
-    "textual==6.3.0",
+    "textual==6.4.0",
     "textual-fastdatatable==0.13.0",
-    "textual-textarea==0.16.0",
+    "textual-textarea==0.17.1",
 
     # click
     "click==8.1.8",
