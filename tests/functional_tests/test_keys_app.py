@@ -8,6 +8,7 @@ import pytest
 from textual.widgets import Input
 
 from harlequin import HarlequinKeys
+from harlequin.keys_app import QuitModal
 
 USER_CONFIG_PATH = Path("/tmp") / "harlequin"
 
@@ -78,13 +79,17 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
-        await pilot.pause()
+        while not isinstance(app.screen, QuitModal):
+            await pilot.pause()
         # the quit modal should now be visible. We make some tweaks so tests
         # pass consistently
         input_widgets = app.query(Input)
         for widget in input_widgets:
             widget.cursor_blink = False  # prevent flaky tests
-        path_input = app.query_one("#path_input", expect_type=Input)
+        path_input = app.screen.query_one(
+            "#path_input",
+            expect_type=Input,
+        )
         assert path_input.value == str(target_path)
         if sys.platform == "win32":
             # on windows the path will use backslashes, which makes

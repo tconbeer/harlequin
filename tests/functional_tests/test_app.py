@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import Awaitable, Callable
 
 import pytest
@@ -11,18 +10,12 @@ from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 async def test_select_1(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     messages: list[Message] = []
@@ -167,6 +160,7 @@ async def test_multiple_queries(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     snap_results: list[bool] = []
@@ -296,6 +290,7 @@ async def test_query_errors(
     bad_query: str,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     snap_results: list[bool] = []

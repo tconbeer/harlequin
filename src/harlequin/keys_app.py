@@ -522,7 +522,7 @@ class HarlequinKeys(AppBase):
         modified_bindings = [
             new_binding
             for new_binding, old_binding in zip(
-                self.bindings.values(), self.unmodifed_bindings.values()
+                self.bindings.values(), self.unmodifed_bindings.values(), strict=False
             )
             if new_binding != old_binding
         ]

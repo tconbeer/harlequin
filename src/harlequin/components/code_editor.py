@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import List, Union
 
-from rich.text import TextType
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual.css.query import NoMatches
+from textual.content import ContentType
+from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
@@ -156,7 +156,7 @@ class EditorCollection(TabbedContent):
 
     def __init__(
         self,
-        *titles: TextType,
+        *titles: ContentType,
         initial: str = "",
         name: Union[str, None] = None,
         id: Union[str, None] = None,  # noqa: A002
@@ -188,7 +188,7 @@ class EditorCollection(TabbedContent):
             try:
                 tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
                 return tab_pane.query_one(CodeEditor)
-            except NoMatches:
+            except (NoMatches, InvalidQueryFormat):
                 pass
         all_editors = content.query(CodeEditor)
         return all_editors.first(CodeEditor)
@@ -310,7 +310,7 @@ class EditorCollection(TabbedContent):
         tabs = self.query(TabPane)
         next_tabs = tabs[1:]
         next_tabs.append(tabs[0])
-        lookup = {t.id: nt.id for t, nt in zip(tabs, next_tabs)}
+        lookup = {t.id: nt.id for t, nt in zip(tabs, next_tabs, strict=False)}
         self.active = lookup[active]  # type: ignore
         self.post_message(self.EditorSwitched(active_editor=None))
         self.current_editor.focus()

@@ -164,8 +164,9 @@ async def test_file_tree(
         assert all(snap_results)
 
 
+@pytest.mark.py12
 @pytest.mark.skipif(
-    sys.version_info >= (3, 12), reason="3.12 renders CSS differently for this test..."
+    sys.version_info < (3, 12), reason="3.12 renders CSS differently for this test..."
 )
 @pytest.mark.asyncio
 async def test_s3_tree(

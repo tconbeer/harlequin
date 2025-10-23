@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime
 from typing import Awaitable, Callable
 from unittest.mock import MagicMock
@@ -13,18 +12,12 @@ from harlequin import Harlequin
 from harlequin.components.results_viewer import ResultsViewer
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 async def test_dupe_column_names(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
@@ -50,6 +43,7 @@ async def test_copy_data(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     query = "select 3, 'rosberg', 6, 'ROS', 'Nico', 'Rosberg', '1985-06-27', 'German', 'http://en.wikipedia.org/wiki/Nico_Rosberg'"
@@ -94,6 +88,7 @@ async def test_data_truncated_with_tooltip(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     query = "select 'supercalifragilisticexpialidocious'"

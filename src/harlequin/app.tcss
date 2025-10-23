@@ -7,6 +7,7 @@ $border-title-color-focus: $primary;
 /* ALL WIDGETS */
 DataCatalog,
 EditorCollection,
+FooterContainer > Input,
 ResultsViewer,
 Lazy {
     border: round $border-color-nofocus;
@@ -20,6 +21,7 @@ LoadingIndicator {
 
 DataCatalog:focus-within,
 EditorCollection:focus-within,
+FooterContainer > Input:focus,
 ResultsViewer:focus-within,
 HistoryScreen TextArea:focus,
 HistoryScreen OptionList:focus {
@@ -97,8 +99,7 @@ DataCatalog * .directory-tree--folder {
 }
 
 DataCatalog * .directory-tree--hidden {
-    text-style: italic;
-    color: $text-muted;
+    text-style: dim italic;
 }
 
 DataCatalog ContextMenu {

@@ -283,6 +283,7 @@ def test_limit(small_sqlite: Path) -> None:
     assert len(results) == 100  # type: ignore
 
 
+@pytest.mark.py12
 @pytest.mark.skipif(
     sys.version_info < (3, 12), reason="Transactions only supported on py3.12+"
 )

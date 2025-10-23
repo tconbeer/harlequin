@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Drops support for Python 3.9.
+
 ## [2.2.1] - 2025-10-16
 
 ### Bug Fixes

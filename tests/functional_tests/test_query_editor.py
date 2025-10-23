@@ -14,13 +14,6 @@ from harlequin.app import QuerySubmitted
 from harlequin.catalog import CatalogItem
 
 
-def transaction_button_visible(app: Harlequin) -> bool:
-    """
-    Skip snapshot checks for versions of that app showing the autocommit button.
-    """
-    return sys.version_info >= (3, 12) and "Sqlite" in app.adapter.__class__.__name__
-
-
 @pytest.mark.asyncio
 async def test_query_formatting(
     app: Harlequin,
@@ -126,6 +119,7 @@ async def test_word_autocomplete(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    transaction_button_visible: Callable[[Harlequin], bool],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
@@ -302,3 +296,44 @@ async def test_no_tree_sitter(
             )
         )
         assert text_area_warning
+
+
+@pytest.mark.asyncio
+async def test_footer_inputs(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    app_snapshot: Callable[..., Awaitable[bool]],
+) -> None:
+    snap_results: List[bool] = []
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        assert app.editor is not None
+        assert app.editor.text_input is not None
+        app.editor.text = "select 1"
+
+        await pilot.press("ctrl+o")
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "Open Input visible"))
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "Save Input visible"))
+
+        await pilot.press("esc")
+        await pilot.pause(0.2)
+        snap_results.append(await app_snapshot(app, "No Input visible"))
+
+        await pilot.press("ctrl+f")
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "Find Input visible"))
+
+        await pilot.press("esc")
+        await pilot.pause()
+
+        await pilot.press("ctrl+g")
+        await pilot.pause()
+        snap_results.append(await app_snapshot(app, "Goto Input visible"))

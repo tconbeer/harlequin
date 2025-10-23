@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Sequence
 
 from rich.markup import escape
-from rich.text import TextType
 from textual import on
-from textual.css.query import NoMatches
+from textual.content import ContentType
+from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
 from textual.widgets import (
     DirectoryTree,
@@ -108,7 +108,7 @@ class DataCatalog(TabbedContent, can_focus=True):
 
     def __init__(
         self,
-        *titles: TextType,
+        *titles: ContentType,
         initial: str = "",
         name: str | None = None,
         id: str | None = None,  # noqa: A002
@@ -150,7 +150,7 @@ class DataCatalog(TabbedContent, can_focus=True):
                     error=Exception(
                         "Could not load s3 catalog because boto3 is not available.\n\n"
                         "Re-install harlequin with the s3 extra, like this:\n"
-                        "pip install harlequin[s3]"
+                        "uv tool install harlequin[s3]"
                     ),
                 )
             )
@@ -166,7 +166,7 @@ class DataCatalog(TabbedContent, can_focus=True):
     def on_focus(self) -> None:
         try:
             active_widget = self.query_one(f"#{self.active}").children[0]
-        except NoMatches:
+        except (NoMatches, InvalidQueryFormat):
             self.database_tree.focus()
         else:
             active_widget.focus()
