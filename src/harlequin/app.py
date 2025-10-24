@@ -326,12 +326,14 @@ class Harlequin(AppBase):
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
         message.stop()
-        self.post_message(
-            QuerySubmitted(
-                queries=self._get_selected_queries(),
-                limit=self.run_query_bar.limit_value,
+        queries = self._get_selected_queries()
+        if queries:
+            self.post_message(
+                QuerySubmitted(
+                    queries=queries,
+                    limit=self.run_query_bar.limit_value,
+                )
             )
-        )
 
     @on(Button.Pressed, "#cancel_query")
     def cancel_query(self, message: Button.Pressed) -> None:
@@ -374,12 +376,14 @@ class Harlequin(AppBase):
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
         message.stop()
-        self.post_message(
-            QuerySubmitted(
-                queries=self._get_selected_queries(),
-                limit=self.run_query_bar.limit_value,
+        queries = self._get_selected_queries()
+        if queries:
+            self.post_message(
+                QuerySubmitted(
+                    queries=queries,
+                    limit=self.run_query_bar.limit_value,
+                )
             )
-        )
 
     @on(DatabaseConnected)
     def initialize_app(self, message: DatabaseConnected) -> None:
@@ -494,12 +498,14 @@ class Harlequin(AppBase):
                 self.set_timer(delay=0.1, callback=callback)
                 return
         self.editor.focus()
+        self._sync_run_button_disabled()
+        self._sync_run_button_text()
+
+    def on_text_area_changed(self) -> None:
+        self._sync_run_button_disabled()
 
     def on_text_area_selection_changed(self) -> None:
-        if self._validate_selection():
-            self.run_query_bar.run_button.label = "Run Selection"
-        else:
-            self.run_query_bar.run_button.label = "Run Query"
+        self._sync_run_button_text()
 
     @on(Input.Changed, "#limit_input")
     def update_limit_tooltip(self, message: Input.Changed) -> None:
@@ -522,12 +528,14 @@ class Harlequin(AppBase):
             and message.validation_result
             and message.validation_result.is_valid
         ):
-            self.post_message(
-                QuerySubmitted(
-                    queries=self._get_selected_queries(),
-                    limit=self.run_query_bar.limit_value,
+            queries = self._get_selected_queries()
+            if queries:
+                self.post_message(
+                    QuerySubmitted(
+                        queries=queries,
+                        limit=self.run_query_bar.limit_value,
+                    )
                 )
-            )
 
     @on(DataTable.SelectionCopied)
     def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
@@ -1023,6 +1031,21 @@ class Harlequin(AppBase):
         self.update_schema_data()
         self.data_catalog.update_file_tree()
         self.data_catalog.update_s3_tree()
+
+    def _sync_run_button_text(self) -> None:
+        if self._validate_selection():
+            self.run_query_bar.run_button.label = "Run Selection"
+        else:
+            self.run_query_bar.run_button.label = "Run Query"
+
+    def _sync_run_button_disabled(self) -> None:
+        if self.editor is None or self.editor.text_input is None:
+            return
+
+        if self.editor.text.strip():
+            self.run_query_bar.run_button.disabled = False
+        else:
+            self.run_query_bar.run_button.disabled = True
 
     @work(
         thread=True,

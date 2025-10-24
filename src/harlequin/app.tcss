@@ -212,6 +212,9 @@ RunQueryBar Button#run_query {
     margin: 0 0 0 4;
     &:hover {
         background: $secondary;
+        &:disabled {
+            background: $primary;
+        }
     }
     &:focus {
         text-style: reverse;

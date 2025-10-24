@@ -940,7 +940,7 @@ requires-dist = [
     { name = "shandy-sqlfmt", specifier = ">=0.19.0" },
     { name = "textual", specifier = "==6.4.0" },
     { name = "textual-fastdatatable", specifier = "==0.13.0" },
-    { name = "textual-textarea", specifier = "==0.17.1" },
+    { name = "textual-textarea", specifier = "==0.17.2" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
 ]
 provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
@@ -2514,15 +2514,15 @@ wheels = [
 
 [[package]]
 name = "textual-textarea"
-version = "0.17.1"
+version = "0.17.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyperclip" },
     { name = "textual", extra = ["syntax"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/4c/dbd50b572304323b0b67c2308147855bf5afa875714480f017fca65645ae/textual_textarea-0.17.1.tar.gz", hash = "sha256:e41f32b1e8f2351a5422ab49b3ad13a2f07a7ff944f8dd714ac30008d045eecd", size = 27547, upload-time = "2025-10-23T19:50:49.671Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/9e/1aa70bab939cac85442cbfe3ef94383329b6cbe2535223940f6846252582/textual_textarea-0.17.2.tar.gz", hash = "sha256:84bb2bfe545db70071914802e808dc411c16c21e7744adbcfc381f1390dd2c6b", size = 27615, upload-time = "2025-10-24T21:32:54.62Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/90/5836eb62124d98e516e03d83a1cd7410d4685fc883e5b8c434654ac19e97/textual_textarea-0.17.1-py3-none-any.whl", hash = "sha256:8bb20e24b82555948ec85c80091173342946e00e1370d49d40d57d850c97893d", size = 26710, upload-time = "2025-10-23T19:50:48.481Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/7e/fc0192c7e598c80c88c83cd0a11dbbe6821d557b48548082a0102fc3256e/textual_textarea-0.17.2-py3-none-any.whl", hash = "sha256:c416f6dd613269ca9746df0074897435c80bea18d75d75d24aea822574d2ade1", size = 26710, upload-time = "2025-10-24T21:32:53.035Z" },
 ]
 
 [[package]]

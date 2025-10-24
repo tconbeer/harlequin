@@ -323,17 +323,19 @@ async def test_footer_inputs(
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Save Input visible"))
 
-        await pilot.press("esc")
-        await pilot.pause(0.2)
+        await pilot.press("escape")
+        await pilot.pause(0.1)
         snap_results.append(await app_snapshot(app, "No Input visible"))
 
         await pilot.press("ctrl+f")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Find Input visible"))
 
-        await pilot.press("esc")
+        await pilot.press("escape")
         await pilot.pause()
 
         await pilot.press("ctrl+g")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Goto Input visible"))
+
+        assert all(snap_results)

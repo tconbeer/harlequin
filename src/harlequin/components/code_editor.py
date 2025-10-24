@@ -38,18 +38,23 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         Returns the list of queries that intersect
         with the current selection.
         """
-        if self.text_input is None:
+        if self.text_input is None or not self.text.strip():
             return []
 
-        semicolons = self._query_semicolons()
+        if ";" not in self.text:
+            return [self.text]
 
-        if not semicolons:
+        separators = self._query_separators()
+        if not separators:
+            # a semicolon could be in a string literal,
+            # so there may not be query separators even if
+            # there are literal semicolons in the text.
             return [self.text]
 
         queries: list[str] = []
         prev_query: str | None = None
         query_start = (0, 0)
-        for query_end in [*semicolons, self.text_input.document.end]:
+        for query_end in [*separators, self.text_input.document.end]:
             if query_start > self.selection.end:
                 break
             q = self.text_input.get_text_range(start=query_start, end=query_end).strip()
@@ -116,7 +121,11 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if hasattr(self.app, "action_focus_data_catalog"):
             self.app.action_focus_data_catalog()
 
-    def _query_semicolons(self) -> list[tuple[int, int]]:
+    def _query_separators(self) -> list[tuple[int, int]]:
+        """
+        Return a list of tuples that represent the row and col
+        positions of query separators (semicolons) in the buffer text.
+        """
         if self.text_input is None:
             return []
 
@@ -124,6 +133,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             assert self._semicolon_query is not None
             query_result = self.query_syntax_tree(query=self._semicolon_query)
             return [n.end_point for n in query_result.get("semicolon", [])]
+
         else:
             # tree-sitter is not installed. naively split on semicolons and
             # show a warning.
@@ -138,10 +148,12 @@ class CodeEditor(TextEditor, inherit_bindings=False):
                     timeout=10,
                 )
                 self.has_shown_tree_sitter_error = True
+
             semicolons: list[tuple[int, int]] = []
             for i, line in enumerate(self.text.splitlines()):
                 for pos in [m.span()[1] for m in re.finditer(";", line)]:
                     semicolons.append((i, pos))
+
             return semicolons
 
 
