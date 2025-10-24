@@ -293,7 +293,7 @@ class DebugInfoScreen(ModalScreen):
         self.set_focus(focusables[next_idx])
 
     def on_key(self, event: events.Key) -> None:
-        if event.key in ("escape", "esc"):
+        if event.key == "escape":
             self.app.pop_screen()
             event.stop()
         elif event.key == "pageup":

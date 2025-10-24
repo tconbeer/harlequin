@@ -38,7 +38,7 @@ async def test_debug_info_screen(
         await pilot.press("enter")
         await pilot.press("pageup")
         await pilot.press("pagedown")
-        await pilot.press("esc")
+        await pilot.press("escape")
         await pilot.pause()
         assert len(app.screen_stack) == 1
 

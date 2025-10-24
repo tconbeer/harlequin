@@ -14,7 +14,7 @@ dependencies = [
     # textual and component libraries
     "textual==6.4.0",
     "textual-fastdatatable==0.13.0",
-    "textual-textarea==0.17.1",
+    "textual-textarea==0.17.2",
 
     # click
     "click==8.1.8",

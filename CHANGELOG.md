@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Drops support for Python 3.9.
 
+### Bug Fixes
+
+- Harlequin will no longer execute an empty query; the Run Query button will appear disabled if the buffer is empty ([#873](https://github.com/tconbeer/harlequin/issues/873)).
+
 ## [2.2.1] - 2025-10-16
 
 ### Bug Fixes
