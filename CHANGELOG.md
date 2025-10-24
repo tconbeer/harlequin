@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-10-24
+
 ### Breaking Changes
 
 - Drops support for Python 3.9.
@@ -843,7 +845,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.2.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.3.0...HEAD
+[2.3.0]: https://github.com/tconbeer/harlequin/compare/2.2.1...2.3.0
 [2.2.1]: https://github.com/tconbeer/harlequin/compare/2.2.0...2.2.1
 [2.2.0]: https://github.com/tconbeer/harlequin/compare/2.1.3...2.2.0
 [2.1.3]: https://github.com/tconbeer/harlequin/compare/2.1.2...2.1.3
