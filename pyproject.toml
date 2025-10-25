@@ -2,7 +2,7 @@
 
 name = "harlequin"
 version = "2.3.0"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10"
 description = "The SQL IDE for Your Terminal."
 authors = [
     { name = "Ted Conbeer", email = "tconbeer@users.noreply.github.com" }
