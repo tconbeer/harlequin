@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds support for Python 3.14.
+
 ## [2.3.0] - 2025-10-24
 
 ### Breaking Changes
