@@ -64,7 +64,7 @@ def _export_csv(
     if "header" not in kwargs:
         kwargs["header"] = False
     try:
-        relation = duckdb.arrow(data)  # type: ignore[arg-type]
+        relation = duckdb.arrow(data)
         relation.write_csv(file_name=dest_path, **kwargs)
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
@@ -81,7 +81,7 @@ def _export_parquet(
     import duckdb
 
     try:
-        relation = duckdb.arrow(data)  # type: ignore[arg-type]
+        relation = duckdb.arrow(data)
         relation.write_parquet(
             file_name=dest_path, compression=kwargs.get("compression")
         )
