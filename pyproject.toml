@@ -10,6 +10,17 @@ authors = [
 license = "MIT"
 readme = "README.md"
 keywords = ["sql", "tui", "ide", "textual", "harlequin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = [
     # textual and component libraries
     "textual==6.4.0",
