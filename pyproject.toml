@@ -33,11 +33,14 @@ dependencies = [
 
     # other deps
     "duckdb>=0.8.0; python_version < '3.14'",
-    "duckdb>=1.4.2.dev0; python_version >= '3.14'",
-    "shandy-sqlfmt>=0.19.0",
+    "shandy-sqlfmt>=0.28.2",
     "platformdirs>=3.10,<5.0",
     "tomlkit>=0.12.5,<0.14.0",
     "questionary==2.0.1",
+
+    # ensure we install from wheels
+    "duckdb>=1.4.2.dev0; python_version >= '3.14'",
+    "pandas>=2.3; python_version >= '3.14'",
 ]
 
 
@@ -49,7 +52,11 @@ mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
 bigquery = ["harlequin-bigquery"]
 trino = ["harlequin-trino"]
-databricks = ["harlequin-databricks"]
+# databricks-sql-connector pins numpy to 2.2, which has to be
+# built from source on python 3.14. Rather than forcing all
+# 3.14 users to build numpy from source, make databricks
+# unavailable on 3.14
+databricks = ["harlequin-databricks; python_version < '3.14'"]
 adbc = ["harlequin-adbc"]
 cassandra = ["harlequin-cassandra"]
 nebulagraph = ["harlequin-nebulagraph"]
