@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.4.0] - 2025-10-29
+
 ### Features
 
 - Adds support for Python 3.14 for most Harlequin users ([#852](https://github.com/tconbeer/harlequin/issues/852), [#879](https://github.com/tconbeer/harlequin/pull/879), [#880](https://github.com/tconbeer/harlequin/pull/880) - thank you [@smartinussen](https://github.com/smartinussen) and especially [@branchvincent](https://github.com/branchvincent)!). **NOTE:** The `databricks` extra will not install the Databricks adapter on Python 3.14; Databricks users should continue to use Python 3.10-3.13. uv makes that easy with `uv tool install --python 3.13 'harlequin[databricks]'` See [this issue](https://github.com/alexmalins/harlequin-databricks/issues/23) for more information.
@@ -849,7 +851,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.3.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.4.0...HEAD
+[2.4.0]: https://github.com/tconbeer/harlequin/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/tconbeer/harlequin/compare/2.2.1...2.3.0
 [2.2.1]: https://github.com/tconbeer/harlequin/compare/2.2.0...2.2.1
 [2.2.0]: https://github.com/tconbeer/harlequin/compare/2.1.3...2.2.0
