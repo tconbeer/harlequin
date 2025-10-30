@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.4.1] - 2025-10-30
+
 ### Bug Fixes
 
 - Fixes a bug that was preventing the Database Catalog from being populated on Python 3.12+ ([#883](https://github.com/tconbeer/harlequin/issues/883) - thank you [@alex-lucem](https://github.com/alex-lucem)!).
@@ -855,7 +857,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.4.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.4.1...HEAD
+[2.4.1]: https://github.com/tconbeer/harlequin/compare/2.4.0...2.4.1
 [2.4.0]: https://github.com/tconbeer/harlequin/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/tconbeer/harlequin/compare/2.2.1...2.3.0
 [2.2.1]: https://github.com/tconbeer/harlequin/compare/2.2.0...2.2.1
