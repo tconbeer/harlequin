@@ -305,7 +305,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             key=lambda catalog_item: catalog_item.label,
         )
 
-    @work(name="_database_tree_background_loader", exclusive=True)
+    @work(name="_database_tree_background_loader")
     async def _loader(self) -> None:
         """Background loading queue processor."""
         worker = get_current_worker()
