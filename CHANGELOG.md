@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a bug that was preventing the Database Catalog from being populated on Python 3.12+ ([#883](https://github.com/tconbeer/harlequin/issues/883) - thank you [@alex-lucem](https://github.com/alex-lucem)!).
+
 ## [2.4.0] - 2025-10-29
 
 ### Features
