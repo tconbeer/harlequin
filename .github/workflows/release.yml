@@ -47,7 +47,7 @@ jobs:
           version: ${{ github.event.inputs.newVersion }}
 
       - name: Commit Changes
-        uses: stefanzweifel/git-auto-commit-action@v6
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: Bumps version to ${{ github.event.inputs.newVersion }}
 
