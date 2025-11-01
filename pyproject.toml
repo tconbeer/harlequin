@@ -28,7 +28,7 @@ dependencies = [
     "textual-textarea==0.17.2",
 
     # click
-    "click==8.1.8",
+    "click==8.3.0",
     "rich-click==1.8.5",
 
     # other deps
