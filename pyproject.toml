@@ -29,7 +29,7 @@ dependencies = [
 
     # click
     "click==8.1.8",
-    "rich-click==1.8.5",
+    "rich-click==1.9.4",
 
     # other deps
     "duckdb>=0.8.0; python_version < '3.14'",
