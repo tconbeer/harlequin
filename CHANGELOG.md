@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Allows setting the config path using the `HARLEQUIN_CONFIG_PATH` environment variable ([#897](https://github.com/tconbeer/harlequin/issues/897))
+
 ## [2.4.1] - 2025-10-30
 
 ### Bug Fixes
