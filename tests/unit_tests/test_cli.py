@@ -298,6 +298,29 @@ def test_config_path(
     assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
 
 
+@pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
+def test_config_path_fron_env(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    data_dir: Path,
+    filename: str,
+) -> None:
+    runner = CliRunner()
+    config_path = data_dir / "unit_tests" / "config" / filename
+    res = runner.invoke(
+        build_cli(), env={"HARLEQUIN_CONFIG_PATH": config_path.as_posix()}
+    )
+    assert res.exit_code == 0
+    mock_harlequin.assert_called_once()
+    assert mock_harlequin.call_args
+    # should use default profile of my-duckdb-profile
+    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+    mock_adapter.assert_called_once()
+    assert mock_adapter.call_args.kwargs["conn_str"] == ["my-database.db"]
+    assert mock_adapter.call_args.kwargs["read_only"] is False
+    assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
+
+
 def test_bad_config_exits(
     mock_harlequin: MagicMock,
     mock_adapter: MagicMock,

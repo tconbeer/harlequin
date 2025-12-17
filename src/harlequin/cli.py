@@ -183,6 +183,8 @@ def build_cli() -> click.Command:
             resolve_path=True,
             path_type=Path,
         ),
+        envvar="HARLEQUIN_CONFIG_PATH",
+        show_envvar=True,
     )
     @click.option(
         "-t",
