@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-12-17
+
 - Allows setting the config path using the `HARLEQUIN_CONFIG_PATH` environment variable ([#897](https://github.com/tconbeer/harlequin/issues/897))
 
 ## [2.4.1] - 2025-10-30
@@ -859,7 +861,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.4.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.0...HEAD
+[2.5.0]: https://github.com/tconbeer/harlequin/compare/2.4.1...2.5.0
 [2.4.1]: https://github.com/tconbeer/harlequin/compare/2.4.0...2.4.1
 [2.4.0]: https://github.com/tconbeer/harlequin/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/tconbeer/harlequin/compare/2.2.1...2.3.0
