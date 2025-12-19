@@ -296,7 +296,7 @@ class DuckDbAdapter(HarlequinAdapter):
         primary_db, *other_dbs = self.conn_str
         token = f"?token={self.md_token}" if self.md_token else ""
         saas = "?saas_mode=true" if self.md_saas else ""
-        config = {
+        config: dict[str, str | bool | int | float | list[str]] | None = {
             "allow_unsigned_extensions": str(self.allow_unsigned_extensions).lower()
         }
 
