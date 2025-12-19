@@ -39,7 +39,7 @@ dependencies = [
     "questionary==2.0.1",
 
     # ensure we install from wheels
-    "duckdb>=1.4.2.dev0; python_version >= '3.14'",
+    "duckdb>=1.4.2; python_version >= '3.14'",
     "pandas>=2.3; python_version >= '3.14'",
 ]
 
@@ -78,7 +78,7 @@ test = [
     "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
     "boto3==1.34.22",
     # extension tests require consistent version of duckdb.
-    "duckdb==1.4.2.dev23",
+    "duckdb==1.4.2",
     "flaky>=3.8.1",
 ]
 
