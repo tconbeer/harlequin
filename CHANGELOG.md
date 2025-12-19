@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.5.1] - 2025-12-19
+
 ### Bug Fixes
 
 - Improves Python 3.14 support; re-enables databricks extra for Python 3.14 users; cleans up duckdb dependency for 3.14 users ([#882](https://github.com/tconbeer/harlequin/issues/882), [alexmalins/harlequin-databricks#23](https://github.com/alexmalins/harlequin-databricks/issues/23) - thank you [@alexmalins](https://github.com/alexmalins) for the Databricks fix!).
@@ -865,7 +867,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.1...HEAD
+[2.5.1]: https://github.com/tconbeer/harlequin/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/tconbeer/harlequin/compare/2.4.1...2.5.0
 [2.4.1]: https://github.com/tconbeer/harlequin/compare/2.4.0...2.4.1
 [2.4.0]: https://github.com/tconbeer/harlequin/compare/2.3.0...2.4.0
