@@ -39,7 +39,7 @@ dependencies = [
     "questionary==2.0.1",
 
     # ensure we install from wheels
-    "duckdb>=1.4.2.dev0; python_version >= '3.14'",
+    "duckdb>=1.4.2; python_version >= '3.14'",
     "pandas>=2.3; python_version >= '3.14'",
 ]
 
@@ -52,11 +52,7 @@ mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
 bigquery = ["harlequin-bigquery"]
 trino = ["harlequin-trino"]
-# databricks-sql-connector pins numpy to 2.2, which has to be
-# built from source on python 3.14. Rather than forcing all
-# 3.14 users to build numpy from source, make databricks
-# unavailable on 3.14
-databricks = ["harlequin-databricks; python_version < '3.14'"]
+databricks = ["harlequin-databricks"]
 adbc = ["harlequin-adbc"]
 cassandra = ["harlequin-cassandra"]
 nebulagraph = ["harlequin-nebulagraph"]
@@ -82,7 +78,7 @@ test = [
     "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
     "boto3==1.34.22",
     # extension tests require consistent version of duckdb.
-    "duckdb==1.4.2.dev23",
+    "duckdb==1.4.2",
     "flaky>=3.8.1",
 ]
 
