@@ -3,6 +3,25 @@
   "lockFileMaintenance": {
     "enabled": true
   },
+  "packageRules": [
+    {
+      "matchFileNames": [".python-version"],
+      "matchDatasources": ["python-version"],
+      "enabled": false
+    },
+    {
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-nonmajor",
+      "matchPackageNames": ["!/textual/"],
+      "matchUpdateTypes": ["minor", "patch", "pin"],
+      "automerge": true
+    },
+    {
+      "matchPackageNames": ["!/textual/"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin"],
+      "automerge": true
+    }
+  ],
   "extends": [
     "config:recommended"
   ]
