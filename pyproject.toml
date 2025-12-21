@@ -78,7 +78,7 @@ test = [
     "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
     "boto3==1.34.22",
     # extension tests require consistent version of duckdb.
-    "duckdb==1.4.2",
+    "duckdb==1.4.3",
     "flaky>=3.8.1",
 ]
 
