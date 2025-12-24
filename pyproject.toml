@@ -60,7 +60,7 @@ nebulagraph = ["harlequin-nebulagraph"]
 
 [dependency-groups]
 dev = [
-    "pre-commit>=3.3,<4",
+    "pre-commit>=4.5,<5",
     "textual-dev==1.8.0",
     "harlequin-postgres>=1.1.1,<2",
     "harlequin-mysql>=1,<2",
