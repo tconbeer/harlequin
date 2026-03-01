@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
     # textual and component libraries
-    "textual==6.4.0",
+    "textual==8.0.1",
     "textual-fastdatatable==0.14.0",
     "textual-textarea==0.17.2",
 
