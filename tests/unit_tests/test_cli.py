@@ -77,6 +77,7 @@ def test_default(
         profile_name=None,
         connection_hash=mock_adapter.return_value.connection_id,
         max_results=DEFAULT_LIMIT,
+        indent_width=4,
         keymap_names=DEFAULT_KEYMAP_NAMES,
         user_defined_keymaps=[],
         theme=DEFAULT_THEME,

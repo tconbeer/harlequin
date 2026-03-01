@@ -176,6 +176,7 @@ class EditorCollection(TabbedContent):
         disabled: bool = False,
         language: str = "sql",
         theme: str = "harlequin",
+        indent_width: int = 4,
     ):
         super().__init__(
             *titles,
@@ -187,6 +188,7 @@ class EditorCollection(TabbedContent):
         )
         self.language = language
         self.theme = theme
+        self.indent_width = indent_width
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
@@ -293,6 +295,8 @@ class EditorCollection(TabbedContent):
             id=new_tab_id,
         )
         await self.add_pane(pane)
+        if editor.text_input is not None:
+            editor.text_input.indent_width = self.indent_width
         if state is not None:
             editor.selection = state.selection
         else:

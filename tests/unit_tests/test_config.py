@@ -28,6 +28,7 @@ def test_load_config(data_dir: Path, filename: str) -> None:
         isinstance(good_config["profiles"][name], dict) for name in expected_profiles
     )
     assert good_config["profiles"]["my-duckdb-profile"]["limit"] == 200_000
+    assert good_config["profiles"]["my-duckdb-profile"]["indent_width"] == 2
 
 
 def test_load_keymap(data_dir: Path) -> None:
