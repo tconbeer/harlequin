@@ -76,6 +76,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--theme",
                 "--keymap-name",
                 "--limit",
+                "--indent-width",
                 "--config-path",
                 "--locale",
                 "--no-download-tzdata",
@@ -246,6 +247,16 @@ def build_cli() -> click.Command:
         default=DEFAULT_KEYMAP_NAMES,
     )
     @click.option(
+        "--indent-width",
+        default=4,
+        type=click.IntRange(min=1, max=16),
+        show_default=True,
+        help=(
+            "Set the number of spaces inserted when the Tab key is pressed in the "
+            "Query Editor. Valid range: 1-16."
+        ),
+    )
+    @click.option(
         "--config",
         help=(
             "Run the configuration wizard to create or update a Harlequin config file."
@@ -335,6 +346,7 @@ def build_cli() -> click.Command:
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
         max_results: str | int = config.pop("limit", DEFAULT_LIMIT)
+        indent_width: str | int = config.pop("indent_width", 4)
         theme: str = config.pop("theme", DEFAULT_THEME)
         keymap_names: list[str] = config.pop("keymap_name", DEFAULT_KEYMAP_NAMES)
         if isinstance(keymap_names, str):
@@ -372,6 +384,7 @@ def build_cli() -> click.Command:
             user_defined_keymaps=user_defined_keymaps,
             connection_hash=connection_id,
             max_results=max_results,
+            indent_width=indent_width,
             theme=theme,
             show_files=show_files,
             show_s3=show_s3,

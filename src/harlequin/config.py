@@ -22,6 +22,7 @@ class Profile(TypedDict, total=False):
     show_s3: str | None
     locale: str
     no_download_tzdata: bool
+    indent_width: int
     # many more keys for adapter options
 
 

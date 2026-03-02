@@ -198,6 +198,7 @@ class Harlequin(AppBase):
         show_files: Path | None = None,
         show_s3: str | None = None,
         max_results: int | str = 100_000,
+        indent_width: int | str = 4,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -226,6 +227,18 @@ class Harlequin(AppBase):
                     )
                 ),
             )
+        try:
+            self.indent_width = int(indent_width)
+        except ValueError:
+            self.exit(
+                return_code=2,
+                message=pretty_error_message(
+                    HarlequinConfigError(
+                        f"indent_width={indent_width!r} was set by config file "
+                        "but is not a valid integer."
+                    )
+                ),
+            )
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
         self.harlequin_driver = HarlequinDriver(app=self)
@@ -250,7 +263,7 @@ class Harlequin(AppBase):
             show_s3=self.show_s3,
         )
         self.editor_collection = EditorCollection(
-            language="sql", classes="hide-tabs"
+            language="sql", classes="hide-tabs", indent_width=self.indent_width
         ).data_bind(Harlequin.theme)
         self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None

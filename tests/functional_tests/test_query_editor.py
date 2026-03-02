@@ -15,6 +15,60 @@ from harlequin.catalog import CatalogItem
 
 
 @pytest.mark.asyncio
+async def test_indent_width_configuration(
+    duckdb_adapter: Callable,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Test that indent_width configuration is properly applied to the editor."""
+    # Test with custom indent_width of 2
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="test",
+        indent_width=2,
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        
+        assert app.editor.text_input is not None
+        assert app.editor.text_input.indent_width == 2
+        
+        # Test that tab inserts 2 spaces
+        app.editor.text = ""
+        app.editor.selection = Selection((0, 0), (0, 0))
+        app.editor.focus()
+        await pilot.press("tab")
+        await pilot.pause()
+        
+        assert app.editor.text == "  "
+        assert len(app.editor.text) == 2
+    
+    # Test with default indent_width of 4
+    app_default = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="test_default",
+    )
+    async with app_default.run_test() as pilot:
+        await wait_for_workers(app_default)
+        while app_default.editor is None:
+            await pilot.pause()
+        
+        assert app_default.editor.text_input is not None
+        assert app_default.editor.text_input.indent_width == 4
+        
+        # Test that tab inserts 4 spaces
+        app_default.editor.text = ""
+        app_default.editor.selection = Selection((0, 0), (0, 0))
+        app_default.editor.focus()
+        await pilot.press("tab")
+        await pilot.pause()
+        
+        assert app_default.editor.text == "    "
+        assert len(app_default.editor.text) == 4
+
+
+@pytest.mark.asyncio
 async def test_query_formatting(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
