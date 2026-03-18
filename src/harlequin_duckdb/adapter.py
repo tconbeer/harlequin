@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import duckdb
-from duckdb.typing import DuckDBPyType
+from duckdb.sqltypes import DuckDBPyType
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
