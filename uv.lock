@@ -966,7 +966,7 @@ wheels = [
 
 [[package]]
 name = "harlequin"
-version = "2.5.1"
+version = "2.5.2"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
