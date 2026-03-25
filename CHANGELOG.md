@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
 
 - Fixes a crash caused by DuckDB typing API change in DuckDB >= 1.5.0 ([#946](https://github.com/tconbeer/harlequin/pull/946), [#944](https://github.com/tconbeer/harlequin/pull/944) - thank you, [@draew6](https://github.com/draew6) and [@AJCThree](https://github.com/AJCThree)!)
-
 
 ## [2.5.1] - 2025-12-19
 
@@ -873,7 +873,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.2...HEAD
+[2.5.2]: https://github.com/tconbeer/harlequin/compare/2.5.1...2.5.2
 [2.5.1]: https://github.com/tconbeer/harlequin/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/tconbeer/harlequin/compare/2.4.1...2.5.0
 [2.4.1]: https://github.com/tconbeer/harlequin/compare/2.4.0...2.4.1
