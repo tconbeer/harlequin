@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
+### Bug Fixes
+
+- Fixes a crash caused by DuckDB typing API change in DuckDB >= 1.5.0 ([#946](https://github.com/tconbeer/harlequin/pull/946), [#944](https://github.com/tconbeer/harlequin/pull/944) - thank you, [@draew6](https://github.com/draew6) and [@AJCThree](https://github.com/AJCThree)!)
+
+
 ## [2.5.1] - 2025-12-19
 
 ### Bug Fixes

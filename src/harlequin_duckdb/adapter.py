@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import duckdb
-from duckdb.sqltypes import DuckDBPyType
+
+try:
+    from duckdb.sqltypes import DuckDBPyType
+except ImportError:
+    from duckdb.typing import DuckDBPyType  # type: ignore[import-not-found,no-redef]
+
 from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
