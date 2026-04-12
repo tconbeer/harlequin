@@ -42,7 +42,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create a Github Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.harlequin_version.outputs.harlequin_version }}
           target_commitish: main
