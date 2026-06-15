@@ -23,6 +23,7 @@ from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import load_adapter_plugins
+from harlequin.themes import get_theme_directory
 from harlequin.windows_timezone import check_and_install_tzdata
 
 # configure defaults
@@ -193,8 +194,9 @@ def build_cli() -> click.Command:
         show_default=True,
         help=(
             "Set the theme (colors) of the Harlequin IDE. "
-            "Must be `harlequin` or the name of a Textual theme: "
-            f"{ALL_THEMES}"
+            f"Built-in themes: {ALL_THEMES}. "
+            "Custom themes can be added as TOML files in "
+            f"{get_theme_directory()}."
         ),
     )
     @click.option(
