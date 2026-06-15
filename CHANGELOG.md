@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds support for user-defined custom themes loaded from TOML files. Place theme files in the directory printed by `harlequin --locate-themes` ([#966](https://github.com/tconbeer/harlequin/pull/966), [#855](https://github.com/tconbeer/harlequin/discussions/855)).
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
