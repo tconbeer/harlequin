@@ -10,7 +10,11 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual.widgets.text_area import Selection
-from textual_textarea import TextAreaSaved, TextEditor
+# from textual_textarea import TextAreaSaved, TextEditor
+
+from textual_textarea import TextAreaSaved
+from textual_vim_textarea.textarea_plus import Mode, VimTextAreaPlus
+from harlequin.components.vim_text_editor import VimTextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
@@ -18,7 +22,8 @@ from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
 
 
-class CodeEditor(TextEditor, inherit_bindings=False):
+# class CodeEditor(TextEditor, inherit_bindings=False):
+class CodeEditor(VimTextEditor, inherit_bindings=False):
     SEMICOLON_QUERY = '(";" @semicolon)'
 
     class Submitted(Message, bubble=True):
