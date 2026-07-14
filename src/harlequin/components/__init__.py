@@ -1,4 +1,4 @@
-from harlequin.components.code_editor import CodeEditor, EditorCollection
+from harlequin.components.code_editor import CodeEditor, EditorCollection, VimCodeEditor
 from harlequin.components.data_catalog import DataCatalog, HarlequinTree
 from harlequin.components.debug_info import DebugInfoScreen
 from harlequin.components.error_modal import ErrorModal
@@ -11,6 +11,7 @@ from harlequin.components.vim_status_bar import VimStatusBar
 
 __all__ = [
     "CodeEditor",
+    "VimCodeEditor",
     "EditorCollection",
     "ErrorModal",
     "ExportScreen",

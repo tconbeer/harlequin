@@ -203,6 +203,7 @@ class Harlequin(AppBase):
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
+        vim_code_editor: bool = False,
     ):
         super().__init__(
             theme=theme,
@@ -216,6 +217,7 @@ class Harlequin(AppBase):
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
+        self.vim_code_editor = vim_code_editor
         try:
             self.max_results = int(max_results)
         except ValueError:
@@ -252,7 +254,7 @@ class Harlequin(AppBase):
             show_s3=self.show_s3,
         )
         self.editor_collection = EditorCollection(
-            language="sql", classes="hide-tabs"
+            language="sql", classes="hide-tabs", vim_code_editor=self.vim_code_editor
         ).data_bind(Harlequin.theme)
         self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None

@@ -82,6 +82,7 @@ def test_default(
         theme=DEFAULT_THEME,
         show_files=None,
         show_s3=None,
+        vim_code_editor=False,
     )
 
 
