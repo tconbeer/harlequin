@@ -44,6 +44,7 @@ DEFAULT_VIM_RESULTS_VIEWER_KEYMAP = HarlequinKeyMap(
         HarlequinKeyBinding(keys="k,up", action="results_viewer.cursor_up"),
         HarlequinKeyBinding(keys="down,j", action="results_viewer.cursor_down"),
         HarlequinKeyBinding(keys="h,left", action="results_viewer.cursor_left"),
+        HarlequinKeyBinding(keys="l,right", action="results_viewer.cursor_right"),
     ],
 )
 
