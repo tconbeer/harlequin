@@ -26,21 +26,19 @@ dependencies = [
     "textual==6.4.0",
     "textual-fastdatatable==0.14.0",
     "textual-textarea==0.17.2",
-
     # click
     "click==8.1.8",
     "rich-click==1.8.5",
-
     # other deps
     "duckdb>=0.8.0; python_version < '3.14'",
     "shandy-sqlfmt>=0.28.2",
     "platformdirs>=3.10,<5.0",
     "tomlkit>=0.12.5,<0.14.0",
     "questionary==2.0.1",
-
     # ensure we install from wheels
     "duckdb>=1.4.2; python_version >= '3.14'",
     "pandas>=2.3; python_version >= '3.14'",
+    "textual-vim-textarea>=1.2.0",
 ]
 
 

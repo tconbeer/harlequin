@@ -598,7 +598,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -1018,6 +1018,7 @@ dependencies = [
     { name = "textual" },
     { name = "textual-fastdatatable" },
     { name = "textual-textarea" },
+    { name = "textual-vim-textarea" },
     { name = "tomlkit" },
 ]
 
@@ -1099,6 +1100,7 @@ requires-dist = [
     { name = "textual", specifier = "==6.4.0" },
     { name = "textual-fastdatatable", specifier = "==0.14.0" },
     { name = "textual-textarea", specifier = "==0.17.2" },
+    { name = "textual-vim-textarea", specifier = ">=1.2.0" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
 ]
 provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
@@ -2206,10 +2208,10 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
-    { name = "python-dateutil", marker = "python_full_version < '3.14'" },
-    { name = "pytz", marker = "python_full_version < '3.14'" },
-    { name = "tzdata", marker = "python_full_version < '3.14'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" } },
+    { name = "python-dateutil" },
+    { name = "pytz" },
+    { name = "tzdata" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9c/d6/9f8431bacc2e19dca897724cd097b1bb224a6ad5433784a44b587c7c13af/pandas-2.2.3.tar.gz", hash = "sha256:4f18ba62b61d7e192368b84517265a99b4d7ee8912f8708660fb4a366cc82667", size = 4399213, upload-time = "2024-09-20T13:10:04.827Z" }
 wheels = [
@@ -2258,10 +2260,10 @@ resolution-markers = [
     "python_full_version == '3.14.*'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
-    { name = "python-dateutil", marker = "python_full_version >= '3.14'" },
-    { name = "pytz", marker = "python_full_version >= '3.14'" },
-    { name = "tzdata", marker = "python_full_version >= '3.14'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "python-dateutil" },
+    { name = "pytz" },
+    { name = "tzdata" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/33/01/d40b85317f86cf08d853a4f495195c73815fdf205eef3993821720274518/pandas-2.3.3.tar.gz", hash = "sha256:e05e1af93b977f7eafa636d043f9f94c7ee3ac81af99c13508215942e64c993b", size = 4495223, upload-time = "2025-09-29T23:34:51.853Z" }
 wheels = [
@@ -3282,6 +3284,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d1/9e/1aa70bab939cac85442cbfe3ef94383329b6cbe2535223940f6846252582/textual_textarea-0.17.2.tar.gz", hash = "sha256:84bb2bfe545db70071914802e808dc411c16c21e7744adbcfc381f1390dd2c6b", size = 27615, upload-time = "2025-10-24T21:32:54.62Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/7e/fc0192c7e598c80c88c83cd0a11dbbe6821d557b48548082a0102fc3256e/textual_textarea-0.17.2-py3-none-any.whl", hash = "sha256:c416f6dd613269ca9746df0074897435c80bea18d75d75d24aea822574d2ade1", size = 26710, upload-time = "2025-10-24T21:32:53.035Z" },
+]
+
+[[package]]
+name = "textual-vim-textarea"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "textual" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/26/6e/b6a0b5c3786c96f506904e5d2c0f9cf1b1e0aaf79558a31e40b25f91a1e5/textual_vim_textarea-1.2.0.tar.gz", hash = "sha256:4ed2400beb45b6d58f019c1e975e06407bcd2246c65ed78f601655525ca95b0b", size = 49744, upload-time = "2026-07-14T12:32:14.274Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/c7/5851006ae56b6ae3a36a45b97343a86a94f84b3f033b3006332e822eed84/textual_vim_textarea-1.2.0-py3-none-any.whl", hash = "sha256:0bcef47971a6353eece98793b822be1dc453d31980989de00a833e21790809f2", size = 17116, upload-time = "2026-07-14T12:32:12.672Z" },
 ]
 
 [[package]]
