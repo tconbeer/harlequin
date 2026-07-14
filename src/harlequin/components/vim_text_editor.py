@@ -24,15 +24,6 @@ from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 
 
 class VimTextEditor(TextEditor):
-    """Identical to textual_textarea.TextEditor, except `compose()`
-    mounts VimTextAreaPlus instead of the stock TextAreaPlus as
-    `self.text_input`. Every other TextEditor feature (save/load/find/
-    goto-line footer inputs, autocomplete dropdown wiring, theming) is
-    inherited completely unchanged, since none of it depends on the
-    concrete class of `text_input` -- it only calls TextArea-level
-    methods on it.
-    """
-
     def compose(self) -> ComposeResult:
         self.text_container = TextContainer()
         self.text_input = VimTextAreaPlus(

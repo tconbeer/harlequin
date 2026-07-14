@@ -13,7 +13,6 @@ from textual.widgets.text_area import Selection
 # from textual_textarea import TextAreaSaved, TextEditor
 
 from textual_textarea import TextAreaSaved
-from textual_vim_textarea.textarea_plus import Mode, VimTextAreaPlus
 from harlequin.components.vim_text_editor import VimTextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
