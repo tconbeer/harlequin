@@ -20,10 +20,11 @@ class VimStatusBar(Static):
     DEFAULT_CSS = """
     VimStatusBar {
         height: 1;
-        background: $panel;
-        color: $text-muted;
+        width: 100%;
+        color: $primary;
         padding: 0 1;
     }
+    
     VimStatusBar.hide {
         display: none;
     }
