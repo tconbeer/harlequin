@@ -72,6 +72,13 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    vim_code_choice = questionary.select(
+        message="Enable Vim support in the Code Editor?",
+        choices=["Yes", "No"],
+        default="No",
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
     keymap_choices = [
         questionary.Choice(
             title=opt,
@@ -159,6 +166,7 @@ def _wizard(config_path: Path | None) -> None:
         "theme": theme,
         "limit": limit,
         "keymap_name": keymap_name,
+        "vim_code_editor": True if vim_code_choice == "Yes" else False,
     }
 
     if show_files:
