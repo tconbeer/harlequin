@@ -65,9 +65,11 @@ from harlequin.components import (
     HistoryScreen,
     ResultsViewer,
     RunQueryBar,
+    VimStatusBar,
     export_callback,
 )
 from harlequin.components.confirm_modal import ConfirmModal
+from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
@@ -264,12 +266,14 @@ class Harlequin(AppBase):
             show_cancel_button=self.adapter.IMPLEMENTS_CANCEL,
         )
         self.footer = Footer(show_command_palette=False)
+        self.vim_status_bar = VimStatusBar(id="vim_status_bar", classes="hide")
 
         # lay out the widgets
         with Horizontal():
             yield self.data_catalog
             with Vertical(id="main_panel"):
                 yield editor_placeholder
+                yield self.vim_status_bar
                 yield self.run_query_bar
                 yield self.results_viewer
         yield self.footer
@@ -500,6 +504,48 @@ class Harlequin(AppBase):
         self.editor.focus()
         self._sync_run_button_disabled()
         self._sync_run_button_text()
+
+    @on(EditorCollection.EditorSwitched)
+    def _sync_vim_status_bar_on_switch(
+        self, message: EditorCollection.EditorSwitched
+    ) -> None:
+        # Deliberately reads editor_collection.current_editor directly,
+        # rather than self.editor -- Textual doesn't guarantee this
+        # handler runs after update_internal_editor_state above just
+        # because it's declared later, so this can't depend on that
+        # other handler having already set self.editor.
+        try:
+            editor = self.editor_collection.current_editor
+        except NoMatches:
+            return
+        self._sync_vim_status_bar(editor)
+
+    def on_vim_text_area_plus_mode_changed(
+        self, message: VimTextAreaPlus.ModeChanged
+    ) -> None:
+        # a mode change doesn't carry the full status text, and the
+        # message could in principle come from a buffer that isn't the
+        # currently-focused one -- always resync from whichever editor
+        # is actually current
+        try:
+            editor = self.editor_collection.current_editor
+        except NoMatches:
+            return
+        self._sync_vim_status_bar(editor)
+
+    def on_vim_text_area_plus_status_changed(
+        self, message: VimTextAreaPlus.StatusChanged
+    ) -> None:
+        self.vim_status_bar.update(message.status)
+        self.vim_status_bar.remove_class("hide")
+
+    def _sync_vim_status_bar(self, editor: CodeEditor) -> None:
+        text_input = getattr(editor, "text_input", None)
+        if isinstance(text_input, VimTextAreaPlus):
+            self.vim_status_bar.update(text_input.status_text)
+            self.vim_status_bar.remove_class("hide")
+        else:
+            self.vim_status_bar.add_class("hide")
 
     def on_text_area_changed(self) -> None:
         self._sync_run_button_disabled()
