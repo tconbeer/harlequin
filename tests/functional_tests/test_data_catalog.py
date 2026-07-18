@@ -1,13 +1,15 @@
 import sys
 from pathlib import Path
-from typing import Awaitable, Callable, List, NamedTuple, Type
+from typing import Awaitable, Callable, List, NamedTuple, Set, Type
 from unittest.mock import MagicMock
 
 import pytest
 from textual.geometry import Offset
+from textual.widgets import Input
 
 from harlequin import Harlequin
 from harlequin.catalog import InteractiveCatalogItem
+from harlequin.components import ExportScreen
 from harlequin_duckdb.adapter import DuckDbAdapter
 
 
@@ -287,3 +289,91 @@ async def test_context_menu(
         snap_results.append(await app_snapshot(app, "table context menu expanded"))
 
         assert all(snap_results)
+
+
+def _file_tree_paths(app: Harlequin) -> Set[Path]:
+    """Return the paths of the top-level nodes in the file tree."""
+    assert app.data_catalog.file_tree is not None
+    return {
+        node.data.path
+        for node in app.data_catalog.file_tree.root.children
+        if node.data is not None
+    }
+
+
+@pytest.mark.asyncio
+async def test_file_tree_refreshes_after_editor_save(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """
+    Regression test for https://github.com/tconbeer/harlequin/issues/871:
+    the file tree should refresh after Harlequin saves a file from the editor,
+    without the user having to manually refresh the catalog.
+    """
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        assert app.data_catalog.file_tree is not None
+
+        new_file = tmp_path / "saved_by_harlequin.sql"
+        assert new_file not in _file_tree_paths(app)
+
+        app.editor.focus()
+        app.editor.text = "select 1"
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        save_input = app.editor.query_one("#textarea__save_input", Input)
+        save_input.value = str(new_file)
+        await pilot.press("enter")
+
+        for _ in range(100):
+            await pilot.pause()
+            if new_file in _file_tree_paths(app):
+                break
+
+        assert new_file.is_file()
+        assert new_file in _file_tree_paths(app)
+
+
+@pytest.mark.asyncio
+async def test_file_tree_refreshes_after_export(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """
+    Regression test for https://github.com/tconbeer/harlequin/issues/871:
+    the file tree should refresh after Harlequin exports data to a file,
+    without the user having to manually refresh the catalog.
+    """
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
+    async with app.run_test(size=(120, 36)) as pilot:
+        while app.editor is None:
+            await pilot.pause()
+
+        app.editor.text = "select 1 as a, 2 as b"
+        await pilot.press("ctrl+j")  # run query
+        for _ in range(100):
+            await pilot.pause()
+            if app.results_viewer.get_visible_table() is not None:
+                break
+        assert app.results_viewer.get_visible_table() is not None
+
+        export_path = tmp_path / "exported.csv"
+        assert export_path not in _file_tree_paths(app)
+
+        await pilot.press("ctrl+e")
+        while not isinstance(app.screen, ExportScreen):
+            await pilot.pause()
+        app.screen.file_input.value = str(export_path)
+        await pilot.pause()
+        await pilot.press("enter")
+
+        for _ in range(100):
+            await pilot.pause()
+            if export_path in _file_tree_paths(app):
+                break
+
+        assert export_path.is_file()
+        assert export_path in _file_tree_paths(app)

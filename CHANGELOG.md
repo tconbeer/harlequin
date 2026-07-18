@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Refreshes the file tree in the Data Catalog after Harlequin writes a file, either by saving from the editor or exporting data, so newly written files appear without a manual refresh ([#871](https://github.com/tconbeer/harlequin/issues/871)).
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
