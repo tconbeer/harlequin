@@ -1046,6 +1046,9 @@ odbc = [
 postgres = [
     { name = "harlequin-postgres" },
 ]
+questdb = [
+    { name = "harlequin-questdb" },
+]
 s3 = [
     { name = "boto3" },
 ]
@@ -1090,6 +1093,7 @@ requires-dist = [
     { name = "harlequin-nebulagraph", marker = "extra == 'nebulagraph'" },
     { name = "harlequin-odbc", marker = "extra == 'odbc'" },
     { name = "harlequin-postgres", marker = "extra == 'postgres'" },
+    { name = "harlequin-questdb", marker = "extra == 'questdb'" },
     { name = "harlequin-trino", marker = "extra == 'trino'" },
     { name = "pandas", marker = "python_full_version >= '3.14'", specifier = ">=2.3" },
     { name = "platformdirs", specifier = ">=3.10,<5.0" },
@@ -1101,7 +1105,7 @@ requires-dist = [
     { name = "textual-textarea", specifier = "==0.17.2" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
 ]
-provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
+provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph", "questdb"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1231,6 +1235,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9d/2e/ee282a4eeb39492befbbec4d26529b33cdfcfe407e26f75efdcc4e1fc5a4/harlequin_postgres-1.2.2.tar.gz", hash = "sha256:bbfc7c271d727d4b454985faa32bce64999d3d66da3a4167dce19076ac722bc0", size = 19651, upload-time = "2025-09-12T22:28:02.136Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/53/0d/5c6684624798967b6297c39157e1a041ea120b155ab834f5d942cc110050/harlequin_postgres-1.2.2-py3-none-any.whl", hash = "sha256:a42ce2e4aa2980b9bd6ca200e968cc2d46d4a3e3d7df81cc27f67e472931bb4d", size = 21002, upload-time = "2025-09-12T22:28:01.261Z" },
+]
+
+[[package]]
+name = "harlequin-questdb"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "harlequin" },
+    { name = "psycopg", extra = ["binary"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ee/02/2d697ce1824f548a7077066aba3c3892abb2be18b275d4df86ba480ea3c1/harlequin_questdb-0.3.2.tar.gz", hash = "sha256:b7a01ac176e9782a3c2a595f4d1bad539d87d8452f50f3348f32a346be927632", size = 97497, upload-time = "2026-06-30T12:46:38.265Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/b7/ce4f6092e3c2e424406500311336d36f505103c28f11c129141876679803/harlequin_questdb-0.3.2-py3-none-any.whl", hash = "sha256:142699ef40b008180bd4dd558854081d1a30a9247332d41bcedfdb8cba79f543", size = 5777, upload-time = "2026-06-30T12:46:37.016Z" },
 ]
 
 [[package]]

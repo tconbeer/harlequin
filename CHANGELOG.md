@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-   The QuestDB adapter is now installable as an extra; use `pip install harlequin[questdb]`.
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
@@ -189,7 +191,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-- Harlequin no longer crashes when attempting to display negative datetime values ([#568](https://github.com/tconbeer/harlequin/issues/568)). 
+- Harlequin no longer crashes when attempting to display negative datetime values ([#568](https://github.com/tconbeer/harlequin/issues/568)).
 
 ## [1.23.0] - 2024-07-11
 
@@ -596,7 +598,7 @@ All notable changes to this project will be documented in this file.
 ### Testing
 
 - Harlequin now uses snapshot testing on screenshots to prevent regresssions ([#252](https://github.com/tconbeer/harlequin/issues/252)).
-- Harlequin no longer installs extensions or connects to MotherDuck in CI, due to flaky failures around the time of DuckDB releases ([#262](https://github.com/tconbeer/harlequin/issues/262)).   
+- Harlequin no longer installs extensions or connects to MotherDuck in CI, due to flaky failures around the time of DuckDB releases ([#262](https://github.com/tconbeer/harlequin/issues/262)).
 
 ## [1.1.0] - 2023-10-02
 
