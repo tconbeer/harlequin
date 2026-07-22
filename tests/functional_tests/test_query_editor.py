@@ -29,6 +29,21 @@ async def test_query_formatting(
         assert app.editor.text == "select 1 from foo\n"
 
 
+@pytest.mark.asyncio
+async def test_delete_word_left(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select foo"
+        await pilot.press("ctrl+end")
+        await pilot.press("ctrl+backspace")
+        assert app.editor.text == "select "
+
+
 @pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_multiple_buffers(
