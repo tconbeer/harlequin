@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a bug where keymap bindings targeting the inner text area (e.g., `delete_word_left`, `delete_line`) were never actually attached, since `CodeEditor` only announced itself, not its inner `TextAreaPlus`, as mounted; adds a default `ctrl+backspace` binding for `delete_word_left` to the `vscode` keymap.
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes

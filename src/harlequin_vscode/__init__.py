@@ -64,6 +64,7 @@ VSCODE_EDITOR_BINDINGS = [
     HarlequinKeyBinding("backspace", "code_editor.delete_left"),
     HarlequinKeyBinding("delete", "code_editor.delete_right"),
     HarlequinKeyBinding("shift+delete", "code_editor.delete_line"),
+    HarlequinKeyBinding("ctrl+backspace", "code_editor.delete_word_left"),
 ]
 VSCODE_DATA_CATALOG_BINDINGS = [
     HarlequinKeyBinding("j", "data_catalog.previous_tab"),

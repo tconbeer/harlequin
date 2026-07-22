@@ -72,6 +72,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
         self.post_message(WidgetMounted(widget=self))
+        if self.text_input is not None:
+            self.post_message(WidgetMounted(widget=self.text_input))
         self.has_shown_clipboard_error = False
         self.has_shown_tree_sitter_error = False
         self._semicolon_query = self.prepare_query(self.SEMICOLON_QUERY)
