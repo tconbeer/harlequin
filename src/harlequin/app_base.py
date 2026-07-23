@@ -12,7 +12,9 @@ from harlequin.colors import HARLEQUIN_TEXTUAL_THEME
 from harlequin.exception import (
     HarlequinThemeError,
     pretty_error_message,
+    pretty_print_warning,
 )
+from harlequin.themes import load_user_themes
 
 
 class ScreenBase(Screen):
@@ -42,18 +44,30 @@ class AppBase(App, inherit_bindings=False):
     ):
         super().__init__(driver_class, css_path, watch_css)
         self.register_theme(HARLEQUIN_TEXTUAL_THEME)
+
+        user_themes = load_user_themes()
+        for user_theme in user_themes.loaded_themes.values():
+            self.register_theme(user_theme)
+        for path, exc in user_themes.failed_themes:
+            pretty_print_warning(
+                title="Harlequin couldn't load a theme.",
+                message=f"Failed to load theme from {path}:\n{exc}",
+            )
+
         try:
             self.theme = theme or "harlequin"
         except InvalidThemeError:
             from harlequin.colors import VALID_THEMES
 
-            valid_themes = ", ".join(VALID_THEMES.keys())
+            all_themes = sorted(
+                {*VALID_THEMES.keys(), *user_themes.loaded_themes.keys()}
+            )
             e = HarlequinThemeError(
                 (
-                    f"No theme found with the name {theme}.\n"
-                    "Supported themes changed in Harlequin v2.0.0. "
-                    "Theme must be `harlequin` or the name of a Textual Theme:\n"
-                    f"{valid_themes}"
+                    f"No theme found with the name {theme!r}.\n"
+                    "Theme must be `harlequin`, the name of a Textual built-in theme, "
+                    "or a custom theme loaded from your theme directory.\n"
+                    f"Available themes: {', '.join(all_themes)}"
                 ),
                 title="Harlequin couldn't load your theme.",
             )

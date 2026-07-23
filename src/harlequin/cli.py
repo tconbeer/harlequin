@@ -23,6 +23,7 @@ from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import load_adapter_plugins
+from harlequin.themes import get_theme_directory
 from harlequin.windows_timezone import check_and_install_tzdata
 
 # configure defaults
@@ -86,6 +87,7 @@ click.rich_click.OPTION_GROUPS = {
             "options": [
                 "--config",
                 "--keys",
+                "--locate-themes",
                 "--version",
                 "--help",
             ],
@@ -117,6 +119,13 @@ def _version_option() -> str:
     )
 
     return output
+
+
+def _locate_themes_callback(ctx: click.Context, param: Any, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    print(get_theme_directory())
+    ctx.exit(0)
 
 
 def _config_wizard_callback(ctx: click.Context, param: Any, value: bool) -> None:
@@ -193,8 +202,9 @@ def build_cli() -> click.Command:
         show_default=True,
         help=(
             "Set the theme (colors) of the Harlequin IDE. "
-            "Must be `harlequin` or the name of a Textual theme: "
-            f"{ALL_THEMES}"
+            f"Built-in themes: {ALL_THEMES}. "
+            "Custom themes can be added as TOML files in "
+            f"{get_theme_directory()}."
         ),
     )
     @click.option(
@@ -260,6 +270,17 @@ def build_cli() -> click.Command:
         is_flag=True,
         callback=_keys_app_callback,
         expose_value=True,
+    )
+    @click.option(
+        "--locate-themes",
+        help=(
+            "Print the path to the user theme directory and exit. "
+            "Place custom .toml theme files in this directory."
+        ),
+        is_flag=True,
+        callback=_locate_themes_callback,
+        expose_value=False,
+        is_eager=True,
     )
     @click.option(
         "--locale",
