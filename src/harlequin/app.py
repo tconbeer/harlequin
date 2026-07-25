@@ -423,6 +423,13 @@ class Harlequin(AppBase):
         self.editor.copy_to_clipboard(text)
         self.notify(success_message)
 
+    def action_close_editor_tab(self, tab_id: str) -> None:
+        """Close a specific editor tab; called by the clickable ✕ on each tab.
+        Deferred on a short timer so the click's own tab-activation message is
+        processed first (activating the tab while it still exists); otherwise the
+        activation lands on an already-removed tab and Textual raises."""
+        self.set_timer(0.1, partial(self.editor_collection.close_buffer_by_id, tab_id))
+
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()

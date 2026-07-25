@@ -313,8 +313,10 @@ class EditorCollection(TabbedContent):
             word_completer=self.word_completer,
             member_completer=self.member_completer,
         )
+        # The trailing ✕ is a clickable close button (Textual @click markup);
+        # clicking it closes this specific tab, clicking the label selects it.
         pane = TabPane(
-            f"Tab {self.counter}",
+            f"Tab {self.counter} [@click=app.close_editor_tab('{new_tab_id}')]✕[/]",
             editor,
             id=new_tab_id,
         )
@@ -340,6 +342,35 @@ class EditorCollection(TabbedContent):
             self.current_editor.text = ""
             self.current_editor.cursor = (0, 0)  # type: ignore
         self.current_editor.focus()
+
+    def close_buffer_by_id(self, tab_id: str) -> None:
+        """Close a specific tab (used by the clickable ✕ on each tab)."""
+        if self.tab_count <= 1:
+            self.current_editor.text = ""
+            self.current_editor.cursor = (0, 0)  # type: ignore
+            return
+        if self.tab_count == 2:
+            self.add_class("hide-tabs")
+        # If we're closing the active tab, move focus to another tab FIRST so the
+        # TabbedContent doesn't try to re-activate the tab we're about to remove
+        # (that raises "No Tab with id ..."). This is what makes closing a
+        # non-active/restored tab work, not just the active one.
+        if self.active == tab_id:
+            other = next(
+                (
+                    pane.id
+                    for pane in self.query(TabPane)
+                    if pane.id and pane.id != tab_id
+                ),
+                None,
+            )
+            if other is not None:
+                self.active = other
+        self.remove_pane(tab_id)
+        try:
+            self.current_editor.focus()
+        except NoMatches:
+            pass
 
     def action_next_buffer(self) -> None:
         active = self.active
