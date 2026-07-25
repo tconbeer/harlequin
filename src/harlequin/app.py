@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -70,6 +71,7 @@ from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import (
     get_config_for_profile,
     get_highest_priority_existing_config_file,
@@ -423,6 +425,45 @@ class Harlequin(AppBase):
         self.editor.copy_to_clipboard(text)
         self.notify(success_message)
 
+    @on(ResultsTable.ForeignKeyFollowed)
+    async def follow_foreign_key(
+        self, message: ResultsTable.ForeignKeyFollowed
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            self._recycle_message(message)
+            return
+        literal = self._sql_literal(message.value)
+        query = (
+            f"select *\nfrom {message.ref_table}\n"
+            f"where {message.ref_col} = {literal}\nlimit 100"
+        )
+        await self.editor_collection.insert_buffer_with_text(query_text=query)
+        self.post_message(QuerySubmitted(queries=[query], limit=None))
+
+    @on(ResultsTable.CellEditRequested)
+    def edit_cell_value(self, message: ResultsTable.CellEditRequested) -> None:
+        message.stop()
+        # TODO: open an edit popup and write the change back (next feature).
+        self.notify(
+            f"Edit cell (row {message.row}, col {message.column}): "
+            f"{message.value!r} — edit popup coming next.",
+            title="Cell edit",
+        )
+
+    @staticmethod
+    def _sql_literal(value: Any) -> str:
+        """Render a Python value as a SQL literal for a WHERE clause. Numbers are
+        emitted bare; everything else is single-quoted (Postgres implicitly casts
+        quoted values for int/uuid/text keys)."""
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
@@ -669,10 +710,22 @@ class Harlequin(AppBase):
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
         for id_, (cols, data, query_text) in message.data.items():
+            # Ask the cursor which result columns are foreign keys (adapters that
+            # don't support it simply won't have the method).
+            fk_map: dict[int, tuple[str, str]] = {}
+            cursor_tuple = message.cursors.get(id_)
+            if cursor_tuple is not None:
+                fk_fn = getattr(cursor_tuple[0], "foreign_key_columns", None)
+                if callable(fk_fn):
+                    try:
+                        fk_map = fk_fn()
+                    except Exception:
+                        fk_map = {}
             table = await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
                 data=data,
+                fk_map=fk_map,
             )
             self.append_to_history(
                 query_text=query_text,
