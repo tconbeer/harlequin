@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Double-clicking (or pressing <kbd>enter</kbd> on) a table or view in the Data Catalog now opens its data directly, running `select * from <relation> limit 100` in a new buffer, instead of only inserting its name into the editor.
+
 ### Performance
 
 - Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
