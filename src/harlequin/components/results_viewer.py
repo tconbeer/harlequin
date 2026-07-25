@@ -54,24 +54,46 @@ class ResultsTable(DataTable, inherit_bindings=False):
 
     # {result-column-index: (referenced_qualified_table, referenced_column)}
     fk_map: dict[int, tuple[str, str]] = {}
+    # {result-column-index: (qualified_table, quoted_column, is_primary_key)} for
+    # cells that map to a plain table column and can be edited in place.
+    edit_map: dict[int, tuple[str, str, bool]] = {}
     _fk_glyph = " ↗"
 
     def on_mount(self) -> None:
         self.post_message(WidgetMounted(widget=self))
         self._pending_fk_timer: Any = None
+        self._edited_cells: dict[tuple[int, int], Any] = {}
+
+    def apply_edit(self, row: int, column: int, value: Any) -> None:
+        """Overlay a new value for a cell after an in-place edit. The result
+        backend is immutable, so edited values are kept in a side map and
+        rendered (and returned by get_cell_at) from there."""
+        self._edited_cells[(row, column)] = value
+        self.refresh()
+
+    def get_cell_at(self, coordinate: Coordinate) -> Any:
+        edited = getattr(self, "_edited_cells", {})
+        key = (coordinate.row, coordinate.column)
+        if key in edited:
+            return edited[key]
+        return super().get_cell_at(coordinate)
 
     def _get_cell_renderable(
         self, row_index: int, column_index: int
     ) -> RenderableType | Text:
-        """Render a foreign-key cell as its value plus a glyph. The raw value
-        (get_cell_at) is untouched, so navigation/editing/copy use the real value.
-        Non-FK cells fall through to the default renderer."""
+        """Render a foreign-key cell as its value plus a glyph, and edited cells
+        from the overlay. get_cell_at reflects edits too, so navigation/copy use
+        the current value. Everything else falls through to the default renderer."""
+        edited = getattr(self, "_edited_cells", {})
         if row_index >= 0 and column_index in self.fk_map:
             raw = self.get_cell_at(Coordinate(row_index, column_index))
             if raw is not None:
                 cell = Text(str(raw))
                 cell.append(self._fk_glyph, Style(color="cyan", bold=True))
                 return cell
+        if (row_index, column_index) in edited:
+            raw = edited[(row_index, column_index)]
+            return Text("" if raw is None else str(raw))
         return super()._get_cell_renderable(row_index, column_index)
 
     @on(events.Click)
@@ -220,8 +242,10 @@ class ResultsViewer(TabbedContent, can_focus=True):
         column_labels: list[tuple[str, str]],
         data: AutoBackendType,
         fk_map: dict[int, tuple[str, str]] | None = None,
+        edit_map: dict[int, tuple[str, str, bool]] | None = None,
     ) -> ResultsTable:
         fk_map = fk_map or {}
+        edit_map = edit_map or {}
         formatted_labels = [
             self._format_column_label(col_name, col_type)
             for col_name, col_type in column_labels
@@ -238,6 +262,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             render_markup=False,
         )
         table.fk_map = fk_map
+        table.edit_map = edit_map
         n = self.tab_count + 1
         if n > 1:
             self.remove_class("hide-tabs")

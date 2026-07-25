@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Foreign-key cells in the Results Viewer are marked with a `↗` glyph; single-clicking one navigates to the referenced row (`select * from <ref_table> where <ref_col> = <value>`) in a new buffer. Requires an adapter that reports foreign keys (supported by harlequin-postgres); works across joins.
+- Double-clicking a result cell now opens an editor to change its value; on confirm it runs an `UPDATE` against the source table (with the row identified by its primary key) and reflects the new value in the grid. Requires an adapter that reports editable columns (supported by harlequin-postgres).
 
 ### Performance
 
