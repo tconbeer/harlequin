@@ -13,6 +13,7 @@ from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import get_config_for_profile
 from harlequin.config_wizard import wizard
+from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinLocaleError,
@@ -31,6 +32,21 @@ DEFAULT_LIMIT = 100_000
 DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())
 DEFAULT_KEYMAP_NAMES = ["vscode"]
+
+# Auto-applied whenever vim_code_editor=True in the active profile, so users
+# don't have to hand-write this in their own config just to get vim-style
+# navigation in the results viewer too. If a profile already defines its own
+# keymap named "vim" (via [[keymaps.vim]] in a config file), that one is used
+# instead -- this default is only a fallback, never an override.
+DEFAULT_VIM_RESULTS_VIEWER_KEYMAP = HarlequinKeyMap(
+    name="vim",
+    bindings=[
+        HarlequinKeyBinding(keys="k,up", action="results_viewer.cursor_up"),
+        HarlequinKeyBinding(keys="down,j", action="results_viewer.cursor_down"),
+        HarlequinKeyBinding(keys="h,left", action="results_viewer.cursor_left"),
+        HarlequinKeyBinding(keys="l,right", action="results_viewer.cursor_right"),
+    ],
+)
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -350,6 +366,18 @@ def build_cli() -> click.Command:
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
 
+        # must be popped before it's passed to the adapter below, same as
+        # every other harlequin-only option above
+        vim_code_editor: bool = bool(config.pop("vim_code_editor", False))
+        if vim_code_editor:
+            if not any(km.name == "vim" for km in user_defined_keymaps):
+                user_defined_keymaps = [
+                    *user_defined_keymaps,
+                    DEFAULT_VIM_RESULTS_VIEWER_KEYMAP,
+                ]
+            if "vim" not in keymap_names:
+                keymap_names = [*keymap_names, "vim"]
+
         # load and instantiate the adapter
         adapter: str = config.pop("adapter", DEFAULT_ADAPTER)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]
@@ -375,6 +403,7 @@ def build_cli() -> click.Command:
             theme=theme,
             show_files=show_files,
             show_s3=show_s3,
+            vim_code_editor=vim_code_editor,
         )
         tui.run()
 

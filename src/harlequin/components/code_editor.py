@@ -10,10 +10,12 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
 from textual.widgets.text_area import Selection
+
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
+from harlequin.components.vim_text_editor import VimTextEditor
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
 
@@ -159,6 +161,20 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             return semicolons
 
 
+class VimCodeEditor(CodeEditor, VimTextEditor, inherit_bindings=False):
+    """CodeEditor with vim-modal editing.
+
+    Deliberately not a rewrite -- multiple inheritance here means every
+    CodeEditor method (selected_queries, action_format,
+    _query_separators, on_text_area_saved, etc.) is inherited completely
+    unchanged. The only thing that actually differs is compose(): since
+    CodeEditor itself never overrides compose(), Python's MRO resolves it
+    to VimTextEditor.compose() instead (which mounts VimTextAreaPlus as
+    text_input rather than plain TextAreaPlus) -- so this class needs no
+    body of its own at all.
+    """
+
+
 class EditorCollection(TabbedContent):
     BORDER_TITLE = "Query Editor"
     theme: reactive[str] = reactive("harlequin")
@@ -178,6 +194,7 @@ class EditorCollection(TabbedContent):
         disabled: bool = False,
         language: str = "sql",
         theme: str = "harlequin",
+        vim_code_editor: bool = False,
     ):
         super().__init__(
             *titles,
@@ -193,6 +210,9 @@ class EditorCollection(TabbedContent):
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
         self.startup_cache = load_cache()
+        self._editor_cls: type[CodeEditor] = (
+            VimCodeEditor if vim_code_editor else CodeEditor
+        )
 
     @property
     def current_editor(self) -> CodeEditor:
@@ -281,7 +301,7 @@ class EditorCollection(TabbedContent):
     ) -> CodeEditor:
         self.counter += 1
         new_tab_id = f"tab-{self.counter}"
-        editor = CodeEditor(
+        editor = self._editor_cls(
             id=f"buffer-{self.counter}",
             text=state.text if state is not None else "",
             language=self.language,
