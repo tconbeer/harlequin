@@ -1301,8 +1301,8 @@ requires-dist = [
     { name = "rich-click", specifier = "==1.8.5" },
     { name = "shandy-sqlfmt", specifier = ">=0.28.2" },
     { name = "textual", specifier = "==6.4.0" },
-    { name = "textual-fastdatatable", specifier = "==0.14.0" },
-    { name = "textual-textarea", specifier = "==0.17.2" },
+    { name = "textual-fastdatatable", specifier = "==0.15.0" },
+    { name = "textual-textarea", specifier = "==0.17.3" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
 ]
 provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
@@ -3358,7 +3358,7 @@ wheels = [
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.14.0"
+version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -3369,9 +3369,9 @@ dependencies = [
     { name = "textual" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/ec/8cc2204560200dcc80abc432a61eb6f99672049aecfd0860472cfc3f82fe/textual_fastdatatable-0.14.0.tar.gz", hash = "sha256:cb99e208fb96c7eb5cfb7f225a280da950bd8cfb29d685a49071787c80218901", size = 35202, upload-time = "2025-10-25T17:44:46.786Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/86/25c3c7c5397a5023d8477bd64c14dbf6ab401195007601914bc93132f1ac/textual_fastdatatable-0.15.0.tar.gz", hash = "sha256:b4c5ab6c90d510c52bfbbc19d4a978a6f0311b358a9bc7bbaefe2870dd730676", size = 35529, upload-time = "2026-08-03T22:34:43.677Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/c6/92b5af55575997aeba1d434dedadcc333eab83c47d5e8b3b0d8b7dca0250/textual_fastdatatable-0.14.0-py3-none-any.whl", hash = "sha256:4873ed8f339365c284f98e2e7f8fffbdcaef0a74b8c031d86d91964569c56986", size = 33301, upload-time = "2025-10-25T17:44:43.969Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/5c/83bb88aa59c15330d737cf4232c156245a4dbd299a1e66e4db4511294608/textual_fastdatatable-0.15.0-py3-none-any.whl", hash = "sha256:267fa7b3672b46c12ac479c28ed08e36cde09d5331a4446f4d3225db83a59540", size = 33524, upload-time = "2026-08-03T22:34:42.218Z" },
 ]
 
 [[package]]
@@ -3392,15 +3392,15 @@ wheels = [
 
 [[package]]
 name = "textual-textarea"
-version = "0.17.2"
+version = "0.17.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyperclip" },
     { name = "textual", extra = ["syntax"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/9e/1aa70bab939cac85442cbfe3ef94383329b6cbe2535223940f6846252582/textual_textarea-0.17.2.tar.gz", hash = "sha256:84bb2bfe545db70071914802e808dc411c16c21e7744adbcfc381f1390dd2c6b", size = 27615, upload-time = "2025-10-24T21:32:54.62Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/21/b2662e28ad126944594da2b273afb782ef06ad456ceb3601ba388854e7c6/textual_textarea-0.17.3.tar.gz", hash = "sha256:be27de85017540c75244ca2459d7046c74b479ae45538b5c178623c0845e06d0", size = 27577, upload-time = "2026-08-03T22:34:01.19Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/7e/fc0192c7e598c80c88c83cd0a11dbbe6821d557b48548082a0102fc3256e/textual_textarea-0.17.2-py3-none-any.whl", hash = "sha256:c416f6dd613269ca9746df0074897435c80bea18d75d75d24aea822574d2ade1", size = 26710, upload-time = "2025-10-24T21:32:53.035Z" },
+    { url = "https://files.pythonhosted.org/packages/11/fb/30ef1f9309ca0b9475bd0432f3c6a0e0768b21866a8fe7c68967c28f6c89/textual_textarea-0.17.3-py3-none-any.whl", hash = "sha256:e2c9d5a16ec5323f26ba835afd974f6aa28f847af46209ffc467179b650cfbd3", size = 26568, upload-time = "2026-08-03T22:33:59.937Z" },
 ]
 
 [[package]]

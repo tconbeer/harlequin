@@ -4,9 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
+- Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
+- Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+
 ### Refactoring
 
 - The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+- The Query Editor now uses Textual's `Click.chain` for double-, triple-, and quadruple-click selection, instead of tracking consecutive clicks with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
 ## [2.6.0] - 2026-08-03
 
