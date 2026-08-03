@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Autocomplete no longer re-sorts the full completion list every time the Data Catalog lazy-loads a node's children; new completions are staged and merged at most once per second. This keeps the UI responsive while the catalog loads in the background, especially against high-latency (remote) databases.
 ### Bug Fixes
 
 - Refreshes the file tree in the Data Catalog after Harlequin writes a file, either by saving from the editor or exporting data, so newly written files appear without a manual refresh ([#871](https://github.com/tconbeer/harlequin/issues/871)).

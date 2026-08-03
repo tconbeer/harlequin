@@ -27,6 +27,7 @@ from textual.lazy import Lazy
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
+from textual.timer import Timer
 from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
@@ -229,6 +230,7 @@ class Harlequin(AppBase):
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
         self.harlequin_driver = HarlequinDriver(app=self)
+        self._completer_merge_timer: Timer | None = None
 
         if keymap_names is None:
             keymap_names = ("vscode",)
@@ -1172,12 +1174,27 @@ class Harlequin(AppBase):
             self.editor_collection.word_completer is not None
             and self.editor_collection.member_completer is not None
         ):
+            # appending to the catalog is cheap, but merging the full
+            # completion list is O(n log n), so when the Data Catalog's lazy
+            # loader delivers a stream of items (one message per node), we
+            # defer the merge and run it at most once per second.
             self.editor_collection.word_completer.extend_catalog(
-                parent=parent, items=items
+                parent=parent, items=items, defer_merge=True
             )
             self.editor_collection.member_completer.extend_catalog(
-                parent=parent, items=items
+                parent=parent, items=items, defer_merge=True
             )
+            if self._completer_merge_timer is None:
+                self._completer_merge_timer = self.set_timer(
+                    1.0, self._merge_completers
+                )
+
+    def _merge_completers(self) -> None:
+        self._completer_merge_timer = None
+        if self.editor_collection.word_completer is not None:
+            self.editor_collection.word_completer.merge()
+        if self.editor_collection.member_completer is not None:
+            self.editor_collection.member_completer.merge()
 
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:
