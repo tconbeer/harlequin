@@ -274,7 +274,7 @@ def test_bad_profile_opt(
     res = runner.invoke(build_cli(), args=harlequin_args)
     assert res.exit_code == 2
     key_words = ["profile", "config"]
-    assert all([w in res.stdout for w in key_words])
+    assert all([w in res.stderr for w in key_words])
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
@@ -331,7 +331,7 @@ def test_bad_config_exits(
     res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 2
     key_words = ["default_profile", "foo"]
-    assert all([w in res.stdout for w in key_words])
+    assert all([w in res.stderr for w in key_words])
 
 
 @pytest.mark.skipif(
