@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Refactoring
+
+- The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+
 ## [2.6.0] - 2026-08-03
 
 ### Performance

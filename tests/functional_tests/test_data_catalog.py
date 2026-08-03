@@ -133,6 +133,35 @@ async def test_data_catalog(
 
 
 @pytest.mark.asyncio
+async def test_double_click_inserts_node_into_editor(
+    app_multi_duck: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    app = app_multi_duck
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        catalog = app.data_catalog
+
+        dbs = catalog.database_tree.root.children
+        assert isinstance(dbs[0].data, InteractiveCatalogItem)
+        while not dbs[0].data.loaded:
+            await pilot.pause(0.1)
+
+        # a single click on "small" selects and expands it, but inserts nothing
+        await pilot.click(catalog.__class__, offset=Offset(x=6, y=1))
+        await pilot.pause()
+        assert app.editor.text == ""
+
+        # a double click inserts the node's query name into the editor
+        await pilot.double_click(catalog.__class__, offset=Offset(x=6, y=1))
+        await pilot.pause()
+        assert app.editor.text == '"small"'
+        assert dbs[0].is_expanded is True
+
+
+@pytest.mark.asyncio
 async def test_file_tree(
     duckdb_adapter: Type[DuckDbAdapter],
     data_dir: Path,
