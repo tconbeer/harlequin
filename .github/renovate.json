@@ -1,28 +1,51 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json", 
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "timezone": "America/New_York",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "platformAutomerge": true,
   "lockFileMaintenance": {
-    "enabled": true
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 6am on the first day of the month"]
   },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "schedule": ["at any time"],
+    "prCreation": "immediate",
+    "minimumReleaseAge": null
+  },
+  "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
+      "description": "The .python-version file tracks the local dev interpreter, not a dependency.",
       "matchFileNames": [".python-version"],
       "matchDatasources": ["python-version"],
       "enabled": false
     },
     {
+      "description": "Group non-major updates into a single PR and merge on green CI.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "groupName": "all non-major dependencies",
       "groupSlug": "all-nonmajor",
-      "matchPackageNames": ["!/textual/"],
-      "matchUpdateTypes": ["minor", "patch", "pin"],
       "automerge": true
     },
     {
-      "matchPackageNames": ["!/textual/"],
-      "matchUpdateTypes": ["major", "minor", "patch", "pin"],
+      "description": "Majors get one PR each, but still merge themselves once CI is green.",
+      "matchUpdateTypes": ["major"],
       "automerge": true
+    },
+    {
+      "description": "textual and its satellites are pinned to exact, version-coupled releases; upgrade them together by hand. Listed last so it overrides the automerge rules above.",
+      "matchPackageNames": ["/textual/"],
+      "groupName": "textual",
+      "groupSlug": "textual",
+      "automerge": false
     }
-  ],
-  "extends": [
-    "config:recommended"
   ]
 }
