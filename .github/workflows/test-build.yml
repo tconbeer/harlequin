@@ -16,7 +16,7 @@ concurrency:
   
 jobs:
   test-build:
-    name: ${{ matrix.os }} - ${{ matrix.py }}
+    name: build - ${{ matrix.os }} - ${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
