@@ -19,7 +19,6 @@ class HarlequinTree(Tree[TTreeNode], inherit_bindings=False):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "harlequin-tree--type-label",
     }
-    double_click: int | None = None
 
     class CatalogError(Message):
         def __init__(self, catalog_type: str, error: BaseException) -> None:
@@ -76,30 +75,16 @@ class HarlequinTree(Tree[TTreeNode], inherit_bindings=False):
         click_line: Union[int, None] = meta.get("line", None)
         if event.button == 1:  # left button click
             self.post_message(self.HideContextMenu())
-            if (
-                self.double_click is not None
-                and click_line is not None
-                and self.double_click == click_line
-            ):
+            if event.chain == 2 and click_line is not None:  # double click
                 event.prevent_default()
                 node = self.get_node_at_line(click_line)
                 if node is not None:
                     self.post_message(self.NodeSubmitted(node=node))
                     node.expand()
-            else:
-                self.double_click = click_line
-                self.set_timer(
-                    delay=0.5,
-                    callback=self._clear_double_click,
-                    name="double_click_timer",
-                )
         elif event.button == 3 and click_line is not None:  # right click
             node = self.get_node_at_line(click_line)
             if node is not None and isinstance(node.data, CatalogItem):
                 self.post_message(self.ShowContextMenu(node=node))
-
-    def _clear_double_click(self) -> None:
-        self.double_click = None
 
     def action_submit(self) -> None:
         if self.cursor_node is not None:
