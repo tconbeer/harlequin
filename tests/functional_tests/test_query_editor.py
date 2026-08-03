@@ -289,8 +289,9 @@ async def test_no_tree_sitter(
         text_area_warning = next(
             iter(
                 filter(
-                    lambda m: isinstance(m, Notify)
-                    and m.notification.severity == "warning",
+                    lambda m: (
+                        isinstance(m, Notify) and m.notification.severity == "warning"
+                    ),
                     messages,
                 )
             )
