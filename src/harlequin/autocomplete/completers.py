@@ -25,12 +25,8 @@ class WordCompleter:
         self._function_completions = function_completions
         self._catalog_completions = catalog_completions
         self._extra_completions = extra_completions or []
-        self.completions: list[HarlequinCompletion] = self._merge_completions(
-            self._keyword_completions,
-            self._function_completions,
-            self._catalog_completions,
-            self._extra_completions,
-        )
+        self.completions: list[HarlequinCompletion] = []
+        self.merge()
 
     def __call__(self, prefix: str) -> list[tuple[tuple[str, str], str]]:
         """
@@ -64,18 +60,29 @@ class WordCompleter:
 
     def update_catalog(self, catalog: Catalog) -> None:
         self._catalog_completions = build_catalog_completions(catalog=catalog)
-        self.completions = self._merge_completions(
-            self._keyword_completions,
-            self._function_completions,
-            self._catalog_completions,
-            self._extra_completions,
-        )
+        self.merge()
 
-    def extend_catalog(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+    def extend_catalog(
+        self,
+        parent: CatalogItem,
+        items: list[CatalogItem],
+        defer_merge: bool = False,
+    ) -> None:
         # TODO: dedupe/merge on the parent's unique key, so we can load items from
         # a cache and update them later when they are lazy-loaded.
         new_completions = _build_children_completions(items=items, context=parent.label)
         self._catalog_completions.extend(new_completions)
+        if not defer_merge:
+            self.merge()
+
+    def merge(self) -> None:
+        """
+        Rebuild the merged, sorted completions list. This is O(n log n) in the
+        total number of completions, so callers that extend the catalog many
+        times in quick succession (e.g., the Data Catalog's lazy loader) should
+        pass defer_merge=True to extend_catalog and call this once, on a
+        debounce.
+        """
         self.completions = self._merge_completions(
             self._keyword_completions,
             self._function_completions,

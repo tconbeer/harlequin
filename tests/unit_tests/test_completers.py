@@ -5,6 +5,7 @@ import pytest
 
 from harlequin.autocomplete.completers import WordCompleter
 from harlequin.autocomplete.completion import HarlequinCompletion
+from harlequin.catalog import CatalogItem
 
 
 @pytest.fixture
@@ -30,3 +31,38 @@ def test_completer_fuzzy_match(iris_completer: WordCompleter) -> None:
     assert "petal_width" in labels
     assert "sepal_width" in labels
     assert len(labels) == 2
+
+
+@pytest.fixture
+def parent_item() -> CatalogItem:
+    return CatalogItem(
+        qualified_identifier='"main"."foo"',
+        query_name='"main"."foo"',
+        label="foo",
+        type_label="t",
+        children=[
+            CatalogItem(
+                qualified_identifier='"main"."foo"."bar"',
+                query_name='"bar"',
+                label="bar",
+                type_label="#",
+            )
+        ],
+    )
+
+
+def test_extend_catalog_merges_by_default(parent_item: CatalogItem) -> None:
+    completer = WordCompleter([], [], [], [])
+    completer.extend_catalog(parent=parent_item, items=parent_item.children)
+    assert any(c.label == "bar" for c in completer.completions)
+
+
+def test_extend_catalog_defer_merge(parent_item: CatalogItem) -> None:
+    completer = WordCompleter([], [], [], [])
+    completer.extend_catalog(
+        parent=parent_item, items=parent_item.children, defer_merge=True
+    )
+    # the new items are staged but not yet visible
+    assert not any(c.label == "bar" for c in completer.completions)
+    completer.merge()
+    assert any(c.label == "bar" for c in completer.completions)
