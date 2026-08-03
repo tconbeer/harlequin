@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Autocomplete no longer re-sorts the full completion list every time the Data Catalog lazy-loads a node's children; new completions are staged and merged at most once per second. This keeps the UI responsive while the catalog loads in the background, especially against high-latency (remote) databases.
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
