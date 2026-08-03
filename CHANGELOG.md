@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-03
+
 ### Performance
 
 - Autocomplete no longer re-sorts the full completion list every time the Data Catalog lazy-loads a node's children; new completions are staged and merged at most once per second. This keeps the UI responsive while the catalog loads in the background, especially against high-latency (remote) databases.
+
 ### Bug Fixes
 
 - Refreshes the file tree in the Data Catalog after Harlequin writes a file, either by saving from the editor or exporting data, so newly written files appear without a manual refresh ([#871](https://github.com/tconbeer/harlequin/issues/871)).
@@ -880,7 +883,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.6.0...HEAD
+[2.6.0]: https://github.com/tconbeer/harlequin/compare/2.5.2...2.6.0
 [2.5.2]: https://github.com/tconbeer/harlequin/compare/2.5.1...2.5.2
 [2.5.1]: https://github.com/tconbeer/harlequin/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/tconbeer/harlequin/compare/2.4.1...2.5.0
