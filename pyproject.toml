@@ -24,8 +24,8 @@ classifiers = [
 dependencies = [
     # textual and component libraries
     "textual==6.4.0",
-    "textual-fastdatatable==0.14.0",
-    "textual-textarea==0.17.2",
+    "textual-fastdatatable==0.15.0",
+    "textual-textarea==0.17.3",
 
     # click
     "click==8.3.3",
