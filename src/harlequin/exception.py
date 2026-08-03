@@ -49,9 +49,11 @@ class HarlequinLocaleError(HarlequinError):
 
 
 def pretty_print_error(error: HarlequinError) -> None:
-    from rich import print as rich_print
+    from rich.console import Console
 
-    rich_print(pretty_error_message(error))
+    # errors are diagnostics on a failing exit path, so they belong on stderr;
+    # rich.print would put them on stdout and contaminate piped output.
+    Console(stderr=True).print(pretty_error_message(error))
 
 
 def pretty_error_message(error: HarlequinError) -> Panel:
