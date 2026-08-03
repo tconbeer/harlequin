@@ -76,7 +76,7 @@ test = [
     "pytest>=9.0.2,<9.1.0",
     "pytest-asyncio==1.3.0",
     "pytest-xdist>=3.6",
-    "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
+    "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@d5e8b1c174adb2e13b9fb409c1c4ab472042acbd",
     "boto3==1.34.22",
     # extension tests require consistent version of duckdb.
     "duckdb==1.5.1",
