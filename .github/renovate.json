@@ -23,9 +23,13 @@
   "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
-      "description": "The .python-version file tracks the local dev interpreter, not a dependency.",
+      "description": "The supported Python floor is a project decision, not a dependency. Renovate reads it from .python-version, setup-python pins in the workflows, and the python Docker tag; all three must be disabled or it will keep trying to drag the project to the newest interpreter (see #915).",
+      "matchDepNames": ["python"],
+      "matchDatasources": ["python-version", "github-releases", "docker"],
+      "enabled": false
+    },
+    {
       "matchFileNames": [".python-version"],
-      "matchDatasources": ["python-version"],
       "enabled": false
     },
     {
