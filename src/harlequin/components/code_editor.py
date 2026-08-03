@@ -81,6 +81,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
 
     def on_text_area_saved(self, message: TextAreaSaved) -> None:
         self.app.notify(f"Editor contents saved to {message.path}")
+        if hasattr(self.app, "data_catalog"):
+            self.app.data_catalog.update_file_tree()
 
     def on_text_area_clipboard_error(self) -> None:
         if not self.has_shown_clipboard_error:

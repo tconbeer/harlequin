@@ -57,6 +57,14 @@ jobs:
         run: |
           uv sync --locked --group test
 
+      # Windows runners ship without a timezone database, so the test session
+      # downloads one into a shared user data directory. Do it once, up front:
+      # xdist workers would otherwise race to download and extract it.
+      - name: Install timezone database
+        if: matrix.os == 'Windows-latest'
+        run: |
+          uv run --no-sync python -c "from harlequin.windows_timezone import check_and_install_tzdata; check_and_install_tzdata()"
+
       - name: Run tests
         run: |
           uv run --no-sync pytest -m "not online" ${{ matrix.os == 'Windows-latest' && '--force-flaky --max-runs=3' || '' }} --snapshot-warn-unused

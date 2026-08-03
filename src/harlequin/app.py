@@ -891,11 +891,15 @@ class Harlequin(AppBase):
         if table is None:
             show_export_error(error=ValueError("You must execute a query first."))
             return
-        notify = partial(self.notify, "Data exported successfully.")
+
+        def on_export_success() -> None:
+            self.notify("Data exported successfully.")
+            self.data_catalog.update_file_tree()
+
         callback = partial(
             export_callback,
             table=table,
-            success_callback=notify,
+            success_callback=on_export_success,
             error_callback=show_export_error,
         )
         self.app.push_screen(
