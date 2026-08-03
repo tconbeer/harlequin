@@ -75,6 +75,7 @@ static = [
 test = [
     "pytest>=9.0.2,<9.1.0",
     "pytest-asyncio==1.3.0",
+    "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ https://github.com/tconbeer/pytest-textual-snapshot.git#main",
     "boto3==1.34.22",
     # extension tests require consistent version of duckdb.
@@ -185,6 +186,10 @@ strict_equality = true
 
 
 [tool.pytest.ini_options]
+
+# Tests run in parallel, one worker per CPU. Pass -n0 to run them in a single
+# process, e.g. when using a debugger or -s.
+addopts = ["-n", "auto"]
 
 markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
