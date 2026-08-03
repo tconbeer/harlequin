@@ -212,7 +212,7 @@ def test_bad_adapter_opt(
     res = runner.invoke(build_cli(), args=harlequin_args)
     assert res.exit_code == 2
     key_words = ["Error", "Invalid", "-a", "-adapter", "duckdb"]
-    assert all([w in res.stdout for w in key_words])
+    assert all([w in res.stderr for w in key_words])
 
 
 @pytest.mark.parametrize(
@@ -368,4 +368,4 @@ def test_sqlite_extension_not_supported(
         build_cli(), args=f"-a sqlite --extension {extension_path.as_posix()}"
     )
     assert res.exit_code == 2
-    assert "No such option" in res.stdout
+    assert "No such option" in res.stderr
