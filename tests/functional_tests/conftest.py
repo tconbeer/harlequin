@@ -4,10 +4,23 @@ from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
+from textual.widgets import Input
 from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 from harlequin.autocomplete import HarlequinCompletion
+
+
+@pytest.fixture(autouse=True)
+def no_cursor_blink(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Freeze every Input's cursor in the visible state.
+
+    Snapshots are captured after a settle delay that is longer than the blink
+    interval, so a blinking cursor makes snapshot tests nondeterministic.
+    Neutering the toggle leaves the pause/restart behavior (and so the blurred
+    state) intact.
+    """
+    monkeypatch.setattr(Input, "_toggle_cursor", lambda _self: None)
 
 
 @pytest.fixture(autouse=True)

@@ -4,8 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
+- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python < 3.14.
+- Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of textual-textarea.
+
 ### Bug Fixes
 
+- Fixes `harlequin --help`, which printed the help text and then crashed.
+- Harlequin no longer prints a `UserWarning` for each duplicated CLI flag (`The parameter -u is used more than once`) on every invocation.
+- Copying the text of an error modal, a catalog label, or a data selection now works over ssh and in terminals where pyperclip has no backend, and reports a useful message when it fails.
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
 - Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
 - Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).

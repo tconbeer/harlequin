@@ -284,12 +284,10 @@ class Harlequin(AppBase):
         callback: ScreenResultCallbackType[ScreenResultType] | None = None,
         wait_for_dismiss: bool = False,
     ) -> AwaitMount | asyncio.Future[ScreenResultType]:
-        if (
-            self.editor is not None
-            and self.editor.text_input is not None
-            and self.editor._has_focus_within
-        ):
-            self.editor.text_input._pause_blink(visible=True)
+        # the editor keeps focus while a modal is up, so its cursor has to be
+        # frozen explicitly.
+        if self.editor is not None and self.editor._has_focus_within:
+            self.editor.pause_blink(visible=True)
 
         ## TODO: PREVENT DUPLICATE SCREENS HERE.
         return super().push_screen(  # type: ignore[no-any-return,call-overload]
@@ -303,10 +301,9 @@ class Harlequin(AppBase):
         if (
             len(self.screen_stack) == 1
             and self.editor is not None
-            and self.editor.text_input is not None
             and self.editor._has_focus_within
         ):
-            self.editor.text_input._restart_blink()
+            self.editor.restart_blink()
         return new_screen
 
     def append_to_history(
@@ -412,25 +409,31 @@ class Harlequin(AppBase):
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
+    def _recycle_message(self, message: Message) -> None:
+        """Re-post a message we can't handle yet, while we wait for the editor."""
+        callback = partial(self.post_message, message)
+        self.set_timer(delay=0.1, callback=callback)
+
+    def _copy_to_clipboard(self, text: str, success_message: str) -> None:
+        """Copy text to the editor's clipboard, and to the system's if enabled.
+
+        The editor must be loaded; callers handle that by recycling their message.
+        textual-textarea also emits OSC 52, so this works over ssh, and reports
+        failures as TextAreaClipboardError, which CodeEditor turns into a notification.
+        """
+        assert self.editor is not None
+        self.editor.copy_to_clipboard(text)
+        self.notify(success_message)
+
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
         if self.editor is None or self.editor.text_input is None:
-            # recycle message while we wait for the editor to load
-            callback = partial(self.post_message, message)
-            self.set_timer(delay=0.1, callback=callback)
+            self._recycle_message(message)
             return
-        self.editor.text_input.clipboard = message.copy_name
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(message.copy_name)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected label copied to clipboard.")
+        self._copy_to_clipboard(
+            message.copy_name, "Selected label copied to clipboard."
+        )
 
     @on(HarlequinDriver.InsertTextAtSelection)
     def driver_insert_text_into_editor(
@@ -543,23 +546,11 @@ class Harlequin(AppBase):
     def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
         message.stop()
         if self.editor is None or self.editor.text_input is None:
-            # recycle the message while we wait for the editor to load
-            callback = partial(self.post_message, message)
-            self.set_timer(delay=0.1, callback=callback)
+            self._recycle_message(message)
             return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
-        self.editor.text_input.clipboard = text
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(text)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected data copied to clipboard.")
+        self._copy_to_clipboard(text, "Selected data copied to clipboard.")
 
     @on(Worker.StateChanged)
     async def handle_worker_error(self, message: Worker.StateChanged) -> None:

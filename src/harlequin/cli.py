@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from importlib.metadata import entry_points, version
 from pathlib import Path
 from typing import Any, Sequence
@@ -36,7 +37,7 @@ DEFAULT_KEYMAP_NAMES = ["vscode"]
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
 
 # general
-click.rich_click.USE_RICH_MARKUP = True
+click.rich_click.TEXT_MARKUP = "rich"
 click.rich_click.COLOR_SYSTEM = "truecolor"
 
 click.rich_click.STYLE_OPTIONS_TABLE_LEADING = 1
@@ -50,9 +51,21 @@ click.rich_click.STYLE_ARGUMENT = PINK
 click.rich_click.STYLE_COMMAND = PINK
 click.rich_click.STYLE_SWITCH = GREEN
 
-# metavars
-click.rich_click.SHOW_METAVARS_COLUMN = False
-click.rich_click.APPEND_METAVARS_HELP = True
+# metavars: drop the metavar column, and append the metavar to the help text instead
+click.rich_click.OPTIONS_TABLE_COLUMN_TYPES = [
+    "required",
+    "opt_long",
+    "opt_short",
+    "help",
+]
+click.rich_click.OPTIONS_TABLE_HELP_SECTIONS = [
+    "help",
+    "deprecated",
+    "envvar",
+    "default",
+    "required",
+    "metavar",
+]
 click.rich_click.STYLE_METAVAR_APPEND = PURPLE
 click.rich_click.STYLE_METAVAR_SEPARATOR = PURPLE
 
@@ -409,4 +422,15 @@ def harlequin() -> None:
     The main entrypoint for the Harlequin IDE. Builds and executes the click Command.
     """
     cli = build_cli()
-    cli()
+    with warnings.catch_warnings():
+        # Two installed adapters can claim the same flag for different options --
+        # -u is duckdb's --allow-unsigned-extensions and postgres' --user, and -d
+        # is --database for one adapter and --dbname for another. Click warns about
+        # each collision on every invocation, but the flags belong to separate
+        # plugins, so there is nothing the user can do about it.
+        warnings.filterwarnings(
+            "ignore",
+            message="The parameter .* is used more than once",
+            category=UserWarning,
+        )
+        cli()

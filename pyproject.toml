@@ -23,20 +23,23 @@ classifiers = [
 ]
 dependencies = [
     # textual and component libraries
-    "textual==6.4.0",
-    "textual-fastdatatable==0.15.0",
-    "textual-textarea==0.17.3",
+    "textual==8.2.8",
+    "textual-fastdatatable==0.16.0",
+    "textual-textarea==0.18.1",
 
     # click
     "click==8.3.3",
-    "rich-click==1.8.5",
+    # 1.9 is the first release compatible with click 8.2's Parameter.make_metavar()
+    "rich-click==1.9.8",
 
     # other deps
-    "duckdb>=0.8.0; python_version < '3.14'",
+    "duckdb>=1.1.1; python_version < '3.14'",
     "shandy-sqlfmt>=0.28.2",
     "platformdirs>=3.10,<5.0",
     "tomlkit>=0.12.5,<0.14.0",
     "questionary==2.0.1",
+    # imported directly by components/error_modal.py; also a textual-textarea dep
+    "pyperclip>=1.9,<2",
 
     # ensure we install from wheels
     "duckdb>=1.4.2; python_version >= '3.14'",

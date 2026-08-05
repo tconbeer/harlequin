@@ -81,11 +81,7 @@ async def test_keys_app(
         await pilot.press("ctrl+q")
         while not isinstance(app.screen, QuitModal):
             await pilot.pause()
-        # the quit modal should now be visible. We make some tweaks so tests
-        # pass consistently
-        input_widgets = app.query(Input)
-        for widget in input_widgets:
-            widget.cursor_blink = False  # prevent flaky tests
+        # the quit modal should now be visible.
         path_input = app.screen.query_one(
             "#path_input",
             expect_type=Input,

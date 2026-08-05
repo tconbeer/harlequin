@@ -9,10 +9,9 @@ import tomlkit
 from rich import print as rich_print
 from rich.markup import escape
 from rich.panel import Panel
-from textual.theme import BUILTIN_THEMES
 
 from harlequin.adapter import HarlequinAdapter
-from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
+from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     Config,
     ConfigFile,
@@ -67,7 +66,7 @@ def _wizard(config_path: Path | None) -> None:
 
     theme = questionary.select(
         message="What theme should this profile use?",
-        choices=sorted(BUILTIN_THEMES.keys()),
+        choices=sorted(VALID_THEMES.keys()),
         default=selected_profile.get("theme", "harlequin"),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()

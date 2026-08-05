@@ -19,6 +19,40 @@ else:
     from importlib.metadata import entry_points
 
 
+# The committed snapshots are generated on the lowest supported Python. On 3.12+,
+# SQLite grows a transaction button, so the tests that show one render differently
+# and skip their snapshot assertions (see the transaction_button_visible fixture).
+SNAPSHOT_PYTHON = (3, 10)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Stop --snapshot-update on a newer Python from clobbering the baseline.
+
+    A full update run on 3.12+ silently rewrites the committed snapshots with
+    3.12 output, and deletes the ones those tests never take. The py12-only
+    snapshots can't be generated on 3.10 (their tests are skipped there), so
+    updating those on 3.12 is allowed -- but such a run covers a slice of the
+    suite, so it must not prune everything it didn't take.
+    """
+    if not config.option.update_snapshots:
+        return
+    if sys.version_info[:2] == SNAPSHOT_PYTHON:
+        return
+
+    baseline = ".".join(str(v) for v in SNAPSHOT_PYTHON)
+    if "py12" not in (config.option.markexpr or ""):
+        raise pytest.UsageError(
+            f"--snapshot-update must run on Python {baseline}, which is what the "
+            "committed snapshots were generated on:\n"
+            "    uv run pytest --snapshot-update\n"
+            "To update the py12-only snapshots, which can only be generated on "
+            "3.12+, select just those tests:\n"
+            "    uv run --python 3.12 --group test pytest -m 'py12 and not online' "
+            "--snapshot-update"
+        )
+    config.option.no_cleanup = True
+
+
 @pytest.fixture(scope="session", autouse=True)
 def install_tzdata() -> None:
     if sys.platform == "win32":
