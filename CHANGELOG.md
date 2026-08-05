@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 
 - Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
+- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python < 3.14. 1.1.1 is the earliest release above 1.0 that ships wheels for every Python version Harlequin supports.
+- The DuckDB adapter now calls `to_arrow_table()` instead of `fetch_arrow_table()`, which DuckDB deprecated in 1.5.1, and the exporters call `duckdb.from_arrow()` instead of its `duckdb.arrow()` alias. The test suite no longer emits any warnings.
 - Declares `pyperclip` as a direct dependency. Harlequin imports it to copy the text of an error modal, but it was only installed as a transitive dependency of textual-textarea.
 
 ### Bug Fixes

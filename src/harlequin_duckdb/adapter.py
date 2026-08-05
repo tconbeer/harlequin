@@ -53,7 +53,7 @@ class DuckDbCursor(HarlequinCursor):
 
     def fetchall(self) -> AutoBackendType | None:
         try:
-            result = self.relation.fetch_arrow_table()
+            result = self.relation.to_arrow_table()
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:
