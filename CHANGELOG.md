@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Fixes an intermittent crash (`ValueError: task_done() called too many times`) when the Data Catalog was refreshed — for example by the automatic refresh after running a query — while its background loader was still fetching a node ([#991](https://github.com/tconbeer/harlequin/issues/991)).
 - A Data Catalog node that turns out to have no children no longer keeps a phantom expand arrow.
 - Expanding a node that was already queued for background loading no longer loads it twice, which could collapse a subtree you had opened.
 

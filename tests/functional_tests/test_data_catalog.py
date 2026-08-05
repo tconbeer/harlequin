@@ -1,6 +1,15 @@
 import sys
+import threading
 from pathlib import Path
-from typing import Awaitable, Callable, List, NamedTuple, Set, Type
+from typing import (
+    Awaitable,
+    Callable,
+    ClassVar,
+    List,
+    NamedTuple,
+    Set,
+    Type,
+)
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,7 +17,7 @@ from textual.geometry import Offset
 from textual.widgets import Input
 
 from harlequin import Harlequin
-from harlequin.catalog import InteractiveCatalogItem
+from harlequin.catalog import CatalogItem, InteractiveCatalogItem
 from harlequin.components import ExportScreen
 from harlequin_duckdb.adapter import DuckDbAdapter
 
@@ -412,3 +421,63 @@ async def test_file_tree_refreshes_after_export(
 
         assert export_path.is_file()
         assert export_path in _file_tree_paths(app)
+
+
+class BlockingCatalogItem(InteractiveCatalogItem):
+    """A catalog item whose fetch_children() blocks until it is released."""
+
+    started: ClassVar[threading.Event] = threading.Event()
+    release: ClassVar[threading.Event] = threading.Event()
+
+    def fetch_children(self) -> List[CatalogItem]:
+        type(self).started.set()
+        type(self).release.wait(timeout=10)
+        return []
+
+
+@pytest.mark.asyncio
+async def test_reload_while_loader_is_fetching(
+    duckdb_adapter: Type[DuckDbAdapter],
+) -> None:
+    """Reloading the catalog mid-fetch must not crash the background loader.
+
+    reload() replaces the tree's load queue. The loader used to call task_done()
+    on whatever `self._load_queue` pointed at when its fetch returned, so a reload
+    that landed mid-fetch made it call task_done() on the fresh queue -- which has
+    no outstanding get() -- and the worker died with "task_done() called too many
+    times" ([#991](https://github.com/tconbeer/harlequin/issues/991)).
+    """
+    BlockingCatalogItem.started.clear()
+    BlockingCatalogItem.release.clear()
+
+    app = Harlequin(duckdb_adapter((":memory:",)))
+    async with app.run_test(size=(120, 36)) as pilot:
+        tree = app.data_catalog.database_tree
+        while tree.loading:
+            await pilot.pause()
+
+        node = tree.root.add(
+            "blocking",
+            data=BlockingCatalogItem(
+                qualified_identifier="blocking",
+                query_name="blocking",
+                label="blocking",
+                type_label="t",
+            ),
+        )
+        tree._add_to_load_queue(node, priority=0)  # type: ignore[arg-type]
+
+        # wait until the adapter call is actually in flight
+        while not BlockingCatalogItem.started.is_set():
+            await pilot.pause()
+
+        # ... and swap the queue out from under the in-flight loader
+        await tree.reload()
+        BlockingCatalogItem.release.set()
+        for _ in range(50):
+            await pilot.pause()
+
+        loaders = [
+            w for w in app.workers if w.name == "_database_tree_background_loader"
+        ]
+        assert not [w.error for w in loaders if w.error is not None]
