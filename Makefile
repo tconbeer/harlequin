@@ -1,12 +1,15 @@
-TEST_ARGS := -m 'not online'
+# `online` tests need a network connection and secrets. Keep this a marker
+# expression, not a whole flag: a second -m silently overrides the first.
+TEST_MARKERS := not online
 
 .PHONY: check
 check:
 	uv sync --group test --group static
 	uv run ruff format .
 	uv run ruff check . --fix
-	uv run pytest $(TEST_ARGS)
-	uv run --python 3.12 --group test pytest -m py12 $(TEST_ARGS)
+	uv run pytest -m '$(TEST_MARKERS)'
+	uv run --python 3.12 --group test pytest -m 'py12 and ($(TEST_MARKERS))'
+	uv sync --group test --group static
 	uv run mypy
 
 .PHONY: lint

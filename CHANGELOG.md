@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file.
 - The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 - The Query Editor now uses Textual's `Click.chain` for double-, triple-, and quadruple-click selection, instead of tracking consecutive clicks with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
+### Development
+
+- `pytest --snapshot-update` now refuses to run on any Python but 3.10, the version the committed snapshots are generated on. On 3.12+, SQLite gains a transaction button, so an update run there silently rewrote 23 snapshots with 3.12 output and deleted 4 more. Updating the py12-only snapshots still works, via `-m 'py12 and not online'`, and no longer prunes the snapshots that run doesn't take.
+- `make check` now actually runs only the py12 tests under Python 3.12. It passed `-m py12 -m 'not online'`, and the second `-m` silently overrode the first, so the whole suite ran there instead. It also re-syncs the dev environment afterwards, so the final `mypy` run is not left without the test dependencies.
+
 ## [2.6.0] - 2026-08-03
 
 ### Performance
