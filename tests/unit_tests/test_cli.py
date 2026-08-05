@@ -60,6 +60,27 @@ def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
     return config
 
 
+def test_help(mock_adapter: MagicMock, mock_empty_config: None) -> None:
+    """--help has to actually render.
+
+    It is the one command that exercises rich-click's help rendering, so a
+    rich-click that is out of step with click's API breaks it and nothing else.
+    """
+    runner = CliRunner()
+    # the option groups are keyed on the program name, so this has to match the
+    # name the console script is installed under
+    res = runner.invoke(build_cli(), args="--help", prog_name="harlequin")
+    assert res.exception is None, f"--help raised {res.exception!r}"
+    assert res.exit_code == 0
+    # the option groups configured at the top of cli.py, including the ones
+    # built dynamically from the installed adapters
+    assert "Harlequin Options" in res.output
+    assert "duckdb Adapter Options" in res.output
+    # an option's help text, and a metavar appended to it
+    assert "--theme" in res.output
+    assert "(TEXT)" in res.output
+
+
 @pytest.mark.parametrize("harlequin_args", ["", ":memory:"])
 def test_default(
     mock_harlequin: MagicMock,

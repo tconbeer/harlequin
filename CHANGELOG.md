@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Fixes `harlequin --help`, which printed the help text and then crashed with a `TypeError`. rich-click 1.8.5 calls `Parameter.make_metavar()` without the argument that click 8.2 made required; Harlequin now requires rich-click 1.9.8. The help text renders exactly as before.
 - Clicking an error modal now copies its text over OSC 52 as well as with pyperclip, so it works over ssh and in terminals where pyperclip has no backend, matching every other copy in Harlequin.
 - Harlequin no longer prints a `UserWarning` for each duplicated CLI flag (`The parameter -u is used more than once`) on every invocation. Separately installed adapters can claim the same short flag for different options, so there was nothing a user could do about the warnings.
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).

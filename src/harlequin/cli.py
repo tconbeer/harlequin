@@ -37,7 +37,7 @@ DEFAULT_KEYMAP_NAMES = ["vscode"]
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
 
 # general
-click.rich_click.USE_RICH_MARKUP = True
+click.rich_click.TEXT_MARKUP = "rich"
 click.rich_click.COLOR_SYSTEM = "truecolor"
 
 click.rich_click.STYLE_OPTIONS_TABLE_LEADING = 1
@@ -51,9 +51,21 @@ click.rich_click.STYLE_ARGUMENT = PINK
 click.rich_click.STYLE_COMMAND = PINK
 click.rich_click.STYLE_SWITCH = GREEN
 
-# metavars
-click.rich_click.SHOW_METAVARS_COLUMN = False
-click.rich_click.APPEND_METAVARS_HELP = True
+# metavars: drop the metavar column, and append the metavar to the help text instead
+click.rich_click.OPTIONS_TABLE_COLUMN_TYPES = [
+    "required",
+    "opt_long",
+    "opt_short",
+    "help",
+]
+click.rich_click.OPTIONS_TABLE_HELP_SECTIONS = [
+    "help",
+    "deprecated",
+    "envvar",
+    "default",
+    "required",
+    "metavar",
+]
 click.rich_click.STYLE_METAVAR_APPEND = PURPLE
 click.rich_click.STYLE_METAVAR_SEPARATOR = PURPLE
 
