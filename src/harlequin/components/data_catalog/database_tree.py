@@ -421,14 +421,23 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             key=lambda catalog_item: catalog_item.label,
         )
 
-    @work(name="_database_tree_background_loader")
+    @work(
+        name="_database_tree_background_loader",
+        exclusive=True,
+        group="database_tree_loaders",
+    )
     async def _loader(self) -> None:
         """Background loading queue processor."""
         worker = get_current_worker()
+        # Bind the queue once: reload() replaces self._load_queue, and calling
+        # task_done() on the replacement -- which has no outstanding get() -- is
+        # what raised "task_done() called too many times". exclusive=True also
+        # retires this worker when reload() starts its successor.
+        queue = self._load_queue
         while not worker.is_cancelled:
             # Get the next node that needs loading off the queue. Note that
             # this blocks if the queue is empty.
-            priority, _, node = await self._load_queue.get()
+            priority, _, node = await queue.get()
             key = id(node)
             try:
                 if self._queued_priority.get(key) != priority:
@@ -472,8 +481,8 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                     await self._populate_node(node, content)
                     self._schedule_prefetch_scan()
             finally:
-                # Mark this iteration as done.
-                self._load_queue.task_done()
+                # Mark this iteration as done, on the queue this item came from.
+                queue.task_done()
 
     async def _on_tree_node_expanded(
         self, event: Tree.NodeExpanded[CatalogItem]
