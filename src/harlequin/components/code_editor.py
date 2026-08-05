@@ -9,7 +9,7 @@ from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
-from textual.widgets.text_area import Selection
+from textual.widgets.text_area import Location, Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
@@ -51,23 +51,42 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             # there are literal semicolons in the text.
             return [self.text]
 
-        queries: list[str] = []
-        prev_query: str | None = None
-        query_start = (0, 0)
+        # a selection can be made in either direction, so its end
+        # can come before its start.
+        selection_start = min(self.selection.start, self.selection.end)
+        selection_end = max(self.selection.start, self.selection.end)
+
+        # each query spans from the end of the previous separator
+        # (or the start of the buffer) through its own separator.
+        queries: list[tuple[Location, Location, str]] = []
+        query_start: Location = (0, 0)
         for query_end in [*separators, self.text_input.document.end]:
-            if query_start > self.selection.end:
-                break
             q = self.text_input.get_text_range(start=query_start, end=query_end).strip()
-            if q and query_end >= self.selection.start:
-                queries.append(q)
-            elif q:
-                prev_query = q
+            if q:
+                queries.append((query_start, query_end, q))
             query_start = query_end
 
-        if not queries and prev_query:
-            return [prev_query]
+        if not queries:
+            return []
 
-        return queries
+        # an empty selection (a bare cursor) spans no range, so it only
+        # overlaps a query if it sits strictly inside that query.
+        overlapping = [
+            q
+            for start, end, q in queries
+            if start < selection_end and end > selection_start
+        ]
+        if overlapping:
+            return overlapping
+
+        # the cursor sits on a boundary between queries (or in the whitespace
+        # between them); run the first query that ends at or after the cursor.
+        for _, end, q in queries:
+            if end >= selection_start:
+                return [q]
+
+        # the cursor is in trailing whitespace after the last query.
+        return [queries[-1][2]]
 
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
@@ -123,9 +142,9 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if hasattr(self.app, "action_focus_data_catalog"):
             self.app.action_focus_data_catalog()
 
-    def _query_separators(self) -> list[tuple[int, int]]:
+    def _query_separators(self) -> list[Location]:
         """
-        Return a list of tuples that represent the row and col
+        Return a sorted list of tuples that represent the row and col
         positions of query separators (semicolons) in the buffer text.
         """
         if self.text_input is None:
@@ -134,7 +153,12 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if self.text_input.is_syntax_aware:
             assert self._semicolon_query is not None
             query_result = self.query_syntax_tree(query=self._semicolon_query)
-            return [n.end_point for n in query_result.get("semicolon", [])]
+            # tree-sitter captures nodes in the order its patterns match them,
+            # which is not the order they appear in the buffer.
+            return sorted(
+                (n.end_point.row, n.end_point.column)
+                for n in query_result.get("semicolon", [])
+            )
 
         else:
             # tree-sitter is not installed. naively split on semicolons and
@@ -151,7 +175,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
                 )
                 self.has_shown_tree_sitter_error = True
 
-            semicolons: list[tuple[int, int]] = []
+            semicolons: list[Location] = []
             for i, line in enumerate(self.text.splitlines()):
                 for pos in [m.span()[1] for m in re.finditer(";", line)]:
                     semicolons.append((i, pos))

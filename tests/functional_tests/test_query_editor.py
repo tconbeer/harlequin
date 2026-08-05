@@ -334,3 +334,65 @@ async def test_footer_inputs(
         snap_results.append(await app_snapshot(app, "Goto Input visible"))
 
         assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_selected_queries(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Regression test for #929: the queries at the cursor or selection are
+    returned once each, in the order they appear in the buffer."""
+    create = "create table foo (a int);"
+    insert = "insert into foo values (1);"
+    select = "select * from foo;"
+    drop = "drop table foo;"
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        assert app.editor.text_input is not None
+        assert app.editor.text_input.is_syntax_aware
+        app.editor.text = f"{create}\n{insert}\n{select}\n{drop}\n"
+        await pilot.pause()
+
+        # tree-sitter does not capture the semicolons in buffer order
+        assert app.editor._query_separators() == [(0, 25), (1, 27), (2, 18), (3, 15)]
+
+        # the whole buffer
+        app.editor.selection = Selection((0, 0), (4, 0))
+        assert app.editor.selected_queries() == [create, insert, select, drop]
+
+        # a reverse selection is the same as a forward one
+        app.editor.selection = Selection((4, 0), (0, 0))
+        assert app.editor.selected_queries() == [create, insert, select, drop]
+
+        # a selection that partially covers two queries runs both of them
+        app.editor.selection = Selection((1, 5), (2, 5))
+        assert app.editor.selected_queries() == [insert, select]
+
+        # a cursor inside a query runs only that query
+        for row, query in enumerate([create, insert, select, drop]):
+            app.editor.selection = Selection((row, 3), (row, 3))
+            assert app.editor.selected_queries() == [query]
+
+        # a cursor just after a semicolon runs the query it terminates,
+        # not the one that follows it
+        app.editor.selection = Selection((1, 27), (1, 27))
+        assert app.editor.selected_queries() == [insert]
+
+        # a cursor at the start of a query runs that query
+        app.editor.selection = Selection((2, 0), (2, 0))
+        assert app.editor.selected_queries() == [select]
+
+        # a cursor in the trailing whitespace runs the last query
+        app.editor.selection = Selection((4, 0), (4, 0))
+        assert app.editor.selected_queries() == [drop]
+
+        # a semicolon in a string literal does not separate queries
+        app.editor.text = "select 'a;b'"
+        await pilot.pause()
+        app.editor.selection = Selection((0, 0), (0, 0))
+        assert app.editor.selected_queries() == ["select 'a;b'"]
