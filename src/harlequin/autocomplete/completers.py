@@ -109,7 +109,13 @@ class WordCompleter:
     def _merge_completions(
         *completion_lists: list[HarlequinCompletion],
     ) -> list[HarlequinCompletion]:
-        return [c for c in sorted(itertools.chain(*completion_lists))]
+        # sorting on an explicit key is ~5x faster than on HarlequinCompletion's
+        # rich comparisons (which build two tuples per comparison), and this runs
+        # over the whole catalog every time the lazy loader delivers more of it.
+        return sorted(
+            itertools.chain(*completion_lists),
+            key=lambda c: (c.priority, c.label),
+        )
 
     @staticmethod
     def _dedupe_labels(

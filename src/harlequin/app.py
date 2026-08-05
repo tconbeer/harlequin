@@ -231,6 +231,7 @@ class Harlequin(AppBase):
         self.connection: HarlequinConnection | None = None
         self.harlequin_driver = HarlequinDriver(app=self)
         self._completer_merge_timer: Timer | None = None
+        self._pending_completer_items: list[tuple[CatalogItem, list[CatalogItem]]] = []
 
         if keymap_names is None:
             keymap_names = ("vscode",)
@@ -1161,31 +1162,45 @@ class Harlequin(AppBase):
         )
 
     def extend_completers(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
-        if (
-            self.editor_collection.word_completer is not None
-            and self.editor_collection.member_completer is not None
-        ):
-            # appending to the catalog is cheap, but merging the full
-            # completion list is O(n log n), so when the Data Catalog's lazy
-            # loader delivers a stream of items (one message per node), we
-            # defer the merge and run it at most once per second.
-            self.editor_collection.word_completer.extend_catalog(
-                parent=parent, items=items, defer_merge=True
-            )
-            self.editor_collection.member_completer.extend_catalog(
-                parent=parent, items=items, defer_merge=True
-            )
-            if self._completer_merge_timer is None:
-                self._completer_merge_timer = self.set_timer(
-                    1.0, self._merge_completers
-                )
+        # Building completions for a node, and then merging the full completion
+        # list (O(n log n) over the whole catalog), are both too expensive for the
+        # event loop: a schema can hold thousands of relations, and the Data
+        # Catalog's lazy loader delivers one message per node. Batch the arrivals
+        # and do the work in a thread, at most once per second.
+        self._pending_completer_items.append((parent, items))
+        if self._completer_merge_timer is None:
+            self._completer_merge_timer = self.set_timer(1.0, self._merge_completers)
 
     def _merge_completers(self) -> None:
         self._completer_merge_timer = None
-        if self.editor_collection.word_completer is not None:
-            self.editor_collection.word_completer.merge()
-        if self.editor_collection.member_completer is not None:
-            self.editor_collection.member_completer.merge()
+        if self._pending_completer_items:
+            batch = self._pending_completer_items
+            self._pending_completer_items = []
+            self._extend_and_merge_completers(batch)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="completer_mergers",
+        description="merging catalog completions",
+    )
+    def _extend_and_merge_completers(
+        self, batch: list[tuple[CatalogItem, list[CatalogItem]]]
+    ) -> None:
+        word_completer = self.editor_collection.word_completer
+        member_completer = self.editor_collection.member_completer
+        if word_completer is None or member_completer is None:
+            return
+        for parent, items in batch:
+            word_completer.extend_catalog(parent=parent, items=items, defer_merge=True)
+            member_completer.extend_catalog(
+                parent=parent, items=items, defer_merge=True
+            )
+        # merge() swaps in a freshly built list, so a completer call on the main
+        # thread reads either the old list or the new one, never a partial one.
+        word_completer.merge()
+        member_completer.merge()
 
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:

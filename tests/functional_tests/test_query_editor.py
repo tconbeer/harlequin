@@ -7,11 +7,9 @@ import pytest
 from textual.message import Message
 from textual.notifications import Notify
 from textual.widgets.text_area import Selection
-from textual.widgets.tree import TreeNode
 
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
-from harlequin.catalog import CatalogItem
 
 
 @pytest.mark.asyncio
@@ -190,18 +188,12 @@ async def test_member_autocomplete(
     app_small_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    expand_catalog_node: Callable[..., Awaitable[None]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-
-        async def _expand_and_wait(node: TreeNode[CatalogItem]) -> None:
-            node.expand()
-            while not node.children:
-                if getattr(node.data, "loaded", True):
-                    break
-                await pilot.pause()
 
         # we need to expand the data catalog to load items into the completer
         while (
@@ -210,11 +202,13 @@ async def test_member_autocomplete(
         ):
             await pilot.pause()
         for db_node in app.data_catalog.database_tree.root.children:
-            await _expand_and_wait(db_node)
+            await expand_catalog_node(pilot, db_node)
             await wait_for_workers(app)
             for schema_node in db_node.children:
-                await _expand_and_wait(schema_node)
+                await expand_catalog_node(pilot, schema_node)
                 await wait_for_workers(app)
+        # the relations are on screen now, so the catalog prefetches their
+        # columns; wait for those to reach the member completer.
         await pilot.pause(1)
 
         # now the completer should be populated
