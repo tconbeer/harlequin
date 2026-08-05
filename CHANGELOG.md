@@ -7,31 +7,22 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 
 - Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
-- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python < 3.14. 1.1.1 is the earliest release above 1.0 that ships wheels for every Python version Harlequin supports.
-- The DuckDB adapter now calls `to_arrow_table()` instead of `fetch_arrow_table()`, which DuckDB deprecated in 1.5.1, and the exporters call `duckdb.from_arrow()` instead of its `duckdb.arrow()` alias. The test suite no longer emits any warnings.
-- Declares `pyperclip` as a direct dependency. Harlequin imports it to copy the text of an error modal, but it was only installed as a transitive dependency of textual-textarea.
+- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python < 3.14.
+- Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of textual-textarea.
 
 ### Bug Fixes
 
-- Fixes `harlequin --help`, which printed the help text and then crashed with a `TypeError`. rich-click 1.8.5 calls `Parameter.make_metavar()` without the argument that click 8.2 made required; Harlequin now requires rich-click 1.9.8. The help text renders exactly as before.
-- Clicking an error modal now copies its text over OSC 52 as well as with pyperclip, so it works over ssh and in terminals where pyperclip has no backend, matching every other copy in Harlequin.
-- Harlequin no longer prints a `UserWarning` for each duplicated CLI flag (`The parameter -u is used more than once`) on every invocation. Separately installed adapters can claim the same short flag for different options, so there was nothing a user could do about the warnings.
+- Fixes `harlequin --help`, which printed the help text and then crashed.
+- Harlequin no longer prints a `UserWarning` for each duplicated CLI flag (`The parameter -u is used more than once`) on every invocation.
+- Copying the text of an error modal, a catalog label, or a data selection now works over ssh and in terminals where pyperclip has no backend, and reports a useful message when it fails.
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
 - Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
 - Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
 ### Refactoring
 
-- Copying a catalog label or a data selection now goes through textual-textarea's `TextEditor.copy_to_clipboard()`, instead of Harlequin duplicating that logic twice. Copying now also emits OSC 52, so it works over ssh and in terminals where pyperclip has no backend, and clipboard failures now report the same actionable message as a failed copy from the Query Editor.
-- Harlequin now uses textual-textarea's public `pause_blink()`/`restart_blink()` methods to freeze the Query Editor's cursor while a modal is open, instead of reaching into the inner text area's private methods.
-- The list of valid themes is now read from one place (`harlequin.colors.VALID_THEMES`); the config wizard previously read Textual's `BUILTIN_THEMES` directly, relying on `harlequin.colors` having mutated it at import time.
 - The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 - The Query Editor now uses Textual's `Click.chain` for double-, triple-, and quadruple-click selection, instead of tracking consecutive clicks with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
-
-### Development
-
-- `pytest --snapshot-update` now refuses to run on any Python but 3.10, the version the committed snapshots are generated on. On 3.12+, SQLite gains a transaction button, so an update run there silently rewrote 23 snapshots with 3.12 output and deleted 4 more. Updating the py12-only snapshots still works, via `-m 'py12 and not online'`, and no longer prunes the snapshots that run doesn't take.
-- `make check` now actually runs only the py12 tests under Python 3.12. It passed `-m py12 -m 'not online'`, and the second `-m` silently overrode the first, so the whole suite ran there instead. It also re-syncs the dev environment afterwards, so the final `mypy` run is not left without the test dependencies.
 
 ## [2.6.0] - 2026-08-03
 
