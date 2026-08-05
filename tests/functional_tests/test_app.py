@@ -339,3 +339,40 @@ async def test_rich_markup(
         await wait_for_workers(app)
         await pilot.pause()
         assert await app_snapshot(app, "select markup")
+
+
+@pytest.mark.asyncio
+async def test_adapter_raises_unexpected_error(
+    app: Harlequin,
+    monkeypatch: pytest.MonkeyPatch,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """
+    An adapter that raises a raw driver exception instead of a
+    HarlequinQueryError should not crash the app.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        assert app.connection is not None
+
+        def raise_driver_error(query: str) -> None:
+            raise RuntimeError("1049 (42000): Unknown database 'ht;'")
+
+        monkeypatch.setattr(app.connection, "execute", raise_driver_error)
+
+        app.editor.text = "use ht;"
+        await pilot.press("ctrl+a")
+        await pilot.press("ctrl+j")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert app.is_running
+        assert isinstance(app.screen, ErrorModal)
+        assert "Unknown database" in str(app.screen.error)
+
+        await pilot.press("space")
+        assert len(app.screen_stack) == 1
+        assert "non-responsive" not in app.run_query_bar.classes
+        assert "non-responsive" not in app.results_viewer.classes
