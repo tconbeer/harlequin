@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2.7.0] - 2026-08-05
+### Features
+
+- The Data Catalog no longer appears to hang while loading large databases ([#838](https://github.com/tconbeer/harlequin/issues/838)). It now builds tree nodes only for objects you can actually see, bounds its background loading to the visible part of the tree instead of eagerly walking every schema, and shows a `loading…` placeholder under a node while its children are fetched.
+
+### Bug Fixes
+
+- A Data Catalog node that turns out to have no children no longer keeps a phantom expand arrow.
+- Expanding a node that was already queued for background loading no longer loads it twice, which could collapse a subtree you had opened.
 
 ### Dependencies
 

@@ -65,13 +65,15 @@ async def test_data_catalog(
         assert dbs[0].data.query_name == '"small"'
         assert dbs[0].is_expanded is False
 
-        # the small db has two schemas, but you can't see them yet
-        # pause while the children are loaded
+        # the small db has two schemas, but you can't see them yet: a collapsed
+        # node holds its children on `data` and only builds TreeNodes when it is
+        # expanded, so that a huge catalog costs a screenful of nodes, not one
+        # per object in the database.
         assert isinstance(dbs[0].data, InteractiveCatalogItem)
         while not dbs[0].data.loaded:
             await pilot.pause(0.1)
-        assert len(dbs[0].children) == 2
-        assert all(not node.is_expanded for node in dbs[0].children)
+        assert len(dbs[0].data.children) == 2
+        assert not dbs[0].children
         snap_results.append(await app_snapshot(app, "Initialization"))
 
         assert str(dbs[1].label) == "tiny db"
@@ -79,9 +81,16 @@ async def test_data_catalog(
 
         # click on "small" and see it expand.
         await pilot.click(catalog.__class__, offset=Offset(x=6, y=1))
+        await pilot.pause()
         assert dbs[0].is_expanded is True
         assert dbs[1].is_expanded is False
+        assert len(dbs[0].children) == 2
         assert all(not node.is_expanded for node in dbs[0].children)
+        # the schemas are on screen now, so the catalog probes them; wait, or the
+        # snapshot catches "empty" still showing an expand arrow it will lose.
+        for schema in dbs[0].children:
+            while not getattr(schema.data, "loaded", True):
+                await pilot.pause()
         snap_results.append(await app_snapshot(app, "small expanded"))
 
         # small's second schema is "main". click "main"
@@ -260,6 +269,7 @@ async def test_context_menu(
     app_small_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    expand_catalog_node: Callable[..., Awaitable[None]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
@@ -275,11 +285,7 @@ async def test_context_menu(
         ):
             await pilot.pause()
         for db_node in app.data_catalog.database_tree.root.children:
-            db_node.expand()
-            while not db_node.children:
-                if getattr(db_node.data, "loaded", True):
-                    break
-                await pilot.pause()
+            await expand_catalog_node(pilot, db_node)
             for schema_node in db_node.children:
                 schema_node.expand()
 

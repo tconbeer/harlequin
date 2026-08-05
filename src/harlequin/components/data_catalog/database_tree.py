@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from asyncio import PriorityQueue
-from contextlib import suppress
 from typing import TYPE_CHECKING, Generator, Iterable, TypeVar
 
 from rich.style import Style
 from rich.text import Text, TextType
-from textual import work
+from textual import events, work
 from textual.await_complete import AwaitComplete
 from textual.reactive import var
+from textual.timer import Timer
 from textual.widgets._tree import Tree, TreeNode
 from textual.worker import WorkerCancelled, WorkerFailed, get_current_worker
 
@@ -24,6 +25,29 @@ from harlequin.messages import WidgetMounted
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+DEMAND_PRIORITY = 0
+"""Priority for a node the user expanded; jumps ahead of all speculative work."""
+
+PREFETCH_PRIORITY = 100
+"""Priority for a node we load speculatively, because it's on (or near) screen."""
+
+PREFETCH_MARGIN = 20
+"""Lines above and below the viewport to warm, so a short scroll finds data ready."""
+
+POPULATE_CHUNK_SIZE = 250
+"""TreeNodes to add per event-loop slice, so a wide node can't stall rendering."""
+
+PREFETCH_DEBOUNCE = 0.1
+"""Seconds to coalesce viewport scans; scrolling fires them in bursts."""
+
+LOADING_ITEM = CatalogItem(
+    qualified_identifier="__loading__",
+    query_name="",
+    label="",
+    type_label="",
+)
+"""Sentinel data for the placeholder shown under a node while its children load."""
+
 
 class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
     catalog: var[Catalog | None] = var["Catalog | None"](
@@ -38,14 +62,20 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         disabled: bool = False,
     ) -> None:
         self._load_queue: PriorityQueue[
-            tuple[int, str, int, TreeNode[InteractiveCatalogItem]]
+            tuple[int, int, TreeNode[InteractiveCatalogItem]]
         ] = PriorityQueue()
         """
-        _load_queue is a priority queue, ordered by a priority int,
-        then the string label of the node, then the id of the node,
-        which should prevent any comparisons between TreeNodes, which
-        do not implement cmp operators.
+        _load_queue is a priority queue, ordered by a priority int, then by an
+        ever-increasing sequence number, which makes the queue FIFO within a
+        priority and ensures the TreeNodes are never compared (they do not
+        implement cmp operators).
         """
+        self._queue_seq = 0
+        self._queued_priority: dict[int, int] = {}
+        """The priority each pending node was queued at, keyed by id(node)."""
+        self._loading: set[int] = set()
+        """ids of nodes whose fetch_children() call is in flight."""
+        self._prefetch_timer: Timer | None = None
         super().__init__(
             label="Root",
             data=CatalogItem(
@@ -66,6 +96,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self.show_root = False
         self.guide_depth = 3
         self.root.expand()
+        self._schedule_prefetch_scan()
         self.post_message(WidgetMounted(widget=self))
 
     def _build_item_label(self, label: str, type_label: str) -> Text:
@@ -82,27 +113,79 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         assert isinstance(self.root.data, CatalogItem)
         self.root.data.children = catalog.items if catalog is not None else []
         await self.reload()
-        # add the root's children to the prefetch queue
-        for child in self.root.children:
-            if isinstance(child.data, InteractiveCatalogItem) and not child.data.loaded:
-                self._add_to_load_queue(child)  # type: ignore[arg-type]
+        self._schedule_prefetch_scan()
         self.loading = False
 
     def _add_to_load_queue(
-        self, node: TreeNode[InteractiveCatalogItem], priority: int = 100
+        self, node: TreeNode[InteractiveCatalogItem], priority: int = PREFETCH_PRIORITY
     ) -> None:
         """Add the given node to the load priority queue.
+
+        A node already queued at an equal or better priority is left alone; one
+        queued at a worse priority is re-queued, and the stale entry is dropped
+        when it surfaces. This keeps a node the user expands from being fetched
+        (and re-rendered) twice.
 
         Args:
             node: The node to add to the load queue.
             priority: An order for this node to be loaded; lowest first.
         """
-        assert node.data is not None
-        if not node.data.loaded:
-            with suppress(TypeError):
-                # typeError will be raised if this node already exists in the queue,
-                # since TreeNodes do not implement cmp operators.
-                self._load_queue.put_nowait((priority, str(node.label), id(node), node))
+        if node.data is None or node.data.loaded:
+            return
+        key = id(node)
+        if key in self._loading:
+            return
+        queued_at = self._queued_priority.get(key)
+        if queued_at is not None and queued_at <= priority:
+            return
+        self._queued_priority[key] = priority
+        self._queue_seq += 1
+        self._load_queue.put_nowait((priority, self._queue_seq, node))
+
+    def _prefetch_window(self) -> tuple[int, int]:
+        """The inclusive range of tree lines worth loading speculatively."""
+        top = int(self.scroll_offset.y)
+        return max(0, top - PREFETCH_MARGIN), top + self.size.height + PREFETCH_MARGIN
+
+    def _in_prefetch_window(self, node: TreeNode[CatalogItem]) -> bool:
+        line = node.line
+        if line < 0:  # node is not displayed (an ancestor is collapsed)
+            return False
+        first, last = self._prefetch_window()
+        return first <= line <= last
+
+    def _schedule_prefetch_scan(self) -> None:
+        """Queue a viewport scan, coalescing the bursts that scrolling produces."""
+        if self._prefetch_timer is not None:
+            self._prefetch_timer.stop()
+        self._prefetch_timer = self.set_timer(
+            PREFETCH_DEBOUNCE, self._queue_nodes_in_view
+        )
+
+    def _queue_nodes_in_view(self) -> None:
+        """Speculatively load the unloaded nodes on (or just off) screen.
+
+        Bounding prefetch by the viewport rather than by the tree's shape is what
+        keeps this affordable on a large remote database: a catalog that fits on
+        screen is loaded in full, exactly as before, while a catalog with
+        thousands of objects costs a screenful of fetches no matter how big it
+        gets.
+        """
+        self._prefetch_timer = None
+        first, last = self._prefetch_window()
+        lines = self._tree_lines
+        for line_no in range(first, min(last + 1, len(lines))):
+            node = lines[line_no].node
+            if isinstance(node.data, InteractiveCatalogItem) and not node.data.loaded:
+                self._add_to_load_queue(node)  # type: ignore[arg-type]
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        super().watch_scroll_y(old_value, new_value)
+        self._schedule_prefetch_scan()
+
+    def _on_resize(self, event: events.Resize) -> None:
+        super()._on_resize(event)
+        self._schedule_prefetch_scan()
 
     def reload(self) -> AwaitComplete:
         """Reload the `DirectoryTree` contents.
@@ -112,6 +195,8 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """
         # Orphan the old queue...
         self._load_queue = PriorityQueue()
+        self._queued_priority.clear()
+        self._loading.clear()
         # ... reset the root node ...
         processed = self.reload_node(self.root)
         # ... and replace the old loader with a new one.
@@ -201,7 +286,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                         content = await self._load_children(reopening).wait()
                     except (WorkerCancelled, WorkerFailed):
                         continue
-                    self._populate_node(reopening, content)
+                    await self._populate_node(reopening, content)
                     to_reopen.extend(reopening.children)
                     reopening.expand()
 
@@ -255,22 +340,53 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
 
     TCatalogItem_co = TypeVar("TCatalogItem_co", bound=CatalogItem, covariant=True)
 
-    def _populate_node(
+    async def _populate_node(
         self, node: TreeNode[TCatalogItem_co], content: Iterable[TCatalogItem_co]
     ) -> None:
-        """Populate the given tree node with the given directory content.
+        """Populate the given tree node with the given catalog items.
+
+        Adding TreeNodes is main-thread work, and a schema can hold thousands of
+        relations, so the children are added a chunk at a time and the event loop
+        is released in between. The lock is taken per chunk rather than for the
+        whole run so the tree can rebuild and render the rows added so far.
 
         Args:
             node: The Tree node to populate.
-            content: The collection of `Path` objects to populate the node with.
+            content: The CatalogItems to populate the node with.
         """
+        items = list(content)
+        async with self.lock:
+            node.remove_children()
+        for offset in range(0, len(items), POPULATE_CHUNK_SIZE):
+            async with self.lock:
+                for item in items[offset : offset + POPULATE_CHUNK_SIZE]:
+                    node.add(
+                        self._build_item_label(item.label, item.type_label),
+                        data=item,
+                        allow_expand=bool(item.children)
+                        or not getattr(item, "loaded", True),
+                    )
+            await asyncio.sleep(0)
+
+    def _show_loading_placeholder(self, node: TreeNode[CatalogItem]) -> None:
+        """Give an expanded node something to show while its children are fetched.
+
+        Without this the node expands to nothing at all, which is what makes a
+        slow catalog look like a hung one.
+        """
+        if self._has_placeholder(node):
+            return
+        type_label_style = self.get_component_rich_style("harlequin-tree--type-label")
         node.remove_children()
-        for item in content:
-            node.add(
-                self._build_item_label(item.label, item.type_label),
-                data=item,
-                allow_expand=bool(item.children) or not getattr(item, "loaded", True),
-            )
+        node.add(
+            Text("loading…", style=Style(color=type_label_style.color, italic=True)),
+            data=LOADING_ITEM,
+            allow_expand=False,
+        )
+
+    @staticmethod
+    def _has_placeholder(node: TreeNode[CatalogItem]) -> bool:
+        return len(node.children) == 1 and node.children[0].data is LOADING_ITEM
 
     @work(thread=True, exit_on_error=False, description="_load_children")
     def _load_children(self, node: TreeNode[CatalogItem]) -> list[CatalogItem]:
@@ -312,12 +428,27 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         while not worker.is_cancelled:
             # Get the next node that needs loading off the queue. Note that
             # this blocks if the queue is empty.
-            *_, node = await self._load_queue.get()
-            content: list[CatalogItem] = []
-            async with self.lock:
+            priority, _, node = await self._load_queue.get()
+            key = id(node)
+            try:
+                if self._queued_priority.get(key) != priority:
+                    # a stale entry: this node was re-queued at a better priority
+                    # (or has since been loaded), so it is handled elsewhere.
+                    continue
+                del self._queued_priority[key]
+                if priority > DEMAND_PRIORITY and not self._in_prefetch_window(
+                    node  # type: ignore[arg-type]
+                ):
+                    # scrolled or collapsed out of view before we got to it, so
+                    # the speculation no longer pays for itself.
+                    continue
+                self._loading.add(key)
                 try:
-                    # Spin up a short-lived thread that will load the content of
-                    # the directory associated with that node.
+                    # Spin up a short-lived thread that will load the children of
+                    # the catalog item associated with that node. The tree lock is
+                    # deliberately not held here: an adapter's fetch_children() can
+                    # take seconds against a remote database, and holding the lock
+                    # across it would block the tree's own rendering and input.
                     content = await self._load_children(node).wait()
                 except WorkerCancelled:
                     # The worker was cancelled, that would suggest we're all
@@ -326,15 +457,23 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                 except WorkerFailed:
                     # This particular worker failed to start. We don't know the
                     # reason so let's no-op that (for now anyway).
-                    pass
-                else:
-                    # We're still here and we have directory content, get it into
-                    # the tree.
-                    if content:
-                        self._populate_node(node, content)
+                    continue
                 finally:
-                    # Mark this iteration as done.
-                    self._load_queue.task_done()
+                    self._loading.discard(key)
+                # _load_children may have cleared allow_expand, and setting that
+                # only bumps the node's update counter -- nothing repaints. Without
+                # this, a node we found to be empty keeps a phantom expand arrow.
+                self._invalidate()
+                # Only build TreeNodes the user can actually reach. A collapsed
+                # node keeps its children on `node.data`, and they are rendered
+                # if and when it is expanded. Empty content still has to be
+                # populated, to clear the placeholder off a node with no children.
+                if node.is_expanded or self._has_placeholder(node):  # type: ignore[arg-type]
+                    await self._populate_node(node, content)
+                    self._schedule_prefetch_scan()
+            finally:
+                # Mark this iteration as done.
+                self._load_queue.task_done()
 
     async def _on_tree_node_expanded(
         self, event: Tree.NodeExpanded[CatalogItem]
@@ -345,14 +484,12 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             return
         if isinstance(node.data, InteractiveCatalogItem) and not node.data.loaded:
             # if this node isn't loaded yet, add it to the front of the queue
-            self._add_to_load_queue(node, priority=0)  # type: ignore[arg-type]
-        if (
-            isinstance(node.data, CatalogItem)
-            and node.data.children
-            and not node.children
-        ):
-            self._populate_node(node, content=node.data.children)
-        # pre-fetch the node's grandchildren
-        for child in node.children:
-            if isinstance(child.data, InteractiveCatalogItem):
-                self._add_to_load_queue(child)  # type: ignore[arg-type]
+            self._show_loading_placeholder(node)
+            self._add_to_load_queue(node, priority=DEMAND_PRIORITY)  # type: ignore[arg-type]
+        elif node.data.children and (not node.children or self._has_placeholder(node)):
+            await self._populate_node(node, content=node.data.children)
+        self._schedule_prefetch_scan()
+
+    def _on_tree_node_collapsed(self, event: Tree.NodeCollapsed[CatalogItem]) -> None:
+        # the lines below shifted up; re-scan so we prefetch what's on screen now
+        self._schedule_prefetch_scan()
