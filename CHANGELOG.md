@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
+
 ### Bug Fixes
 
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
