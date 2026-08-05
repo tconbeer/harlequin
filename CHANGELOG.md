@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - Running a buffer that contains several queries no longer merges, skips, or repeats queries, and runs them in the order they appear in the buffer ([#929](https://github.com/tconbeer/harlequin/issues/929)). Selecting queries backwards now runs the same queries as selecting them forwards, and placing the cursor immediately after a semicolon runs only the query it terminates.
+- Harlequin no longer crashes if an adapter raises an exception other than a `HarlequinQueryError` while executing a query, fetching results, canceling queries, or loading completions; it shows an error modal and keeps running ([#982](https://github.com/tconbeer/harlequin/issues/982)).
 - Fixes an intermittent crash (`ValueError: task_done() called too many times`) when the Data Catalog was refreshed — for example by the automatic refresh after running a query — while its background loader was still fetching a node ([#991](https://github.com/tconbeer/harlequin/issues/991)).
 - A Data Catalog node that turns out to have no children no longer keeps a phantom expand arrow.
 - Expanding a node that was already queued for background loading no longer loads it twice, which could collapse a subtree you had opened.

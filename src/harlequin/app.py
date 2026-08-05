@@ -86,7 +86,6 @@ from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
-    HarlequinQueryError,
     pretty_error_message,
     pretty_print_error,
 )
@@ -1071,7 +1070,7 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_runners",
         description="Executing queries.",
     )
@@ -1084,7 +1083,9 @@ class Harlequin(AppBase):
         for q in queries:
             try:
                 cur = self.connection.execute(q)
-            except HarlequinQueryError as e:
+            # adapters are supposed to raise HarlequinQueryError, but a raw
+            # driver exception must not take down the app.
+            except Exception as e:
                 self.post_message(QueryError(query_text=q, error=e))
                 break
             else:
@@ -1107,14 +1108,22 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_cancellers",
         description="Cancelling queries.",
     )
     def _cancel_query(self) -> None:
         if self.connection is None or not self.adapter.IMPLEMENTS_CANCEL:
             return
-        self.connection.cancel()
+        try:
+            self.connection.cancel()
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Cancel Error",
+                header="Harlequin could not cancel your queries.",
+                error=e,
+            )
         self.post_message(QueriesCanceled())
 
     def _get_selected_queries(self) -> list[str]:
@@ -1138,7 +1147,7 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_runners",
         description="fetching data from adapter.",
     )
@@ -1152,10 +1161,11 @@ class Harlequin(AppBase):
         for id_, (cur, q) in cursors.items():
             try:
                 cur_data = cur.fetchall()
+                cols = cur.columns()
             except BaseException as e:
                 errors.append((e, q))
             else:
-                data[id_] = (cur.columns(), cur_data, q)
+                data[id_] = (cols, cur_data, q)
         elapsed = time.monotonic() - submitted_at
         self.post_message(
             ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
@@ -1217,13 +1227,21 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="completer_builders",
         description="building completers",
     )
     def _build_completers(self, catalog: Catalog) -> None:
         assert self.connection is not None
-        extra_completions = self.connection.get_completions()
+        try:
+            extra_completions = self.connection.get_completions()
+        except Exception:
+            # completions are a nice-to-have; build the rest without them.
+            extra_completions = []
+            self.notify(
+                "Harlequin could not load completions from your adapter.",
+                severity="warning",
+            )
         word_completer, member_completer = completer_factory(
             catalog=catalog,
             extra_completions=extra_completions,
