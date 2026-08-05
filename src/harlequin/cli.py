@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from importlib.metadata import entry_points, version
 from pathlib import Path
 from typing import Any, Sequence
@@ -409,4 +410,15 @@ def harlequin() -> None:
     The main entrypoint for the Harlequin IDE. Builds and executes the click Command.
     """
     cli = build_cli()
-    cli()
+    with warnings.catch_warnings():
+        # Two installed adapters can claim the same flag for different options --
+        # -u is duckdb's --allow-unsigned-extensions and postgres' --user, and -d
+        # is --database for one adapter and --dbname for another. Click warns about
+        # each collision on every invocation, but the flags belong to separate
+        # plugins, so there is nothing the user can do about it.
+        warnings.filterwarnings(
+            "ignore",
+            message="The parameter .* is used more than once",
+            category=UserWarning,
+        )
+        cli()
