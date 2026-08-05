@@ -4,10 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-05
+
 ### Dependencies
 
 - Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
-- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python < 3.14.
+- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python &lt; 3.14.
 - Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of textual-textarea.
 
 ### Bug Fixes
@@ -903,7 +905,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.6.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.7.0...HEAD
+[2.7.0]: https://github.com/tconbeer/harlequin/compare/2.6.0...2.7.0
 [2.6.0]: https://github.com/tconbeer/harlequin/compare/2.5.2...2.6.0
 [2.5.2]: https://github.com/tconbeer/harlequin/compare/2.5.1...2.5.2
 [2.5.1]: https://github.com/tconbeer/harlequin/compare/2.5.0...2.5.1
