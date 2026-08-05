@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 
 ### Refactoring
 
+- Copying a catalog label or a data selection now goes through textual-textarea's `TextEditor.copy_to_clipboard()`, instead of Harlequin duplicating that logic twice. Copying now also emits OSC 52, so it works over ssh and in terminals where pyperclip has no backend, and clipboard failures now report the same actionable message as a failed copy from the Query Editor.
+- Harlequin now uses textual-textarea's public `pause_blink()`/`restart_blink()` methods to freeze the Query Editor's cursor while a modal is open, instead of reaching into the inner text area's private methods.
+- The list of valid themes is now read from one place (`harlequin.colors.VALID_THEMES`); the config wizard previously read Textual's `BUILTIN_THEMES` directly, relying on `harlequin.colors` having mutated it at import time.
 - The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 - The Query Editor now uses Textual's `Click.chain` for double-, triple-, and quadruple-click selection, instead of tracking consecutive clicks with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
