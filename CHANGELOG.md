@@ -7,9 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 
 - Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
+- Declares `pyperclip` as a direct dependency. Harlequin imports it to copy the text of an error modal, but it was only installed as a transitive dependency of textual-textarea.
 
 ### Bug Fixes
 
+- Clicking an error modal now copies its text over OSC 52 as well as with pyperclip, so it works over ssh and in terminals where pyperclip has no backend, matching every other copy in Harlequin.
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
 - Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
 - Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).

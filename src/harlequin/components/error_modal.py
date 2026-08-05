@@ -12,12 +12,14 @@ from textual.widgets import Static
 class ClickableStatic(Static):
     def on_click(self, message: events.Click) -> None:
         message.stop()
+        text = str(self.content)
+        # OSC 52 works over ssh and where pyperclip has no backend
+        self.app.copy_to_clipboard(text)
         try:
-            pyperclip.copy(str(self.content))
+            pyperclip.copy(text)
         except pyperclip.PyperclipException:
             pass
-        else:
-            self.app.notify("Error copied to clipboard.")
+        self.app.notify("Error copied to clipboard.")
 
 
 class ErrorModal(ModalScreen):
