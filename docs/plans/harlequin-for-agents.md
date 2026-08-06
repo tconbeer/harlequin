@@ -210,8 +210,9 @@ hsql <SUBCOMMAND> [OPTIONS]         catalog, describe, fmt, spec, info,
   -o, --output PATH      Write results to PATH instead of stdout.
   -F, --format NAME      Output format (see below). Default: table.
       --csv/--json/--jsonl/--markdown/--vertical    Format shorthands.
-  -A, --no-align         Unaligned output.
-      --no-header        Omit the header row.
+  -t, --tuples-only      Rows only: no header, no footer. As in psql.
+  -A, --no-align         Unaligned output. As in psql.
+      --no-header        Omit the header row (keep other chrome).
       --null-string STR  Render NULL as STR. Default: empty for csv, "NULL" for table.
   -P, --profile NAME     Same profiles as the TUI.
   -l, --limit N          Max rows per result set. Default: 500. 0 = no limit.
@@ -248,6 +249,9 @@ point — `hsql -P prod -c ...` means the agent never handles a credential.
 `note: results truncated at 500 rows (--limit)`, and text formats append a visible
 `… 500 of N rows` footer. The TUI's default of 100,000 rows is right for a TUI and a
 catastrophe for an agent; `hsql` defaults to 500.
+
+The stderr notice fires **even under `-t`**. `-t` suppresses stdout chrome, not
+warnings; a flag that silently defeats truncation reporting would undo principle 5.
 
 **Row counts and timing go to stderr**, so `hsql -c "select 1" --csv > out.csv` produces
 a clean file while the agent still sees `1 row in 0.02s`.
@@ -306,16 +310,27 @@ CSV/JSONL export. This also chips at [#875](https://github.com/tconbeer/harlequi
 - **A8.** As a human, I use `hsql` in a Makefile or CI job because it's the same engine
   and the same profile I already use interactively.
 
-### Small open question: `-t`
+### On `-t`, and the `-tAc` idiom
 
-psql's `-t` is "tuples only"; Harlequin's `-t` is `--theme`. Since `hsql` has no themes
-there's no conflict *within* `hsql`, but claiming `-t` for tuples-only creates a
-divergence between our own two commands. My inclination is to **reserve `-t` in `hsql`
-and error with a hint** (`use --no-header`), rather than have the same short flag mean
-different things in `harlequin` and `hsql`. Easy to overrule if psql compatibility wins.
+`-t` is `--theme` in `harlequin` and "tuples only" in psql. Since `hsql` has no themes,
+`-t` is free, and it takes the **psql meaning**.
 
-A short "differences from psql" table in the docs should cover this, `-P`, and anything
-else that diverges.
+The reason isn't `-t` in isolation — it's that `psql -tAc "select count(*)"` is a single
+well-worn idiom, the standard way to capture a scalar in a shell script. Supporting `-t`
+and `-A` separately but not together would be pointless; refusing `-t` would break the
+cluster and make first contact with a scripting audience an error message. Borrowing the
+flag is principle 6 doing its job.
+
+The residual risk is small and worth naming: someone with `harlequin -t nord` habits
+types `hsql -t nord -c ...`, `-t` parses as a boolean, and `nord` is read as a
+connection string. The resulting "could not open database 'nord'" is diagnosable, and we
+can special-case the hint when an unparseable conn_str matches a known theme name.
+
+`hsql -tAc "select count(*) from orders"` returning a bare number and nothing else
+should be an explicitly tested case, and the first example in the scripting docs.
+
+A short "differences from psql" table in the docs should still cover `-P` (profile here,
+pset there) and anything else that diverges.
 
 ---
 
