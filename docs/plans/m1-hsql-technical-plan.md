@@ -253,6 +253,14 @@ it one extra row. This is why the limit is a value object with an explicit
 plan ("truncation must always be announced — never silent") is unimplementable without
 it, and it costs exactly one row.
 
+**No adapter-interface change for limits in M1.** The clean long-term answer is for the
+cursor to say whether more rows exist — a `has_more()`, or a `set_limit()` that reports
+back — instead of us inferring it from an extra row. That's a fifteen-adapter rollout for
+a problem the existing API already solves, so it waits. `set_limit()` and the backend's
+`max_rows` are both existing features, used as they are; the only thing `hsql` does
+differently is pass `limit + 1`. If a later milestone adds a real capability, `RowLimit`
+is the single place that changes.
+
 **Upstream first.** The two `textual-fastdatatable` changes in §3 are a prerequisite, and
 both are non-breaking: the lazy `__init__` keeps `from textual_fastdatatable import DataTable`
 working via PEP 562 `__getattr__`, and deferring `pyarrow.parquet` is invisible to
@@ -637,23 +645,29 @@ Beyond that:
 
 ---
 
-## 6. Decisions I need from you
+## 6. Decisions
 
-1. **Should the TUI adopt overflow detection?** The core can tell the TUI its
-   100,000-row limit bit, so it could show "100,000+ rows" instead of "100,000 rows".
-   More honest, costs one row, but it's a visible change and it moves snapshots. My
-   inclination is yes, in PR 2. Default if you don't care: leave the TUI's display alone,
-   `detect_overflow=False` there.
-2. **`tree-sitter` and `tree-sitter-sql` as hard dependencies of `harlequin`?** They're
+**Settled.**
+
+- *Limits stay on the existing machinery.* `cursor.set_limit()` and the backend's
+  `max_rows`, exactly as they are — no new adapter-interface method for truncation in M1
+  (see §3.1).
+- *The TUI keeps its current row-count display.* `detect_overflow=False` there; only
+  `hsql` pays the extra row. No snapshot churn in PR 2.
+- *Streaming is out.* Not designed around, not partially built — see §3.3 and §7.
+
+**Still open.**
+
+1. **`tree-sitter` and `tree-sitter-sql` as hard dependencies of `harlequin`?** They're
    installed for everyone today via `textual[syntax]`, and depending on them directly
    would let us delete the degraded splitter path and its troubleshooting page. The
    reason not to is the reason Textual made it an extra: platforms without wheels. You'll
    know better than me how much traffic that troubleshooting page gets. My default is to
    keep it optional and mirror the TUI's fallback.
-3. **`hsql --help` showing only the selected adapter's options** — confirmed as an
+2. **`hsql --help` showing only the selected adapter's options** — confirmed as an
    improvement rather than a regression? It's what makes startup cost bounded, and I'd
    want to make the same call even if it weren't.
-4. **`--result` default.** The product plan says `all` for text formats and `last` for
+3. **`--result` default.** The product plan says `all` for text formats and `last` for
    data formats. That's context-dependent behavior, which cuts against determinism. I'd
    rather default to `all` everywhere and let `json`/`csv` emit multiple documents when a
    script produces multiple result sets — but "csv with two headers in it" is genuinely
@@ -695,6 +709,6 @@ release.
 - **§5 says "Large results stream" and lists it as an M1 concern.** Nothing streams in
   M1, and it can't: `HarlequinCursor.fetchall()` materializes the whole result before any
   writer exists, so the format layer is downstream of the problem. Streaming is an M5
-  change to the cursor interface. The M1 commitment should be narrowed to "the format
-  layer doesn't make streaming harder later," which is what `rows()` returning an
-  iterator buys.
+  change to the cursor interface, and M1 doesn't design around it — `rows()` returns an
+  iterator because that's the natural shape, not as a hedge. Agreed with Ted; the product
+  plan's §5 bullet should move to M5 outright.
