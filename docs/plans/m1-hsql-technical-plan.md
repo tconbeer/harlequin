@@ -778,6 +778,10 @@ release.
 
 ## 8. Corrections to the product plan
 
+All of these are **applied** in `harlequin-for-agents.md` in the same PR as this
+document; they're recorded here so the reasoning behind each change is written down
+somewhere.
+
 - **§4 says the full adapter option matrix on `hsql --help` is "unavoidable and shared."**
   It's avoidable. `hsql --help` lists adapter *names* and points at `--help -a X`, which
   is both a token saving and the fix for the only unbounded startup cost (§3.6).
