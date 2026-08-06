@@ -789,6 +789,10 @@ A few things worth getting right the first time:
 This is a genuine, working package rather than a squat, which also keeps it on the right
 side of PyPI's naming policy.
 
+*Status: the metapackage lives in `packaging/hsql/` and publishes via the manual
+`publish-hsql.yml` workflow. It is versioned independently and deliberately kept out of
+the Harlequin release, so shipping it is one `workflow_dispatch`.*
+
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's
 the flag that makes everything else socially acceptable.

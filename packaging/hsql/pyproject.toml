@@ -1,0 +1,54 @@
+[project]
+
+name = "hsql"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "The headless SQL client for scripts and agents. Installs Harlequin."
+authors = [
+    { name = "Ted Conbeer", email = "tconbeer@users.noreply.github.com" }
+]
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+keywords = ["sql", "cli", "harlequin", "agents", "headless"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+# hsql is a metapackage: it ships no modules of its own, it just installs
+# Harlequin. The floor floats deliberately so this package does not need a
+# release every time Harlequin cuts one. When Harlequin starts shipping the
+# `hsql` console script, raise the floor to that version -- do not add a
+# console script here, or two installed distributions would claim one name.
+dependencies = [
+    "harlequin>=2.8",
+]
+
+
+[project.urls]
+
+Homepage = "https://harlequin.sh"
+Documentation = "https://harlequin.sh/docs/getting-started/index"
+Repository = "https://github.com/tconbeer/harlequin"
+"Bug Tracker" = "https://github.com/tconbeer/harlequin/issues"
+Changelog = "https://github.com/tconbeer/harlequin/blob/main/CHANGELOG.md"
+
+
+[build-system]
+
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.hatch.build.targets.wheel]
+
+# there are no modules to ship; without this hatchling cannot infer a target.
+bypass-selection = true
