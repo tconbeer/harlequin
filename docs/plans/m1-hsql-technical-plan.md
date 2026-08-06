@@ -104,7 +104,11 @@ Driving that grammar directly, with no Textual and no textual-textarea, measures
 **28ms to import, 92 modules**, and 22ms to split a 2000-statement script. It gets
 string literals, line comments, block comments, quoted identifiers and unicode right.
 It gets `$$`-dollar-quoting wrong — and so does the TUI today, because it's the same
-grammar and the same query. See §3.2.
+grammar and the same query.
+
+Two further things fell out of driving it directly. Tree-sitter is used in exactly one
+place in Harlequin — that one query — and nowhere else. And its `Point.column` is a
+**byte** offset, which the editor feeds to a function expecting characters. See §3.2.
 
 ### 1.5 Two places already write results to stdout that shouldn't
 
@@ -280,39 +284,54 @@ against sqlfmt's 85ms, no new SQL scanner to maintain, and — the part that mat
 and the editor cannot disagree about where a statement ends.
 
 ```python
-SEMICOLON_QUERY = '(";" @semicolon)'          # one definition, both consumers
-
-def tree_sitter_available() -> bool: ...
-def find_separators(text: str) -> list[int]: ...   # offset just past each separator
-def split(text: str) -> list[Statement]: ...       # separators -> trimmed statements
+def find_separators(text: str) -> list[Point]: ...  # (row, character column) past each ";"
+def split(text: str) -> list[Statement]: ...        # separators -> trimmed statements
 ```
 
-The editor keeps its own path, and that's correct rather than a compromise:
-`selected_queries()` needs to know which statements *intersect the selection*, so it
-works in `(row, column)` Locations against textual-textarea's already-parsed incremental
-tree. Reparsing the buffer through a second parser would be slower and no more accurate.
-What it stops owning is the query pattern and the fallback policy, which it imports from
-here. So: one grammar, one query constant, one definition of "empty statement", two
-slicers because there are genuinely two coordinate systems — and a shared fixture corpus
-of tricky SQL that both are tested against.
+**`tree-sitter` and `tree-sitter-sql` become explicit, required dependencies of
+`harlequin`** (Ted's call). Both are installed for everyone today, transitively via
+`textual[syntax]`; depending on them directly costs 28ms, makes the guarantee real
+instead of incidental, and collapses this section from "two splitters, carefully kept in
+sync" to one. The accepted cost is that Harlequin stops installing on a platform with no
+tree-sitter wheel — which is why `textual` made it an extra, and which the
+`harlequin.sh/docs/troubleshooting/tree-sitter` page currently exists to explain. That
+page becomes obsolete; PR 7 removes it.
 
-**Two honest caveats.**
+**With that, there is exactly one splitter.** Tree-sitter is used in precisely one place
+in Harlequin today — `code_editor.py`, for the semicolon query, and nowhere else
+(highlighting is textual-textarea's own business and unaffected). So the editor calls
+`find_separators(self.text)` and slices as it does now, and we delete `SEMICOLON_QUERY`,
+`_semicolon_query`, `prepare_query`, `query_syntax_tree`, `has_shown_tree_sitter_error`,
+and the whole `is_syntax_aware` fallback branch.
 
-*tree-sitter is optional.* It arrives via `textual[syntax]`, so in practice every
-Harlequin install has it, but the TUI has an explicit degraded path
-(`is_syntax_aware == False` → naive regex split plus a warning toast) because
-tree-sitter wheels aren't available everywhere — that's what the
-`harlequin.sh/docs/troubleshooting/tree-sitter` page is for. `hsql` mirrors it: naive
-split, plus a stderr warning saying that statement splitting may be wrong without
-tree-sitter. Promoting `tree-sitter`/`tree-sitter-sql` to hard dependencies of
-`harlequin` would delete the degraded path for everyone and is tempting at 28ms, but it
-would break installs on platforms without wheels. See §6.
+The one thing given up is textual-textarea's incremental tree: the shared library
+reparses. Measured, that's 0.6ms for a realistic buffer and 22ms for a pathological
+2000-statement one, and `selected_queries()` runs on submit rather than on keystroke. A
+worthwhile trade for deleting a divergence.
 
-*Dollar-quoting is wrong.* `create function f() … $$ … ; … $$ …` splits inside the
-function body. The TUI has this bug today, identically, because it's the grammar's. It
-should be its own issue rather than M1 scope — and it's a good demonstration that
-sharing the grammar means `hsql` inherits the TUI's behavior including its bugs, which
-is the definition of no drift.
+**This fixes a live unicode bug in the TUI, which is why the shared library returns
+character columns.** Tree-sitter's `Point.column` is a **byte** offset; Textual's own
+docstring says so, and it hands the raw nodes back. But `get_text_range()` takes
+*character* columns, and `code_editor.py:159` passes one straight into the other. Any
+non-ASCII before a semicolon on the same line shifts the cut:
+
+```
+select '日本語';select 2
+  splits today  -> "select '日本語';select"  |  "2"
+  should be     -> "select '日本語';"        |  "select 2"
+```
+
+Both halves are then syntax errors. It's narrow — it needs non-ASCII before the
+semicolon and a non-space after it, so `.strip()` usually absorbs the off-by-one — but
+it's real, reproducible, and in `main` right now. Owning the byte→character conversion
+in one place, once, is what stops `hsql` from inheriting it. Worth its own issue and a
+changelog line, since it's a TUI bug fix that happens to fall out of this work.
+
+*One known bug we don't fix:* `create function f() … $$ … ; … $$ …` splits inside the
+dollar-quoted body. The TUI has it today, identically, because it's the grammar's. Its
+own issue, not M1 scope — and a decent demonstration that sharing the grammar means
+`hsql` inherits the TUI's behavior including its bugs, which is the definition of no
+drift.
 
 ### 3.3 Output — duckdb serializes, `hsql` lays out
 
@@ -550,11 +569,15 @@ stdout leaks from §1.5. Add import-linter contracts and the cold-start benchmar
 Ships value on its own: importing `harlequin_duckdb` goes from 691ms to 56ms, which
 every adapter's test suite and every library consumer feels.
 
-**PR 2 — `harlequin.statements` and `harlequin.query`.** The tree-sitter splitter and its
-fallback; the editor refactored to import the shared query constant; the tricky-SQL
-corpus. Then the execution core, with `_execute_query` and `_fetch_data` refactored onto
-it. Delete the dead `_split_query_text`. Snapshot tests are the safety net for the TUI
-refactor.
+**PR 2 — `harlequin.statements` and `harlequin.query`.** Add `tree-sitter` and
+`tree-sitter-sql` to `dependencies`. Build the splitter; refactor `CodeEditor` onto it and
+delete its fallback branch, fixing the unicode column bug in the same move; land the
+tricky-SQL corpus. Then the execution core, with `_execute_query` and `_fetch_data`
+refactored onto it. Delete the dead `_split_query_text`. Snapshot tests are the safety
+net for the TUI refactor.
+
+This is the only PR in Release A with user-visible behavior in it — the unicode fix — so
+it gets a changelog entry and its own issue while the rest stay silent.
 
 **PR 3 — `export.py` decoupled from `ResultsTable`, plus `harlequin.layout`.** Extend
 `export.py` with `tsv` and `jsonl` (option variants of formats it already writes) and the
@@ -581,7 +604,8 @@ notices, plain errors.
 known theme name.
 
 **PR 7 — Docs.** The "Headless & Agents" topic (a PR against `tconbeer/harlequin-web`),
-README, changelog.
+README, changelog. Retire the `troubleshooting/tree-sitter` page, which describes a
+degraded mode that no longer exists (§3.2).
 
 **PR 8 — The agent eval suite.** Three tasks against fixture databases, scored on
 wrong-flag retries and completion. §13 of the product plan calls this the metric that
@@ -637,11 +661,10 @@ Beyond that:
   named test. It's the idiom the scripting audience will try first.
 - **Truncation:** exactly-at-limit, one-over-limit, and under-limit, on both duckdb and
   sqlite — the two implement `set_limit` differently enough to matter.
-- **The tricky-SQL corpus** against both the editor's slicer and `statements.split()`,
-  including a skip-marked case for dollar-quoting so the known bug is recorded rather
-  than forgotten.
-- **Splitter fallback:** the naive path exercised with tree-sitter monkeypatched out, so
-  the degraded behavior stays tested on machines that have it.
+- **The tricky-SQL corpus** against `statements.split()` and, through `selected_queries()`,
+  the editor — same fixtures, one splitter underneath. Includes non-ASCII before a
+  semicolon with no following space (the §3.2 bug, which fails on `main`) and a
+  skip-marked dollar-quoting case so the known bug is recorded rather than forgotten.
 
 ---
 
@@ -655,19 +678,16 @@ Beyond that:
 - *The TUI keeps its current row-count display.* `detect_overflow=False` there; only
   `hsql` pays the extra row. No snapshot churn in PR 2.
 - *Streaming is out.* Not designed around, not partially built — see §3.3 and §7.
+- *`tree-sitter` and `tree-sitter-sql` become required dependencies.* One splitter, no
+  fallback, the troubleshooting page retired (§3.2). Accepted cost: no install on
+  platforms without a tree-sitter wheel.
 
 **Still open.**
 
-1. **`tree-sitter` and `tree-sitter-sql` as hard dependencies of `harlequin`?** They're
-   installed for everyone today via `textual[syntax]`, and depending on them directly
-   would let us delete the degraded splitter path and its troubleshooting page. The
-   reason not to is the reason Textual made it an extra: platforms without wheels. You'll
-   know better than me how much traffic that troubleshooting page gets. My default is to
-   keep it optional and mirror the TUI's fallback.
-2. **`hsql --help` showing only the selected adapter's options** — confirmed as an
+1. **`hsql --help` showing only the selected adapter's options** — confirmed as an
    improvement rather than a regression? It's what makes startup cost bounded, and I'd
    want to make the same call even if it weren't.
-3. **`--result` default.** The product plan says `all` for text formats and `last` for
+2. **`--result` default.** The product plan says `all` for text formats and `last` for
    data formats. That's context-dependent behavior, which cuts against determinism. I'd
    rather default to `all` everywhere and let `json`/`csv` emit multiple documents when a
    script produces multiple result sets — but "csv with two headers in it" is genuinely
