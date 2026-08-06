@@ -202,29 +202,34 @@ The one-line statement of the architecture, which is also a testable rule:
 @dataclass(frozen=True)
 class Statement:
     sql: str
-    index: int                 # 0-based position in the submitted script
+    index: int  # 0-based position in the submitted script
+
 
 @dataclass(frozen=True)
 class RowLimit:
-    max_rows: int | None       # None = unlimited
-    detect_overflow: bool      # fetch one extra row so truncation is knowable
+    max_rows: int | None  # None = unlimited
+    detect_overflow: bool  # fetch one extra row so truncation is knowable
+
 
 @dataclass
 class ExecutedStatement:
     statement: Statement
-    cursor: HarlequinCursor | None    # None for DDL/DML
+    cursor: HarlequinCursor | None  # None for DDL/DML
+
 
 @dataclass
 class ResultSet:
     statement: Statement
-    columns: list[tuple[str, str]]    # (name, short type) from cursor.columns()
-    backend: DataTableBackend         # from textual_fastdatatable
+    columns: list[tuple[str, str]]  # (name, short type) from cursor.columns()
+    backend: DataTableBackend  # from textual_fastdatatable
     truncated: bool
     elapsed: float
+
     @property
-    def row_count(self) -> int: ...   # backend.row_count
+    def row_count(self) -> int: ...  # backend.row_count
     def rows(self) -> Iterator[Sequence[Any]]: ...
-    def text_columns(self) -> pa.Table: ...   # every value CAST AS VARCHAR; see §3.3
+    def text_columns(self) -> pa.Table: ...  # every value CAST AS VARCHAR; see §3.3
+
 
 def execute(
     connection: HarlequinConnection,
@@ -308,8 +313,10 @@ against sqlfmt's 85ms, no new SQL scanner to maintain, and — the part that mat
 and the editor cannot disagree about where a statement ends.
 
 ```python
-def find_separators(text: str) -> list[Point]: ...  # (row, character column) past each ";"
-def split(text: str) -> list[Statement]: ...        # separators -> trimmed statements
+def find_separators(
+    text: str,
+) -> list[Point]: ...  # (row, character column) past each ";"
+def split(text: str) -> list[Statement]: ...  # separators -> trimmed statements
 ```
 
 **`tree-sitter` and `tree-sitter-sql` become explicit, required dependencies of
@@ -491,9 +498,9 @@ about them. `--no-header` and `--null-string` also reach `export.py` as `header`
 ### 3.4 `harlequin.plugins` — naming an adapter without importing it
 
 ```python
-def adapter_names() -> list[str]: ...                        # entry-point names only
-def load_adapter(name: str) -> type[HarlequinAdapter]: ...   # imports exactly one
-def load_adapter_plugins() -> dict[str, type[HarlequinAdapter]]: ...   # existing
+def adapter_names() -> list[str]: ...  # entry-point names only
+def load_adapter(name: str) -> type[HarlequinAdapter]: ...  # imports exactly one
+def load_adapter_plugins() -> dict[str, type[HarlequinAdapter]]: ...  # existing
 ```
 
 `adapter_names()` reads entry-point *names* without calling `ep.load()`, so it costs
