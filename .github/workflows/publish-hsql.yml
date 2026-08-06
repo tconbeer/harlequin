@@ -1,0 +1,59 @@
+name: Build and Publish hsql Metapackage
+
+# hsql is the reserved name for Harlequin's future headless CLI. It is a
+# metapackage that only depends on harlequin, it is versioned independently of
+# harlequin, and it is released rarely -- so this is a manual workflow rather
+# than part of the harlequin release. Bump the version in
+# packaging/hsql/pyproject.toml, merge, then run this.
+#
+# The filename and the environment name below are both registered with PyPI's
+# trusted publisher for the hsql project. Renaming either one breaks publishing.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-hsql:
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Check out harlequin main branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.9.3"
+
+      - name: Get hsql version
+        id: hsql_version
+        run: echo "hsql_version=$(uv version --project packaging/hsql --short)" >> $GITHUB_OUTPUT
+
+      - name: Build hsql
+        run: uv build packaging/hsql --out-dir dist
+
+      - name: Check that only hsql artifacts will be uploaded
+        run: |
+          ls -la dist/
+          if ls dist/ | grep -qv '^hsql-'; then
+            echo "::error::dist/ contains non-hsql artifacts; refusing to publish."
+            exit 1
+          fi
+
+      - name: Publish hsql to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Summary
+        run: |
+          echo "Published hsql ${{ steps.hsql_version.outputs.hsql_version }} to PyPI." >> $GITHUB_STEP_SUMMARY

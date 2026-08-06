@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
+
 ## [2.8.0] - 2026-08-06
 
 ### Features
