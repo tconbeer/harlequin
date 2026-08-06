@@ -246,16 +246,40 @@ struct come out" — in two places, and the disagreement would surface as `hsql`
 TUI showing different data for the same query. That is the worst possible place for
 these two front doors to diverge.
 
-**Truncation falls out of the backend's `max_rows`, and needs `limit + 1` at the cursor.**
-`set_limit(n)` then `fetchall()` returns at most n rows and tells you nothing about
-whether an n+1th existed; exactly n is ambiguous. So `execute()` requests `limit + 1`,
-and `fetch()` calls `create_backend(data, max_rows=limit)`. `DataTableBackend` already
-distinguishes `row_count` (capped) from `source_row_count` (what it was handed), so
-`truncated = source_row_count > row_count` — the mechanism exists, we just have to feed
-it one extra row. This is why the limit is a value object with an explicit
-`detect_overflow` rather than an `int` each caller interprets: principle 5 of the product
-plan ("truncation must always be announced — never silent") is unimplementable without
-it, and it costs exactly one row.
+**Harlequin already has two different limits, and `hsql` wants the other one.** This is
+worth spelling out, because the names collide and I had it wrong in an earlier draft:
+
+| | What it does | Where |
+| --- | --- | --- |
+| **Soft, display** — `harlequin --limit`, `max_results`, default 100,000 | Fetches *everything*, caps what's loaded into the viewer | `results_viewer.py:147`, `create_backend(max_rows=…)` |
+| **Hard, fetch** — the Run Query Bar's limit checkbox | `cur.set_limit(n)`, so fewer rows leave the database | `app.py:1093` |
+
+The soft limit is why the TUI needs no overflow detection and never did: because it
+fetched every row, it knows the exact total and already says so —
+`"(Showing 100,000 of 3,412,887 Records)"` at `results_viewer.py:234`. That's strictly
+better than anything an inference could give it. My earlier suggestion that it show
+"100,000+" was wrong.
+
+**`hsql -l` is the hard limit.** Fetching a million rows to print five hundred would
+defeat the entire point of a limit for an agent — time, memory, and egress. There is also
+no viewport headless, so the soft limit has no meaning: `hsql` has exactly one limit
+concept, and it's the fetch-side one. Same flag name, different semantics between the two
+commands; the docs need one sentence about that rather than a pretense that they match.
+
+**Which is why truncation needs `limit + 1`.** `set_limit(n)` then `fetchall()` returns at
+most n rows and tells you nothing about whether an n+1th existed; exactly n is ambiguous.
+So `execute()` requests `limit + 1` and `fetch()` calls `create_backend(data, max_rows=limit)`.
+`DataTableBackend` already distinguishes `row_count` (capped) from `source_row_count`
+(what it was handed), so `truncated = source_row_count > row_count` — the mechanism
+exists, we just feed it one extra row. This is why the limit is a value object with an
+explicit `detect_overflow` rather than an `int` each caller interprets: principle 5 of the
+product plan ("truncation must always be announced — never silent") is unimplementable
+without it, and it costs exactly one row.
+
+The asymmetry is real and defensible: the TUI can afford to know the exact total because
+it already paid for every row; `hsql` deliberately hasn't, so it reports `500 of 500+`.
+Under `-l 0` there's no `set_limit` at all, so the count is exact and `--stats` reports
+`"truncated": false` against a real number.
 
 **No adapter-interface change for limits in M1.** The clean long-term answer is for the
 cursor to say whether more rows exist — a `has_more()`, or a `set_limit()` that reports
@@ -507,10 +531,29 @@ Two-phase parse, which is what obstacle 3 forces and what makes `hsql --help` ch
 2. Resolve the profile (a profile may name an adapter), pick the one adapter in play,
    `load_adapter(name)`, and build the real command with only that adapter's options.
 
-An invocation only ever uses one adapter, so this is not a compromise — and
-`hsql --help` showing one adapter's connection options instead of all four is *better*
-for an agent, not worse. `hsql --help -a postgres` shows postgres'; `hsql info --json`
-(M2) enumerates everything.
+An invocation only ever uses one adapter, so for *execution* this is not a compromise.
+
+**Help is the exception, and it works differently (Ted's call).** My earlier version had
+plain `hsql --help` render the default adapter's options, which is misleading: a Postgres
+user reading `hsql --help` would see DuckDB's connection options and reasonably conclude
+those were the only ones. `--help` is the one path that has to be true for every adapter.
+So:
+
+- **`hsql --help`** shows the adapter-agnostic surface — every option in §5 of the product
+  plan, the format list, the exit codes — plus the *names* of installed adapters and a
+  line saying `run 'hsql --help -a <adapter>' for its connection options`. No adapter is
+  imported to render this at all, only `adapter_names()`.
+- **`hsql --help -a postgres`** imports postgres alone and adds its connection options.
+- **`hsql --help -P prod`** does the same for whatever adapter the profile names, which is
+  the form a human will actually reach for.
+
+This is better than what I had on every axis: it's honest, the top-level help is small and
+stable (the thing an agent reads first), the adapter options are one explicitly signposted
+call away, and rendering the common case imports nothing. It also degrades well as the
+ecosystem grows — twenty installed adapters make the help *list* longer by twenty lines,
+not the help *body* by twenty option tables.
+
+`hsql info --json` (M2) remains the way to enumerate everything at once.
 
 `harlequin` itself keeps its current all-adapters help. Changing it would alter published
 `--help` output and the docs built from it, for no benefit to a TUI already paying for
@@ -675,23 +718,44 @@ Beyond that:
 - *Limits stay on the existing machinery.* `cursor.set_limit()` and the backend's
   `max_rows`, exactly as they are — no new adapter-interface method for truncation in M1
   (see §3.1).
-- *The TUI keeps its current row-count display.* `detect_overflow=False` there; only
-  `hsql` pays the extra row. No snapshot churn in PR 2.
+- *No overflow detection in the TUI.* It doesn't need any: `--limit` there is a soft
+  display cap over a full fetch, so it already reports the exact total (§3.1).
+  `detect_overflow=False`, no snapshot churn in PR 2.
 - *Streaming is out.* Not designed around, not partially built — see §3.3 and §7.
 - *`tree-sitter` and `tree-sitter-sql` become required dependencies.* One splitter, no
   fallback, the troubleshooting page retired (§3.2). Accepted cost: no install on
   platforms without a tree-sitter wheel.
+- *`--help` is adapter-agnostic*, listing adapter names and pointing at `--help -a X`
+  for connection options (§3.6). Ted's design; better than what I proposed.
+- *`--result` defaults to `all`, in every format* (below).
 
-**Still open.**
+### On `--result`
 
-1. **`hsql --help` showing only the selected adapter's options** — confirmed as an
-   improvement rather than a regression? It's what makes startup cost bounded, and I'd
-   want to make the same call even if it weren't.
-2. **`--result` default.** The product plan says `all` for text formats and `last` for
-   data formats. That's context-dependent behavior, which cuts against determinism. I'd
-   rather default to `all` everywhere and let `json`/`csv` emit multiple documents when a
-   script produces multiple result sets — but "csv with two headers in it" is genuinely
-   awkward, so the plan's version may be the lesser evil. Weak opinion.
+The flag only matters when one invocation produces more than one result set — `hsql -c
+"select 1; select 2"`, or the common `-f script.sql` shape of a few setup statements
+followed by the query you actually care about. `all` emits every result set; `last` emits
+only the final one; `N` picks one. With a single statement, which is most invocations,
+the flag does nothing.
+
+The product plan's proposal was `all` for text formats and `last` for data formats. The
+problem isn't the values, it's that the *same command* would emit different things
+depending on `-F`, which is exactly the context-dependence principle 4 exists to prevent.
+Agreed on consistency, so:
+
+**`--result all` is the default everywhere. Formats that can't hold multiple result sets
+say so rather than lying.** Concretely:
+
+- One result set: works in every format, no change.
+- Multiple, into `table` / `markdown` / `vertical` / `jsonl`: all of them, in order.
+- Multiple, into `csv` / `tsv` / `json`: **error, exit 2** —
+  `hsql: error: 3 result sets, but csv holds one; use --result last or --result 3`.
+
+Writing two headers into one CSV is silent corruption of the same family as silent
+truncation, and an error that names the fix costs an agent one retry with a clear signal.
+The alternative — silently defaulting to `last` — throws away data the user asked for
+without saying so.
+
+**Still open.** Nothing.
 
 ---
 
@@ -715,8 +779,8 @@ release.
 ## 8. Corrections to the product plan
 
 - **§4 says the full adapter option matrix on `hsql --help` is "unavoidable and shared."**
-  It's avoidable, via the two-phase parse in §3.6, and avoiding it is both a token saving
-  and the fix for the only unbounded startup cost.
+  It's avoidable. `hsql --help` lists adapter *names* and points at `--help -a X`, which
+  is both a token saving and the fix for the only unbounded startup cost (§3.6).
 - **§12 lists cold start as a risk with "may need lazy entry-point resolution."** Not a
   maybe: it's worth 160ms of a 380ms invocation with four adapters installed, and it
   grows without bound. A requirement of M1, not a contingency.
@@ -732,3 +796,14 @@ release.
   change to the cursor interface, and M1 doesn't design around it — `rows()` returns an
   iterator because that's the natural shape, not as a hedge. Agreed with Ted; the product
   plan's §5 bullet should move to M5 outright.
+- **§5's truncation footer says `… 500 of N rows`, and N is unknowable.** Under a hard
+  fetch limit we deliberately never learn the true total — that's the point of the limit.
+  The footer is `500 of 500+`, and only `-l 0` yields an exact count. (The TUI *can* say
+  `100,000 of 3,412,887` because its limit is a display cap over a full fetch; see §3.1.)
+- **§5 lists `--limit` as though it means the same thing in both commands.** It doesn't:
+  soft display cap in the TUI, hard fetch limit in `hsql`. Worth one explicit sentence in
+  the docs rather than letting a reader assume they match.
+- **§5's `--result` default is format-dependent** (`all` for text, `last` for data), which
+  makes the same command emit different things depending on `-F`. It's `all` everywhere,
+  with an error rather than silent corruption where a format can't hold more than one
+  result set (§6).
