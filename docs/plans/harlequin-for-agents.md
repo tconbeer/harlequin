@@ -31,10 +31,10 @@ Harlequin already has the thing that fixes this, and nobody else does:
 - **sqlfmt** as an existing dependency.
 - **A TUI on the other end of the same config**, which no other CLI has.
 
-The pitch writes itself: **`harlequin -P prod -c "select 1"` works the same way against
-every database your team uses.** One CLI contract, one set of flags, one output format
+The pitch writes itself: **`hsql -P prod -c "select 1"` works the same way against every
+database your team uses.** One CLI contract, one set of flags, one output format
 vocabulary, one exit-code scheme — and when the agent needs a human, the human opens
-the same tool and sees the same catalog.
+Harlequin against the same profile and sees the same catalog.
 
 That last point is the real differentiator. Every other SQL client can be made
 agent-friendly. Only Harlequin can make the *handoff* good.
@@ -68,10 +68,9 @@ Harlequin can be uniquely good.
 These are the calls I'd want made up front, because they resolve most of the small
 decisions downstream.
 
-1. **The TUI is the product; headless is a first-class mode of it, not a second
-   product.** Same adapters, same config discovery, same profiles, same `--limit`
-   semantics, same error types. Every headless feature must reuse a TUI code path or
-   the TUI must be refactored to reuse the headless one.
+1. **One engine, two front doors.** `harlequin` (TUI) and `hsql` (headless) share
+   adapters, config discovery, profiles, limit semantics, and one execution core.
+   Neither reimplements the other. See §4.
 
 2. **stdout is data; stderr is narration.** Results go to stdout and nothing else does.
    Timings, row counts, truncation notices, warnings, and errors go to stderr. This is
@@ -102,12 +101,99 @@ decisions downstream.
    credential without flinching.
 
 9. **No LLM inside Harlequin.** No API keys, no model config, no vendor coupling. We
-   make Harlequin excellent for the agent already sitting next to the user. (See §9 for
+   make Harlequin excellent for the agent already sitting next to the user. (See §10 for
    how this answers issue #952.)
 
 ---
 
-## 4. Workstream A — Headless execution (`-c`)
+## 4. Shape of the CLI: two commands, one engine
+
+**Decision: headless mode ships as a separate command, `hsql`, not as flags on
+`harlequin`.**
+
+The tempting reason — it frees the flag namespace — is the weakest one. The real reasons
+are these.
+
+**Two audiences want two stability contracts.** The TUI's promise is "delight a human,
+evolve freely." The headless promise is "output format and exit codes are an API,
+frozen." Inside one command those pull against each other on every release, and a TUI
+change can silently break a machine contract. A separate command makes the boundary
+structural rather than something a reviewer has to remember.
+
+**Cold start stops being a discipline problem.** With one entry point, "never import
+Textual on the headless path" is a rule any contributor can regress silently. With a
+separate module graph it becomes an import-linter test in CI — *the `hsql` module graph
+must not contain `textual`* — which is the difference between hitting the 300ms target
+and hoping to.
+
+**It opens a lean install later.** `pip install hsql` with no Textual, no pyperclip, is
+plausible for CI images and agent sandboxes, and hard to reach from a single entry point.
+
+### What actually ships
+
+**The same package, with a second console script:**
+`hsql = "harlequin.hsql:main"` alongside the existing `harlequin` script.
+
+That is the key de-risking move. **The command split is cheap and near-reversible; the
+package split is the expensive part, and it can wait indefinitely** — possibly forever.
+We get the boundary and the enforceable import graph now, and decide about a separate
+distribution only if the lean-install demand materializes.
+
+`harlequin` itself gains **nothing**: no `-c`, no growth in an already-large `--help`,
+no behavior change. The one addition is a custom unknown-option handler, so
+`harlequin -c "select 1"` fails with *"`-c` isn't a harlequin option — did you mean
+`hsql -c`? See harlequin.sh/docs/headless."*
+
+Everything in Workstream B lands as `hsql` subcommands: `hsql catalog`,
+`hsql describe`, `hsql fmt`, `hsql spec`, `hsql info`, `hsql config`, `hsql history`,
+`hsql mcp`, `hsql open`. Bare `hsql` with no arguments prints help; it never launches
+the TUI.
+
+### Consequences
+
+- **The `-f` collision disappears, and with it the plan's only breaking change.**
+  `harlequin -f` stays `--show-files` forever; `hsql -f` is `--file`, as psql users
+  expect. Nothing here needs to wait for 3.0 — the whole plan becomes additive and can
+  ship in 2.x minors.
+- `hsql` gets clean access to `-c`, `-f`, `-o`, `-A`, and friends, so psql muscle memory
+  works without compromise.
+- `hsql --help` omits every TUI-only option (`--theme`, `--keymap-name`, `--show-files`,
+  `--show-s3`, `--locale`, `--config`, `--keys`), which is a real token saving for an
+  agent reading it. It still carries the full adapter connection-option matrix; that's
+  unavoidable and shared.
+- The handoff gets a natural verb: `hsql open query.sql` reads much better than
+  `harlequin --new-buffer query.sql`.
+
+### Alternatives rejected
+
+- **Flags on `harlequin`.** Requires the 3.0 `-f` break, grows an already-large help
+  surface, and leaves cold start and the stability boundary as matters of discipline.
+- **Subcommands on `harlequin` with a bare-invocation TUI fallback**
+  (`harlequin query -c ...`). Needs a custom Click `Group` that falls back to the TUI
+  when the first argument isn't a known subcommand, and it is genuinely ambiguous: a
+  DuckDB file named `catalog` or `config` in the cwd resolves as a subcommand. Low
+  probability, but exactly the confusing failure we don't want an agent hitting.
+
+### On the name
+
+`hsql` is free on PyPI. HSQLDB ships `sqltool` and `java -jar`, not a binary named
+`hsql`, so there's no PATH collision — the cost is search-results mindshare with
+HyperSQL, which is real but mild and fading. `hq` is taken. `harlequin-cli` is free but
+too long for something an agent types a hundred times in a task; short names are cheap
+in tokens and cheap in working memory.
+
+I'd take `hsql`. It's obviously "harlequin sql," and it sharpens the positioning rather
+than diluting it:
+
+> **Harlequin** — the SQL IDE for your terminal.
+> **hsql** — the same engine, headless, for scripts and agents.
+> Fifteen databases, one adapter ecosystem.
+
+That's a better story than "one tool with a flag."
+
+---
+
+## 5. Workstream A — `hsql`, headless execution
 
 Closes [#524](https://github.com/tconbeer/harlequin/issues/524). This is the
 foundation; everything else in this plan assumes it.
@@ -115,29 +201,33 @@ foundation; everything else in this plan assumes it.
 ### Proposed surface
 
 ```
-harlequin [OPTIONS] [CONN_STR]...
+hsql [OPTIONS] [CONN_STR]...        Execute SQL and exit
+hsql <SUBCOMMAND> [OPTIONS]         catalog, describe, fmt, spec, info,
+                                    config, history, open, mcp
 
-  -c, --command TEXT     Execute SQL and exit. Repeatable. Implies headless mode.
-      --file PATH        Execute SQL from a file (or `-` for stdin). Repeatable.
+  -c, --command TEXT     Execute SQL. Repeatable.
+  -f, --file PATH        Execute SQL from a file (or `-` for stdin). Repeatable.
   -o, --output PATH      Write results to PATH instead of stdout.
   -F, --format NAME      Output format (see below). Default: table.
       --csv/--json/--jsonl/--markdown/--vertical    Format shorthands.
+  -A, --no-align         Unaligned output.
       --no-header        Omit the header row.
       --null-string STR  Render NULL as STR. Default: empty for csv, "NULL" for table.
-  -l, --limit N          Max rows per result set. Headless default: 500. 0 = no limit.
+  -P, --profile NAME     Same profiles as the TUI.
+  -l, --limit N          Max rows per result set. Default: 500. 0 = no limit.
       --result all|last|N  Which result set(s) to emit. Default: all (text), last (data).
       --on-error stop|continue    Default: stop.
       --stats            Write a one-line JSON summary to stderr.
-      --color auto|always|never   Default: never in headless mode.
+      --color auto|always|never   Default: never.
       --timeout SECONDS  Cancel the query and exit non-zero.
       --read-only        Refuse to run if the adapter can't enforce read-only.
       --dry-run          Parse/validate (and EXPLAIN where supported) without executing.
       --single-transaction        Wrap the whole script; roll back on any error.
 ```
 
-Precedence stays as it is today: CLI > env > `--config-path` > cwd config > user config
-dir > home > defaults. Profiles work identically in headless mode, which is the whole
-point — `harlequin -P prod -c ...` means the agent never handles a credential.
+Config discovery, profiles, and precedence are identical to the TUI: CLI > env >
+`--config-path` > cwd config > user config dir > home > defaults. That's the whole
+point — `hsql -P prod -c ...` means the agent never handles a credential.
 
 ### Formats
 
@@ -156,11 +246,11 @@ point — `harlequin -P prod -c ...` means the agent never handles a credential.
 
 **Truncation is always announced.** If `--limit` bites, stderr gets
 `note: results truncated at 500 rows (--limit)`, and text formats append a visible
-`… 500 of N rows` footer. The current default of 100,000 rows is right for a TUI and a
-catastrophe for an agent; headless defaults to 500.
+`… 500 of N rows` footer. The TUI's default of 100,000 rows is right for a TUI and a
+catastrophe for an agent; `hsql` defaults to 500.
 
-**Row counts and timing go to stderr**, so `harlequin -c "select 1" --csv > out.csv`
-produces a clean file while the agent still sees `1 row in 0.02s`.
+**Row counts and timing go to stderr**, so `hsql -c "select 1" --csv > out.csv` produces
+a clean file while the agent still sees `1 row in 0.02s`.
 
 **`--stats` emits one line of JSON to stderr** for any output format:
 
@@ -172,9 +262,8 @@ produces a clean file while the agent still sees `1 row in 0.02s`.
 This is how an agent gets structured metadata without polluting stdout, and it works
 identically whether stdout is CSV or Parquet.
 
-**Errors are plain in headless mode.** No Rich panels, no ANSI, no box drawing:
-`harlequin: error: relation "usres" does not exist` on stderr. The panel is a TUI
-affordance.
+**Errors are plain.** No Rich panels, no ANSI, no box drawing:
+`hsql: error: relation "usres" does not exist` on stderr. The panel is a TUI affordance.
 
 **Exit codes:**
 
@@ -187,18 +276,18 @@ affordance.
 | 4 | Timeout / cancelled |
 | 130 | SIGINT |
 
-**Cold start is a feature.** An agent may run twenty queries in a task. Headless mode
-must lazy-import and never touch Textual. Target: **`harlequin -c "select 1"` against
-DuckDB in under 300ms**, tracked as a benchmark in CI.
+**Cold start is a feature.** An agent may run twenty queries in a task. Target:
+**`hsql -c "select 1"` against DuckDB in under 300ms**, tracked as a benchmark in CI and
+protected by the import-linter rule from §4.
 
-**Large results stream.** Headless should not materialize a full Arrow table for a
+**Large results stream.** `hsql` should not materialize a full Arrow table for a
 CSV/JSONL export. This also chips at [#875](https://github.com/tconbeer/harlequin/issues/875).
 
 ### User stories
 
-- **A1.** As an agent, I run `harlequin -P prod -c "select count(*) from orders"` and get
-  a small, aligned result on stdout and exit code 0, so I can report a number to the
-  human without parsing a TUI.
+- **A1.** As an agent, I run `hsql -P prod -c "select count(*) from orders"` and get a
+  small, aligned result on stdout and exit code 0, so I can report a number to the human
+  without parsing a TUI.
 - **A2.** As an agent, I run the same command against Postgres, BigQuery, and DuckDB and
   the flags, output shape, and exit codes are identical, so I don't relearn a CLI per
   database.
@@ -209,45 +298,40 @@ CSV/JSONL export. This also chips at [#875](https://github.com/tconbeer/harlequi
   I never report a truncated aggregate as a complete one.
 - **A5.** As an agent, I pass `--json` and pipe to `jq` without stripping banners,
   timings, or a "(500 rows)" footer.
-- **A6.** As an agent, I run a multi-statement script with `--file setup.sql
+- **A6.** As an agent, I run a multi-statement script with `-f setup.sql
   --single-transaction` and either all of it applies or none of it does.
 - **A7.** As a human, I set `read_only = true` in my agent profile so the agent
   physically cannot write to prod, and I can point at that line in the config when
   someone asks whether it's safe.
-- **A8.** As a human, I use `harlequin -c` in a Makefile or CI job because it's the same
-  tool and same profile I already use interactively.
+- **A8.** As a human, I use `hsql` in a Makefile or CI job because it's the same engine
+  and the same profile I already use interactively.
 
-### Open decision: the `-f` collision
+### Small open question: `-t`
 
-`-f` is currently `--show-files`. psql uses `-f` for "execute this SQL file," and that's
-what agents will type. Options, in my order of preference:
+psql's `-t` is "tuples only"; Harlequin's `-t` is `--theme`. Since `hsql` has no themes
+there's no conflict *within* `hsql`, but claiming `-t` for tuples-only creates a
+divergence between our own two commands. My inclination is to **reserve `-t` in `hsql`
+and error with a hint** (`use --no-header`), rather than have the same short flag mean
+different things in `harlequin` and `hsql`. Easy to overrule if psql compatibility wins.
 
-1. **Reclaim `-f` for `--file` in 3.0.** In 2.x, `--file` is long-form only and `-f`
-   emits a deprecation notice pointing at `--show-files`. Costs one breaking change in a
-   major version; buys psql muscle memory forever.
-2. Ship `--file` long-form only and never reclaim `-f`. Safe, slightly worse.
-3. Make `-f` mode-dependent. **Don't** — mode-dependent flags are exactly what agents
-   get wrong.
-
-Related, lower stakes: `-t` is `--theme` here and "tuples only" in psql. Leave it; the
-psql behavior is available as `--no-header`, and it should be called out in the docs
-under a short "differences from psql" table.
+A short "differences from psql" table in the docs should cover this, `-P`, and anything
+else that diverges.
 
 ---
 
-## 5. Workstream B — Self-description and introspection
+## 6. Workstream B — Self-description and introspection
 
 If Workstream A is what lets an agent *run* a query, this is what lets it write a
-correct one on the first try.
+correct one on the first try. All of it lands as `hsql` subcommands.
 
-### `harlequin catalog`
+### `hsql catalog`
 
 The highest-leverage feature in this plan after `-c`. Harlequin already normalizes the
 catalog across every adapter; today that value is locked inside the TUI.
 
 ```
-harlequin catalog [PATTERN] [--depth N] [--format compact|json|md|tree]
-harlequin describe <OBJECT>
+hsql catalog [PATTERN] [--depth N] [--format compact|json|md|tree]
+hsql describe <OBJECT>
 ```
 
 Token efficiency is the design constraint. A JSON dump of a 500-table warehouse is
@@ -263,15 +347,15 @@ useless to an agent. So:
 
 **Stories:**
 
-- **B1.** As an agent, I run `harlequin -P prod catalog --depth 2` to learn what schemas
-  exist before spending tokens on columns.
-- **B2.** As an agent, I run `harlequin -P prod catalog 'analytics.*' --format compact`
-  and get every table and column type in that schema in a few hundred tokens, without
-  knowing whether the backend is Postgres or BigQuery.
+- **B1.** As an agent, I run `hsql -P prod catalog --depth 2` to learn what schemas exist
+  before spending tokens on columns.
+- **B2.** As an agent, I run `hsql -P prod catalog 'analytics.*' --format compact` and get
+  every table and column type in that schema in a few hundred tokens, without knowing
+  whether the backend is Postgres or BigQuery.
 - **B3.** As an agent, I write a correct join on the first attempt because I had real
   column names and types, not guesses from a table name.
 
-### `harlequin spec --json`
+### `hsql spec --json`
 
 Dump the full, *installed* CLI surface — including options contributed by whichever
 adapter plugins are present — as JSON. Harlequin already builds these dynamically from
@@ -281,47 +365,48 @@ This is unusually valuable here precisely because the option surface is plugin-d
 No model's pretraining can know that this machine has `harlequin-databricks` installed
 with its particular options. Self-description turns a guessing game into a lookup.
 
-- **B4.** As an agent, I run `harlequin spec --json` once at the start of a task and
-  never hallucinate a flag for the rest of it.
+- **B4.** As an agent, I run `hsql spec --json` once at the start of a task and never
+  hallucinate a flag for the rest of it.
 
-### `harlequin info --json`
+### `hsql info --json`
 
-The debug-info screen, headless: Harlequin version, installed adapters and their
-versions, discovered config files in precedence order, the active profile, and
-**capability flags per adapter** (`implements_cancel`, `implements_copy`,
-`implements_read_only`, `implements_validate_sql`, `supports_transactions`).
-Credentials and connection strings redacted.
+The debug-info screen, headless: versions, installed adapters, discovered config files in
+precedence order, the active profile, and **capability flags per adapter**
+(`implements_cancel`, `implements_copy`, `implements_read_only`,
+`implements_validate_sql`, `supports_transactions`). Credentials and connection strings
+redacted.
 
 Capability flags matter: they let an agent know *not* to try `--dry-run` on an adapter
 that can't validate, instead of trying and failing.
 
-- **B5.** As an agent debugging a human's setup, I run `harlequin info --json` and can
-  tell them exactly which config file is winning and why.
+- **B5.** As an agent debugging a human's setup, I run `hsql info --json` and can tell
+  them exactly which config file is winning and why.
 - **B6.** As an agent, I check capability flags before offering the human a feature their
   adapter doesn't support.
 
-### `harlequin fmt`
+### `hsql fmt`
 
-Expose sqlfmt, which is already a dependency. `harlequin fmt query.sql`,
-`harlequin fmt -c "select 1"`, `--check` for CI. Agents write inconsistent SQL; this
+Expose sqlfmt, which is already a dependency. `hsql fmt query.sql`,
+`hsql fmt -c "select 1"`, `--check` for CI. Agents write inconsistent SQL; this
 normalizes it before it lands in a human's repo. Cheap, and a genuinely nice human
 feature too.
 
-### `harlequin history`
+### `hsql history`
 
 Query history is already cached per connection — but as a pickle. Expose it
-(`harlequin history --json -n 20`) and additionally write an append-only JSONL log, so
-both agents and humans can read it with ordinary tools.
+(`hsql history --json -n 20`) and additionally write an append-only JSONL log, so both
+agents and humans can read it with ordinary tools.
 
 - **B7.** As an agent joining a task mid-stream, I read the human's recent query history
   and continue their line of investigation instead of starting over.
 
 ---
 
-## 6. Workstream C — The config file as a formal contract
+## 7. Workstream C — The config file as a formal contract
 
 Agents write config files. Today they'd be guessing at TOML structure from prose docs,
-and a wrong guess produces a confusing runtime error.
+and a wrong guess produces a confusing runtime error. The config is shared between
+`harlequin` and `hsql`, so this serves both.
 
 ### Deliverables
 
@@ -330,19 +415,19 @@ and a wrong guess produces a confusing runtime error.
    `#:schema` comment for taplo / Even Better TOML — editor validation for humans, and a
    verifiable target for agents.
    - Wrinkle: adapter options are dynamic. Solution: publish a base schema for the
-     site, and have `harlequin config schema --json` generate a locally-accurate one
-     that includes the installed adapters' options.
-2. **`harlequin config validate [--json]`** — structured diagnostics with file paths and
-   line numbers, so an agent can fix its own mistake without a human in the loop. The
-   existing `_raise_on_bad_schema` messages are already good; they just need a machine
-   channel.
-3. **`harlequin config show [--json]`** — the effective merged config, with provenance
-   per key (`limit = 500  # from ~/.harlequin.toml`). This is the single best
-   troubleshooting artifact we could produce.
-4. **`harlequin config init --non-interactive`** — the wizard is questionary-only today,
-   so agents can't use it. A non-interactive path that edits TOML through tomlkit
-   (preserving the human's comments and formatting) means an agent can safely modify a
-   config it didn't write.
+     site, and have `hsql config schema --json` generate a locally-accurate one that
+     includes the installed adapters' options.
+2. **`hsql config validate [--json]`** — structured diagnostics with file paths and line
+   numbers, so an agent can fix its own mistake without a human in the loop. The existing
+   `_raise_on_bad_schema` messages are already good; they just need a machine channel.
+3. **`hsql config show [--json]`** — the effective merged config, with provenance per key
+   (`limit = 500  # from ~/.harlequin.toml`). This is the single best troubleshooting
+   artifact we could produce.
+4. **`hsql config init --non-interactive`** — the TUI wizard (`harlequin --config`) is
+   questionary-only, so agents can't use it. A non-interactive path that edits TOML
+   through tomlkit (preserving the human's comments and formatting) means an agent can
+   safely modify a config it didn't write. The interactive wizard stays exactly where it
+   is; each command gets the affordance right for its audience.
 5. **Environment variable interpolation** (`${DB_PASSWORD}`) in config values — closes
    [#898](https://github.com/tconbeer/harlequin/issues/898), and it's a prerequisite for
    agents and CI ever touching a config that involves secrets.
@@ -361,7 +446,7 @@ and a wrong guess produces a confusing runtime error.
 
 ---
 
-## 7. Workstream D — Docs that machines can read (harlequin.sh)
+## 8. Workstream D — Docs that machines can read (harlequin.sh)
 
 The docs are already markdown files on disk (`src/docs/**/*.md`) and there's already an
 `/api/docs` index route. Most of this is plumbing we half-have.
@@ -401,25 +486,31 @@ A "Copy page as Markdown" button and a "View as Markdown" link in the docs layou
 copy variant should prepend the canonical URL and title as a header so pasted context
 carries its provenance. Small, cheap, and increasingly expected.
 
-### D5. A "Harlequin for Agents" docs topic
+### D5. A "Headless & Agents" docs topic
 
 A first-class topic in the sidebar, not a footnote. Pages:
 
-- Headless Mode — the `-c` / `--file` tutorial
-- Output Formats — the table from §4, with examples
+- The `hsql` CLI — overview and tutorial
+- Output Formats — the table from §5, with examples
 - Exit Codes and Error Handling
 - Catalog and Introspection
 - Safety: read-only, timeouts, dry runs
-- Differences from `psql` — the short compatibility table
+- Differences from `psql`
+- Config File Spec (links to Workstream C)
 - Using Harlequin with Claude Code and other agents — the skill
 - The MCP server
-- Config File Spec (links to Workstream C)
 
-This is positioning as much as documentation: *the SQL client your agent already knows
-how to use.* It's also the page a human sends to their agent, which makes it the entry
-point for P3.
+The topic is named for the capability rather than the binary, so a human who doesn't yet
+know `hsql` exists can still find it.
 
-### D6. `AGENTS.md` in the repos
+### D6. Homepage positioning
+
+The two-command story from §4 needs a home on the landing page — a short section that
+says Harlequin is the IDE, `hsql` is the same engine headless, and both speak fifteen
+databases. This is the page a human sends to their agent, which makes it the entry point
+for P3.
+
+### D7. `AGENTS.md` in the repos
 
 For agents working *on* Harlequin: repo layout, how adapters plug in, how to run tests
 (`make check`), the snapshot-test workflow, and the changelog convention. Add it to this
@@ -436,14 +527,14 @@ repo and to `harlequin-adapter-template` so new adapters inherit it.
 
 ---
 
-## 8. Workstream E — Integrations: skill first, MCP second
+## 9. Workstream E — Integrations: skill first, MCP second
 
 ### The recommendation, and why
 
 **Ship a skill first. Make MCP a thin wrapper over the same execution core, not a
 parallel implementation.**
 
-A good CLI plus a skill — one markdown file that teaches the CLI — works in *any* agent
+A good CLI plus a skill — one markdown file that teaches `hsql` — works in *any* agent
 harness that can run a shell command: Claude Code, Codex, Cursor, aider, a bash script,
 CI. It costs one file to maintain, adds zero tokens to requests that don't use it, and
 keeps a single tested code path.
@@ -463,7 +554,7 @@ So: both, in that order, sharing one core.
 
 `SKILL.md` in this repo, published on the site, and installable. Contents:
 
-- Discover the setup first: `harlequin info --json`, `harlequin spec --json`
+- Discover the setup first: `hsql info --json`, `hsql spec --json`
 - Use profiles, never raw credentials
 - Orient with `catalog --depth 2`, then scope with a pattern
 - Run with `-c`; pick a format on purpose; respect the limit; check for truncation
@@ -472,10 +563,10 @@ So: both, in that order, sharing one core.
 - **When to stop and hand off to the human's TUI** — this is the part nobody else will
   write, and it's what makes the skill feel like Harlequin's rather than generic
 
-### E2. `harlequin mcp`
+### E2. `hsql mcp`
 
-`harlequin mcp --profile prod` starts a stdio MCP server. Deliberately small tool
-surface — every tool is tokens in every request:
+`hsql mcp --profile prod` starts a stdio MCP server. Deliberately small tool surface —
+every tool is tokens in every request:
 
 - `run_query(sql, format?, limit?)`
 - `list_catalog(pattern?, depth?)`
@@ -486,8 +577,8 @@ surface — every tool is tokens in every request:
 Plus MCP *resources* for the catalog and for the docs (`llms-full.txt`), which is the
 idiomatic way to expose reference material without spending tool-schema tokens.
 
-Read-only by default; writes require an explicit `--allow-writes`. Shipped as an optional
-extra (`harlequin[mcp]`) so the base install stays lean.
+Read-only by default; writes require an explicit `--allow-writes`. The MCP dependencies
+ship as an optional extra so the base install stays lean.
 
 ### Stories
 
@@ -500,17 +591,18 @@ extra (`harlequin[mcp]`) so the base install stays lean.
 
 ---
 
-## 9. Workstream F — Human ↔ agent handoff
+## 10. Workstream F — Human ↔ agent handoff
 
 This is the part only Harlequin can build, and I'd resist the temptation to sequence it
 last just because it's the least conventional.
 
-- **`harlequin --new-buffer query.sql`** (or `-c "..." --open`) opens the TUI with the
-  query loaded in a new buffer, **not executed**. The agent drafts; the human reviews,
-  edits, and runs. Buffers already persist through `editor_cache.py`, so the machinery
-  is close at hand.
-- **"Copy CLI command" action in the TUI** — writes `harlequin -P prod -c '<current
-  buffer>' --csv` to the clipboard, so a human can hand their agent something exactly
+- **`hsql open query.sql`** launches the TUI with the query loaded in a new buffer,
+  **not executed**. The agent drafts; the human reviews, edits, and runs. Buffers already
+  persist through `editor_cache.py`, so the machinery is close at hand. Having a verb for
+  this on the agent-facing command is exactly the ergonomic win the two-command split
+  buys us.
+- **"Copy CLI command" action in the TUI** — writes `hsql -P prod -c '<current buffer>'
+  --csv` to the clipboard, so a human can hand their agent something exactly
   reproducible.
 - **Readable history** (Workstream B) closes the loop the other way.
 
@@ -530,23 +622,26 @@ credentials rather than asking for new ones.
 
 ### Stories
 
-- **F1.** As an agent, I draft a migration and open it in the human's TUI for review
-  rather than executing it myself.
-- **F2.** As a human, I explore interactively, then copy a reproducible CLI command for my
-  agent to parameterize and run in CI.
+- **F1.** As an agent, I draft a migration and `hsql open` it in the human's TUI for
+  review rather than executing it myself.
+- **F2.** As a human, I explore interactively, then copy a reproducible `hsql` command for
+  my agent to parameterize and run in CI.
 - **F3.** As a human, I press one key in the TUI and my own AI tool rewrites my query —
   using my own credentials, not Harlequin's.
 
 ---
 
-## 10. Roadmap
+## 11. Roadmap
+
+Because the CLI is a separate command, **every milestone here is purely additive to
+`harlequin`** and can ship in 2.x minors. Nothing waits for a major version.
 
 | Milestone | Theme | Contents |
 | --- | --- | --- |
-| **M1** | Headless | `-c`, `--file`, stdin, `-o`, `-F` + shorthands, headless `--limit` default, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors, cold-start benchmark. Docs: Headless Mode pages, updated `running.md`. **Closes #524.** |
+| **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
 | **M2** | Self-description & safety | `catalog`, `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. |
-| **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, "Harlequin for Agents" topic, `AGENTS.md`. |
-| **M4** | Integrations & handoff | Skill, `harlequin mcp`, `--new-buffer`, JSONL history, "Copy CLI command", external-command hook. |
+| **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
+| **M4** | Integrations & handoff | Skill, `hsql mcp`, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
@@ -555,50 +650,61 @@ the flag that makes everything else socially acceptable.
 
 ### If only three things get built
 
-1. **`-c` / `--file` / `-o` / `-F`** with a strict stdout/stderr split, documented exit
-   codes, and honest truncation.
-2. **`harlequin catalog --format compact`**.
-3. **`llms.txt` + raw markdown docs + the "Harlequin for Agents" topic + the skill.**
+1. **`hsql`** with `-c` / `-f` / `-o` / `-F`, a strict stdout/stderr split, documented
+   exit codes, and honest truncation.
+2. **`hsql catalog --format compact`**.
+3. **`llms.txt` + raw markdown docs + the "Headless & Agents" topic + the skill.**
 
 That trio takes an agent from "reinvents psql badly" to "writes a correct query against
 any of fifteen databases on the first try."
 
 ---
 
-## 11. Risks and open questions
+## 12. Risks and open questions
 
-- **`-f` collision.** Needs a decision (§4). Everything else in M1 is additive.
+- **Two front doors can drift.** The whole bet rests on one shared execution core. If
+  `hsql` grows its own query logic, or the TUI keeps a parallel path, we've built two
+  products. Mitigation: extract the core in M1 and refactor the TUI onto it in the same
+  milestone, not later.
+- **Discoverability of `hsql`.** Nobody guesses it exists; `harlequin -c` is guessable.
+  Mitigated by the unknown-option hint, the docs topic named for the capability rather
+  than the binary, homepage positioning, and the skill. Worth watching — if support
+  questions suggest people can't find it, revisit.
+- **Name mindshare.** `hsql` competes with HyperSQL in search results. No PATH or PyPI
+  collision, but SEO for "hsql" will take work; docs should always spell it "hsql, the
+  Harlequin CLI" on first use.
 - **Adapter ecosystem lift.** `--read-only`, catalog depth control, and `validate_sql`
-  are optional adapter methods. Headless mode must degrade gracefully and *say which
-  adapter lacks what* — hence capability flags. Third-party adapters will lag; plan for
-  a long tail.
-- **Cold start.** Textual import cost is the main threat to the 300ms target. Headless
-  must not import the TUI at all, which may mean restructuring `cli.py` so the command
-  builder doesn't pull in `harlequin.app`.
+  are optional adapter methods. `hsql` must degrade gracefully and *say which adapter
+  lacks what* — hence capability flags. Third-party adapters will lag; plan for a long
+  tail.
+- **Cold start.** The import-linter rule protects against Textual creeping in, but the
+  adapter plugins themselves can be slow to import. May need lazy entry-point resolution
+  so `hsql -c` against DuckDB doesn't pay for an installed BigQuery adapter.
 - **Memory.** Materializing an Arrow table for a large export is the same failure as
-  #875. Streaming needs to be designed in from M1's format layer, not retrofitted.
+  #875. Streaming needs to be designed into M1's format layer, not retrofitted.
 - **Secrets.** `info --json`, `config show`, error messages, and history must all redact
   connection strings and passwords. One leak here is a security incident, and agents
   paste output into transcripts.
-- **Scope creep.** Harlequin is a TUI. The guardrail: every headless feature reuses a TUI
-  code path, and headless mode ships no capability the TUI doesn't already have.
+- **Two help surfaces to keep coherent.** `harlequin --help` and `hsql --help` share the
+  adapter option matrix and must not disagree. Generate both from the same option
+  definitions.
 - **Docs drift.** `spec --json` output and the site's config spec must be generated from
-  the same source, or they'll disagree within two releases. Generate the docs tables from
-  the option definitions.
+  the same source, or they'll disagree within two releases.
 - **MCP maintenance.** Only worth it as a thin wrapper. If it starts growing its own
   query logic, that's the signal we got the layering wrong.
 
-## 12. How we'd know it worked
+## 13. How we'd know it worked
 
-- `harlequin -c "select 1"` against DuckDB completes in **< 300ms**, tracked in CI.
+- `hsql -c "select 1"` against DuckDB completes in **< 300ms**, tracked in CI.
+- The `hsql` module graph contains **no `textual` import**, enforced in CI.
 - **An agent eval suite in CI**: a handful of realistic tasks ("find the top 10 customers
-  by revenue") run against fixture databases with a small model, scored on
-  wrong-flag retries and task completion. This is the metric that actually matters, and
-  it's the one that would keep the CLI honest as it grows. I'd build it in M1 with three
-  tasks and expand it.
-- An agent given only `harlequin --help` completes a query task with **zero** wrong-flag
+  by revenue") run against fixture databases with a small model, scored on wrong-flag
+  retries and task completion. This is the metric that actually matters, and it's the one
+  that would keep the CLI honest as it grows. I'd build it in M1 with three tasks and
+  expand it.
+- An agent given only `hsql --help` completes a query task with **zero** wrong-flag
   retries.
 - `llms.txt` is served, and every docs page is fetchable as clean markdown.
 - #524 and #898 closed; #952 answered without embedding an LLM.
-- Qualitatively: someone writes "just use harlequin, it works the same everywhere" in a
-  thread about getting an agent to talk to a database.
+- Qualitatively: someone writes "just use hsql, it works the same everywhere" in a thread
+  about getting an agent to talk to a database.
