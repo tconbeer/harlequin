@@ -159,8 +159,11 @@ the TUI.
   works without compromise.
 - `hsql --help` omits every TUI-only option (`--theme`, `--keymap-name`, `--show-files`,
   `--show-s3`, `--locale`, `--config`, `--keys`), which is a real token saving for an
-  agent reading it. It still carries the full adapter connection-option matrix; that's
-  unavoidable and shared.
+  agent reading it. It also omits the adapter connection-option matrix: `hsql --help`
+  lists the *names* of installed adapters and points at `hsql --help -a <adapter>` for
+  one adapter's options. That keeps the first thing an agent reads small and stable, and
+  keeps `--help` true for every adapter rather than showing whichever one is the
+  default.
 - The handoff gets a natural verb: `hsql open query.sql` reads much better than
   `harlequin --new-buffer query.sql`.
 
@@ -217,7 +220,7 @@ hsql <SUBCOMMAND> [OPTIONS]         catalog, describe, fmt, spec, info,
       --null-string STR  Render NULL as STR. Default: empty for csv, "NULL" for table.
   -P, --profile NAME     Same profiles as the TUI.
   -l, --limit N          Max rows per result set. Default: 500. 0 = no limit.
-      --result all|last|N  Which result set(s) to emit. Default: all (text), last (data).
+      --result all|last|N  Which result set(s) to emit. Default: all.
       --on-error stop|continue    Default: stop.
       --stats            Write a one-line JSON summary to stderr.
       --color auto|always|never   Default: never.
@@ -248,8 +251,19 @@ point — `hsql -P prod -c ...` means the agent never handles a credential.
 
 **Truncation is always announced.** If `--limit` bites, stderr gets
 `note: results truncated at 500 rows (--limit)`, and text formats append a visible
-`… 500 of N rows` footer. The TUI's default of 100,000 rows is right for a TUI and a
-catastrophe for an agent; `hsql` defaults to 500.
+`… 500 of 500+ rows` footer.
+
+Note that `-l` here is a *hard* limit — it caps what leaves the database, via the
+adapter's `set_limit()`. The TUI's `--limit` is a soft display cap: it fetches everything
+and caps what loads into the viewer, which is why the TUI can report an exact
+`Showing 100,000 of 3,412,887`. `hsql` deliberately doesn't buy that number, so it says
+`500+`; only `-l 0` yields an exact count. The TUI's default of 100,000 is right for a
+TUI and a catastrophe for an agent; `hsql` defaults to 500.
+
+Detecting truncation at all requires fetching `limit + 1` rows and emitting `limit` —
+`set_limit(n)` followed by `fetchall()` returns at most n rows and cannot say whether an
+n+1th existed. Worth stating here rather than leaving to implementation, because it's the
+kind of detail that gets optimized away and quietly breaks this promise.
 
 The stderr notice fires **even under `-t`**. `-t` suppresses stdout chrome, not
 warnings; a flag that silently defeats truncation reporting would undo principle 5.
@@ -285,8 +299,11 @@ identically whether stdout is CSV or Parquet.
 **`hsql -c "select 1"` against DuckDB in under 300ms**, tracked as a benchmark in CI and
 protected by the import-linter rule from §4.
 
-**Large results stream.** `hsql` should not materialize a full Arrow table for a
-CSV/JSONL export. This also chips at [#875](https://github.com/tconbeer/harlequin/issues/875).
+**Large results stream — in M5, not M1.** Streaming has to start at the cursor:
+`HarlequinCursor.fetchall()` materializes the whole result before any writer exists, so
+no amount of care in the format layer helps. Deferred wholesale to M5 along with
+[#875](https://github.com/tconbeer/harlequin/issues/875), rather than half-designed
+now.
 
 ### User stories
 
@@ -766,6 +783,12 @@ Because the CLI is a separate command, **every milestone here is purely additive
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
 | **M6** | MCP | `hsql mcp` over the M1 execution core: `run_query`, `list_catalog`, `describe_object`, `explain_query`, `format_sql`, plus catalog and docs resources. Read-only by default. |
 
+**On M1.** Implementation is planned in detail in
+[the M1 technical plan](./m1-hsql-technical-plan.md): the module architecture, the
+refactors that have to land first, and an eight-PR sequence across two releases. A few
+figures and defaults in this document were corrected against measurements taken while
+writing it; §8 there lists them.
+
 **On M0.** Name availability is the only thing in this plan that someone else can take
 while we deliberate, which is why it's a milestone rather than a task. It's also cheap
 enough to do this week.
@@ -831,11 +854,16 @@ any of fifteen databases on the first try."
   and it's also the single most useful catalog call an agent can make. Child counts, the
   node budget, and `--stats` are what keep that honest until adapters can serve it in
   one query.
-- **Cold start.** The import-linter rule protects against Textual creeping in, but the
-  adapter plugins themselves can be slow to import. May need lazy entry-point resolution
-  so `hsql -c` against DuckDB doesn't pay for an installed BigQuery adapter.
+- **Cold start.** Measured rather than feared, and worse than this section assumed: a
+  bare `harlequin --version` takes 1.3s today. Lazy entry-point resolution is a
+  requirement of M1, not a contingency — `load_adapter_plugins()` imports every installed
+  adapter on every invocation, worth 160ms with four installed and unbounded as the
+  ecosystem grows. An import-linter rule in this repo would also never have caught the
+  largest single cause, which is upstream: `harlequin.adapter` pays 265ms for
+  `textual-fastdatatable`, whose backend needs no Textual but whose package `__init__`
+  imports the DataTable widget. See the M1 technical plan.
 - **Memory.** Materializing an Arrow table for a large export is the same failure as
-  #875. Streaming needs to be designed into M1's format layer, not retrofitted.
+  #875, and it is not fixed in M1. See the streaming note in §5.
 - **Secrets.** `info --json`, `config show`, error messages, and history are all leak
   surfaces, and agents paste output into transcripts. Mitigated structurally by the
   secret option type in §7 (**#667**) rather than by remembering to redact at each site —
