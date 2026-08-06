@@ -507,8 +507,48 @@ and a wrong guess produces a confusing runtime error. The config is shared betwe
 6. **A formal spec page on the site**: discovery order, merge semantics, precedence,
    every key with its type and default, and the reserved/invalid names.
 
+### Secrets: #667, #898, and redaction are one feature
+
+[#667](https://github.com/tconbeer/harlequin/issues/667) asks for a password prompt, and
+the maintainer's read at the time was that it wants **a new type of adapter option**.
+That's the right shape, and it does far more than serve the prompt: it turns redaction
+from a discipline into a property of the declaration.
+
+The decisive argument is the plugin ecosystem. Core cannot enumerate every adapter's
+secret — `--service-account-key`, `--token`, `--tls-key`, whatever the next adapter
+invents. But each adapter can declare its own, once, and then every consumer gets it
+free: `hsql info --json`, `config show`, `spec --json`, error output, the debug-info
+screen, and the config wizard's masked input.
+
+Combine that with `${VAR}` interpolation (#898) and the secrets story closes:
+
+- **`PasswordOption`** (or `secret=True` on `AbstractOption`) — declares an option as
+  sensitive. Drives `hide_input` at the prompt, a masked widget in the TUI, and
+  redaction everywhere else.
+- **Never prompt in headless mode.** A prompt that blocks on stdin is the *worst*
+  failure mode for an agent: no output, no exit code, the whole turn burned until
+  something times out. `hsql` must fail fast with a message pointing at the profile, the
+  env var, or `--password-stdin` — and `--password-stdin` conflicts with `-f -`, so that
+  pair needs an explicit error rather than a mysterious hang.
+- **`spec --json` marks secret options.** This is what teaches an agent *not* to
+  construct `hsql --password hunter2`, which would leak through `ps` and shell history
+  to every other user on the box. The skill should say it too, but the machine-readable
+  flag is what makes it checkable.
+- **Scrub known secret values from outbound strings** as a backstop. Declarative
+  redaction covers values we own; a driver exception that echoes a DSN does not go
+  through our option layer.
+- **Connection strings need their own handling.** `conn_str` is a positional argument, so
+  no option type covers `postgres://user:pw@host/db`. It needs DSN-aware redaction of its
+  own — and [#354](https://github.com/tconbeer/harlequin/issues/354) is evidence that
+  people really do put passwords there.
+- **History is the one surface this can't fix.** `create user x password 'y'` is a secret
+  inside a query. Worth saying plainly in the docs that history is local-only and may
+  contain secrets by construction.
+
 ### Stories
 
+- **C0.** As a human, I hand my agent a profile name, and no secret ever appears in an
+  argument list, a transcript, or `ps` output.
 - **C1.** As an agent, I add a `prod` profile to a human's existing config without
   clobbering their comments or reformatting the file.
 - **C2.** As an agent, I validate the config I just wrote and get a line number when I
@@ -720,7 +760,7 @@ Because the CLI is a separate command, **every milestone here is purely additive
 | --- | --- | --- |
 | **M0** | Secure the name | Publish `hsql` to PyPI as a metapackage depending on `harlequin`, so `pip install hsql` works today and the name can't be taken while the rest of this ships. |
 | **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
-| **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
+| **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, secret option type + declarative redaction (**#667**), env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
 | **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
 | **M4** | Skill & handoff | Skill, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
@@ -792,9 +832,11 @@ any of fifteen databases on the first try."
   so `hsql -c` against DuckDB doesn't pay for an installed BigQuery adapter.
 - **Memory.** Materializing an Arrow table for a large export is the same failure as
   #875. Streaming needs to be designed into M1's format layer, not retrofitted.
-- **Secrets.** `info --json`, `config show`, error messages, and history must all redact
-  connection strings and passwords. One leak here is a security incident, and agents
-  paste output into transcripts.
+- **Secrets.** `info --json`, `config show`, error messages, and history are all leak
+  surfaces, and agents paste output into transcripts. Mitigated structurally by the
+  secret option type in §7 (**#667**) rather than by remembering to redact at each site —
+  but note that connection strings and query history sit outside that mechanism and need
+  their own handling.
 - **Two help surfaces to keep coherent.** `harlequin --help` and `hsql --help` share the
   adapter option matrix and must not disagree. Generate both from the same option
   definitions.
@@ -815,6 +857,6 @@ any of fifteen databases on the first try."
 - An agent given only `hsql --help` completes a query task with **zero** wrong-flag
   retries.
 - `llms.txt` is served, and every docs page is fetchable as clean markdown.
-- #524 and #898 closed; #952 answered without embedding an LLM.
+- #524, #667, and #898 closed; #952 answered without embedding an LLM.
 - Qualitatively: someone writes "just use hsql, it works the same everywhere" in a thread
   about getting an agent to talk to a database.
