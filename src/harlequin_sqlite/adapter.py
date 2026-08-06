@@ -4,10 +4,8 @@ import sqlite3
 from contextlib import suppress
 from itertools import cycle, zip_longest
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
-
-from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
@@ -22,6 +20,9 @@ from harlequin.transaction_mode import HarlequinTransactionMode
 from harlequin_sqlite.catalog import DatabaseCatalogItem
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
+
+if TYPE_CHECKING:
+    from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
 

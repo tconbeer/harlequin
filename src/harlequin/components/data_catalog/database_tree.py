@@ -17,10 +17,9 @@ from harlequin.catalog import (
     Catalog,
     CatalogItem,
     InteractiveCatalogItem,
-    NewCatalogItems,
 )
 from harlequin.components.data_catalog.tree import HarlequinTree
-from harlequin.messages import WidgetMounted
+from harlequin.messages import NewCatalogItems, WidgetMounted
 
 if TYPE_CHECKING:
     from typing_extensions import Self

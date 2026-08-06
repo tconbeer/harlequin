@@ -36,3 +36,17 @@ jobs:
           uv run --no-sync ruff format . --diff
           uv run --no-sync ruff check .
           uv run --no-sync mypy --no-incremental
+          uv run --no-sync lint-imports
+
+      # Informational: the deterministic guards are the import-linter contracts
+      # above and tests/unit_tests/test_import_hygiene.py. A wall-clock
+      # assertion on a shared runner would just be a flaky test.
+      - name: Report cold start
+        run: |
+          {
+            echo '### Cold start'
+            echo
+            echo '```'
+            uv run --no-sync python scripts/cold_start.py
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

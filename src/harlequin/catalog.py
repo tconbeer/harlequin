@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Generic, Protocol, Sequence, TypeVar
 
-from textual.message import Message
-
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
     from harlequin.driver import HarlequinDriver
@@ -102,16 +100,3 @@ class Catalog:
     """
 
     items: list[CatalogItem]
-
-
-class NewCatalog(Message):
-    def __init__(self, catalog: Catalog) -> None:
-        self.catalog = catalog
-        super().__init__()
-
-
-class NewCatalogItems(Message):
-    def __init__(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
-        self.parent = parent
-        self.items = items
-        super().__init__()

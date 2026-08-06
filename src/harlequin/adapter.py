@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Sequence
-
-from textual_fastdatatable.backend import AutoBackendType
+from typing import TYPE_CHECKING, Any, Sequence
 
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.catalog import Catalog
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
+
+if TYPE_CHECKING:
+    # `AutoBackendType` is an alias for `Any`, and importing it at run time costs
+    # every adapter ~265ms of pyarrow and (before 0.17) Textual.
+    from textual_fastdatatable.backend import AutoBackendType
 
 
 class HarlequinCursor(ABC):
