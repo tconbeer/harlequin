@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-08-06
+
 ### Features
 
 - The Data Catalog no longer appears to hang while loading large databases ([#838](https://github.com/tconbeer/harlequin/issues/838)). It now builds tree nodes only for objects you can actually see, bounds its background loading to the visible part of the tree instead of eagerly walking every schema, and shows a `loading…` placeholder under a node while its children are fetched.
@@ -915,7 +917,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.7.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.8.0...HEAD
+[2.8.0]: https://github.com/tconbeer/harlequin/compare/2.7.0...2.8.0
 [2.7.0]: https://github.com/tconbeer/harlequin/compare/2.6.0...2.7.0
 [2.6.0]: https://github.com/tconbeer/harlequin/compare/2.5.2...2.6.0
 [2.5.2]: https://github.com/tconbeer/harlequin/compare/2.5.1...2.5.2
