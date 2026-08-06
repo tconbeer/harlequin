@@ -176,8 +176,9 @@ the TUI.
 
 ### On the name
 
-`hsql` is free on PyPI. HSQLDB ships `sqltool` and `java -jar`, not a binary named
-`hsql`, so there's no PATH collision — the cost is search-results mindshare with
+`hsql` is free on PyPI as of this writing — M0 in §11 secures it before anything else
+starts. HSQLDB ships `sqltool` and `java -jar`, not a binary named `hsql`, so there's no
+PATH collision — the cost is search-results mindshare with
 HyperSQL, which is real but mild and fading. `hq` is taken. `harlequin-cli` is free but
 too long for something an agent types a hundred times in a task; short names are cheap
 in tokens and cheap in working memory.
@@ -717,12 +718,36 @@ Because the CLI is a separate command, **every milestone here is purely additive
 
 | Milestone | Theme | Contents |
 | --- | --- | --- |
+| **M0** | Secure the name | Publish `hsql` to PyPI as a metapackage depending on `harlequin`, so `pip install hsql` works today and the name can't be taken while the rest of this ships. |
 | **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
 | **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
 | **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
 | **M4** | Skill & handoff | Skill, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
 | **M6** | MCP | `hsql mcp` over the M1 execution core: `run_query`, `list_catalog`, `describe_object`, `explain_query`, `format_sql`, plus catalog and docs resources. Read-only by default. |
+
+**On M0.** Name availability is the only thing in this plan that someone else can take
+while we deliberate, which is why it's a milestone rather than a task. It's also cheap
+enough to do this week.
+
+A few things worth getting right the first time:
+
+- **Metapackage, not a second copy of the artifact.** `hsql` should be a small
+  distribution whose only dependency is `harlequin`. Republishing the same built wheel
+  under a second name would put duplicate modules on disk and conflict outright if a user
+  installed both.
+- **Version it independently and float the dependency** — `hsql 0.1.0` requiring
+  `harlequin>=2.x` — so it doesn't need a release every time Harlequin cuts one.
+- **No placeholder console script.** It's tempting to ship an `hsql` command that prints
+  "coming soon," but from M1 the `harlequin` distribution itself provides that entry
+  point, and two installed distributions claiming the same script name is a mess to
+  unwind. `pip install hsql` giving you Harlequin, plus a README that says what's coming,
+  is honest enough.
+- Reserve the same name anywhere else Harlequin is published or packaged while we're at
+  it.
+
+This is a genuine, working package rather than a squat, which also keeps it on the right
+side of PyPI's naming policy.
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's
