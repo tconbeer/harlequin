@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from importlib.metadata import entry_points
 from typing import Literal, Sequence, overload
 
@@ -51,8 +52,12 @@ def _load_plugins(
         try:
             ep_class = ep.load()
         except ImportError as e:
+            # stderr, not stdout: a plug-in failing to load must not end up in
+            # piped output.
             print(
-                f"Harlequin could not load the installed plug-in named {e.name}.\n\n{e}"
+                f"Harlequin could not load the installed plug-in named "
+                f"{e.name}.\n\n{e}",
+                file=sys.stderr,
             )
         else:
             plugins[ep.name] = ep_class

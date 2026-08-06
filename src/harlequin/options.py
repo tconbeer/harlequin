@@ -3,42 +3,18 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Sequence
 
 import click
-import questionary
-from textual.validation import ValidationResult, Validator
-from textual.widget import Widget
 
-from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
-from harlequin.copy_widgets import (
-    Input,
-    NoFocusLabel,
-    PathInput,
-    Select,
-    Switch,
-)
+if TYPE_CHECKING:
+    import questionary
+    from textual.widget import Widget
 
-
-class _CustomValidator(Validator):
-    def __init__(
-        self,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        failure_description: str | None = None,
-    ) -> None:
-        super().__init__(failure_description)
-        self.validator = validator or (lambda _: (True, ""))
-
-    def validate(self, value: str) -> ValidationResult:
-        try:
-            is_valid, message = self.validator(value)
-        except Exception as e:
-            return self.failure(str(e))
-
-        if is_valid:
-            return self.success()
-        else:
-            return self.failure(message or "Validation failed.")
+# Declaring an option must stay cheap: every adapter imports this module, and
+# `questionary` (130ms) and Textual (150ms, plus 264ms for the themes that
+# `harlequin.colors` pulls in) are only needed to *render* one. `to_widgets()`
+# and `to_questionary()` import what they need when they are called.
 
 
 def concatenate(first: str, second: str) -> str:
@@ -212,15 +188,21 @@ class TextOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import CustomValidator, Input, NoFocusLabel
+
         yield NoFocusLabel(f"{self.label}:", classes="input_label")
         yield Input(
             value=self.default or "",
             placeholder=self.placeholder or "",
             id=self.name,
-            validators=[_CustomValidator(self.validator)],
+            validators=[CustomValidator(self.validator)],
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         def _q_validator(raw: str) -> bool | str | None:
             if self.validator is not None:
                 result = self.validator(raw)
@@ -292,6 +274,10 @@ class ListOption(AbstractOption):
         raise NotImplementedError("No widget for ListOption.")
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         if isinstance(existing_value, str):
             safe_existing_value = existing_value
         elif isinstance(existing_value, Iterable):
@@ -406,6 +392,8 @@ class PathOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, PathInput
+
         yield NoFocusLabel(f"{self.label}:", classes="input_label")
         yield PathInput(
             value=self.default or "",
@@ -418,6 +406,10 @@ class PathOption(AbstractOption):
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         def _path_validator(raw_path: str) -> bool | str:
             try:
                 p = Path(raw_path)
@@ -508,6 +500,8 @@ class SelectOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, Select
+
         choices: list[tuple[str, str]] = []
         for choice in self.choices:
             if isinstance(choice, str):
@@ -523,6 +517,10 @@ class SelectOption(AbstractOption):
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         try:
             safe_existing_value = str(existing_value)
         except (ValueError, TypeError):
@@ -589,10 +587,16 @@ class FlagOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, Switch
+
         yield NoFocusLabel(f"{self.label}:", classes="switch_label")
         yield Switch(value=self.default, id=self.name)
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         try:
             safe_existing_value = bool(existing_value)
         except (ValueError, TypeError):

@@ -66,11 +66,13 @@ def pretty_error_message(error: HarlequinError) -> Panel:
 
 
 def pretty_print_warning(title: str, message: str) -> None:
-    from rich import print as rich_print
+    from rich.console import Console
 
     from harlequin.colors import GREEN
 
-    rich_print(
+    # Warnings go to stderr for the same reason errors do: rich.print would put
+    # them on stdout and contaminate piped output.
+    Console(stderr=True).print(
         Panel.fit(
             message,
             title=title,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 import duckdb
 
@@ -10,8 +10,6 @@ try:
     from duckdb.sqltypes import DuckDBPyType
 except ImportError:
     from duckdb.typing import DuckDBPyType  # type: ignore[import-not-found,no-redef]
-
-from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
@@ -24,6 +22,9 @@ from harlequin.exception import (
 from harlequin_duckdb.catalog import DatabaseCatalogItem
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
+
+if TYPE_CHECKING:
+    from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
 

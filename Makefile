@@ -11,6 +11,7 @@ check:
 	uv run --python 3.12 --group test pytest -m 'py12 and ($(TEST_MARKERS))'
 	uv sync --group test --group static
 	uv run mypy
+	uv run lint-imports
 
 .PHONY: lint
 lint:
@@ -18,6 +19,12 @@ lint:
 	uv run ruff format .
 	uv run ruff check . --fix
 	uv run mypy
+	uv run lint-imports
+
+.PHONY: cold-start
+cold-start:
+	uv sync --group test --group static
+	uv run python scripts/cold_start.py
 
 .PHONY: serve
 serve:

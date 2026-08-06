@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
+
+### Bug Fixes
+
+- A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
+- Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.
+
 ### Dependencies
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
+- Upgrades `textual-fastdatatable` to 0.16.1 (from 0.16.0), which makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual.
 
 ## [2.8.0] - 2026-08-06
 

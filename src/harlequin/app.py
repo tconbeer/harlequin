@@ -46,8 +46,6 @@ from harlequin.catalog import (
     Catalog,
     CatalogItem,
     Interaction,
-    NewCatalog,
-    NewCatalogItems,
     TCatalogItem_contra,
 )
 from harlequin.catalog_cache import (
@@ -90,7 +88,7 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.history import History
-from harlequin.messages import WidgetMounted
+from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
 from harlequin.transaction_mode import HarlequinTransactionMode
 

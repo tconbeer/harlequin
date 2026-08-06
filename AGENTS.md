@@ -49,6 +49,25 @@ uv run --python 3.12 --group test pytest -m 'py12 and not online' --snapshot-upd
 - Async tests need `@pytest.mark.asyncio`. Await `wait_for_workers(app)` (fixture) rather than sleeping — it skips the catalog background loader, which never finishes on its own.
 - Shared fixtures: `tests/conftest.py` builds throwaway DuckDB/SQLite databases (`tiny_*`, `small_*`) and app instances (`app`, `app_all_adapters`, `app_small_duck`, …); `app_all_adapters` is parametrized so one test body covers both bundled adapters.
 
+## Import hygiene
+
+The headless CLI (`hsql`, planned in `docs/plans/`) has to reach a database without paying for the TUI, so **the adapter-facing modules must stay free of Textual, questionary, prompt_toolkit and sqlfmt at import time.** Concretely:
+
+- `harlequin/__init__.py` resolves its public names through a PEP 562 `__getattr__`. Never add a module-scope import there — importing *any* `harlequin.*` submodule executes it, so one eager import puts the whole app behind every consumer.
+- Type-only imports of Textual (e.g. `AutoBackendType`) go under `if TYPE_CHECKING:`; every module involved already has `from __future__ import annotations`.
+- Renderer imports in `options.py` (`questionary`, `harlequin.colors`, `harlequin.copy_widgets`) are deferred into `to_widgets()` / `to_questionary()`. Declaring an option stays cheap; rendering one pays.
+- **stdout belongs to query output.** Diagnostics — including plug-in load failures and `pretty_print_warning` — go to stderr, or they contaminate piped output.
+
+Two guards, and they check different things:
+
+```bash
+uv run lint-imports                 # import-linter contracts in pyproject.toml
+uv run pytest tests/unit_tests/test_import_hygiene.py    # what actually happens at run time
+uv run python scripts/cold_start.py # informational: ms and module count per import
+```
+
+import-linter reads the *static* graph, so it cannot tell a deferred import from a module-scope one — the deliberate deferrals are listed in `ignore_imports` with a comment each. The subprocess tests are what prove a deferral actually defers, so a new deferral needs an entry in both places.
+
 ## Architecture
 
 ### Packages
