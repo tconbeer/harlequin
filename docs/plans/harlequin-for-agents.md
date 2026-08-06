@@ -599,7 +599,7 @@ repo and to `harlequin-adapter-template` so new adapters inherit it.
 
 ---
 
-## 9. Workstream E — Integrations: skill first, MCP second
+## 9. Workstream E — Integrations: skill first, MCP last
 
 ### The recommendation, and why
 
@@ -651,6 +651,13 @@ idiomatic way to expose reference material without spending tool-schema tokens.
 
 Read-only by default; writes require an explicit `--allow-writes`. The MCP dependencies
 ship as an optional extra so the base install stays lean.
+
+**Sequenced last, deliberately** (M6). Everything above it — the execution core, the
+catalog navigation, the capability flags, the skill — is what an MCP server would be a
+wrapper *around*. Building it before those settle means designing tool schemas against a
+moving target and then maintaining the mistakes. Shipping it last also means we'll know
+from real skill usage which five tools are actually worth their tokens, rather than
+guessing.
 
 ### Stories
 
@@ -713,8 +720,9 @@ Because the CLI is a separate command, **every milestone here is purely additive
 | **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
 | **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
 | **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
-| **M4** | Integrations & handoff | Skill, `hsql mcp`, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
+| **M4** | Skill & handoff | Skill, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
+| **M6** | MCP | `hsql mcp` over the M1 execution core: `run_query`, `list_catalog`, `describe_object`, `explain_query`, `format_sql`, plus catalog and docs resources. Read-only by default. |
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's
