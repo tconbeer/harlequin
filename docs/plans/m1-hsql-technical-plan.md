@@ -150,12 +150,16 @@ for the TUI respectively. All patches were reverted.
    the fix from silently regressing.
 3. **Building the CLI requires importing every installed adapter.** The only unbounded
    cost, and the only one that gets worse as the ecosystem grows.
-4. **Result rendering doesn't exist.** The TUI renders into a DataTable widget;
-   `export.py` writes columnar files via duckdb. Neither is a text formatter.
+4. **Text layout doesn't exist, and is coupled to a widget where it does.** The TUI
+   renders into a DataTable; `export.py` writes files but only from a `ResultsTable`.
+   Nothing arranges a result as `table`, `markdown` or `vertical` text.
 
-Note what is *not* on this list: normalizing adapter output, and parsing SQL into
-statements. Both looked like new subsystems and turned out to be existing ones we
-already own.
+Note what is *not* on this list, though earlier drafts of this plan had all three:
+normalizing adapter output, parsing SQL into statements, and serializing values. Each
+looked like a new subsystem and turned out to be an existing one we already own —
+`create_backend`, `tree-sitter-sql`, and duckdb respectively. The residual work in M1 is
+smaller than it first appears, and the parts that remain are the parts that are genuinely
+ours: the CLI, the execution flow, and three text layouts.
 
 ---
 
@@ -172,8 +176,8 @@ textual-fastdatatable
 harlequin/
   statements.py   NEW  locating statement boundaries in SQL text
   query.py        NEW  execute SQL, get results, without a UI
-  formats.py      NEW  serialize a result set as text, incrementally
-  export.py       MOD  serialize a result set as a columnar file  (widget coupling gone)
+  layout.py       NEW  arranging already-serialized text for a reader
+  export.py       MOD  writing a result set to a file, serialized by duckdb/pyarrow
   config.py       MOD  + merging CLI values over a profile
   plugins.py      MOD  + naming and loading one adapter without importing the rest
   options.py      MOD  renderer imports deferred; declaration stays import-light
@@ -185,7 +189,7 @@ harlequin/
 
 The one-line statement of the architecture, which is also a testable rule:
 
-> **stdout is written only by `harlequin.formats` and `harlequin.export`. stderr is
+> **stdout is written only by `harlequin.layout` and `harlequin.export`. stderr is
 > written only by `harlequin.hsql.diagnostics`.**
 
 ### 3.1 `harlequin.query` — the execution core, over the existing backend
@@ -216,6 +220,7 @@ class ResultSet:
     @property
     def row_count(self) -> int: ...   # backend.row_count
     def rows(self) -> Iterator[Sequence[Any]]: ...
+    def text_columns(self) -> pa.Table: ...   # every value CAST AS VARCHAR; see §3.3
 
 def execute(
     connection: HarlequinConnection,
@@ -301,65 +306,136 @@ should be its own issue rather than M1 scope — and it's a good demonstration t
 sharing the grammar means `hsql` inherits the TUI's behavior including its bugs, which
 is the definition of no drift.
 
-### 3.3 `harlequin.formats` — serialization, deliberately not display
+### 3.3 Output — duckdb serializes, `hsql` lays out
 
 ```python
+**`hsql` writes no value-serialization code at all. duckdb is the serializer; `hsql`
+only does layout.** That is the whole of §3.3, and everything below follows from it.
+
+The temptation is to reach for the stdlib `csv` module, and on plain strings it is
+indistinguishable — I diffed duckdb's writer against `csv.writer` on embedded commas,
+embedded quotes, embedded newlines, nulls and unicode and got byte-identical output.
+The divergence isn't escaping, it's **types**:
+
+| value | `export.py` (duckdb) | stdlib `csv` + `str()` |
+| --- | --- | --- |
+| `timestamptz` | `2024-03-01 12:30:00+00` | `2024-03-01 12:30:00+00:00` |
+| `boolean` | `true` | `True` |
+| `blob` | `\x00\x01\xFF` | `b'\x00\x01\xff'` |
+
+The third row is the argument. `b'\x00\x01\xff'` is a Python repr in a data file. A
+hand-rolled writer doesn't just have to get RFC 4180 right, it has to own a rendering for
+every type any of fifteen adapters can return — dates, intervals, decimals, blobs, lists,
+structs, maps — and it will get them subtly wrong in ways nobody notices until an agent
+parses one.
+
+So the format table becomes:
+
+| Format | Serialized by | Via |
+| --- | --- | --- |
+| `csv`, `tsv` | duckdb | `relation.write_csv(sep=…)` |
+| `json`, `jsonl`/`ndjson` | duckdb | `COPY … (FORMAT JSON[, ARRAY TRUE])` |
+| `parquet`, `orc`, `arrow`/`feather` | duckdb / pyarrow | the existing exporters |
+| `table`, `markdown`/`md`, `vertical` | duckdb, then `hsql` lays it out | `CAST(col AS VARCHAR)` |
+| `none` | — | rows discarded, status only |
+
+`write_csv` already takes `sep`, `na_rep`, `header`, `quotechar`, `escapechar`, `quoting`,
+`encoding` — so `tsv` is `sep="\t"`, `--no-header` is `header=False`, and
+`--null-string` is `na_rep`. Nothing new needed. duckdb's JSON writer emits unquoted
+numbers, bare `true`/`false`, real `null`, and preserves nested structs — the array-of-row-objects
+shape §5 of the product plan asks for, with `ARRAY TRUE`, and jsonl without it.
+
+**`ResultSet.text_columns()` is `CAST(col AS VARCHAR)`, and it's what keeps `-F table`
+honest.** The human-facing layouts need strings, and if they derived them any other way
+they would disagree with `-F csv` about what a timestamp or a blob looks like. Casting
+through duckdb returns `1234.5600`, `true`, `\x00\xFF` — the same text `write_csv`
+produces — with SQL `NULL` arriving as Python `None`, so it stays distinguishable from
+the literal string `"NULL"` and `--null-string` works properly. `hsql` then does padding,
+pipes and alignment, and nothing else.
+
+**One serializer across every adapter is a feature, not a side effect.** Routing a
+Postgres result through duckdb means Postgres, BigQuery and DuckDB timestamps print
+identically — which is story A2 in the product plan ("the flags, output shape, and exit
+codes are identical, so I don't relearn a CLI per database"). Getting that from a shared
+serializer rather than from discipline is the cheap way to get it.
+
+*Robustness:* everything reaches duckdb via `duckdb.from_arrow()`, so an arrow type
+duckdb can't ingest would break the path. I tested large_string, dictionary-encoded,
+duration, map and fixed-size-binary — all fine. There's still a `str()`-based fallback
+with a stderr warning, as belt and braces rather than an expected path.
+
+**`hsql` never calls `cell_formatter`, and this is the one place we deliberately don't
+reuse the TUI's code.** `textual_fastdatatable.format.cell_formatter` is *display*
+formatting: floats and ints as `f"{obj:n}"` (locale-aware thousands separators), booleans
+as `✓ True`, strings as Rich markup. Correct for a data table a human is reading;
+catastrophic in a CSV. Display and serialization are different operations, and conflating
+them is how `1,234,567` ends up in a numeric column.
+
+The corollary is a live trap: **`hsql` must not call `set_locale()`.** The `harlequin` CLI
+does (`cli.py:339`), and inheriting it would make output vary with `LC_ALL` — a direct
+violation of principle 4's "identical output" promise, visible only on someone else's
+machine. `CAST AS VARCHAR` is locale-independent; `f"{obj:n}"` is not.
+
+Column widths for `-F table` are `max(len(s))` over the strings from `text_columns()`,
+not `backend.column_content_widths` — the latter measures the width of the *displayed*
+form we're not displaying.
+
+### Consequences worth stating plainly
+
+**Nothing streams in M1, including CSV.** duckdb's writers are file-producing, so `-o PATH`
+hands duckdb the path and stdout writes to a temp file and copies it out. My earlier
+draft claimed csv and jsonl would stream; that was wrong twice over, because `fetchall()`
+has already materialized the whole result before any writer sees it. Streaming is
+uniformly an M5 problem that starts at the cursor, not at the formatter — which is
+simpler than a format layer where some writers stream and some don't.
+
+**One code path to stdout, not two.** `/dev/stdout` works on Linux and I verified it, but
+it doesn't exist on Windows, and a platform-conditional output path is two paths to test
+for no benefit. Temp file then `copyfileobj` everywhere. At the default `--limit 500`
+it's unmeasurable; at `-l 0` duckdb writing a temp file beats building strings in Python.
+
+**Newlines are still part of the contract.** duckdb writes `\n`; the copy to stdout must
+be binary so Python's text-mode translation doesn't turn it into `\r\n` on Windows. Same
+test as before, and now it covers every format at once.
+
+**The overlap I flagged last draft is gone.** There was going to be one CSV writer for the
+TUI's export dialog and another for `hsql`. There's one, and the export dialog's options
+(compression, quoting, encoding) are already in its vocabulary.
+
+### `harlequin.export` and `harlequin.layout`
+
+Given the above, the split isn't text-versus-columnar, it's **who serializes**:
+
+```python
+# harlequin/export.py — writing a result set to a file, serialized by duckdb or pyarrow
+def write_file(data: pa.Table, path: Path, format_name: str, options: Mapping[str, Any]) -> None: ...
+def file_format_names() -> list[str]: ...
+
+# harlequin/layout.py — arranging already-serialized text for a reader
 @dataclass(frozen=True)
-class RenderOptions:
+class LayoutOptions:
     header: bool = True
     footer: bool = True
     aligned: bool = True
-    null_string: str | None = None    # None = per-format default
+    null_string: str | None = None
     color: bool = False
 
-class ResultWriter(Protocol):
-    def write_result(self, result: ResultSet, out: TextIO) -> None: ...
+class Layout(Protocol):
+    def write(self, result: ResultSet, out: TextIO) -> None: ...
 
-def get_writer(name: str, options: RenderOptions) -> ResultWriter: ...
-def format_names() -> list[str]: ...
+def get_layout(name: str, options: LayoutOptions) -> Layout: ...
+def layout_names() -> list[str]: ...
 ```
 
-Formats: `table`, `markdown`/`md`, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `vertical`,
-`none`. Columnar formats (`parquet`, `arrow`, `orc`) route to `export.py`, which needs a
-path and a materialized table.
+`export.py` keeps its name and its job, loses the `ResultsTable` coupling from §1.6, and
+gains `tsv` and `jsonl` as thin option variants of formats it already writes. `layout.py`
+is new and small: three layouts, no type knowledge, no duckdb.
 
-`RenderOptions` is what makes psql's flag algebra fall out for free: `-t` is
+`LayoutOptions` is what makes psql's flag algebra fall out for free: `-t` is
 `header=False, footer=False`, `-A` is `aligned=False`, and `-tA` needs no special case
-because it was never a special case — two independent options, which is how psql users
-already think about them.
-
-**`hsql` never calls `cell_formatter`, and this is the one place we deliberately do not
-reuse the TUI's code.** `textual_fastdatatable.format.cell_formatter` is *display*
-formatting: it renders floats and ints as `f"{obj:n}"` (locale-aware thousands
-separators), booleans as `✓ True`, and strings as Rich markup. Correct for a data table
-a human is reading; catastrophic in a CSV. Serialization and display are different
-operations and conflating them is how `1,234,567` ends up in a numeric column.
-`hsql -F table` prints `1234567`, same as psql.
-
-The corollary is a live trap: **`hsql` must not call `set_locale()`.** The `harlequin`
-CLI does (`cli.py:339`), and inheriting it would make output vary with `LC_ALL` — a
-direct violation of principle 4's "identical output" promise, and one that would only
-show up on someone else's machine.
-
-For the same reason `hsql` computes its own column widths for `-F table`, rather than
-reusing `backend.column_content_widths`: that measures the *displayed* width of values
-we're not going to display that way. `max(len(s))` over the strings we actually emit is
-trivial and guaranteed consistent with the output.
-
-**`table` cannot stream** — column widths require seeing every row. `csv`, `tsv`,
-`jsonl`, `vertical` can. That's inherent, not a defect; the Protocol is defined over a
-`ResultSet` whose `rows()` is an iterator, so the streaming formats are already written
-in the shape M5 needs.
-
-**Newlines are part of the contract.** Python text mode translates `\n` to `\r\n` on
-Windows, which would make `hsql -F csv` produce different bytes per platform. Every
-writer opens with `newline=""` and emits `\n`, with a test.
-
-**One accepted overlap:** `export.py` writes CSV via duckdb for the TUI's export dialog;
-`formats.py` writes CSV via the stdlib for `hsql`. Unifying them means either making the
-export dialog's options (compression, quoting, encoding) part of the streaming path or
-dropping them, and neither is M1's business. Noted so it's a decision rather than an
-accident; revisit in M5.
+because it was never one — two independent options, which is how psql users already think
+about them. `--no-header` and `--null-string` also reach `export.py` as `header` and
+`na_rep`, so the same four flags mean the same thing in every format.
 
 ### 3.4 `harlequin.plugins` — naming an adapter without importing it
 
@@ -472,8 +548,10 @@ corpus. Then the execution core, with `_execute_query` and `_fetch_data` refacto
 it. Delete the dead `_split_query_text`. Snapshot tests are the safety net for the TUI
 refactor.
 
-**PR 3 — `harlequin.formats`, and `export.py` decoupled from `ResultsTable`.** Golden
-files per format. No user-visible change; `formats.py` has no consumer until PR 5.
+**PR 3 — `export.py` decoupled from `ResultsTable`, plus `harlequin.layout`.** Extend
+`export.py` with `tsv` and `jsonl` (option variants of formats it already writes) and the
+temp-file-to-stream path; add the three layouts and `ResultSet.text_columns()`. Golden
+files per format. No user-visible change; neither has a consumer until PR 5.
 
 **PR 4 — `merge_profile_with_cli`, `adapter_names`, `load_adapter`.** `harlequin`'s own
 CLI refactored onto the first; behavior-neutral, covered by the existing 392 lines of
@@ -533,11 +611,20 @@ Beyond that:
   values, duplicate column names, and zero rows. Zero rows is the case that separates
   "the query returned nothing" from "the query failed" — A3 in the product plan — and
   the one most likely to be wrong in a format nobody exercised.
+- **A type-coverage fixture** — timestamp, timestamptz, date, decimal, float, boolean,
+  blob, list, struct, map, and null in each — rendered into every format, as golden
+  files. This is the table in §3.3 turned into a test: it's what would catch a change in
+  duckdb's rendering, and it's the reason `-F table` and `-F csv` can be asserted to
+  agree cell for cell.
+- **`text_columns()` agreement:** for that fixture, the strings `-F table` prints are the
+  same strings `-F csv` writes.
 - **stdout purity:** for each format, stdout bytes identical with and without `--stats`;
   a query error leaves stdout completely empty.
 - **Determinism:** identical bytes whether stdout is a pipe, a file, or a pty; `\n`
-  regardless of platform; **identical bytes under `LC_ALL=de_DE.UTF-8`**, which is the
-  regression test for §3.3's locale trap.
+  regardless of platform, which now means the temp-file copy is binary; **identical bytes
+  under `LC_ALL=de_DE.UTF-8`**, the regression test for §3.3's locale trap.
+- **`-o PATH` and `> PATH` produce identical bytes** for every format — the one thing the
+  temp-file path could plausibly get wrong.
 - **`hsql -tAc "select count(*)"` returning a bare number and nothing else** as its own
   named test. It's the idiom the scripting audience will try first.
 - **Truncation:** exactly-at-limit, one-over-limit, and under-limit, on both duckdb and
@@ -578,8 +665,10 @@ Beyond that:
 
 `--read-only`, `--timeout`, `--dry-run`, `--single-transaction` (M2 — the first three
 need adapter-interface additions and an ecosystem rollout). Every subcommand: `catalog`,
-`describe`, `fmt`, `spec`, `info`, `config`, `history`, `open`, `mcp`. Real streaming
-(M5 — designed for, not built). Making `textual` an optional extra of
+`describe`, `fmt`, `spec`, `info`, `config`, `history`, `open`, `mcp`. Streaming of any
+kind — it starts at the cursor interface, not the format layer (M5; see §3.3 and §8).
+Unifying the TUI's export dialog onto `write_file` (mechanical, but it moves a UI).
+Making `textual` an optional extra of
 `textual-fastdatatable`, and the separate lean `hsql` distribution it would enable (§4
 of the product plan: near-reversible, indefinitely deferrable). Fixing dollar-quoted
 statement splitting (its own issue, affects the TUI equally).
@@ -603,3 +692,9 @@ release.
 - **§5's truncation guarantee needs the `limit + 1` fetch to be implementable at all.**
   Worth stating in the product plan, because it's exactly the kind of thing that gets
   designed out as an implementation detail and then quietly breaks the promise.
+- **§5 says "Large results stream" and lists it as an M1 concern.** Nothing streams in
+  M1, and it can't: `HarlequinCursor.fetchall()` materializes the whole result before any
+  writer exists, so the format layer is downstream of the problem. Streaming is an M5
+  change to the cursor interface. The M1 commitment should be narrowed to "the format
+  layer doesn't make streaming harder later," which is what `rows()` returning an
+  iterator buys.
