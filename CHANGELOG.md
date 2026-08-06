@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 - A Data Catalog node that turns out to have no children no longer keeps a phantom expand arrow.
 - Expanding a node that was already queued for background loading no longer loads it twice, which could collapse a subtree you had opened.
 
+## [2.7.0] - 2026-08-05
+
 ### Dependencies
 
 - Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
