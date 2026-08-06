@@ -339,36 +339,93 @@ pset there) and anything else that diverges.
 If Workstream A is what lets an agent *run* a query, this is what lets it write a
 correct one on the first try. All of it lands as `hsql` subcommands.
 
-### `hsql catalog`
+### `hsql catalog` — the catalog is a filesystem, not a document
 
 The highest-leverage feature in this plan after `-c`. Harlequin already normalizes the
 catalog across every adapter; today that value is locked inside the TUI.
 
+**The binding constraint is fetch cost, not token cost.** `get_catalog()` issues one
+query and returns databases only; every level below it is a separate `fetch_children()`
+round trip, with columns as the leaf. Listing one schema's columns is `1 + 1 + 1 + T`
+queries. A "dump the tree, then filter" interface is an N+1 walk that gets slower the
+more useful it would be — and #1007 already moved the TUI off eager loading for exactly
+this reason. Filtering in the client protects the agent's context and does nothing for
+the database.
+
+So the model is a filesystem: **`ls`, `stat`, `find`** — not dump-and-grep. That bounds
+cost structurally, because you only pay for the level you asked for, and it rides on the
+navigation loop agents are most practiced at.
+
 ```
-hsql catalog [PATTERN] [--depth N] [--format compact|json|md|tree]
-hsql describe <OBJECT>
+hsql catalog [PATH] [--depth N] [--max-nodes N] [--format compact|json|md|tree]
+hsql describe <PATH>
+hsql find <TERM> [--in tables|columns|all]
 ```
 
-Token efficiency is the design constraint. A JSON dump of a 500-table warehouse is
-useless to an agent. So:
+- **One level below the match, by default.** `hsql catalog` → databases;
+  `hsql catalog mydb` → schemas; `hsql catalog mydb.analytics` → relations;
+  `hsql catalog mydb.analytics.orders` → columns. Exactly one `fetch_children()` call.
+  `--depth N` opts into recursion; there is no unbounded default.
 
-- `--depth 1|2` returns just databases, or databases and schemas — cheap orientation.
-- `PATTERN` (e.g. `analytics.*`, `*.orders`) scopes the expensive part.
-- `--format compact` emits one line per table: `analytics.orders(id BIGINT, customer_id
-  BIGINT, total DECIMAL(18,2), created_at TIMESTAMP)`. Roughly an order of magnitude
-  cheaper than pretty JSON and perfectly readable by a model.
-- `describe` returns one object in full, including comments and row counts where the
-  adapter can supply them.
+  Counting depth **from the match** rather than from the root is what makes this safe
+  rather than merely conservative: at every level, depth 1 is a single round trip, so
+  there is no path on which the default degrades into a walk. Depth ≥2 from a schema is
+  the first N+1, and it's opt-in.
+
+- **Patterns are paths with an optional trailing glob.** A trailing wildcard filters one
+  resolved parent's children and stays a single round trip, so `analytics.*` is just
+  sugar for `analytics`, and `analytics.ord*` narrows it. An *interior* wildcard
+  (`*.orders`, `mydb.*.orders`) can't be evaluated without fetching every candidate
+  level, so it belongs to `find` below — never something a `catalog` call does quietly.
+- **Report child counts** wherever the adapter can get them cheaply. `400 relations` next
+  to a schema is what lets an agent decide *not* to recurse. Cost should be predictable
+  before the call, not just measurable after it.
+- **A node budget.** `--max-nodes` (default ~2000) stops a recursive walk and says so,
+  naming the path to narrow. Same rule as row truncation: never silent.
+- **`--stats` reports round trips**, so the expensive shape of a query is visible.
+- **Emit `query_name`, not just the label.** Adapters already compute the correctly
+  quoted identifier for every item. Handing it over means the agent never guesses whether
+  this backend wants `"Orders"` or `` `orders` ``. It costs nothing and no other client
+  does it.
+- **`--format compact`** stays for the leaf and shallow-recursion cases:
+  `analytics.orders(id BIGINT, customer_id BIGINT, total DECIMAL(18,2))`. Roughly an
+  order of magnitude cheaper than pretty JSON and perfectly readable by a model.
+- **`describe`** returns one object in full — columns, types, comments, row counts where
+  the adapter can supply them. One round trip.
+
+### `hsql find` — the real gap
+
+What an agent most often needs isn't "list this schema," it's *"where does `orders`
+live"* or *"which tables have a `customer_id`."* That cannot be a walk.
+
+This wants an **optional adapter capability** (`implements_catalog_search`): one
+`information_schema`-style query where the adapter can serve it, and an explicit "not
+supported by this adapter" where it can't, surfaced through the capability flags in
+`hsql info`. High value, but it should not block the rest of the workstream.
+
+### An adapter-API question this raises
+
+`fetch_children` is per-item, which is exactly right for a viewport-driven TUI and forces
+N+1 for bulk access. An adapter that could pull an entire schema's columns in a single
+`information_schema` query has no way to say so.
+
+Worth considering an optional **`fetch_descendants(depth)`** on `InteractiveCatalogItem`,
+with a default implementation that simply walks `fetch_children`. Adapters that can do
+better override it; everything keeps working for those that don't. This is a
+Harlequin-core API decision, not an `hsql` one, and it would improve the TUI's
+expand-all path too.
 
 **Stories:**
 
-- **B1.** As an agent, I run `hsql -P prod catalog --depth 2` to learn what schemas exist
-  before spending tokens on columns.
-- **B2.** As an agent, I run `hsql -P prod catalog 'analytics.*' --format compact` and get
-  every table and column type in that schema in a few hundred tokens, without knowing
-  whether the backend is Postgres or BigQuery.
-- **B3.** As an agent, I write a correct join on the first attempt because I had real
-  column names and types, not guesses from a table name.
+- **B1.** As an agent, I run `hsql -P prod catalog` and then `hsql -P prod catalog mydb`
+  to orient myself, paying one query per step and knowing what each step cost.
+- **B2.** As an agent, I see `analytics — 400 relations` and scope my next call instead of
+  recursing into a walk that would take a minute and blow my context.
+- **B3.** As an agent, I run `hsql -P prod catalog mydb.analytics.orders --format compact`
+  and write a correct join on the first attempt, pasting the adapter's own quoted
+  identifiers rather than guessing at them.
+- **B4.** As an agent handed an unfamiliar warehouse, I run `hsql find orders` and get a
+  path instead of walking three levels to look for one.
 
 ### `hsql spec --json`
 
@@ -654,7 +711,7 @@ Because the CLI is a separate command, **every milestone here is purely additive
 | Milestone | Theme | Contents |
 | --- | --- | --- |
 | **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
-| **M2** | Self-description & safety | `catalog`, `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. |
+| **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
 | **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
 | **M4** | Integrations & handoff | Skill, `hsql mcp`, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
 | **M5** | Scale | Streaming output, `--offset`/pagination, memory work for large results (**#875**). |
@@ -688,10 +745,15 @@ any of fifteen databases on the first try."
 - **Name mindshare.** `hsql` competes with HyperSQL in search results. No PATH or PyPI
   collision, but SEO for "hsql" will take work; docs should always spell it "hsql, the
   Harlequin CLI" on first use.
-- **Adapter ecosystem lift.** `--read-only`, catalog depth control, and `validate_sql`
-  are optional adapter methods. `hsql` must degrade gracefully and *say which adapter
-  lacks what* — hence capability flags. Third-party adapters will lag; plan for a long
-  tail.
+- **Adapter ecosystem lift.** `--read-only`, `validate_sql`, catalog search, and any bulk
+  `fetch_descendants` are optional adapter methods. `hsql` must degrade gracefully and
+  *say which adapter lacks what* — hence capability flags. Third-party adapters will lag;
+  plan for a long tail.
+- **Catalog fetch cost is the sharpest edge in the plan.** The default is safe by
+  construction (§6), but `--depth 2` on a wide schema is an N+1 walk on most adapters,
+  and it's also the single most useful catalog call an agent can make. Child counts, the
+  node budget, and `--stats` are what keep that honest until adapters can serve it in
+  one query.
 - **Cold start.** The import-linter rule protects against Textual creeping in, but the
   adapter plugins themselves can be slow to import. May need lazy entry-point resolution
   so `hsql -c` against DuckDB doesn't pay for an installed BigQuery adapter.
