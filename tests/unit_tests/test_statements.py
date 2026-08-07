@@ -60,9 +60,15 @@ CORPUS: list[tuple[str, str, list[str]]] = [
         ["select 'it''s; fine';", "select 2"],
     ),
     # the reason find_separators() returns character columns. A byte offset
-    # would land 6 positions late here, one per byte of overhead in 日本語.
+    # lands one position late per byte of overhead: one for é, six for 日本語.
+    # The first is the reproduction from #1015.
     (
         "non-ascii before a separator",
+        "select 'café';select 2",
+        ["select 'café';", "select 2"],
+    ),
+    (
+        "multibyte before a separator",
         "select '日本語';select 2",
         ["select '日本語';", "select 2"],
     ),
@@ -133,11 +139,13 @@ def test_find_separators_agrees_with_split(script: str, expected: list[str]) -> 
 
 
 def test_find_separators_returns_character_columns() -> None:
-    """Regression test for the byte-vs-character bug this module fixes.
+    """Regression test for #1015, the byte-vs-character bug this module fixes.
 
-    tree-sitter reports `Point.column` in bytes; `日本語` is 9 bytes and 3
-    characters, so the raw node put the separator at column 19 instead of 13.
+    tree-sitter reports `Point.column` in bytes; `café` is 5 bytes and 4
+    characters, so the raw node put the separator at column 15 instead of 14,
+    and `日本語` (9 bytes, 3 characters) at 19 instead of 13.
     """
+    assert find_separators("select 'café';select 2") == [(0, 14)]
     assert find_separators("select '日本語';select 2") == [(0, 13)]
 
 

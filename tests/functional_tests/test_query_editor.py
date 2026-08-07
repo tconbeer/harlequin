@@ -412,7 +412,8 @@ async def test_selected_queries_split_on_character_columns(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
-    """The editor and `harlequin.statements` split at the same place.
+    """Regression test for #1015: the editor and `harlequin.statements` split
+    at the same place.
 
     tree-sitter reports columns in bytes, and the editor used to feed one
     straight to `get_text_range()`, which wants characters. Any non-ASCII

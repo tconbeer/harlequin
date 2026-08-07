@@ -263,8 +263,8 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 
 # The headless execution core. It may reach `textual_fastdatatable.backend` --
-# that is where result normalization lives, and as of 0.17 it costs no Textual
-# -- but nothing here may reach Textual itself or any part of the app.
+# that is where result normalization lives, and as of 0.16.1 it costs no
+# Textual -- but nothing here may reach Textual itself or any part of the app.
 name = "The execution core is reachable without the TUI"
 type = "forbidden"
 source_modules = [
