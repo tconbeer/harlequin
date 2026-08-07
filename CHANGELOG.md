@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Clicking a column header in the Results Viewer sorts by that column: the query is rewritten with an `order by` and re-run, so the database does the sorting and a `limit` returns the true top rows. Clicking the same header again flips ascending to descending. Sorted columns are marked `▲` or `▼`; every other column carries a dim `⇅` to show it can be sorted. The clause is written back into the editor, so you can see and edit it, and a hand-written `order by` marks its header the same way.
+
 ### Performance
 
 - Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
