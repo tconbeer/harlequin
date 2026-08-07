@@ -15,9 +15,11 @@ surface as two front ends showing different data for the same query.
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator, Literal, Sequence
 
+import pyarrow as pa
 from textual_fastdatatable.backend import create_backend
 
 from harlequin.statements import Statement
@@ -105,6 +107,109 @@ class ResultSet:
     # `backend.source_data` instead; `get_row_at()` costs an Arrow slice and a
     # dict per row (1.8s vs 0.34s over 100k rows) and materializes the whole
     # result as Python objects, which is what `--limit` exists to avoid.
+
+    def arrow_table(self) -> pa.Table:
+        """The rows this result set holds, as Arrow, under the cursor's names.
+
+        This is `backend.data` -- the rows kept, not the rows fetched -- so
+        under `detect_overflow` the extra row used to infer `truncated` is not
+        in it. (The app's export dialog wants `backend.source_data` instead: it
+        fetched everything on purpose and exports all of it.)
+
+        Column names come from `cursor.columns()`, because the backend's do not
+        always survive normalization: an adapter that returns rows as tuples
+        arrives here with columns named `f0`, `f1`, ... . Names are applied
+        as-is, duplicates included -- de-duplicating is `export.write_file()`'s
+        job, since it is duckdb that cannot take them.
+        """
+        names = [name for name, _ in self.columns]
+        if self.backend is None:
+            return _empty_table(names)
+
+        held = self.backend.data
+        # a polars backend, if the adapter returned a DataFrame.
+        data: pa.Table = held if isinstance(held, pa.Table) else held.to_arrow()
+        if data.num_columns == 0 and names:
+            # a cursor that returned an empty sequence of rows normalizes to a
+            # table with no columns at all, but the cursor still described
+            # some -- and zero rows must render with its header intact.
+            return _empty_table(names)
+        if data.num_columns != len(names):
+            return data
+        return data.rename_columns(names)
+
+    def text_columns(self) -> pa.Table:
+        """Every value in this result set, `CAST(... AS VARCHAR)`.
+
+        The text layouts need strings, and this is where they get them: through
+        duckdb, the same serializer `export.write_file()` writes csv and json
+        with. Deriving them any other way -- `str()`, or the data table's
+        display formatter -- would make `-F table` and `-F csv` disagree about
+        what a timestamp, a decimal or a blob looks like, and the display
+        formatter would additionally render `1234567` as `1,234,567` under a
+        locale that groups digits.
+
+        SQL `NULL` comes back as Python `None`, so a null stays distinguishable
+        from the literal string a caller chose to render nulls as.
+        """
+        data = self.arrow_table()
+        if data.num_columns == 0:
+            return data
+        try:
+            return _cast_to_text(data)
+        except Exception as e:  # noqa: BLE001
+            # not an expected path: duckdb ingests every Arrow type these
+            # adapters have been seen to produce. Belt and braces, and loud,
+            # because the output is no longer the output a file export would
+            # have produced.
+            warnings.warn(
+                f"Could not serialize this result set with duckdb ({e}); "
+                "falling back to Python's str(), which may render some values "
+                "differently than an exported file would.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return _cast_to_text_with_str(data)
+
+
+def _empty_table(names: Sequence[str]) -> pa.Table:
+    """A table with these columns and no rows."""
+    return pa.Table.from_arrays(
+        [pa.array([], type=pa.string()) for _ in names], names=list(names)
+    )
+
+
+def _cast_to_text(data: pa.Table) -> pa.Table:
+    """Cast every column to VARCHAR, in duckdb."""
+    import duckdb
+
+    names = data.column_names
+    # duckdb refuses an Arrow table with duplicate field names, and a column
+    # name is otherwise an identifier we would have to quote correctly. Neither
+    # is worth a rendezvous with quoting rules, so the projection is written
+    # against positional names and the originals are put back afterwards.
+    positional = [f"c{i}" for i in range(len(names))]
+    relation = duckdb.from_arrow(data.rename_columns(positional))
+    projection = ", ".join(f"CAST({name} AS VARCHAR) AS {name}" for name in positional)
+    projected = relation.project(projection).arrow()
+    # duckdb >= 1.3 hands back a RecordBatchReader rather than a table.
+    cast: pa.Table = (
+        projected if isinstance(projected, pa.Table) else projected.read_all()
+    )
+    return cast.rename_columns(names)
+
+
+def _cast_to_text_with_str(data: pa.Table) -> pa.Table:
+    return pa.Table.from_arrays(
+        [
+            pa.array(
+                [None if value is None else str(value) for value in column.to_pylist()],
+                type=pa.string(),
+            )
+            for column in data.columns
+        ],
+        names=data.column_names,
+    )
 
 
 def execute(

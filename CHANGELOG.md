@@ -4,12 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Refactoring
+
+- Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)). `harlequin.export.write_file()` and `write_stream()` take an Arrow table and write it to a path or an open binary stream, and `harlequin.layout` arranges a result set as `table`, `markdown` or `vertical` text. Both are for the planned headless CLI and have no user-facing surface yet; the Data Exporter behaves as before. `export.py` also gains `tsv`, `jsonl`/`ndjson` and `arrow` as option variants of formats it already wrote.
+
 ### Performance
 
 - Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
 
 ### Bug Fixes
 
+- The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
 - Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)). `select 'café';select 2` ran as `select 'café';s` and `elect 2`, both syntax errors, because tree-sitter reports columns in bytes and the editor read them as characters.
 - A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
 - Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.

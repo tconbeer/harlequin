@@ -10,12 +10,13 @@ from textual.css.query import QueryError
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
+from textual_fastdatatable.backend import ArrowBackend
 from textual_textarea import PathInput
 
 from harlequin.components.error_modal import ErrorModal
 from harlequin.components.results_viewer import ResultsTable
 from harlequin.exception import HarlequinCopyError
-from harlequin.export import copy
+from harlequin.export import write_file
 from harlequin.options import AbstractOption, HarlequinCopyFormat
 
 ExportOptions = Dict[str, Any]
@@ -27,13 +28,23 @@ def export_callback(
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
+    """Write the visible table to the file the export screen collected.
+
+    The dialog exports every row it fetched, not the rows on screen, so the
+    data is `source_data` rather than what the row cap left. Naming the columns
+    is this side's job too: the backend may have normalized them (an adapter
+    that returns tuples arrives with `f0`, `f1`, ...), and the labels the user
+    is looking at are the ones they expect in the file.
+    """
+    path, format_name, options = screen_data
     try:
-        copy(
-            table=table,
-            path=screen_data[0],
-            format_name=screen_data[1],
-            options=screen_data[2],
-        )
+        if table.row_count == 0:
+            raise HarlequinCopyError("Cannot export empty table.")
+        assert isinstance(table.backend, ArrowBackend)
+        data = table.backend.source_data
+        if table.plain_column_labels:
+            data = data.rename_columns(table.plain_column_labels)
+        write_file(data=data, path=path, format_name=format_name, options=options)
         success_callback()
     except (OSError, HarlequinCopyError) as e:
         error_callback(e)
