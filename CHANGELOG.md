@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Foreign-key cells in the Results Viewer are marked with a `↗` glyph; single-clicking one navigates to the referenced row (`select * from <ref_table> where <ref_col> = <value>`) in a new buffer. Requires an adapter that reports foreign keys (supported by harlequin-postgres); works across joins.
+- Double-clicking a result cell now opens an editor to change its value; on confirm it runs an `UPDATE` against the source table (with the row identified by its primary key) and reflects the new value in the grid. Requires an adapter that reports editable columns (supported by harlequin-postgres).
+
 ### Performance
 
 - Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.

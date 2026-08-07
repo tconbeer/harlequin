@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -20,6 +21,7 @@ from typing import (
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.css.query import DOMQuery, NoMatches
 from textual.dom import DOMNode
 from textual.driver import Driver
@@ -66,10 +68,12 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.components.cell_edit_modal import CellEditModal
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import (
     get_config_for_profile,
     get_highest_priority_existing_config_file,
@@ -84,6 +88,7 @@ from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
+    HarlequinQueryError,
     pretty_error_message,
     pretty_print_error,
 )
@@ -423,6 +428,113 @@ class Harlequin(AppBase):
         self.editor.copy_to_clipboard(text)
         self.notify(success_message)
 
+    @on(ResultsTable.ForeignKeyFollowed)
+    async def follow_foreign_key(
+        self, message: ResultsTable.ForeignKeyFollowed
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            self._recycle_message(message)
+            return
+        literal = self._sql_literal(message.value)
+        query = (
+            f"select *\nfrom {message.ref_table}\n"
+            f"where {message.ref_col} = {literal}\nlimit 100"
+        )
+        await self.editor_collection.insert_buffer_with_text(query_text=query)
+        self.post_message(QuerySubmitted(queries=[query], limit=None))
+
+    @on(ResultsTable.CellEditRequested)
+    def edit_cell_value(self, message: ResultsTable.CellEditRequested) -> None:
+        message.stop()
+        table = self.results_viewer.get_visible_table()
+        if table is None:
+            return
+        info = table.edit_map.get(message.column)
+        if info is None:
+            self.notify(
+                "This column can't be edited (it isn't a plain table column).",
+                title="Cell edit",
+                severity="warning",
+            )
+            return
+        qualified_table, quoted_column, _ = info
+        # Identify the row using the primary-key columns of the same source table
+        # that are present in the result set.
+        key_cells = [
+            (col_name, table.get_cell_at(Coordinate(message.row, idx)))
+            for idx, (src_table, col_name, is_pk) in table.edit_map.items()
+            if src_table == qualified_table and is_pk
+        ]
+        if not key_cells:
+            self.notify(
+                "Can't edit: no primary-key column for this table is in the "
+                "result set, so the row can't be identified safely.",
+                title="Cell edit",
+                severity="warning",
+            )
+            return
+        where_sql = " and ".join(
+            f"{col} = {self._sql_literal(val)}" for col, val in key_cells
+        )
+
+        def _on_close(new_value: str | None) -> None:
+            if new_value is None:
+                return
+            update_sql = (
+                f"update {qualified_table} set {quoted_column} = "
+                f"{self._sql_literal(new_value)} where {where_sql}"
+            )
+            self._run_cell_update(update_sql, message.row, message.column, new_value)
+
+        self.push_screen(
+            CellEditModal(
+                table=qualified_table,
+                column=quoted_column,
+                where_description=where_sql,
+                current=message.value,
+            ),
+            _on_close,
+        )
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="query_runners",
+        description="Updating a cell.",
+    )
+    def _run_cell_update(
+        self, update_sql: str, row: int, column: int, new_value: str
+    ) -> None:
+        if self.connection is None:
+            return
+        try:
+            self.connection.execute(update_sql)
+        except HarlequinQueryError as e:
+            self.post_message(QueryError(query_text=update_sql, error=e))
+            return
+        self.call_from_thread(self._after_cell_update, row, column, new_value)
+
+    def _after_cell_update(self, row: int, column: int, new_value: str) -> None:
+        table = self.results_viewer.get_visible_table()
+        if table is not None:
+            table.apply_edit(row, column, new_value)
+        self.notify("Cell updated.", title="Cell edit")
+
+    @staticmethod
+    def _sql_literal(value: Any) -> str:
+        """Render a Python value as a SQL literal for a WHERE clause. Numbers are
+        emitted bare; everything else is single-quoted (Postgres implicitly casts
+        quoted values for int/uuid/text keys)."""
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
@@ -669,10 +781,30 @@ class Harlequin(AppBase):
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
         for id_, (cols, data, query_text) in message.data.items():
+            # Ask the cursor which result columns are foreign keys (adapters that
+            # don't support it simply won't have the method).
+            fk_map: dict[int, tuple[str, str]] = {}
+            edit_map: dict[int, tuple[str, str, bool]] = {}
+            cursor_tuple = message.cursors.get(id_)
+            if cursor_tuple is not None:
+                fk_fn = getattr(cursor_tuple[0], "foreign_key_columns", None)
+                if callable(fk_fn):
+                    try:
+                        fk_map = fk_fn()
+                    except Exception:
+                        fk_map = {}
+                edit_fn = getattr(cursor_tuple[0], "editable_columns", None)
+                if callable(edit_fn):
+                    try:
+                        edit_map = edit_fn()
+                    except Exception:
+                        edit_map = {}
             table = await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
                 data=data,
+                fk_map=fk_map,
+                edit_map=edit_map,
             )
             self.append_to_history(
                 query_text=query_text,
