@@ -1325,6 +1325,8 @@ dependencies = [
     { name = "textual-fastdatatable" },
     { name = "textual-textarea" },
     { name = "tomlkit" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-sql" },
 ]
 
 [package.optional-dependencies]
@@ -1409,6 +1411,8 @@ requires-dist = [
     { name = "textual-fastdatatable", specifier = "==0.16.1" },
     { name = "textual-textarea", specifier = "==0.18.1" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
+    { name = "tree-sitter", specifier = ">=0.25,<0.27" },
+    { name = "tree-sitter-sql", specifier = ">=0.3.11,<0.4" },
 ]
 provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
 

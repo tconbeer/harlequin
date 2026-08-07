@@ -10,6 +10,7 @@ from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
+from harlequin.statements import find_separators, split
 
 
 @pytest.mark.asyncio
@@ -244,11 +245,20 @@ async def test_member_autocomplete(
 
 
 @pytest.mark.asyncio
-async def test_no_tree_sitter(
+async def test_splitting_survives_a_text_area_without_syntax_awareness(
     app: Harlequin,
     monkeypatch: pytest.MonkeyPatch,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
+    """Splitting no longer depends on the editor widget's syntax tree.
+
+    It used to: with Textual's tree-sitter unavailable the editor fell back to
+    a regex over semicolons and warned the user that query splitting might
+    misbehave. `harlequin.statements` drives the grammar itself, so a text area
+    that cannot highlight still splits exactly, and there is nothing to warn
+    about -- which is the degraded mode the tree-sitter troubleshooting page
+    described.
+    """
     import textual.document._syntax_aware_document
     import textual.widgets._text_area
 
@@ -264,7 +274,8 @@ async def test_no_tree_sitter(
 
         assert app.editor is not None
         assert app.editor.text_input is not None
-        app.editor.text = "select 1; select 2"
+        # a semicolon in a string literal, which the old regex fallback split on
+        app.editor.text = "select 'a;b'; select 2"
 
         assert not app.editor.text_input.is_syntax_aware
 
@@ -276,21 +287,14 @@ async def test_no_tree_sitter(
         submitted_msg = next(
             iter(filter(lambda m: isinstance(m, QuerySubmitted), messages))
         )
-        assert submitted_msg
         assert isinstance(submitted_msg, QuerySubmitted)
-        assert len(submitted_msg.queries) == 2
+        assert submitted_msg.queries == ["select 'a;b';", "select 2"]
 
-        text_area_warning = next(
-            iter(
-                filter(
-                    lambda m: (
-                        isinstance(m, Notify) and m.notification.severity == "warning"
-                    ),
-                    messages,
-                )
-            )
-        )
-        assert text_area_warning
+        assert not [
+            m
+            for m in messages
+            if isinstance(m, Notify) and "tree-sitter" in m.notification.message.lower()
+        ]
 
 
 @pytest.mark.asyncio
@@ -359,7 +363,12 @@ async def test_selected_queries(
         await pilot.pause()
 
         # tree-sitter does not capture the semicolons in buffer order
-        assert app.editor._query_separators() == [(0, 25), (1, 27), (2, 18), (3, 15)]
+        assert find_separators(app.editor.text) == [
+            (0, 25),
+            (1, 27),
+            (2, 18),
+            (3, 15),
+        ]
 
         # the whole buffer
         app.editor.selection = Selection((0, 0), (4, 0))
@@ -396,3 +405,28 @@ async def test_selected_queries(
         await pilot.pause()
         app.editor.selection = Selection((0, 0), (0, 0))
         assert app.editor.selected_queries() == ["select 'a;b'"]
+
+
+@pytest.mark.asyncio
+async def test_selected_queries_split_on_character_columns(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The editor and `harlequin.statements` split at the same place.
+
+    tree-sitter reports columns in bytes, and the editor used to feed one
+    straight to `get_text_range()`, which wants characters. Any non-ASCII
+    before a semicolon shifted the cut, and both halves came out as syntax
+    errors -- this split into "select '日本語';select" and "2".
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        app.editor.text = "select '日本語';select 2"
+        await pilot.pause()
+        app.editor.selection = Selection((0, 0), (0, 22))
+        assert app.editor.selected_queries() == ["select '日本語';", "select 2"]
+        assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]

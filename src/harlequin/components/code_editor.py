@@ -16,11 +16,10 @@ from harlequin.autocomplete import MemberCompleter, WordCompleter
 from harlequin.components.error_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
+from harlequin.statements import find_separators
 
 
 class CodeEditor(TextEditor, inherit_bindings=False):
-    SEMICOLON_QUERY = '(";" @semicolon)'
-
     class Submitted(Message, bubble=True):
         """Posted when user runs the query.
 
@@ -44,7 +43,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if ";" not in self.text:
             return [self.text]
 
-        separators = self._query_separators()
+        separators = find_separators(self.text)
         if not separators:
             # a semicolon could be in a string literal,
             # so there may not be query separators even if
@@ -92,8 +91,6 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
         self.post_message(WidgetMounted(widget=self))
         self.has_shown_clipboard_error = False
-        self.has_shown_tree_sitter_error = False
-        self._semicolon_query = self.prepare_query(self.SEMICOLON_QUERY)
 
     def on_unmount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=None))
@@ -141,46 +138,6 @@ class CodeEditor(TextEditor, inherit_bindings=False):
     def action_focus_data_catalog(self) -> None:
         if hasattr(self.app, "action_focus_data_catalog"):
             self.app.action_focus_data_catalog()
-
-    def _query_separators(self) -> list[Location]:
-        """
-        Return a sorted list of tuples that represent the row and col
-        positions of query separators (semicolons) in the buffer text.
-        """
-        if self.text_input is None:
-            return []
-
-        if self.text_input.is_syntax_aware:
-            assert self._semicolon_query is not None
-            query_result = self.query_syntax_tree(query=self._semicolon_query)
-            # tree-sitter captures nodes in the order its patterns match them,
-            # which is not the order they appear in the buffer.
-            return sorted(
-                (n.end_point.row, n.end_point.column)
-                for n in query_result.get("semicolon", [])
-            )
-
-        else:
-            # tree-sitter is not installed. naively split on semicolons and
-            # show a warning.
-            import re
-
-            if not self.has_shown_tree_sitter_error:
-                self.app.notify(
-                    "Tree-sitter is not installed. Syntax highlighting and query "
-                    "splitting may not work as expected.\n"
-                    "See https://harlequin.sh/docs/troubleshooting/tree-sitter",
-                    severity="warning",
-                    timeout=10,
-                )
-                self.has_shown_tree_sitter_error = True
-
-            semicolons: list[Location] = []
-            for i, line in enumerate(self.text.splitlines()):
-                for pos in [m.span()[1] for m in re.finditer(";", line)]:
-                    semicolons.append((i, pos))
-
-            return semicolons
 
 
 class EditorCollection(TabbedContent):

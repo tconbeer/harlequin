@@ -25,6 +25,8 @@ HEADLESS_IMPORTS = [
     "import harlequin.keymap",
     "import harlequin.options",
     "import harlequin.plugins",
+    "import harlequin.query",
+    "import harlequin.statements",
     "import harlequin.transaction_mode",
     "import harlequin_duckdb",
     "import harlequin_sqlite",

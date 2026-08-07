@@ -10,10 +10,13 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1018](https://github.com/tconbeer/harlequin/issues/1018)). `select '日本語';select 2` ran as `select '日本語';select` and `2`, both syntax errors, because tree-sitter reports columns in bytes and the editor read them as characters.
 - A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
 - Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.
 
 ### Dependencies
+
+- `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
 - Upgrades `textual-fastdatatable` to 0.16.1 (from 0.16.0), which makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual.

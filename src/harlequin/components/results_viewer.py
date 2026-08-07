@@ -12,13 +12,14 @@ from textual.widgets import (
     Tabs,
 )
 from textual_fastdatatable import DataTable
-from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
     from textual_fastdatatable.backend import DataTableBackend
     from textual_fastdatatable.data_table import CursorType
+
+    from harlequin.query import ResultSet
 
 
 class ResultsTable(DataTable, inherit_bindings=False):
@@ -129,22 +130,18 @@ class ResultsViewer(TabbedContent, can_focus=True):
             except NoMatches:
                 return None
 
-    async def push_table(
-        self,
-        table_id: str,
-        column_labels: list[tuple[str, str]],
-        data: AutoBackendType,
-    ) -> ResultsTable:
+    async def push_table(self, table_id: str, result: ResultSet) -> ResultsTable:
         formatted_labels = [
             self._format_column_label(col_name, col_type)
-            for col_name, col_type in column_labels
+            for col_name, col_type in result.columns
         ]
         table = ResultsTable(
             id=table_id,
             column_labels=formatted_labels,  # type: ignore
-            plain_column_labels=[col_name for (col_name, _) in column_labels],
-            data=data,
-            max_rows=self.max_results,
+            plain_column_labels=[col_name for (col_name, _) in result.columns],
+            # the backend was built by `harlequin.query.fetch()`, which already
+            # applied `max_results` as its row cap.
+            backend=result.backend,
             cursor_type="range",
             max_column_content_width=self.max_col_width,
             null_rep="[dim]∅ null[/]",
