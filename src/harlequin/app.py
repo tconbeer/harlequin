@@ -62,6 +62,7 @@ from harlequin.components import (
     ExportScreen,
     HelpScreen,
     HistoryScreen,
+    ResultsTable,
     ResultsViewer,
     RunQueryBar,
     export_callback,
@@ -89,6 +90,7 @@ from harlequin.exception import (
 )
 from harlequin.history import History
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
+from harlequin.order_by import parse_trailing_order_by, with_order_by
 from harlequin.plugins import load_keymap_plugins
 from harlequin.transaction_mode import HarlequinTransactionMode
 
@@ -407,6 +409,32 @@ class Harlequin(AppBase):
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
+    @on(ResultsTable.SortRequested)
+    def sort_results_by_column(self, message: ResultsTable.SortRequested) -> None:
+        """Rewrite the query that produced the visible result to sort by a column.
+
+        The clause is written back into the editor so it stays visible and
+        editable, then only that query is re-run -- other queries sharing the
+        buffer are left where they are.
+        """
+        message.stop()
+        if self.editor is None:
+            self._recycle_message(message)
+            return
+        table = self.results_viewer.get_visible_table()
+        if table is None or not table.source_query:
+            return
+        sorted_query = with_order_by(
+            table.source_query, message.column, descending=message.descending
+        )
+        buffer_text = self.editor.text
+        if table.source_query in buffer_text:
+            self.editor.text = buffer_text.replace(table.source_query, sorted_query, 1)
+        else:
+            # The buffer moved on since this result was produced; don't clobber it.
+            self.editor.text = sorted_query
+        self.post_message(QuerySubmitted(queries=[sorted_query], limit=None))
+
     def _recycle_message(self, message: Message) -> None:
         """Re-post a message we can't handle yet, while we wait for the editor."""
         callback = partial(self.post_message, message)
@@ -669,10 +697,16 @@ class Harlequin(AppBase):
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
         for id_, (cols, data, query_text) in message.data.items():
+            # Read the sort indicator off the query itself, so a hand-written
+            # ORDER BY lights up the same header a click would.
+            current_sort = parse_trailing_order_by(query_text)
             table = await self.results_viewer.push_table(
                 table_id=id_,
                 column_labels=cols,
                 data=data,
+                source_query=query_text,
+                sort_column=current_sort[0] if current_sort else None,
+                sort_descending=current_sort[1] if current_sort else False,
             )
             self.append_to_history(
                 query_text=query_text,
