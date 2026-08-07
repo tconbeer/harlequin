@@ -10,7 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     Dict,
-    List,
     Optional,
     Sequence,
     Type,
@@ -33,11 +32,10 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
-from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin import HarlequinConnection
 from harlequin.actions import HARLEQUIN_ACTIONS
-from harlequin.adapter import HarlequinAdapter, HarlequinCursor
+from harlequin.adapter import HarlequinAdapter
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
 from harlequin.autocomplete.completers import MemberCompleter, WordCompleter
@@ -90,6 +88,8 @@ from harlequin.exception import (
 from harlequin.history import History
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
+from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
+from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 
 if TYPE_CHECKING:
@@ -129,7 +129,7 @@ class QueriesExecuted(Message):
     def __init__(
         self,
         query_count: int,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
         ddl_queries: list[str],
     ) -> None:
@@ -147,14 +147,14 @@ class QueriesCanceled(Message):
 class ResultsFetched(Message):
     def __init__(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]],
+        cursors: Dict[str, ExecutedStatement],
+        results: Dict[str, ResultSet],
         errors: list[tuple[BaseException, str]],
         elapsed: float,
     ) -> None:
         super().__init__()
         self.cursors = cursors
-        self.data = data
+        self.results = results
         self.errors = errors
         self.elapsed = elapsed
 
@@ -668,14 +668,10 @@ class Harlequin(AppBase):
 
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
-        for id_, (cols, data, query_text) in message.data.items():
-            table = await self.results_viewer.push_table(
-                table_id=id_,
-                column_labels=cols,
-                data=data,
-            )
+        for id_, result in message.results.items():
+            table = await self.results_viewer.push_table(table_id=id_, result=result)
             self.append_to_history(
-                query_text=query_text,
+                query_text=result.statement.sql,
                 result_row_count=table.source_row_count,
                 elapsed=message.elapsed,
             )
@@ -705,7 +701,7 @@ class Harlequin(AppBase):
             self.results_viewer.show_table(did_run=False)
         else:
             self.results_viewer.show_table(did_run=True)
-            if message.data:
+            if message.results:
                 self.results_viewer.focus()
 
     @on(WidgetMounted)
@@ -1075,25 +1071,26 @@ class Harlequin(AppBase):
     def _execute_query(self, message: QuerySubmitted) -> None:
         if self.connection is None:
             return
-        cursors: Dict[str, tuple[HarlequinCursor, str]] = {}
-        queries = message.queries
+        cursors: Dict[str, ExecutedStatement] = {}
         ddl_queries: list[str] = []
-        for q in queries:
-            try:
-                cur = self.connection.execute(q)
-            # adapters are supposed to raise HarlequinQueryError, but a raw
-            # driver exception must not take down the app.
-            except Exception as e:
-                self.post_message(QueryError(query_text=q, error=e))
-                break
+        statements = [Statement(sql=q, index=i) for i, q in enumerate(message.queries)]
+        # the Run Query Bar's limit is a hard fetch limit. The app's own
+        # `--limit` is a soft display cap and is applied in _fetch_data; since
+        # the app fetches every row, it knows the exact total and needs no
+        # overflow detection.
+        for executed in execute(
+            connection=self.connection,
+            statements=statements,
+            limit=RowLimit(max_rows=message.limit, detect_overflow=False),
+        ):
+            if executed.error is not None:
+                self.post_message(
+                    QueryError(query_text=executed.statement.sql, error=executed.error)
+                )
+            elif executed.cursor is not None:
+                cursors[f"t{hash(executed.cursor)}"] = executed
             else:
-                if cur is not None:
-                    if message.limit is not None:
-                        cur = cur.set_limit(message.limit)
-                    table_id = f"t{hash(cur)}"
-                    cursors[table_id] = (cur, q)
-                else:
-                    ddl_queries.append(q)
+                ddl_queries.append(executed.statement.sql)
         self.post_message(
             QueriesExecuted(
                 query_count=len(cursors) + len(ddl_queries),
@@ -1129,10 +1126,6 @@ class Harlequin(AppBase):
             return []
         return self.editor.selected_queries()
 
-    @staticmethod
-    def _split_query_text(query_text: str) -> List[str]:
-        return [q for q in query_text.split(";") if q.strip()]
-
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
         self.push_screen(
             ErrorModal(
@@ -1151,22 +1144,26 @@ class Harlequin(AppBase):
     )
     def _fetch_data(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
     ) -> None:
         errors: list[tuple[BaseException, str]] = []
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]] = {}
-        for id_, (cur, q) in cursors.items():
+        results: Dict[str, ResultSet] = {}
+        # the app's `--limit` is a soft display cap over a full fetch, so the
+        # backend keeps `max_results` rows but knows the true total.
+        limit = RowLimit(max_rows=self.max_results, detect_overflow=False)
+        for id_, executed in cursors.items():
             try:
-                cur_data = cur.fetchall()
-                cols = cur.columns()
+                results[id_] = fetch(executed, limit=limit)
             except BaseException as e:
-                errors.append((e, q))
-            else:
-                data[id_] = (cols, cur_data, q)
+                errors.append((e, executed.statement.sql))
+        # each ResultSet times its own fetch; the app reports the batch,
+        # measured from the moment the query was submitted.
         elapsed = time.monotonic() - submitted_at
         self.post_message(
-            ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
+            ResultsFetched(
+                cursors=cursors, results=results, errors=errors, elapsed=elapsed
+            )
         )
 
     def extend_completers(self, parent: CatalogItem, items: list[CatalogItem]) -> None:

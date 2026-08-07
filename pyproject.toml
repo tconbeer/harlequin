@@ -34,6 +34,13 @@ dependencies = [
     # 1.9 is the first release compatible with click 8.2's Parameter.make_metavar()
     "rich-click==1.9.8",
 
+    # statement splitting. Both arrive anyway, transitively, via
+    # textual-textarea's `textual[syntax]` -- but `harlequin.statements` drives
+    # the grammar directly, without Textual, so the dependency is declared here
+    # rather than relied on incidentally.
+    "tree-sitter>=0.25,<0.27",
+    "tree-sitter-sql>=0.3.11,<0.4",
+
     # other deps
     "duckdb>=1.1.1; python_version < '3.14'",
     "shandy-sqlfmt>=0.28.2",
@@ -251,6 +258,31 @@ ignore_imports = [
     "harlequin.options -> harlequin.colors",         # to_questionary()
     "harlequin.options -> questionary",              # to_questionary()
 ]
+
+
+[[tool.importlinter.contracts]]
+
+# The headless execution core. It may reach `textual_fastdatatable.backend` --
+# that is where result normalization lives, and as of 0.16.1 it costs no
+# Textual -- but nothing here may reach Textual itself or any part of the app.
+name = "The execution core is reachable without the TUI"
+type = "forbidden"
+source_modules = [
+    "harlequin.query",
+    "harlequin.statements",
+]
+forbidden_modules = [
+    "questionary",
+    "textual",
+    "textual_textarea",
+    "harlequin.app",
+    "harlequin.colors",
+    "harlequin.components",
+    "harlequin.copy_widgets",
+    "harlequin.keys_app",
+    "harlequin.messages",
+]
+unmatched_ignore_imports_alerting = "error"
 
 
 [[tool.importlinter.contracts]]

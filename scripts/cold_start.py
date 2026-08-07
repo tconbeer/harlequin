@@ -28,6 +28,7 @@ import time
 STEPS: list[tuple[str, str]] = [
     ("interpreter only", "pass"),
     ("harlequin", "import harlequin"),
+    ("harlequin.statements", "import harlequin.statements"),
     ("harlequin.catalog", "import harlequin.catalog"),
     ("harlequin.options", "import harlequin.options"),
     ("harlequin.config", "import harlequin.config"),
@@ -36,6 +37,7 @@ STEPS: list[tuple[str, str]] = [
         "fastdatatable backend",
         "from textual_fastdatatable.backend import create_backend",
     ),
+    ("harlequin.query", "import harlequin.query"),
     ("harlequin_sqlite", "import harlequin_sqlite"),
     ("harlequin_duckdb", "import harlequin_duckdb"),
     ("harlequin.cli", "import harlequin.cli"),

@@ -4,12 +4,10 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
-from textual.message import Message
-from textual.notifications import Notify
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
-from harlequin.app import QuerySubmitted
+from harlequin.statements import find_separators, split
 
 
 @pytest.mark.asyncio
@@ -244,56 +242,6 @@ async def test_member_autocomplete(
 
 
 @pytest.mark.asyncio
-async def test_no_tree_sitter(
-    app: Harlequin,
-    monkeypatch: pytest.MonkeyPatch,
-    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-) -> None:
-    import textual.document._syntax_aware_document
-    import textual.widgets._text_area
-
-    monkeypatch.setattr(textual.document._syntax_aware_document, "TREE_SITTER", False)
-    monkeypatch.setattr(textual.widgets._text_area, "TREE_SITTER", False)
-
-    messages: list[Message] = []
-    async with app.run_test(message_hook=messages.append) as pilot:
-        await wait_for_workers(app)
-
-        while app.editor is None:
-            await pilot.pause()
-
-        assert app.editor is not None
-        assert app.editor.text_input is not None
-        app.editor.text = "select 1; select 2"
-
-        assert not app.editor.text_input.is_syntax_aware
-
-        await pilot.press("ctrl+a")
-        await pilot.press("ctrl+j")
-        await pilot.pause()
-        await wait_for_workers(app)
-
-        submitted_msg = next(
-            iter(filter(lambda m: isinstance(m, QuerySubmitted), messages))
-        )
-        assert submitted_msg
-        assert isinstance(submitted_msg, QuerySubmitted)
-        assert len(submitted_msg.queries) == 2
-
-        text_area_warning = next(
-            iter(
-                filter(
-                    lambda m: (
-                        isinstance(m, Notify) and m.notification.severity == "warning"
-                    ),
-                    messages,
-                )
-            )
-        )
-        assert text_area_warning
-
-
-@pytest.mark.asyncio
 async def test_footer_inputs(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
@@ -359,7 +307,12 @@ async def test_selected_queries(
         await pilot.pause()
 
         # tree-sitter does not capture the semicolons in buffer order
-        assert app.editor._query_separators() == [(0, 25), (1, 27), (2, 18), (3, 15)]
+        assert find_separators(app.editor.text) == [
+            (0, 25),
+            (1, 27),
+            (2, 18),
+            (3, 15),
+        ]
 
         # the whole buffer
         app.editor.selection = Selection((0, 0), (4, 0))
@@ -396,3 +349,29 @@ async def test_selected_queries(
         await pilot.pause()
         app.editor.selection = Selection((0, 0), (0, 0))
         assert app.editor.selected_queries() == ["select 'a;b'"]
+
+
+@pytest.mark.asyncio
+async def test_selected_queries_split_on_character_columns(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Regression test for #1015: the editor and `harlequin.statements` split
+    at the same place.
+
+    tree-sitter reports columns in bytes, and the editor used to feed one
+    straight to `get_text_range()`, which wants characters. Any non-ASCII
+    before a semicolon shifted the cut, and both halves came out as syntax
+    errors -- this split into "select '日本語';select" and "2".
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        app.editor.text = "select '日本語';select 2"
+        await pilot.pause()
+        app.editor.selection = Selection((0, 0), (0, 22))
+        assert app.editor.selected_queries() == ["select '日本語';", "select 2"]
+        assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]

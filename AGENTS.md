@@ -80,6 +80,16 @@ import-linter reads the *static* graph, so it cannot tell a deferred import from
 
 `plugins.py` loads both groups via `importlib.metadata.entry_points`; a plugin that fails to import prints a warning instead of taking down the app.
 
+### The execution core (`statements.py`, `query.py`)
+
+Both front ends run queries through here, and neither may grow its own copy.
+
+`statements.split()` and `statements.find_separators()` are the **only** SQL splitter. They drive `tree-sitter-sql` directly — no Textual, no textual-textarea — through the one-line `(";" @semicolon)` query the Query Editor has always used, so `-f script.sql` and the editor cannot disagree about where a statement ends. Tree-sitter reports **byte** columns; everything this module returns is in characters, and that conversion belongs here and nowhere else.
+
+`query.execute()` runs statements and `query.fetch()` drains one cursor into a `ResultSet`. Keep them two phases: that split is what lets the app say "query executed" before data materializes. `fetch()` normalizes through `textual_fastdatatable.create_backend()` — a second normalizer would put "what counts as a row, what counts as null" in two places, and the disagreement would show up as two front ends rendering the same query differently.
+
+`RowLimit` carries `detect_overflow` because Harlequin has two different limits: the app's `--limit` is a *soft display cap over a full fetch*, so it knows the exact total; a headless caller wants the *hard* one, and can only learn it was truncated by asking for one row more than it keeps.
+
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)
 
 `HarlequinAdapter` (built from CLI/config options) → `connect()` → `HarlequinConnection` (execute, get_catalog, optional copy/cancel/transaction-mode/completions) → `HarlequinCursor` (columns, set_limit, fetchall). Adapters must tolerate receiving both subsets and supersets of their declared options, and must not rely on option defaults.
@@ -91,6 +101,8 @@ Changing anything in `adapter.py`, `catalog.py`, or `driver.py` is a public API 
 ### App and threading model (`app.py`)
 
 `Harlequin(AppBase)` composes `DataCatalog | (EditorCollection, RunQueryBar, ResultsViewer)` plus a footer. The invariant to preserve: **all database work happens in `@work(thread=True, exclusive=True, exit_on_error=False, group=...)` workers that never mutate widgets.** Workers `post_message(...)`; `@on(...)` handlers on `Harlequin` own all state changes. The query path is `QuerySubmitted → _execute_query → QueriesExecuted → (fetch) → ResultsFetched`, with parallel flows for `DatabaseConnected`, `NewCatalog`/`NewCatalogItems`, `CompletersReady`, and `TransactionModeChanged`.
+
+Both query workers are thin wrappers over the execution core above: `_execute_query` calls `query.execute()`, `_fetch_data` calls `query.fetch()`. New query behavior belongs in the core, where `hsql` can reach it, not in the worker.
 
 Adapters are third-party code: a raw driver exception (not a `HarlequinQueryError`) must surface as an error modal, never crash the app.
 
