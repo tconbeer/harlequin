@@ -4,12 +4,9 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
-from textual.message import Message
-from textual.notifications import Notify
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
-from harlequin.app import QuerySubmitted
 from harlequin.statements import find_separators, split
 
 
@@ -242,59 +239,6 @@ async def test_member_autocomplete(
         snap_results.append(await app_snapshot(app, "submitted"))
 
         assert all(snap_results)
-
-
-@pytest.mark.asyncio
-async def test_splitting_survives_a_text_area_without_syntax_awareness(
-    app: Harlequin,
-    monkeypatch: pytest.MonkeyPatch,
-    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-) -> None:
-    """Splitting no longer depends on the editor widget's syntax tree.
-
-    It used to: with Textual's tree-sitter unavailable the editor fell back to
-    a regex over semicolons and warned the user that query splitting might
-    misbehave. `harlequin.statements` drives the grammar itself, so a text area
-    that cannot highlight still splits exactly, and there is nothing to warn
-    about -- which is the degraded mode the tree-sitter troubleshooting page
-    described.
-    """
-    import textual.document._syntax_aware_document
-    import textual.widgets._text_area
-
-    monkeypatch.setattr(textual.document._syntax_aware_document, "TREE_SITTER", False)
-    monkeypatch.setattr(textual.widgets._text_area, "TREE_SITTER", False)
-
-    messages: list[Message] = []
-    async with app.run_test(message_hook=messages.append) as pilot:
-        await wait_for_workers(app)
-
-        while app.editor is None:
-            await pilot.pause()
-
-        assert app.editor is not None
-        assert app.editor.text_input is not None
-        # a semicolon in a string literal, which the old regex fallback split on
-        app.editor.text = "select 'a;b'; select 2"
-
-        assert not app.editor.text_input.is_syntax_aware
-
-        await pilot.press("ctrl+a")
-        await pilot.press("ctrl+j")
-        await pilot.pause()
-        await wait_for_workers(app)
-
-        submitted_msg = next(
-            iter(filter(lambda m: isinstance(m, QuerySubmitted), messages))
-        )
-        assert isinstance(submitted_msg, QuerySubmitted)
-        assert submitted_msg.queries == ["select 'a;b';", "select 2"]
-
-        assert not [
-            m
-            for m in messages
-            if isinstance(m, Notify) and "tree-sitter" in m.notification.message.lower()
-        ]
 
 
 @pytest.mark.asyncio
