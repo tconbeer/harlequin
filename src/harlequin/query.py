@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterator, Literal, Sequence
+from typing import TYPE_CHECKING, Iterator, Literal, Sequence
 
 from textual_fastdatatable.backend import create_backend
 
@@ -98,11 +98,13 @@ class ResultSet:
     def row_count(self) -> int:
         return 0 if self.backend is None else self.backend.row_count
 
-    def rows(self) -> Iterator[Sequence[Any]]:
-        if self.backend is None:
-            return
-        for i in range(self.backend.row_count):
-            yield self.backend.get_row_at(i)
+    # Deliberately no row iterator. Every consumer of a result set works
+    # columnwise -- the file formats hand `backend.source_data` to duckdb or
+    # pyarrow, and the text layouts read a VARCHAR-cast Arrow table -- so a
+    # row-at-a-time accessor would be a slow path with no callers. Reach for
+    # `backend.source_data` instead; `get_row_at()` costs an Arrow slice and a
+    # dict per row (1.8s vs 0.34s over 100k rows) and materializes the whole
+    # result as Python objects, which is what `--limit` exists to avoid.
 
 
 def execute(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 
+import pyarrow as pa
 import pytest
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
@@ -104,7 +105,8 @@ class TestFetch:
         result = fetch(executed)
         assert [name for name, _ in result.columns] == ["a", "b"]
         assert result.row_count == 1
-        assert list(result.rows()) == [[1, "x"]]
+        assert result.backend is not None
+        assert result.backend.source_data.to_pylist() == [{"a": 1, "b": "x"}]
         assert result.statement.sql == "select 1 as a, 'x' as b"
         assert result.elapsed >= 0
 
@@ -116,7 +118,8 @@ class TestFetch:
         result = fetch(executed)
         assert result.columns == [("1", "#")]
         assert result.row_count == 0
-        assert list(result.rows()) == []
+        assert result.backend is not None
+        assert result.backend.source_data.to_pylist() == []
         assert result.truncated is False
 
     def test_a_cursor_that_returns_none_has_no_backend(self) -> None:
@@ -142,7 +145,6 @@ class TestFetch:
         )
         assert result.backend is None
         assert result.row_count == 0
-        assert list(result.rows()) == []
         assert result.truncated is False
 
     def test_rejects_a_statement_with_no_cursor(
@@ -234,9 +236,20 @@ class TestExecuteWithoutAnAdapter:
             list(execute(Interrupting(), statements("select 1"), on_error="continue"))
 
 
-def test_result_set_rows_are_lazy() -> None:
-    """`rows()` is an iterator because that is the natural shape, not because
-    anything streams -- fetchall() has already materialized the result."""
+@pytest.mark.parametrize(
+    "returned",
+    [
+        {"a": [1, 2, 3]},
+        [(1,), (2,), (3,)],
+        pa.table({"a": [1, 2, 3]}),
+        pa.RecordBatch.from_arrays([pa.array([1, 2, 3])], names=["a"]),
+    ],
+    ids=["mapping", "records", "table", "record batch"],
+)
+def test_every_shape_a_cursor_may_return_is_normalized(returned: Any) -> None:
+    """`fetchall()` is typed `AutoBackendType`, which is `Any`. Routing each
+    shape through the one `create_backend()` the app already uses is what keeps
+    two front ends from disagreeing about what a row is."""
 
     class FakeCursor(HarlequinCursor):
         def __init__(self) -> None:
@@ -249,11 +262,14 @@ def test_result_set_rows_are_lazy() -> None:
             return self
 
         def fetchall(self) -> Any:
-            return {"a": [1, 2, 3]}
+            return returned
 
     result = fetch(
         ExecutedStatement(statement=Statement("select 1", 0), cursor=FakeCursor())
     )
     assert isinstance(result, ResultSet)
-    rows: Sequence[Any] = list(result.rows())
-    assert [r[0] for r in rows] == [1, 2, 3]
+    assert result.row_count == 3
+    assert result.backend is not None
+    assert [
+        next(iter(row.values())) for row in result.backend.source_data.to_pylist()
+    ] == [1, 2, 3]
