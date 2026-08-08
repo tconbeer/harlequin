@@ -1,5 +1,4 @@
-# Both of these are compared byte for byte by the test suite, so a CRLF
-# checkout on Windows is a spurious failure. Newlines are part of what the
-# golden files assert.
+# Snapshots are compared byte for byte, so a CRLF checkout on Windows fails
+# every one of them. Newlines are part of what they assert.
 *.svg text eol=lf
-tests/data/unit_tests/golden/** text eol=lf
+tests/**/__snapshots__/** text eol=lf

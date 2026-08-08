@@ -36,7 +36,7 @@ uv run harlequin [OPTIONS] [CONN_STR]              # run the CLI from source
 
 ## Testing notes
 
-Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots.
+Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots. Unit tests use syrupy directly for the headless output formats (`tests/unit_tests/test_golden_formats.py`), as single-file binary snapshots — same `--snapshot-update` workflow, and `.gitattributes` pins every `__snapshots__` file to LF so a Windows checkout can't rewrite what they assert.
 
 - **A snapshot mismatch is not automatically a failure.** What matters is whether the test passes. Several tests deliberately skip their snapshot assertion (e.g. the `transaction_button_visible` fixture, because SQLite on 3.12+ grows a transaction button that isn't in the baseline), and CI runs with `--snapshot-warn-unused`.
 - Snapshots are committed from **Python 3.10**, the lowest supported version. Regenerating requires two runs, and `tests/conftest.py::pytest_configure` will refuse a run that would clobber the baseline:
@@ -98,7 +98,7 @@ Both front ends run queries through here, and neither may grow its own copy.
 
 `layout.py` does padding, pipes and row counts over the strings `text_columns()` produced, and knows nothing about types. Widths are **terminal cells, via `wcwidth`** — never `len()`, which is off by one per CJK glyph or emoji and by one the other way per combining mark. Its `LayoutOptions` are independent switches on purpose: `-t` is `header=False, footer=False` and `-A` is `aligned=False`, so `-tA` needs no special case.
 
-Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the golden files in `tests/data/unit_tests/golden/` exist to catch. Regenerate those with `HARLEQUIN_UPDATE_GOLDEN=1` and read the diff; a change there is a change to Harlequin's output contract.
+Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the output snapshots in `tests/unit_tests/__snapshots__/test_golden_formats/` exist to catch. They are syrupy single-file snapshots, one per format, written in binary — regenerate them with `--snapshot-update` on 3.10 like every other snapshot here, and read the diff; a change there is a change to Harlequin's output contract.
 
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)
 

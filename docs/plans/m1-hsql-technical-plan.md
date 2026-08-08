@@ -698,7 +698,8 @@ Beyond that:
 
 - **`CliRunner` tests** for `hsql`, following the existing `test_cli.py` patterns and its
   adapter-mocking fixtures.
-- **Golden files** per format against a fixture result set with nulls, unicode, wide
+- **Golden files** per format (syrupy snapshots, as everywhere else in this repo)
+  against a fixture result set with nulls, unicode, wide
   values, duplicate column names, and zero rows. Zero rows is the case that separates
   "the query returned nothing" from "the query failed" — A3 in the product plan — and
   the one most likely to be wrong in a format nobody exercised.
