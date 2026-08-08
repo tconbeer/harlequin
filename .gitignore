@@ -10,6 +10,11 @@
 !tests/data/**/*.json
 !tests/data/**/*.parquet
 !tests/data/**/*.sql
+# Snapshots are named after the format they hold, so several of them collide
+# with the patterns above. Re-include the whole directory rather than one
+# extension at a time -- a snapshot git silently refuses to track is a test
+# that passes here and fails in CI.
+!tests/**/__snapshots__/**
 Pipfile
 snapshot_report.html
 .harlequin.toml

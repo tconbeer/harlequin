@@ -434,9 +434,18 @@ does (`cli.py:339`), and inheriting it would make output vary with `LC_ALL` — 
 violation of principle 4's "identical output" promise, visible only on someone else's
 machine. `CAST AS VARCHAR` is locale-independent; `f"{obj:n}"` is not.
 
-Column widths for `-F table` are `max(len(s))` over the strings from `text_columns()`,
-not `backend.column_content_widths` — the latter measures the width of the *displayed*
-form we're not displaying.
+Column widths for `-F table` are measured over the strings from `text_columns()`, not
+taken from `backend.column_content_widths` — the latter measures the width of the
+*displayed* form we're not displaying.
+
+They are measured in **terminal cells**, with `wcwidth` (Ted's call). An earlier draft
+of this section said `max(len(s))` and dismissed display width as a great deal of
+surface for a cosmetic problem; that was wrong on the cost, because `wcwidth` is already
+installed and is one function call. It's the difference between a table that lines up
+and one that doesn't for anyone whose data isn't Latin. `wcwidth` arrives transitively
+via `prompt_toolkit` today — one of the packages the headless import graph exists to
+keep *out* — so like `tree-sitter` in PR 2 it becomes a direct dependency. An ASCII fast
+path keeps the common cell at `len()`.
 
 ### Consequences worth stating plainly
 
@@ -689,7 +698,8 @@ Beyond that:
 
 - **`CliRunner` tests** for `hsql`, following the existing `test_cli.py` patterns and its
   adapter-mocking fixtures.
-- **Golden files** per format against a fixture result set with nulls, unicode, wide
+- **Golden files** per format (syrupy snapshots, as everywhere else in this repo)
+  against a fixture result set with nulls, unicode, wide
   values, duplicate column names, and zero rows. Zero rows is the case that separates
   "the query returned nothing" from "the query failed" — A3 in the product plan — and
   the one most likely to be wrong in a format nobody exercised.

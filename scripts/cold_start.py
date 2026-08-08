@@ -38,6 +38,8 @@ STEPS: list[tuple[str, str]] = [
         "from textual_fastdatatable.backend import create_backend",
     ),
     ("harlequin.query", "import harlequin.query"),
+    ("harlequin.layout", "import harlequin.layout"),
+    ("harlequin.export", "import harlequin.export"),
     ("harlequin_sqlite", "import harlequin_sqlite"),
     ("harlequin_duckdb", "import harlequin_duckdb"),
     ("harlequin.cli", "import harlequin.cli"),

@@ -1327,6 +1327,7 @@ dependencies = [
     { name = "tomlkit" },
     { name = "tree-sitter" },
     { name = "tree-sitter-sql" },
+    { name = "wcwidth" },
 ]
 
 [package.optional-dependencies]
@@ -1413,6 +1414,7 @@ requires-dist = [
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
     { name = "tree-sitter", specifier = ">=0.25,<0.27" },
     { name = "tree-sitter-sql", specifier = ">=0.3.11,<0.4" },
+    { name = "wcwidth", specifier = ">=0.2.13,<0.9" },
 ]
 provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
 

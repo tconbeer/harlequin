@@ -36,7 +36,7 @@ uv run harlequin [OPTIONS] [CONN_STR]              # run the CLI from source
 
 ## Testing notes
 
-Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots.
+Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots. Unit tests use syrupy directly for the headless output formats (`tests/unit_tests/test_golden_formats.py`), as single-file binary snapshots — same `--snapshot-update` workflow, and `.gitattributes` pins every `__snapshots__` file to LF so a Windows checkout can't rewrite what they assert.
 
 - **A snapshot mismatch is not automatically a failure.** What matters is whether the test passes. Several tests deliberately skip their snapshot assertion (e.g. the `transaction_button_visible` fixture, because SQLite on 3.12+ grows a transaction button that isn't in the baseline), and CI runs with `--snapshot-warn-unused`.
 - Snapshots are committed from **Python 3.10**, the lowest supported version. Regenerating requires two runs, and `tests/conftest.py::pytest_configure` will refuse a run that would clobber the baseline:
@@ -88,7 +88,17 @@ Both front ends run queries through here, and neither may grow its own copy.
 
 `query.execute()` runs statements and `query.fetch()` drains one cursor into a `ResultSet`. Keep them two phases: that split is what lets the app say "query executed" before data materializes. `fetch()` normalizes through `textual_fastdatatable.create_backend()` — a second normalizer would put "what counts as a row, what counts as null" in two places, and the disagreement would show up as two front ends rendering the same query differently.
 
+`ResultSet.arrow_table()` is the rows a result *holds*, under the column names the cursor described — the backend renames what it can't normalize, and an adapter that returns tuples arrives with `f0`, `f1`, …. `text_columns()` is that table cast to VARCHAR **in duckdb**, which is where the text layouts get their strings; never `str()`, and never `textual_fastdatatable`'s `cell_formatter`, which is display formatting (locale-grouped numbers, `✓ True`) and would put `1,234,567` in a numeric column.
+
 `RowLimit` carries `detect_overflow` because Harlequin has two different limits: the app's `--limit` is a *soft display cap over a full fetch*, so it knows the exact total; a headless caller wants the *hard* one, and can only learn it was truncated by asking for one row more than it keeps.
+
+### Output (`export.py`, `layout.py`)
+
+**duckdb serializes; Harlequin lays out.** `export.write_file()` / `write_stream()` take an Arrow table to a path or an open binary stream, and every value in them is rendered by duckdb's own writers — so a Postgres blob and a DuckDB blob print identically, and nothing here has to own a rendering for intervals, structs or maps. `tsv`, `jsonl`/`ndjson` and `arrow` are the csv, json and feather writers under different default options, not new writers; a caller's explicit option always beats the format's default.
+
+`layout.py` does padding, pipes and row counts over the strings `text_columns()` produced, and knows nothing about types. Widths are **terminal cells, via `wcwidth`** — never `len()`, which is off by one per CJK glyph or emoji and by one the other way per combining mark. Its `LayoutOptions` are independent switches on purpose: `-t` is `header=False, footer=False` and `-A` is `aligned=False`, so `-tA` needs no special case.
+
+Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the output snapshots in `tests/unit_tests/__snapshots__/test_golden_formats/` exist to catch. They are syrupy single-file snapshots, one per format, written in binary — regenerate them with `--snapshot-update` on 3.10 like every other snapshot here, and read the diff; a change there is a change to Harlequin's output contract.
 
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)
 
