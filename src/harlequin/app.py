@@ -397,12 +397,26 @@ class Harlequin(AppBase):
         self.update_schema_data()
 
     @on(HarlequinTree.NodeSubmitted)
-    def insert_node_into_editor(self, message: HarlequinTree.NodeSubmitted) -> None:
+    async def insert_node_into_editor(
+        self, message: HarlequinTree.NodeSubmitted
+    ) -> None:
         message.stop()
         if self.editor is None:
             # recycle message while editor loads
             callback = partial(self.post_message, message)
             self.set_timer(delay=0.1, callback=callback)
+            return
+        node_data = getattr(message.node, "data", None)
+        # A table/view double-click opens the data directly: put
+        # "select * from <relation> limit 100" in a new buffer and run it.
+        # Relations (tables, views, mat. views, ...) all subclass
+        # RelationCatalogItem; check by name to avoid an adapter import.
+        if node_data is not None and any(
+            cls.__name__ == "RelationCatalogItem" for cls in type(node_data).__mro__
+        ):
+            query = f"select *\nfrom {node_data.query_name}\nlimit 100"
+            await self.editor_collection.insert_buffer_with_text(query_text=query)
+            self.post_message(QuerySubmitted(queries=[query], limit=None))
             return
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
