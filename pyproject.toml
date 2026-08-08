@@ -41,6 +41,12 @@ dependencies = [
     "tree-sitter>=0.25,<0.27",
     "tree-sitter-sql>=0.3.11,<0.4",
 
+    # measuring text for the headless layouts. Installed for everyone today,
+    # but transitively via prompt_toolkit -- which is one of the packages the
+    # headless import graph exists to keep out, so inheriting it from there is
+    # exactly backwards. It is pure Python with no dependencies of its own.
+    "wcwidth>=0.2.13,<0.9",
+
     # other deps
     "duckdb>=1.1.1; python_version < '3.14'",
     "shandy-sqlfmt>=0.28.2",

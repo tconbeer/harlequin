@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### Dependencies
 
+- `wcwidth` is now a direct dependency of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). It was already installed for everyone, transitively via `prompt_toolkit`; the planned headless CLI measures text with it to align columns, and that code must not depend on `prompt_toolkit` being present. It is pure Python with no dependencies of its own.
 - `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.

@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, Protocol, Sequence, TextIO
 
+from wcwidth import wcswidth
+
 if TYPE_CHECKING:
     from harlequin.query import ResultSet
 
@@ -116,11 +118,11 @@ class _BaseLayout:
     def _cell(self, value: str | None, width: int) -> str:
         """A value, rendered, styled if it is a null, and padded to `width`.
 
-        In that order: an ANSI escape has no width, so padding a styled string
-        would count its bytes and misalign the column.
+        In that order: an ANSI escape occupies no cells, so padding a styled
+        string would count its bytes and misalign the column.
         """
         text = self.null if value is None else value
-        return self._pad(self._style(text, dim=value is None), len(text), width)
+        return self._pad(self._style(text, dim=value is None), _width(text), width)
 
     def _pad(self, styled: str, plain_width: int, width: int) -> str:
         if not self.options.aligned:
@@ -128,7 +130,7 @@ class _BaseLayout:
         return styled + " " * max(width - plain_width, 0)
 
     def _label(self, name: str, width: int) -> str:
-        return self._pad(self._style(name, bold=True), len(name), width)
+        return self._pad(self._style(name, bold=True), _width(name), width)
 
     @staticmethod
     def _unpadded_last(widths: Sequence[int]) -> list[int]:
@@ -246,7 +248,7 @@ class _VerticalLayout(_BaseLayout):
     def write(self, result: "ResultSet", out: TextIO) -> None:
         headers = self._headers(result)
         rows = self._rows(result)
-        name_width = max((len(name) for name in headers), default=0)
+        name_width = max((_width(name) for name in headers), default=0)
         separator = " | " if self.options.aligned else "|"
         # one width for the whole result, not one per record: a rule that
         # changed length from record to record would read as raggedness rather
@@ -274,26 +276,38 @@ class _VerticalLayout(_BaseLayout):
         return rule + "-" * max(width - len(rule), 1)
 
 
-def _column_widths(headers: Sequence[str], rows: Sequence[Row], null: str) -> list[int]:
-    """The width of each column, in characters.
+def _width(text: str) -> int:
+    """How many terminal cells `text` occupies.
 
-    Characters, not display cells: a wide CJK glyph counts as one, so a column
-    holding one does not line up. Measuring display width means owning an East
-    Asian width table and its exceptions -- a great deal of surface for a
-    cosmetic difference in one layout.
+    Not `len()`: a CJK ideograph or an emoji is one character and two cells, and
+    a combining mark is one character and none. A column measured in characters
+    is a column that does not line up for anyone whose data isn't Latin.
     """
-    widths = [len(header) for header in headers]
+    if text.isascii():
+        # the overwhelming majority of cells. `isascii()` is a C-level flag
+        # check, and every printable ASCII character is exactly one cell.
+        return len(text)
+    width = wcswidth(text)
+    # -1 means the string holds a control character, whose effect on the cursor
+    # we cannot predict anyway -- that row is misaligned whatever we return, so
+    # return the answer that at least stays deterministic.
+    return width if width >= 0 else len(text)
+
+
+def _column_widths(headers: Sequence[str], rows: Sequence[Row], null: str) -> list[int]:
+    """The width of each column, in terminal cells."""
+    widths = [_width(header) for header in headers]
     for row in rows:
         for i, value in enumerate(row):
             if i < len(widths):
-                widths[i] = max(widths[i], len(null if value is None else value))
+                widths[i] = max(widths[i], _width(null if value is None else value))
     return widths
 
 
 def _widest(rows: Sequence[Row], null: str) -> int:
-    """The longest value anywhere in `rows`, in characters."""
+    """The widest value anywhere in `rows`, in terminal cells."""
     return max(
-        (len(null if value is None else value) for row in rows for value in row),
+        (_width(null if value is None else value) for row in rows for value in row),
         default=0,
     )
 

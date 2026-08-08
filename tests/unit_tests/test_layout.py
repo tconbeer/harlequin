@@ -4,6 +4,7 @@ import io
 from typing import Callable
 
 import pytest
+from wcwidth import wcswidth
 
 from harlequin.layout import LayoutOptions, get_layout, layout_names
 from harlequin.query import ResultSet, RowLimit
@@ -150,6 +151,78 @@ class TestVerticalLayout:
         assert render(
             result, "vertical", LayoutOptions(header=False, footer=False)
         ) == ("a | 1\n\na | 2\n")
+
+
+class TestWidth:
+    """Columns are measured in terminal cells, not characters.
+
+    A CJK ideograph is one character and two cells; an emoji is one and two; a
+    combining mark is one and none. Measured with `len()`, a column holding any
+    of them lines up for nobody whose data isn't Latin.
+    """
+
+    @staticmethod
+    def separator_columns(rendered: str) -> set[tuple[int, ...]]:
+        """Where each line's separators fall, measured in terminal cells.
+
+        Deliberately not the character index -- that the two differ is the
+        whole point. Measured here with wcswidth directly, rather than through
+        the helper under test.
+        """
+        return {
+            tuple(wcswidth(line[:i]) for i, c in enumerate(line) if c in "|+")
+            for line in rendered.splitlines()
+        }
+
+    @pytest.mark.parametrize(
+        "value",
+        # the combining mark stays an escape: composed, it is invisible here.
+        ["東京", "🎉", "cafe\u0301", "ｆｕｌｌ"],
+        ids=["cjk", "emoji", "combining mark", "fullwidth latin"],
+    )
+    def test_a_column_lines_up_whatever_it_holds(
+        self, result_set: ResultSetFactory, value: str
+    ) -> None:
+        result = result_set(
+            f"select * from (values ('{value}', 1), ('ascii', 22)) t(v, n)"
+        )
+        rendered = render(result, options=LayoutOptions(footer=False))
+        assert len(self.separator_columns(rendered)) == 1
+
+    def test_a_wide_glyph_is_two_cells(self, result_set: ResultSetFactory) -> None:
+        """東京 is 2 characters and 4 cells, so it is exactly as wide as `wxyz`
+        and takes no padding beside it -- where `len()` would have added two
+        spaces and pushed the next column out.
+
+        Two columns, because the last one is never padded: a single-column
+        result would pass this either way.
+        """
+        result = result_set(
+            "select * from (values ('東京', 'x'), ('wxyz', 'y')) t(v, w)"
+        )
+        assert render(result, options=LayoutOptions(header=False, footer=False)) == (
+            " 東京 | x\n wxyz | y\n"
+        )
+
+    def test_a_combining_mark_is_no_cells(self, result_set: ResultSetFactory) -> None:
+        """`cafe` followed by U+0301 is 5 characters and 4 cells."""
+        result = result_set(
+            "select * from (values ('cafe\u0301', 'x'), ('wxyz', 'y')) t(v, w)"
+        )
+        assert render(result, options=LayoutOptions(header=False, footer=False)) == (
+            " cafe\u0301 | x\n wxyz | y\n"
+        )
+
+    def test_a_control_character_does_not_crash_the_measurement(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """wcswidth reports -1 for a string it cannot measure. That row is
+        misaligned by the control character whatever we do; it must still
+        render, and every other row must still line up."""
+        result = result_set("select * from (values ('a\bb'), ('wxyz')) t(v)")
+        rendered = render(result, options=LayoutOptions(footer=False))
+        assert "a\bb" in rendered
+        assert rendered.splitlines()[-1] == " wxyz"
 
 
 class TestNulls:

@@ -96,7 +96,7 @@ Both front ends run queries through here, and neither may grow its own copy.
 
 **duckdb serializes; Harlequin lays out.** `export.write_file()` / `write_stream()` take an Arrow table to a path or an open binary stream, and every value in them is rendered by duckdb's own writers — so a Postgres blob and a DuckDB blob print identically, and nothing here has to own a rendering for intervals, structs or maps. `tsv`, `jsonl`/`ndjson` and `arrow` are the csv, json and feather writers under different default options, not new writers; a caller's explicit option always beats the format's default.
 
-`layout.py` does padding, pipes and row counts over the strings `text_columns()` produced, and knows nothing about types. Its `LayoutOptions` are independent switches on purpose: `-t` is `header=False, footer=False` and `-A` is `aligned=False`, so `-tA` needs no special case.
+`layout.py` does padding, pipes and row counts over the strings `text_columns()` produced, and knows nothing about types. Widths are **terminal cells, via `wcwidth`** — never `len()`, which is off by one per CJK glyph or emoji and by one the other way per combining mark. Its `LayoutOptions` are independent switches on purpose: `-t` is `header=False, footer=False` and `-A` is `aligned=False`, so `-tA` needs no special case.
 
 Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the golden files in `tests/data/unit_tests/golden/` exist to catch. Regenerate those with `HARLEQUIN_UPDATE_GOLDEN=1` and read the diff; a change there is a change to Harlequin's output contract.
 
