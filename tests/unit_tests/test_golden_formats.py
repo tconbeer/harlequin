@@ -81,7 +81,13 @@ def assert_golden(path: Path, actual: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(actual)
     assert path.is_file(), f"{path.name} has never been generated."
-    assert actual.decode() == path.read_bytes().decode()
+    expected = path.read_bytes()
+    assert b"\r\n" not in expected, (
+        f"{path.name} was checked out with CRLF line endings, so every line "
+        "differs. Newlines are part of what these files assert; .gitattributes "
+        "pins them to LF."
+    )
+    assert actual.decode() == expected.decode()
 
 
 @pytest.mark.parametrize("format_name", FILE_FORMATS)

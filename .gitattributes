@@ -1,1 +1,5 @@
+# Both of these are compared byte for byte by the test suite, so a CRLF
+# checkout on Windows is a spurious failure. Newlines are part of what the
+# golden files assert.
 *.svg text eol=lf
+tests/data/unit_tests/golden/** text eol=lf
