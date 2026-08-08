@@ -147,6 +147,14 @@ EditorCollection.premount {
     border: none;
 }
 
+/* The clickable ✕ on each tab is an action-link; drop the default underline. */
+EditorCollection Tab {
+    link-style: none;
+    link-style-hover: bold;
+    link-color: $secondary;
+    link-color-hover: $error;
+}
+
 CodeEditor {
     height: 100%;
     width: 100%;
