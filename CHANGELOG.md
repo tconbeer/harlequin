@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-08-09
+
 ### Refactoring
 
 - Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)). `harlequin.export.write_file()` and `write_stream()` take an Arrow table and write it to a path or an open binary stream, and `harlequin.layout` arranges a result set as `table`, `markdown` or `vertical` text. Both are for the planned headless CLI and have no user-facing surface yet; the Data Exporter behaves as before. `export.py` also gains `tsv`, `jsonl`/`ndjson` and `arrow` as option variants of formats it already wrote.
@@ -26,9 +28,11 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 
 - `wcwidth` is now a direct dependency of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). It was already installed for everyone, transitively via `prompt_toolkit`; the planned headless CLI measures text with it to align columns, and that code must not depend on `prompt_toolkit` being present. It is pure Python with no dependencies of its own.
+
 - `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
+
 - Upgrades `textual-fastdatatable` to 0.17.0 (from 0.16.0). 0.16.1 makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual; 0.17.0 lets `create_backend()` take the column names a cursor reported, so a result with no rows carries its header through normalization instead of arriving empty.
 
 ## [2.8.0] - 2026-08-06
@@ -946,7 +950,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.8.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.8.1...HEAD
+[2.8.1]: https://github.com/tconbeer/harlequin/compare/2.8.0...2.8.1
 [2.8.0]: https://github.com/tconbeer/harlequin/compare/2.7.0...2.8.0
 [2.7.0]: https://github.com/tconbeer/harlequin/compare/2.6.0...2.7.0
 [2.6.0]: https://github.com/tconbeer/harlequin/compare/2.5.2...2.6.0
