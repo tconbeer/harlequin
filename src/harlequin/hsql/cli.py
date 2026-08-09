@@ -25,7 +25,13 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Iterator, Mapping, Sequence
 
 import click
 
-from harlequin.config import get_config_for_profile, merge_profile_with_cli
+from harlequin.config import (
+    DEFAULT_ADAPTER,
+    TUI_ONLY_KEYS,
+    Profile,
+    get_config_for_profile,
+    merge_profile_with_cli,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -42,10 +48,6 @@ if TYPE_CHECKING:
     from harlequin.statements import Statement
 
 PROGRAM = "hsql"
-
-# Repeated from harlequin.cli rather than imported: that module builds the IDE's
-# command and reaches the app, the config wizard and the keymap editor with it.
-DEFAULT_ADAPTER = "duckdb"
 
 DEFAULT_FORMAT = "table"
 
@@ -66,45 +68,32 @@ SHORTHANDS = {
 }
 """`--csv` and friends, as flags, spelling the `-F` they stand for."""
 
-TUI_ONLY_KEYS = (
-    "theme",
-    "keymap_name",
-    "show_files",
-    "show_s3",
-    "locale",
-    "no_download_tzdata",
-)
-"""Profile keys that belong to the IDE.
-
-A profile is shared between the two commands, so a profile written for the IDE
-has to work here -- these are dropped rather than handed to the adapter as
-options it never declared. `locale` in particular is one hsql must ignore: the
-IDE sets it to group digits for a human, and output that varied with `LC_ALL`
-would be output a caller could not predict.
-"""
-
 SOURCES = f"{__name__}.sources"
 """Context key under which `-c` and `-f` record themselves, in order."""
 
 
-def build_cli(args: Sequence[str] | None = None) -> click.Command:
-    """Build the hsql command, importing at most one adapter to do it."""
-    argv = list(args) if args is not None else sys.argv[1:]
-    adapter_name, wants_help = _preflight(argv)
+def build_cli(argv: Sequence[str]) -> click.Command:
+    """Build the hsql command, importing at most one adapter to do it.
+
+    Takes the same arguments click is about to parse, because which adapter's
+    connection options belong on the command is a question only the arguments
+    can answer.
+    """
     installed = adapter_names()
+    found = _preflight(argv, installed)
 
     adapter_cls: type[HarlequinAdapter] | None = None
-    adapter_error: HarlequinConfigError | None = None
-    if adapter_name is not None:
+    setup_error: HarlequinConfigError | None = found.error
+    if found.adapter is not None and setup_error is None:
         try:
-            adapter_cls = load_adapter(adapter_name)
+            adapter_cls = load_adapter(found.adapter)
         except HarlequinConfigError as e:
-            adapter_error = e
+            setup_error = e
 
     @click.command(
         name=PROGRAM,
         no_args_is_help=True,
-        epilog=_epilog(installed, adapter_name),
+        epilog=_epilog(installed, found.adapter),
     )
     @click.version_option(package_name="harlequin", prog_name=PROGRAM)
     @click.argument("conn_str", nargs=-1)
@@ -223,25 +212,24 @@ def build_cli(args: Sequence[str] | None = None) -> click.Command:
     @click.pass_context
     def inner_cli(
         ctx: click.Context,
-        profile: str | None,
-        config_path: Path | None,
+        profile: str | None,  # noqa: ARG001 -- read in _preflight; see below
+        config_path: Path | None,  # noqa: ARG001
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
 
         CONN_STR: one or more connection strings, or paths to local db files.
         """
-        if adapter_error is not None:
-            diagnostics.report_error(adapter_error)
+        # `profile` and `config_path` are named rather than left in `kwargs` so
+        # that they stay out of the merge, and so out of the options handed to
+        # the adapter. `_preflight` has already read them off the same argv.
+        # the profile was already read, and the adapter already loaded, to
+        # decide which connection options this command carries. Whatever went
+        # wrong doing that is reported here, where there is an exit code.
+        if setup_error is not None:
+            diagnostics.report_error(setup_error)
             ctx.exit(ExitCode.USAGE)
-
-        try:
-            config, _ = get_config_for_profile(
-                config_path=config_path, profile_name=profile
-            )
-        except HarlequinConfigError as e:
-            diagnostics.report_error(e)
-            ctx.exit(ExitCode.USAGE)
+        config = found.profile
 
         explicitly_set = {
             k
@@ -322,7 +310,6 @@ def build_cli(args: Sequence[str] | None = None) -> click.Command:
             diagnostics.report_error(e)
             ctx.exit(ExitCode.CONNECTION)
 
-        run_started = time.monotonic()
         run = _Run()
         executed = _execute_all(
             connection, statements, limit=row_limit, on_error=on_error, run=run
@@ -366,33 +353,31 @@ def build_cli(args: Sequence[str] | None = None) -> click.Command:
 
         if stats:
             diagnostics.report_stats(
-                status="error" if run.failure is not None else "ok",
+                status=run.status,
                 statements=run.statements,
                 rows=run.rows,
                 truncated=run.truncated,
                 limit=row_limit.max_rows,
-                elapsed_ms=round((time.monotonic() - run_started) * 1000),
+                elapsed_ms=run.elapsed_ms,
                 columns=run.columns,
                 message=_message_for(run.failure),
             )
 
-        ctx.exit(
-            ExitCode.OK
-            if run.failure is None
-            else diagnostics.exit_code_for(run.failure)
-        )
+        ctx.exit(run.exit_code)
 
     cmd: click.Command = inner_cli
     if adapter_cls is not None:
-        reserved = {opt for param in cmd.params for opt in param.opts}
-        taken = {param.name for param in cmd.params if param.name is not None}
-        cmd.params.extend(_adapter_params(adapter_cls, reserved, taken))
+        _attach_adapter_options(cmd, adapter_cls)
     return cmd
 
 
 @dataclass
 class _Run:
-    """What one invocation did, accumulated as it does it."""
+    """What one invocation did, accumulated as it does it.
+
+    Starts its own clock, so that "when did this run begin" cannot drift from
+    "what has it done so far" by someone moving one of the two.
+    """
 
     statements: int = 0
     """How many statements the database was asked to run."""
@@ -404,6 +389,22 @@ class _Run:
 
     failure: BaseException | None = None
     """The last thing that went wrong, and so the code hsql exits with."""
+
+    started: float = field(default_factory=time.monotonic)
+
+    @property
+    def elapsed_ms(self) -> int:
+        return round((time.monotonic() - self.started) * 1000)
+
+    @property
+    def status(self) -> str:
+        return "error" if self.failure is not None else "ok"
+
+    @property
+    def exit_code(self) -> ExitCode:
+        if self.failure is None:
+            return ExitCode.OK
+        return diagnostics.exit_code_for(self.failure)
 
 
 def _execute_all(
@@ -477,15 +478,32 @@ def _emit(
     out.flush()
 
 
-def _preflight(args: Sequence[str]) -> tuple[str | None, bool]:
-    """Name the adapter an invocation will use, importing none of them.
+@dataclass(frozen=True)
+class _Preflight:
+    """What a first look at the arguments settled, before click parses them."""
 
-    Best-effort by design: a config file it cannot read is not reported here,
-    because the real parse is about to read the same file and has somewhere to
-    report it. All this decides is whose connection options get attached.
+    profile: Profile
+    """The profile this invocation runs under, read once and reused."""
+
+    adapter: str | None
+    """Whose connection options belong on the command; None to attach none."""
+
+    error: HarlequinConfigError | None = None
+    """Held rather than raised, so the callback can report it with an exit code."""
+
+
+def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
+    """Read the profile and name the adapter, importing none of them.
+
+    This is the first of the two passes: it learns just enough from the raw
+    arguments -- `-a`, `-P`, `--config-path` -- to decide whose connection
+    options the real command carries, without `ep.load()`ing every installed
+    adapter to find out.
+
+    A config file it cannot read is held, not raised: at this point there is no
+    command and so no exit code, and the profile is wanted whether or not it
+    names an adapter, so the callback reports it.
     """
-    wants_help = not args or "--help" in args
-
     probe = click.Command(
         PROGRAM,
         params=[
@@ -496,6 +514,9 @@ def _preflight(args: Sequence[str]) -> tuple[str | None, bool]:
                 type=click.Path(path_type=Path),
                 envvar="HARLEQUIN_CONFIG_PATH",
             ),
+            # click's own --help is eager and would exit; this is the same
+            # spelling as a plain flag, so the probe can see it was asked for.
+            click.Option(["--help"], is_flag=True),
         ],
         add_help_option=False,
     )
@@ -509,51 +530,63 @@ def _preflight(args: Sequence[str]) -> tuple[str | None, bool]:
         allow_interspersed_args=True,
     )
     with contextlib.suppress(click.ClickException, ValueError):
-        probe.parse_args(ctx, list(args))
+        probe.parse_args(ctx, list(argv))
 
-    name: str | None = ctx.params.get("adapter")
+    profile: Profile = {}
+    error: HarlequinConfigError | None = None
+    try:
+        profile, _ = get_config_for_profile(
+            config_path=ctx.params.get("config_path"),
+            profile_name=ctx.params.get("profile"),
+        )
+    except HarlequinConfigError as e:
+        error = e
+    except OSError as e:
+        error = HarlequinConfigError(str(e), title="Harlequin could not read a config.")
+
+    name = ctx.params.get("adapter") or profile.get("adapter")
+    # bare `hsql` and `hsql --help` render the adapter-agnostic surface, which
+    # is the one help that is true for every adapter -- and imports none.
+    wants_help = not argv or bool(ctx.params.get("help"))
+    if name is None and wants_help:
+        return _Preflight(profile=profile, adapter=None, error=error)
+
+    by_name = {n.lower(): n for n in installed}
     if name is None:
-        with contextlib.suppress(HarlequinConfigError, OSError):
-            found, _ = get_config_for_profile(
-                config_path=ctx.params.get("config_path"),
-                profile_name=ctx.params.get("profile"),
-            )
-            name = found.get("adapter")
-
-    installed = {n.lower(): n for n in adapter_names()}
-    if name is not None:
-        # an unknown name is left for click's Choice to reject, with the list
-        return installed.get(str(name).lower()), wants_help
-    if wants_help:
-        return None, wants_help
-    return installed.get(DEFAULT_ADAPTER), wants_help
+        name = DEFAULT_ADAPTER
+    # an unknown name is left for click's Choice to reject, with the list
+    return _Preflight(
+        profile=profile, adapter=by_name.get(str(name).lower()), error=error
+    )
 
 
-def _adapter_params(
-    adapter_cls: type[HarlequinAdapter], reserved: set[str], taken: set[str]
-) -> list[click.Parameter]:
-    """One adapter's connection options, as click parameters.
+def _attach_adapter_options(
+    cmd: click.Command, adapter_cls: type[HarlequinAdapter]
+) -> None:
+    """Add one adapter's connection options to an already-built command.
 
-    hsql's own flags are the part of it that is an API, so a declaration that
-    collides with one loses the colliding spelling -- visibly, in
-    `hsql --help -a <adapter>` -- rather than shadowing it.
+    `AbstractOption.to_click()` appends straight to a `Command`'s params, so the
+    adapter declares its options exactly as it does for the IDE and this only
+    has to settle what happens when one of them collides. hsql's own flags are
+    the part of it that is an API, so a colliding declaration loses the
+    colliding spelling -- visibly, in `hsql --help -a <adapter>` -- rather than
+    shadowing a documented flag.
     """
+    reserved = {opt for param in cmd.params for opt in param.opts}
+    taken = {param.name for param in cmd.params}
+    first = len(cmd.params)
 
-    def _stub() -> None: ...
-
-    decorated: Any = _stub
     for option in adapter_cls.ADAPTER_OPTIONS or []:
-        decorated = option.to_click()(decorated)
+        option.to_click()(cmd)
 
-    params: list[click.Parameter] = []
-    for param in reversed(getattr(decorated, "__click_params__", [])):
+    for param in cmd.params[first:]:
         param.opts = [opt for opt in param.opts if opt not in reserved]
         param.secondary_opts = [
             opt for opt in param.secondary_opts if opt not in reserved
         ]
-        if param.opts and param.name not in taken:
-            params.append(param)
-    return params
+    cmd.params[first:] = [
+        param for param in cmd.params[first:] if param.opts and param.name not in taken
+    ]
 
 
 def _record_source(
@@ -683,7 +716,7 @@ def _use_color(when: str, destination: Path | None) -> bool:
         return False
     if when == "always":
         return True
-    return sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    return sys.stdout.isatty() and not os.getenv("NO_COLOR")
 
 
 @contextlib.contextmanager

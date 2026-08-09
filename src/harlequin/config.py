@@ -11,6 +11,26 @@ from tomlkit.toml_file import TOMLFile
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap, RawKeyBinding
 
+DEFAULT_ADAPTER = "duckdb"
+"""The adapter both commands connect with when nothing names one."""
+
+TUI_ONLY_KEYS = (
+    "theme",
+    "keymap_name",
+    "show_files",
+    "show_s3",
+    "locale",
+    "no_download_tzdata",
+)
+"""Profile keys the IDE reads and a headless caller must drop.
+
+One profile serves both commands, so a profile written for the IDE has to work
+headless -- these are dropped rather than handed to an adapter as options it
+never declared. `locale` in particular is one a headless caller must ignore:
+the IDE sets it to group digits for a human, and output that varied with
+`LC_ALL` would be output a caller could not predict.
+"""
+
 
 class Profile(TypedDict, total=False):
     conn_str: Sequence[str] | str

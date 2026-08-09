@@ -21,8 +21,11 @@ def main() -> None:
 
     from harlequin.hsql.cli import PROGRAM, build_cli
 
+    argv = sys.argv[1:]
     try:
-        code = build_cli().main(prog_name=PROGRAM, standalone_mode=False)
+        # the same arguments to both: which adapter's options the command
+        # carries is decided from them, and then click parses them.
+        code = build_cli(argv).main(args=argv, prog_name=PROGRAM, standalone_mode=False)
     except click.ClickException as e:
         # parse-level failures -- an unknown option, a bad choice. click already
         # exits 2 for those, which is the code hsql documents for usage errors.

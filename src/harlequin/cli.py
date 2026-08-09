@@ -12,7 +12,11 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
-from harlequin.config import get_config_for_profile, merge_profile_with_cli
+from harlequin.config import (
+    DEFAULT_ADAPTER,
+    get_config_for_profile,
+    merge_profile_with_cli,
+)
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
     HarlequinConfigError,
@@ -27,7 +31,6 @@ from harlequin.plugins import load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
 # configure defaults
-DEFAULT_ADAPTER = "duckdb"
 DEFAULT_LIMIT = 100_000
 DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())

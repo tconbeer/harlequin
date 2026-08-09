@@ -13,8 +13,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Sequence, cast
 
+import click
 import pytest
 from click.testing import CliRunner, Result
 
@@ -600,3 +601,68 @@ def _environ() -> dict[str, str]:
     import os
 
     return dict(os.environ)
+
+
+# --- how the command gets built ----------------------------------------------
+
+
+def test_the_config_is_read_once(
+    hsql: Hsql, duck: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both phases want the profile; only one of them may go to disk for it."""
+    import harlequin.config
+
+    reads: list[object] = []
+    real = harlequin.config.load_config
+
+    def counting(config_path: Any) -> Any:
+        reads.append(config_path)
+        return real(config_path)
+
+    monkeypatch.setattr("harlequin.config.load_config", counting)
+    res = hsql(*duck, "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert len(reads) == 1
+
+
+def test_hsql_does_not_claim_dash_h() -> None:
+    """`-h` belongs to `--host`.
+
+    psql spells it that way, and the postgres and mysql adapters both declare
+    it. Taking it for help would silently strip it from them.
+    """
+    cmd = build_cli(["--help"])
+    with click.Context(cmd) as ctx:
+        opts = {opt for param in cmd.get_params(ctx) for opt in param.opts}
+    assert "--help" in opts
+    assert "-h" not in opts
+
+
+def test_an_adapter_option_cannot_shadow_an_hsql_flag() -> None:
+    from harlequin.adapter import HarlequinAdapter
+    from harlequin.hsql.cli import _attach_adapter_options
+    from harlequin.options import TextOption
+
+    class _Adapter:
+        ADAPTER_OPTIONS = [
+            TextOption(name="collides", description="x", short_decls=["-c"]),
+            TextOption(name="format", description="x"),
+            TextOption(name="fine", description="x", short_decls=["-Z"]),
+        ]
+
+    cmd = build_cli(["--help"])
+    _attach_adapter_options(cmd, cast("type[HarlequinAdapter]", _Adapter))
+    by_name: dict[str | None, list[click.Parameter]] = {}
+    for param in cmd.params:
+        by_name.setdefault(param.name, []).append(param)
+
+    # the colliding short goes; the option survives under its long spelling
+    (collides,) = by_name["collides"]
+    assert collides.opts == ["--collides"]
+    # an option whose only spelling hsql already owns is dropped whole, so the
+    # command is left with hsql's own --format and no duplicate
+    (fmt,) = by_name["format"]
+    assert "-F" in fmt.opts
+    # anything that doesn't collide arrives untouched
+    (fine,) = by_name["fine"]
+    assert set(fine.opts) == {"--fine", "-Z"}
