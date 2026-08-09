@@ -40,6 +40,7 @@ STEPS: list[tuple[str, str]] = [
     ("harlequin.query", "import harlequin.query"),
     ("harlequin.layout", "import harlequin.layout"),
     ("harlequin.export", "import harlequin.export"),
+    ("harlequin.hsql.cli", "import harlequin.hsql.cli"),
     ("harlequin_sqlite", "import harlequin_sqlite"),
     ("harlequin_duckdb", "import harlequin_duckdb"),
     ("harlequin.cli", "import harlequin.cli"),

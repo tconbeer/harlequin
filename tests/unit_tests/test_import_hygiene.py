@@ -23,6 +23,8 @@ HEADLESS_IMPORTS = [
     "import harlequin.config",
     "import harlequin.exception",
     "import harlequin.export",
+    "import harlequin.hsql",
+    "import harlequin.hsql.cli",
     "import harlequin.keymap",
     "import harlequin.layout",
     "import harlequin.options",

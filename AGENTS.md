@@ -65,7 +65,7 @@ uv run --python 3.12 --group test pytest -m 'py12 and not online' --snapshot-upd
 
 ## Import hygiene
 
-The headless CLI (`hsql`, planned in `docs/plans/`) has to reach a database without paying for the TUI, so **the adapter-facing modules must stay free of Textual, questionary, prompt_toolkit and sqlfmt at import time.** Concretely:
+The headless CLI (`hsql`) has to reach a database without paying for the TUI, so **the adapter-facing modules must stay free of Textual, questionary, prompt_toolkit and sqlfmt at import time.** Concretely:
 
 - `harlequin/__init__.py` resolves its public names through a PEP 562 `__getattr__`. Never add a module-scope import there — importing *any* `harlequin.*` submodule executes it, so one eager import puts the whole app behind every consumer.
 - Type-only imports of Textual (e.g. `AutoBackendType`) go under `if TYPE_CHECKING:`; every module involved already has `from __future__ import annotations`.
@@ -118,6 +118,16 @@ Both front ends run queries through here, and neither may grow its own copy.
 
 Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the output snapshots in `tests/unit_tests/__snapshots__/test_golden_formats/` exist to catch. They are syrupy single-file snapshots, one per format, written in binary — regenerate them with `--snapshot-update` on 3.10 like every other snapshot here, and read the diff; a change there is a change to Harlequin's output contract.
 
+### The headless CLI (`hsql/`)
+
+`hsql` is a second console script over the same execution core, not a mode of `harlequin`. It owns no query logic: `cli.py` parses, `harlequin.query` runs, `harlequin.layout` and `harlequin.export` write. New query behavior belongs in the core so both front ends get it.
+
+- `cli.py` parses in **two phases**. The first reads `-a`, `-P` and `--config-path` with a throwaway resilient parser to name the one adapter the invocation will use — `adapter_names()`, no `ep.load()` — and the second builds the real command with only that adapter's options. `--help` with no adapter named imports *nothing* and lists adapter names instead; that's what keeps the first thing an agent reads small and true for every adapter. `harlequin.query` and `harlequin.statements` are deferred into the callback for the same reason.
+- **hsql's own flags are the frozen part.** An adapter option whose spelling collides with one loses that spelling (`_adapter_params`), rather than shadowing a documented flag.
+- `diagnostics.py` owns **everything on stderr and the exit-code mapping**. Nothing else in `hsql/` writes to stderr, and nothing writes to stdout except `output.py`.
+- `output.py` picks between the two families of format and writes through **one binary stream**, `-o PATH` included, so a file and a redirect cannot disagree about a byte.
+- Two things it must never do: call `set_locale()` (output that varies with `LC_ALL` is output a caller cannot predict) or reach `harlequin.cli` (that module builds the IDE's command). Both are covered by the `hsql does not reach the TUI` import-linter contract and `tests/unit_tests/test_hsql.py`.
+
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)
 
 `HarlequinAdapter` (built from CLI/config options) → `connect()` → `HarlequinConnection` (execute, get_catalog, optional copy/cancel/transaction-mode/completions) → `HarlequinCursor` (columns, set_limit, fetchall). Adapters must tolerate receiving both subsets and supersets of their declared options, and must not rely on option defaults.
@@ -156,7 +166,7 @@ That last sentence is `config.merge_profile_with_cli()`, and it belongs to every
 
 - `stubs/` holds type stubs for untyped dependencies (`mypy_path = "stubs,src"`).
 - Styles are Textual CSS: `global.tcss`, `app.tcss`, `keys_app.tcss`.
-- `packaging/hsql/` is a metapackage reserving the `hsql` name on PyPI; `docs/plans/` holds design docs for the planned headless CLI.
+- `packaging/hsql/` is a metapackage reserving the `hsql` name on PyPI; `docs/plans/` holds the design docs behind the headless CLI.
 - `scripts/` has the screenshot exporter used for marketing SVGs and pyinstrument profiling entrypoints (`make profiles`).
 
 ## Conventions

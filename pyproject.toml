@@ -124,6 +124,7 @@ Changelog = "https://github.com/tconbeer/harlequin/blob/main/CHANGELOG.md"
 [project.scripts]
 
 harlequin = "harlequin.cli:harlequin"
+hsql = "harlequin.hsql:main"
 
 
 [project.entry-points."harlequin.adapter"]
@@ -300,6 +301,42 @@ forbidden_modules = [
 # deferred into pretty_print_warning(), which nothing here calls; the run-time
 # test in tests/unit_tests/test_import_hygiene.py is what proves it defers.
 ignore_imports = ["harlequin.exception -> harlequin.colors"]
+unmatched_ignore_imports_alerting = "error"
+
+
+[[tool.importlinter.contracts]]
+
+# The whole point of shipping hsql as a second console script rather than a flag
+# on `harlequin` is that this becomes a rule CI can check, instead of a
+# discipline every contributor has to remember.
+name = "hsql does not reach the TUI"
+type = "forbidden"
+source_modules = ["harlequin.hsql"]
+forbidden_modules = [
+    "questionary",
+    "sqlfmt",
+    "textual",
+    "textual_textarea",
+    "harlequin.app",
+    "harlequin.cli",
+    "harlequin.colors",
+    "harlequin.components",
+    "harlequin.config_wizard",
+    "harlequin.copy_widgets",
+    "harlequin.keys_app",
+    "harlequin.messages",
+]
+# deferred into pretty_print_warning(), which nothing here calls; the run-time
+# test in tests/unit_tests/test_import_hygiene.py is what proves it defers.
+# the same deliberate deferrals the adapter-API contract lists, each with a
+# comment at its import site. tests/unit_tests/test_import_hygiene.py is what
+# proves they defer; a *new* route to Textual fails this contract instead.
+ignore_imports = [
+    "harlequin.exception -> harlequin.colors",       # pretty_print_warning()
+    "harlequin.options -> harlequin.copy_widgets",   # to_widgets()
+    "harlequin.options -> harlequin.colors",         # to_questionary()
+    "harlequin.options -> questionary",              # to_questionary()
+]
 unmatched_ignore_imports_alerting = "error"
 
 

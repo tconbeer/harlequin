@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds `hsql`, Harlequin's headless CLI, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses — so an agent or a CI job never handles a credential. The `harlequin` command is unchanged: no new flags, no new behavior.
+  - **SQL comes from `-c/--command`, `-f/--file`, or `-f -` for stdin.** Both are repeatable and run in the order given.
+  - **Formats** are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none` to report status without rows. Pick one with `-F/--format` or the `--csv`/`--json`/`--jsonl`/`--markdown`/`--vertical` shorthands, and write it to a file with `-o/--output`.
+  - **psql's flags, where psql has one**: `-t/--tuples-only`, `-A/--no-align`, `--no-header` and `--null-string`, so `hsql -tAc "select count(*)"` returns a bare number.
+  - **stdout is data; stderr is narration.** Row counts, timings, truncation notices and errors all go to stderr, so `hsql -c ... --csv > out.csv` produces a clean file. Errors are one plain line — `hsql: error: ...` — rather than a panel.
+  - **Exit codes are an API**: 0 success, 1 query error, 2 usage or config error, 3 connection error, 130 interrupted.
+  - **`--limit` defaults to 500 and truncation is never silent.** It is a *hard* limit — `cursor.set_limit()`, so fewer rows leave the database — where the IDE's `--limit` is a soft cap over a full fetch. A truncated result says `(500 of 500+ rows)` and reports it on stderr, `-t` included; `-l 0` fetches everything and counts exactly. A profile shared with the IDE shares its `limit` too, so pass `-l` when the IDE's cap is not the one you want.
+  - **`--stats`** writes one line of JSON to stderr — statement count, rows, truncation, elapsed time and the result's columns — whatever stdout is carrying.
+  - **`--result all|last|N`** picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script. A format that cannot hold two result sets says so and exits 2, rather than writing a second header into the same csv.
+  - **Output is deterministic.** Identical bytes whether stdout is a pipe, a file or a terminal, `\n` on every platform, and unaffected by `LC_ALL`. Color is the exception and is off unless `--color` asks for it.
+  - **`hsql --help` costs no adapter import**: it lists the adapter-agnostic options, the formats, the exit codes and the *names* of installed adapters, and points at `hsql --help -a <adapter>` for one adapter's connection options.
+
+### Performance
+
+- `harlequin.exception` no longer imports `rich` ([#524](https://github.com/tconbeer/harlequin/issues/524)). It is on every headless path — `harlequin.config` imports it — so `hsql --help` was paying 20ms for a panel it never draws.
+
 ## [2.8.1] - 2026-08-09
 
 ### Refactoring
