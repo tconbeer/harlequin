@@ -26,7 +26,9 @@ dependencies = [
     "textual==8.2.8",
     # 0.16.1 makes the DataTable widget a lazy import, so `backend` -- which is
     # what the adapter interface types against -- is reachable without Textual.
-    "textual-fastdatatable==0.16.1",
+    # 0.17.0 lets `create_backend()` take the column names the cursor reported,
+    # so a result normalizes under them however the adapter shaped its rows.
+    "textual-fastdatatable==0.17.0",
     "textual-textarea==0.18.1",
 
     # click

@@ -1409,7 +1409,7 @@ requires-dist = [
     { name = "rich-click", specifier = "==1.9.8" },
     { name = "shandy-sqlfmt", specifier = ">=0.28.2" },
     { name = "textual", specifier = "==8.2.8" },
-    { name = "textual-fastdatatable", specifier = "==0.16.1" },
+    { name = "textual-fastdatatable", specifier = "==0.17.0" },
     { name = "textual-textarea", specifier = "==0.18.1" },
     { name = "tomlkit", specifier = ">=0.12.5,<0.14.0" },
     { name = "tree-sitter", specifier = ">=0.25,<0.27" },
@@ -3487,7 +3487,7 @@ wheels = [
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.16.1"
+version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -3496,9 +3496,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/9c/1f53a1eee8a3e4b7e305b7d67986253f23bbbc1b87015f39eab0a493b30c/textual_fastdatatable-0.16.1.tar.gz", hash = "sha256:b9ad8af9f839c7151b16b0a49fd8a8c5790e4593ff69598520aa74c145a8751b", size = 36676, upload-time = "2026-08-07T02:16:18.472Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/2a/f5844539d1ab139a220ee29ca81552cdd3e794048456a4b23a714f868e11/textual_fastdatatable-0.17.0.tar.gz", hash = "sha256:3b1ea1f78aa7aa7ab41df9fb2b3b926fb274bbe8cb2e4f622b16a500eeb2157c", size = 38399, upload-time = "2026-08-09T03:16:54.345Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/5e/9faba936d546143e1265587db7227ed20aa26ad51496837fa9ae8d77b283/textual_fastdatatable-0.16.1-py3-none-any.whl", hash = "sha256:893dcf34b70d489e6aee79502c61e819ce0aefa272bfe58fa6b0ee0a625c66dd", size = 34065, upload-time = "2026-08-07T02:16:17.307Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/b3/492b452bff8ec06100a5564895d976649847bd185283dcef5da968e45314/textual_fastdatatable-0.17.0-py3-none-any.whl", hash = "sha256:68cdf5461135d68258d1a04382f947f9ec0e51209041f3bee5fc7ec03c98793e", size = 35595, upload-time = "2026-08-09T03:16:53.133Z" },
 ]
 
 [[package]]

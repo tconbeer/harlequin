@@ -8,6 +8,20 @@ Harlequin is a SQL IDE that runs in the terminal, built on [Textual](https://tex
 
 User-facing docs live in a separate repo, [`tconbeer/harlequin-web`](https://github.com/tconbeer/harlequin-web) (published at harlequin.sh). Doc changes for a feature go there, not here.
 
+## We own most of the stack — fix things upstream
+
+Much of what Harlequin depends on is maintained in the same org, so a limitation in a dependency is usually not something to work around:
+
+- **`textual-fastdatatable`** and **`textual-textarea`**, the component libraries the Results Viewer and Query Editor are built on.
+- **`pytest-textual-snapshot`**, pinned to a fork (see the `test` dependency group).
+- **Several adapters** — `harlequin_duckdb` and `harlequin_sqlite` in this repo, plus out-of-tree ones like `harlequin-postgres` and `harlequin-mysql`.
+
+**When the real fix belongs upstream, make it upstream.** A workaround here is a permanent tax on this repo for a problem whose actual home is one release away, and it will be read by the next person as intended design. If you can't reach the upstream repo yourself, write the change up as an issue and hand it over — don't quietly absorb it.
+
+Worked example: `create_backend()` had no way to accept the column names a cursor reported, so a result with no rows arrived with no header. The reconciliation that would otherwise have lived in `harlequin.query` forever — special cases for `None`, for an empty sequence, for `f0`/`f1` names, for a count mismatch — became a `column_names` argument in textual-fastdatatable 0.17.0 and one line here.
+
+The costs are real and worth planning around rather than avoiding: an upstream fix needs a release and a pin bump before this repo sees it, and a component-library bump can bring snapshot churn. Neither outweighs owning a workaround forever.
+
 ## Commands
 
 Everything runs through `uv`. `make check` is the full pre-PR loop; run it before pushing.
@@ -85,6 +99,8 @@ import-linter reads the *static* graph, so it cannot tell a deferred import from
 Both front ends run queries through here, and neither may grow its own copy.
 
 `statements.split()` and `statements.find_separators()` are the **only** SQL splitter. They drive `tree-sitter-sql` directly — no Textual, no textual-textarea — through the one-line `(";" @semicolon)` query the Query Editor has always used, so `-f script.sql` and the editor cannot disagree about where a statement ends. Tree-sitter reports **byte** columns; everything this module returns is in characters, and that conversion belongs here and nowhere else.
+
+`fetch()` hands `create_backend()` the columns the cursor described, so a result with no rows is an empty table with a header rather than nothing — `ResultSet.backend` is never None. `arrow_table()` slices `source_data` rather than reading `backend.data`, which is otherwise the same rows: `data` has unique column names and `source_data` has the ones the cursor reported, and `export.write_file()` has to be the only thing that decides what a duplicate name becomes.
 
 `query.execute()` runs statements and `query.fetch()` drains one cursor into a `ResultSet`. Keep them two phases: that split is what lets the app say "query executed" before data materializes. `fetch()` normalizes through `textual_fastdatatable.create_backend()` — a second normalizer would put "what counts as a row, what counts as null" in two places, and the disagreement would show up as two front ends rendering the same query differently.
 

@@ -87,8 +87,12 @@ class ResultSet:
     columns: list[tuple[str, str]]
     """(name, short type) pairs, in the order the data is returned."""
 
-    backend: DataTableBackend | None
-    """None when the statement returned no rows at all."""
+    backend: DataTableBackend[pa.Table]
+    """Always present, even for a statement that returned no rows at all.
+
+    `create_backend()` is given the columns the cursor described, so a result
+    with no rows is an empty table with a header rather than nothing.
+    """
 
     truncated: bool
     """Whether the database had more rows than this result set holds."""
@@ -98,7 +102,7 @@ class ResultSet:
 
     @property
     def row_count(self) -> int:
-        return 0 if self.backend is None else self.backend.row_count
+        return self.backend.row_count
 
     # Deliberately no row iterator. Every consumer of a result set works
     # columnwise -- the file formats hand `backend.source_data` to duckdb or
@@ -111,18 +115,19 @@ class ResultSet:
     def arrow_table(self) -> pa.Table:
         """The rows this result set holds, as Arrow, under the cursor's names.
 
-        This is `backend.data` -- the rows kept, not the rows fetched -- so
-        under `detect_overflow` the extra row used to infer `truncated` is not
-        in it. (The app's export dialog wants `backend.source_data` instead: it
-        fetched everything on purpose and exports all of it.)
+        The rows kept, not the rows fetched: under `detect_overflow` the extra
+        row that made `truncated` knowable is not in it. (The app's export
+        dialog wants all of `source_data` -- it fetched everything on purpose.)
 
-        Names are applied as-is, duplicates included; de-duplicating is
-        `export.write_file()`'s job, since it is duckdb that cannot take them.
+        Sliced from `source_data` rather than read from `backend.data`, which is
+        otherwise the same rows: `data` has unique column names, because
+        `to_pylist()` silently drops duplicate-named fields, and `source_data`
+        has the ones the cursor reported. Names have to survive to
+        `export.write_file()`, which is the one place that decides what a
+        duplicate becomes -- otherwise `select 1 as a, 2 as a` exports a
+        different header here than it does from the app.
         """
-        return as_arrow_table(
-            None if self.backend is None else self.backend.data,
-            [name for name, _ in self.columns],
-        )
+        return self.backend.source_data.slice(0, self.backend.row_count)
 
     def text_columns(self) -> pa.Table:
         """Every value in this result set, `CAST(... AS VARCHAR)`.
@@ -156,31 +161,6 @@ class ResultSet:
                 stacklevel=2,
             )
             return _cast_to_text_with_str(data)
-
-
-def as_arrow_table(data: pa.Table | None, column_names: Sequence[str]) -> pa.Table:
-    """What a backend held, under the column names its cursor described.
-
-    A cursor may return `None`, or an empty sequence of rows, and neither
-    carries the columns it described -- but zero rows still has a header.
-    `create_backend()` also names record-shaped data `f0`, `f1`, ... , since
-    tuples arrive without names at all.
-
-    Reconciling that belongs upstream in `create_backend()`, which is what
-    invents those names and what turns an empty result into a table with no
-    columns. Given a `column_names` argument there, this function goes away and
-    its callers read `backend.data`.
-    """
-    names = list(column_names)
-    if data is None or data.num_columns == 0:
-        return pa.Table.from_arrays(
-            [pa.array([], type=pa.string()) for _ in names], names=names
-        )
-    if data.num_columns != len(names):
-        # an adapter whose columns() disagrees with the rows it returned. The
-        # data is still the data; the names are what cannot be trusted.
-        return data
-    return data.rename_columns(names)
 
 
 def _cast_to_text(data: pa.Table) -> pa.Table:
@@ -273,16 +253,20 @@ def fetch(executed: ExecutedStatement, limit: RowLimit | None = None) -> ResultS
     columns = executed.cursor.columns()
     elapsed = time.monotonic() - started_at
 
-    # a cursor with no rows returns None, which is not a shape `create_backend`
-    # can normalize -- and there is nothing to normalize.
-    backend = None if data is None else create_backend(data, max_rows=limit.max_rows)
+    # `data` may be None, an empty sequence, or rows with no names on them --
+    # none of which carry the columns the cursor just described. Handing those
+    # names to `create_backend()` is what makes a result with no rows an empty
+    # table with a header.
+    backend = create_backend(
+        data,
+        max_rows=limit.max_rows,
+        column_names=[name for name, _ in columns],
+    )
 
     return ResultSet(
         statement=executed.statement,
         columns=columns,
         backend=backend,
-        truncated=(
-            backend is not None and backend.source_row_count > backend.row_count
-        ),
+        truncated=backend.source_row_count > backend.row_count,
         elapsed=elapsed,
     )

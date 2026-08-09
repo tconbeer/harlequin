@@ -28,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
-- Upgrades `textual-fastdatatable` to 0.16.1 (from 0.16.0), which makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual.
+- Upgrades `textual-fastdatatable` to 0.17.0 (from 0.16.0). 0.16.1 makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual; 0.17.0 lets `create_backend()` take the column names a cursor reported, so a result with no rows carries its header through normalization instead of arriving empty.
 
 ## [2.8.0] - 2026-08-06
 

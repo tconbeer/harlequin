@@ -106,7 +106,6 @@ class TestFetch:
         result = fetch(executed)
         assert [name for name, _ in result.columns] == ["a", "b"]
         assert result.row_count == 1
-        assert result.backend is not None
         assert result.backend.source_data.to_pylist() == [{"a": 1, "b": "x"}]
         assert result.statement.sql == "select 1 as a, 'x' as b"
         assert result.elapsed >= 0
@@ -119,14 +118,14 @@ class TestFetch:
         result = fetch(executed)
         assert result.columns == [("1", "#")]
         assert result.row_count == 0
-        assert result.backend is not None
         assert result.backend.source_data.to_pylist() == []
         assert result.truncated is False
 
-    def test_a_cursor_that_returns_none_has_no_backend(self) -> None:
+    def test_a_cursor_that_returns_none_still_gets_its_columns(self) -> None:
         """The adapter interface lets a cursor return None instead of an empty
-        result. None is not a shape create_backend() can normalize -- and there
-        is nothing to normalize."""
+        result. It still described its columns, and `create_backend()` is given
+        those, so the result is an empty table with a header rather than
+        nothing at all."""
 
         class EmptyCursor(HarlequinCursor):
             def __init__(self) -> None:
@@ -144,9 +143,10 @@ class TestFetch:
         result = fetch(
             ExecutedStatement(statement=Statement("select 1", 0), cursor=EmptyCursor())
         )
-        assert result.backend is None
         assert result.row_count == 0
         assert result.truncated is False
+        assert result.arrow_table().column_names == ["a"]
+        assert result.arrow_table().num_rows == 0
 
     def test_rejects_a_statement_with_no_cursor(
         self, connection: HarlequinConnection
@@ -163,7 +163,6 @@ class TestFetch:
         (executed,) = execute(connection, statements("select * from range(100)"))
         result = fetch(executed, limit=RowLimit(max_rows=5))
         assert result.row_count == 5
-        assert result.backend is not None
         assert result.backend.source_row_count == 100
 
 
@@ -387,7 +386,6 @@ def test_every_shape_a_cursor_may_return_is_normalized(returned: Any) -> None:
     )
     assert isinstance(result, ResultSet)
     assert result.row_count == 3
-    assert result.backend is not None
     assert [
         next(iter(row.values())) for row in result.backend.source_data.to_pylist()
     ] == [1, 2, 3]
