@@ -22,3 +22,7 @@ def write_table(
     bloom_filter_columns: list[str] | None = None,
     bloom_filter_fpp: float = 0.05,
 ) -> None: ...
+def read_table(
+    source: str | NativeFile,
+    columns: list[str] | None = None,
+) -> Table: ...

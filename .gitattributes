@@ -1,1 +1,4 @@
+# Snapshots are compared byte for byte, so a CRLF checkout on Windows fails
+# every one of them. Newlines are part of what they assert.
 *.svg text eol=lf
+tests/**/__snapshots__/** text eol=lf

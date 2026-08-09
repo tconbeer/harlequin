@@ -4,22 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Refactoring
+
+- Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)). `harlequin.export.write_file()` and `write_stream()` take an Arrow table and write it to a path or an open binary stream, and `harlequin.layout` arranges a result set as `table`, `markdown` or `vertical` text. Both are for the planned headless CLI and have no user-facing surface yet; the Data Exporter behaves as before. `export.py` also gains `tsv`, `jsonl`/`ndjson` and `arrow` as option variants of formats it already wrote.
+
 ### Performance
 
 - Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
 
 ### Bug Fixes
 
+- Exporting a query that returned no rows now writes a file with a header and no rows, instead of refusing with "Cannot export empty table."
+- Exporting a query with duplicate column names now suffixes the repeats the same way the Results Viewer does, so `select 1 as a, 2 as a` writes `a,a0` rather than `a,a_0`.
+- A SQLite query that returns no rows now reports the columns it selected, so the Data Exporter writes their names into the file instead of an empty one.
+- The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
+- The Data Exporter no longer crashes when Arrow rejects an ORC or Feather option, such as a bloom filter column; it shows an error modal.
 - Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)). `select 'café';select 2` ran as `select 'café';s` and `elect 2`, both syntax errors, because tree-sitter reports columns in bytes and the editor read them as characters.
 - A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
 - Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.
 
 ### Dependencies
 
+- `wcwidth` is now a direct dependency of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). It was already installed for everyone, transitively via `prompt_toolkit`; the planned headless CLI measures text with it to align columns, and that code must not depend on `prompt_toolkit` being present. It is pure Python with no dependencies of its own.
 - `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
 
 - Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
-- Upgrades `textual-fastdatatable` to 0.16.1 (from 0.16.0), which makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual.
+- Upgrades `textual-fastdatatable` to 0.17.0 (from 0.16.0). 0.16.1 makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual; 0.17.0 lets `create_backend()` take the column names a cursor reported, so a result with no rows carries its header through normalization instead of arriving empty.
 
 ## [2.8.0] - 2026-08-06
 

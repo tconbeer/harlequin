@@ -10,12 +10,13 @@ from textual.css.query import QueryError
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
+from textual_fastdatatable.backend import ArrowBackend
 from textual_textarea import PathInput
 
 from harlequin.components.error_modal import ErrorModal
 from harlequin.components.results_viewer import ResultsTable
 from harlequin.exception import HarlequinCopyError
-from harlequin.export import copy
+from harlequin.export import write_file
 from harlequin.options import AbstractOption, HarlequinCopyFormat
 
 ExportOptions = Dict[str, Any]
@@ -27,12 +28,26 @@ def export_callback(
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
+    """Write the visible table to the file the export screen collected.
+
+    The dialog exports every row it fetched, not the rows on screen, so the
+    data is `source_data` rather than what the row cap left -- and `source_data`
+    already carries the names the cursor reported, duplicates and all, which
+    `write_file()` makes unique for duckdb.
+
+    A result with no rows exports as a file with no rows -- a header and
+    nothing else, or an empty array. That is a true account of what the query
+    returned, and it is what tells a reader "nothing matched" apart from
+    "the query failed".
+    """
+    path, format_name, options = screen_data
     try:
-        copy(
-            table=table,
-            path=screen_data[0],
-            format_name=screen_data[1],
-            options=screen_data[2],
+        assert isinstance(table.backend, ArrowBackend)
+        write_file(
+            data=table.backend.source_data,
+            path=path,
+            format_name=format_name,
+            options=options,
         )
         success_callback()
     except (OSError, HarlequinCopyError) as e:

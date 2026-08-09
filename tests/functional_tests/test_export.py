@@ -80,3 +80,43 @@ async def test_export(
 
         if not transaction_button_visible(app):
             assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_export_result_with_no_rows(
+    app_all_adapters: Harlequin,
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A query that matched nothing exports a header and no rows.
+
+    Not an error: an empty file is a true account of what the query returned,
+    and it is what tells a reader "nothing matched" apart from "it failed".
+    SQLite is the case that matters -- its cursor returns no backend at all
+    for zero rows, so the columns come from the labels on screen.
+    """
+    app = app_all_adapters
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1 as a, 2 as b where false"
+        await pilot.press("ctrl+j")
+        for _ in range(3):
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        await pilot.press("ctrl+e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportScreen)
+
+        export_path = tmp_path / "empty.csv"
+        app.screen.file_input.value = str(export_path)
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert export_path.read_text() == "a,b\n"
+        # back on the main screen, i.e. no error modal
+        assert len(app.screen_stack) == 1

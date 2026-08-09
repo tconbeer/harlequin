@@ -8,6 +8,20 @@ Harlequin is a SQL IDE that runs in the terminal, built on [Textual](https://tex
 
 User-facing docs live in a separate repo, [`tconbeer/harlequin-web`](https://github.com/tconbeer/harlequin-web) (published at harlequin.sh). Doc changes for a feature go there, not here.
 
+## We own most of the stack — fix things upstream
+
+Much of what Harlequin depends on is maintained in the same org, so a limitation in a dependency is usually not something to work around:
+
+- **`textual-fastdatatable`** and **`textual-textarea`**, the component libraries the Results Viewer and Query Editor are built on.
+- **`pytest-textual-snapshot`**, pinned to a fork (see the `test` dependency group).
+- **Several adapters** — `harlequin_duckdb` and `harlequin_sqlite` in this repo, plus out-of-tree ones like `harlequin-postgres` and `harlequin-mysql`.
+
+**When the real fix belongs upstream, make it upstream.** A workaround here is a permanent tax on this repo for a problem whose actual home is one release away, and it will be read by the next person as intended design. If you can't reach the upstream repo yourself, write the change up as an issue and hand it over — don't quietly absorb it.
+
+Worked example: `create_backend()` had no way to accept the column names a cursor reported, so a result with no rows arrived with no header. The reconciliation that would otherwise have lived in `harlequin.query` forever — special cases for `None`, for an empty sequence, for `f0`/`f1` names, for a count mismatch — became a `column_names` argument in textual-fastdatatable 0.17.0 and one line here.
+
+The costs are real and worth planning around rather than avoiding: an upstream fix needs a release and a pin bump before this repo sees it, and a component-library bump can bring snapshot churn. Neither outweighs owning a workaround forever.
+
 ## Commands
 
 Everything runs through `uv`. `make check` is the full pre-PR loop; run it before pushing.
@@ -36,7 +50,7 @@ uv run harlequin [OPTIONS] [CONN_STR]              # run the CLI from source
 
 ## Testing notes
 
-Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots.
+Functional tests drive the real Textual app via `pilot` and assert on both messages and SVG snapshots. Unit tests use syrupy directly for the headless output formats (`tests/unit_tests/test_golden_formats.py`), as single-file binary snapshots — same `--snapshot-update` workflow, and `.gitattributes` pins every `__snapshots__` file to LF so a Windows checkout can't rewrite what they assert.
 
 - **A snapshot mismatch is not automatically a failure.** What matters is whether the test passes. Several tests deliberately skip their snapshot assertion (e.g. the `transaction_button_visible` fixture, because SQLite on 3.12+ grows a transaction button that isn't in the baseline), and CI runs with `--snapshot-warn-unused`.
 - Snapshots are committed from **Python 3.10**, the lowest supported version. Regenerating requires two runs, and `tests/conftest.py::pytest_configure` will refuse a run that would clobber the baseline:
@@ -86,9 +100,23 @@ Both front ends run queries through here, and neither may grow its own copy.
 
 `statements.split()` and `statements.find_separators()` are the **only** SQL splitter. They drive `tree-sitter-sql` directly — no Textual, no textual-textarea — through the one-line `(";" @semicolon)` query the Query Editor has always used, so `-f script.sql` and the editor cannot disagree about where a statement ends. Tree-sitter reports **byte** columns; everything this module returns is in characters, and that conversion belongs here and nowhere else.
 
+`fetch()` hands `create_backend()` the columns the cursor described, so a result with no rows is an empty table with a header rather than nothing — `ResultSet.backend` is never None.
+
+**Two things de-duplicate column names, and they have to agree.** Arrow allows `select 1 as a, 2 as a` and `to_pylist()` silently drops the second one, so `create_backend()` resolves duplicates for `backend.data` while `source_data` keeps them verbatim. duckdb won't export duplicates either, so `export.write_file()` resolves them too — for the app, which exports `source_data`. Both paths must produce the same header for the same query, so `export._deduplicate_column_names()` is character-for-character what the backend does, pinned by a test that asserts against the backend rather than against a copy of its algorithm. If upstream changes the scheme, follow it here rather than forking.
+
 `query.execute()` runs statements and `query.fetch()` drains one cursor into a `ResultSet`. Keep them two phases: that split is what lets the app say "query executed" before data materializes. `fetch()` normalizes through `textual_fastdatatable.create_backend()` — a second normalizer would put "what counts as a row, what counts as null" in two places, and the disagreement would show up as two front ends rendering the same query differently.
 
+`ResultSet.arrow_table()` is the rows a result *holds*, under the column names the cursor described — the backend renames what it can't normalize, and an adapter that returns tuples arrives with `f0`, `f1`, …. `text_columns()` is that table cast to VARCHAR **in duckdb**, which is where the text layouts get their strings; never `str()`, and never `textual_fastdatatable`'s `cell_formatter`, which is display formatting (locale-grouped numbers, `✓ True`) and would put `1,234,567` in a numeric column.
+
 `RowLimit` carries `detect_overflow` because Harlequin has two different limits: the app's `--limit` is a *soft display cap over a full fetch*, so it knows the exact total; a headless caller wants the *hard* one, and can only learn it was truncated by asking for one row more than it keeps.
+
+### Output (`export.py`, `layout.py`)
+
+**duckdb serializes; Harlequin lays out.** `export.write_file()` / `write_stream()` take an Arrow table to a path or an open binary stream, and every value in them is rendered by duckdb's own writers — so a Postgres blob and a DuckDB blob print identically, and nothing here has to own a rendering for intervals, structs or maps. `tsv`, `jsonl`/`ndjson` and `arrow` are the csv, json and feather writers under different default options, not new writers; a caller's explicit option always beats the format's default.
+
+`layout.py` does padding, pipes and row counts over the strings `text_columns()` produced, and knows nothing about types. Widths are **terminal cells, via `wcwidth`** — never `len()`, which is off by one per CJK glyph or emoji and by one the other way per combining mark. Its `LayoutOptions` are independent switches on purpose: `-t` is `header=False, footer=False` and `-A` is `aligned=False`, so `-tA` needs no special case.
+
+Two invariants the tests pin: **the bytes are the contract** — writers go through a temp file and are copied out in binary, so `\n` survives on Windows and `-o PATH` and `> PATH` agree — and **`-F table` and `-F csv` agree cell for cell**, which is what the output snapshots in `tests/unit_tests/__snapshots__/test_golden_formats/` exist to catch. They are syrupy single-file snapshots, one per format, written in binary — regenerate them with `--snapshot-update` on 3.10 like every other snapshot here, and read the diff; a change there is a change to Harlequin's output contract.
 
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)
 

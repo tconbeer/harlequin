@@ -6,6 +6,29 @@ from typing import Callable
 
 import pytest
 
+from harlequin.adapter import HarlequinAdapter
+from harlequin.query import ResultSet, RowLimit, execute, fetch
+from harlequin.statements import split
+
+
+@pytest.fixture
+def result_set(
+    duckdb_adapter: type[HarlequinAdapter],
+) -> Callable[..., ResultSet]:
+    """Run one statement against an in-memory DuckDB and fetch its result.
+
+    DuckDB rather than a fake cursor: everything downstream of `fetch()` is
+    about how real values -- decimals, blobs, structs -- come out, and a fake
+    would only prove that the fixture and the assertion agree.
+    """
+    connection = duckdb_adapter([":memory:"], no_init=True).connect()
+
+    def _result_set(sql: str, limit: RowLimit | None = None) -> ResultSet:
+        (executed,) = execute(connection, split(sql), limit=limit)
+        return fetch(executed, limit=limit)
+
+    return _result_set
+
 
 @pytest.fixture
 def run_python() -> Callable[[str], subprocess.CompletedProcess[str]]:

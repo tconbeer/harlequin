@@ -26,7 +26,9 @@ dependencies = [
     "textual==8.2.8",
     # 0.16.1 makes the DataTable widget a lazy import, so `backend` -- which is
     # what the adapter interface types against -- is reachable without Textual.
-    "textual-fastdatatable==0.16.1",
+    # 0.17.0 lets `create_backend()` take the column names the cursor reported,
+    # so a result normalizes under them however the adapter shaped its rows.
+    "textual-fastdatatable==0.17.0",
     "textual-textarea==0.18.1",
 
     # click
@@ -40,6 +42,12 @@ dependencies = [
     # rather than relied on incidentally.
     "tree-sitter>=0.25,<0.27",
     "tree-sitter-sql>=0.3.11,<0.4",
+
+    # measuring text for the headless layouts. Installed for everyone today,
+    # but transitively via prompt_toolkit -- which is one of the packages the
+    # headless import graph exists to keep out, so inheriting it from there is
+    # exactly backwards. It is pure Python with no dependencies of its own.
+    "wcwidth>=0.2.13,<0.9",
 
     # other deps
     "duckdb>=1.1.1; python_version < '3.14'",
@@ -262,12 +270,18 @@ ignore_imports = [
 
 [[tool.importlinter.contracts]]
 
-# The headless execution core. It may reach `textual_fastdatatable.backend` --
-# that is where result normalization lives, and as of 0.16.1 it costs no
-# Textual -- but nothing here may reach Textual itself or any part of the app.
+# The headless execution core, and the two modules that write its results out.
+# It may reach `textual_fastdatatable.backend` -- that is where result
+# normalization lives, and as of 0.16.1 it costs no Textual -- but nothing here
+# may reach Textual itself or any part of the app. `harlequin.export` is in the
+# list from both directions: it is what a headless caller writes a file with,
+# and it is what the app's export dialog calls, so the dependency has to point
+# that way and not back.
 name = "The execution core is reachable without the TUI"
 type = "forbidden"
 source_modules = [
+    "harlequin.export",
+    "harlequin.layout",
     "harlequin.query",
     "harlequin.statements",
 ]
@@ -282,6 +296,9 @@ forbidden_modules = [
     "harlequin.keys_app",
     "harlequin.messages",
 ]
+# deferred into pretty_print_warning(), which nothing here calls; the run-time
+# test in tests/unit_tests/test_import_hygiene.py is what proves it defers.
+ignore_imports = ["harlequin.exception -> harlequin.colors"]
 unmatched_ignore_imports_alerting = "error"
 
 

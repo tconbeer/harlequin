@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest import mock
 
 import pyarrow as pa
 import pytest
@@ -105,7 +106,6 @@ class TestFetch:
         result = fetch(executed)
         assert [name for name, _ in result.columns] == ["a", "b"]
         assert result.row_count == 1
-        assert result.backend is not None
         assert result.backend.source_data.to_pylist() == [{"a": 1, "b": "x"}]
         assert result.statement.sql == "select 1 as a, 'x' as b"
         assert result.elapsed >= 0
@@ -118,14 +118,14 @@ class TestFetch:
         result = fetch(executed)
         assert result.columns == [("1", "#")]
         assert result.row_count == 0
-        assert result.backend is not None
         assert result.backend.source_data.to_pylist() == []
         assert result.truncated is False
 
-    def test_a_cursor_that_returns_none_has_no_backend(self) -> None:
+    def test_a_cursor_that_returns_none_still_gets_its_columns(self) -> None:
         """The adapter interface lets a cursor return None instead of an empty
-        result. None is not a shape create_backend() can normalize -- and there
-        is nothing to normalize."""
+        result. It still described its columns, and `create_backend()` is given
+        those, so the result is an empty table with a header rather than
+        nothing at all."""
 
         class EmptyCursor(HarlequinCursor):
             def __init__(self) -> None:
@@ -143,9 +143,10 @@ class TestFetch:
         result = fetch(
             ExecutedStatement(statement=Statement("select 1", 0), cursor=EmptyCursor())
         )
-        assert result.backend is None
         assert result.row_count == 0
         assert result.truncated is False
+        assert result.arrow_table().column_names == ["a"]
+        assert result.arrow_table().num_rows == 0
 
     def test_rejects_a_statement_with_no_cursor(
         self, connection: HarlequinConnection
@@ -162,7 +163,6 @@ class TestFetch:
         (executed,) = execute(connection, statements("select * from range(100)"))
         result = fetch(executed, limit=RowLimit(max_rows=5))
         assert result.row_count == 5
-        assert result.backend is not None
         assert result.backend.source_row_count == 100
 
 
@@ -198,6 +198,126 @@ class TestTruncation:
         result = fetch(executed, limit=limit)
         assert result.row_count == 100
         assert result.truncated is False
+
+
+class TestArrowTable:
+    def test_names_come_from_the_cursor(
+        self, all_adapters: type[HarlequinAdapter]
+    ) -> None:
+        """An adapter that returns rows as tuples normalizes to columns named
+        `f0`, `f1`, ... . The names the cursor described are the real ones."""
+        connection = all_adapters([":memory:"], no_init=True).connect()
+        (executed,) = execute(connection, statements("select 1 as a, 'x' as b"))
+        assert fetch(executed).arrow_table().column_names == ["a", "b"]
+
+    def test_duplicate_names_are_made_unique(
+        self, all_adapters: type[HarlequinAdapter]
+    ) -> None:
+        """Arrow allows duplicates and `to_pylist()` silently drops them, so
+        the backend resolves them. `export.write_file()` resolves them the same
+        way, so it does not matter which of the two saw the table first."""
+        connection = all_adapters([":memory:"], no_init=True).connect()
+        (executed,) = execute(connection, statements("select 1 as a, 2 as a"))
+        assert fetch(executed).arrow_table().column_names == ["a", "a0"]
+        # the names the cursor reported are still available, verbatim
+        assert [name for name, _ in fetch(executed).columns] == ["a", "a"]
+
+    def test_zero_rows_keeps_its_columns(
+        self, all_adapters: type[HarlequinAdapter]
+    ) -> None:
+        """Zero rows still has a header, whether the cursor returned an empty
+        result or nothing at all."""
+        connection = all_adapters([":memory:"], no_init=True).connect()
+        (executed,) = execute(
+            connection, statements("select 1 as a, 'x' as b where false")
+        )
+        table = fetch(executed).arrow_table()
+        assert table.column_names == ["a", "b"]
+        assert table.num_rows == 0
+
+    def test_it_holds_the_rows_kept_not_the_rows_fetched(
+        self, connection: HarlequinConnection
+    ) -> None:
+        """Under overflow detection one extra row was fetched to prove there
+        were more. It is not part of the result."""
+        limit = RowLimit(max_rows=5, detect_overflow=True)
+        (executed,) = execute(
+            connection, statements("select * from range(100)"), limit=limit
+        )
+        result = fetch(executed, limit=limit)
+        assert result.truncated is True
+        assert result.arrow_table().num_rows == 5
+
+
+class TestTextColumns:
+    def test_every_value_is_a_string(self, connection: HarlequinConnection) -> None:
+        (executed,) = execute(
+            connection, statements("select 1 as a, 2.5::double as b, true as c")
+        )
+        text = fetch(executed).text_columns()
+        assert all(column.type == pa.string() for column in text.columns)
+        assert text.to_pylist() == [{"a": "1", "b": "2.5", "c": "true"}]
+
+    def test_duckdb_serializes_not_python(
+        self, connection: HarlequinConnection
+    ) -> None:
+        """`str()` on a blob is a Python repr (`b'\\x00\\xff'`) and on a bool is
+        `True`. Neither belongs in output an agent parses."""
+        (executed,) = execute(
+            connection,
+            statements("select '\\x00\\xFF'::blob as b, false as f"),
+        )
+        assert fetch(executed).text_columns().to_pylist() == [
+            {"b": "\\x00\\xFF", "f": "false"}
+        ]
+
+    def test_a_null_stays_a_null(self, connection: HarlequinConnection) -> None:
+        """So that it stays distinguishable from the literal string a caller
+        chose to render nulls as."""
+        (executed,) = execute(connection, statements("select null as a, 'NULL' as b"))
+        assert fetch(executed).text_columns().to_pylist() == [{"a": None, "b": "NULL"}]
+
+    def test_duplicate_names_survive_the_cast(
+        self, connection: HarlequinConnection
+    ) -> None:
+        (executed,) = execute(connection, statements("select 1 as a, 2 as a"))
+        text = fetch(executed).text_columns()
+        assert text.column_names == ["a", "a0"]
+        assert [column.to_pylist() for column in text.columns] == [["1"], ["2"]]
+
+    def test_zero_rows_is_not_an_error(self, connection: HarlequinConnection) -> None:
+        (executed,) = execute(connection, statements("select 1 as a where false"))
+        text = fetch(executed).text_columns()
+        assert text.column_names == ["a"]
+        assert text.num_rows == 0
+
+    def test_a_type_duckdb_cannot_ingest_falls_back_loudly(self) -> None:
+        """Not an expected path -- duckdb ingests every Arrow type these
+        adapters have been seen to produce -- but a silent fallback would mean
+        output that quietly disagreed with an exported file."""
+
+        class UningestibleCursor(HarlequinCursor):
+            def __init__(self) -> None:
+                pass
+
+            def columns(self) -> list[tuple[str, str]]:
+                return [("a", "int")]
+
+            def set_limit(self, limit: int) -> HarlequinCursor:
+                return self
+
+            def fetchall(self) -> Any:
+                return pa.table({"a": [1, 2]})
+
+        result = fetch(
+            ExecutedStatement(
+                statement=Statement("select 1", 0), cursor=UningestibleCursor()
+            )
+        )
+        with mock.patch("duckdb.from_arrow", side_effect=RuntimeError("no such type")):
+            with pytest.warns(RuntimeWarning, match="falling back"):
+                text = result.text_columns()
+        assert text.to_pylist() == [{"a": "1"}, {"a": "2"}]
 
 
 class TestExecuteWithoutAnAdapter:
@@ -269,7 +389,6 @@ def test_every_shape_a_cursor_may_return_is_normalized(returned: Any) -> None:
     )
     assert isinstance(result, ResultSet)
     assert result.row_count == 3
-    assert result.backend is not None
     assert [
         next(iter(row.values())) for row in result.backend.source_data.to_pylist()
     ] == [1, 2, 3]
