@@ -342,6 +342,30 @@ def test_config_path_fron_env(
     assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
 
 
+@pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
+def test_conn_str_overrides_the_profile(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    data_dir: Path,
+    filename: str,
+) -> None:
+    """A conn_str on the command line beats the profile's.
+
+    test_config_path is the other half: with none passed, the profile's survives.
+    """
+    runner = CliRunner()
+    config_path = data_dir / "unit_tests" / "config" / filename
+    res = runner.invoke(
+        build_cli(), args=f"--config-path {config_path.as_posix()} other.db"
+    )
+    assert res.exit_code == 0
+    mock_adapter.assert_called_once()
+    assert mock_adapter.call_args.kwargs["conn_str"] == ("other.db",)
+    # unrelated profile values are untouched
+    assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
+    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+
+
 def test_bad_config_exits(
     mock_harlequin: MagicMock,
     mock_adapter: MagicMock,

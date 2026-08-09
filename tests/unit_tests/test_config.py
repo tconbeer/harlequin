@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from harlequin.config import (
+    Profile,
     _find_config_files,
     get_config_for_profile,
     get_highest_priority_existing_config_file,
     load_config,
+    merge_profile_with_cli,
 )
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
@@ -157,3 +159,69 @@ def test_config_file_discovery(
     expected_paths.pop()
     assert _find_config_files(config_path=None) == expected_paths
     assert get_highest_priority_existing_config_file() == expected_paths[-1]
+
+
+def test_merge_profile_with_cli_prefers_values_the_user_typed() -> None:
+    profile: Profile = {"theme": "fruity", "limit": 200_000}
+    merged = merge_profile_with_cli(
+        profile=profile,
+        cli_values={"theme": "zenburn", "limit": 100_000},
+        explicitly_set={"theme"},
+    )
+    # the theme was typed, so it wins; the limit is a default, so it doesn't
+    assert merged == {"theme": "zenburn", "limit": 200_000}
+
+
+def test_merge_profile_with_cli_keeps_options_the_profile_alone_defines() -> None:
+    """Adapter options live in the profile under names the CLI never saw."""
+    profile: Profile = {"adapter": "postgres", "dbname": "prod"}  # type: ignore[typeddict-unknown-key]
+    merged = merge_profile_with_cli(
+        profile=profile,
+        cli_values={"username": "ted"},
+        explicitly_set={"username"},
+    )
+    assert merged == {"adapter": "postgres", "dbname": "prod", "username": "ted"}
+
+
+def test_merge_profile_with_cli_ignores_an_empty_conn_str() -> None:
+    """An absent conn_str would otherwise leave `harlequin -P prod` nothing to open."""
+    profile: Profile = {"conn_str": ["my-database.db"]}
+    merged = merge_profile_with_cli(
+        profile=profile,
+        cli_values={"conn_str": tuple()},
+        explicitly_set={"conn_str"},
+    )
+    assert merged == {"conn_str": ["my-database.db"]}
+
+
+def test_merge_profile_with_cli_accepts_a_conn_str_that_was_passed() -> None:
+    profile: Profile = {"conn_str": ["my-database.db"]}
+    merged = merge_profile_with_cli(
+        profile=profile,
+        cli_values={"conn_str": ("other.db",)},
+        explicitly_set={"conn_str"},
+    )
+    assert merged == {"conn_str": ("other.db",)}
+
+
+def test_merge_profile_with_cli_leaves_its_arguments_alone() -> None:
+    """The profile is a live reference into the merged config files."""
+    profile: Profile = {"theme": "fruity"}
+    cli_values = {"theme": "zenburn"}
+    merged = merge_profile_with_cli(
+        profile=profile, cli_values=cli_values, explicitly_set={"theme"}
+    )
+    assert profile == {"theme": "fruity"}
+    assert cli_values == {"theme": "zenburn"}
+    assert merged is not profile
+
+
+def test_merge_profile_with_cli_falsy_values_are_still_values() -> None:
+    """`--limit 0` and `--no-init` mean what they say."""
+    profile: Profile = {"limit": 200_000, "no_init": False}  # type: ignore[typeddict-unknown-key]
+    merged = merge_profile_with_cli(
+        profile=profile,
+        cli_values={"limit": 0, "no_init": True},
+        explicitly_set={"limit", "no_init"},
+    )
+    assert merged == {"limit": 0, "no_init": True}

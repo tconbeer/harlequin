@@ -234,6 +234,7 @@ source_modules = [
     "harlequin.adapter",
     "harlequin.autocomplete",
     "harlequin.catalog",
+    "harlequin.config",
     "harlequin.exception",
     "harlequin.keymap",
     "harlequin.options",

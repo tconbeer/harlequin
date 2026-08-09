@@ -2,11 +2,44 @@ from __future__ import annotations
 
 import sys
 from importlib.metadata import entry_points
-from typing import Literal, Sequence, overload
+from typing import Literal, Sequence, cast, overload
 
 from harlequin.adapter import HarlequinAdapter
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap
+
+
+def adapter_names() -> list[str]:
+    """
+    The name of every installed adapter, without importing any of them.
+    """
+    return sorted({ep.name for ep in entry_points(group="harlequin.adapter")})
+
+
+def load_adapter(name: str) -> type[HarlequinAdapter]:
+    """
+    Import exactly one installed adapter, by its entry point name.
+
+    Raises HarlequinConfigError, where load_adapter_plugins() only warns,
+    because a caller that named an adapter has nothing to fall back to.
+    """
+    matches = [ep for ep in entry_points(group="harlequin.adapter") if ep.name == name]
+    if not matches:
+        installed = ", ".join(adapter_names())
+        raise HarlequinConfigError(
+            f"Could not load an adapter named {name}, because no installed "
+            "plug-in provides one with that name. Installed adapters: "
+            f"{installed if installed else '(none)'}.",
+            title="Harlequin could not load your adapter.",
+        )
+    ep = matches[-1]  # last one wins, to agree with load_adapter_plugins()
+    try:
+        return cast("type[HarlequinAdapter]", ep.load())
+    except ImportError as e:
+        raise HarlequinConfigError(
+            f"Could not load the installed plug-in named {ep.name}.\n\n{e}",
+            title="Harlequin could not load your adapter.",
+        ) from e
 
 
 def load_adapter_plugins() -> dict[str, type[HarlequinAdapter]]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence, TypedDict, cast
+from typing import Any, Container, Mapping, Sequence, TypedDict, cast
 
 from platformdirs import user_config_path
 from tomlkit.exceptions import TOMLKitError
@@ -118,6 +118,29 @@ def get_config_for_profile(
     ]
 
     return profile, keymaps
+
+
+def merge_profile_with_cli(
+    profile: Profile,
+    cli_values: Mapping[str, Any],
+    explicitly_set: Container[str],
+) -> Profile:
+    """
+    Layer the CLI values a user typed over the profile from their config files.
+
+    A value counts as typed only if `explicitly_set` names it -- in click, every
+    parameter whose `get_parameter_source()` is not `DEFAULT`. An empty
+    `conn_str` never counts: it is an argument, so click always reports it as
+    typed.
+    """
+    merged: dict[str, Any] = dict(profile)
+    for key, value in cli_values.items():
+        if key not in explicitly_set:
+            continue
+        if key == "conn_str" and value == tuple():
+            continue
+        merged[key] = value
+    return cast(Profile, merged)
 
 
 def load_config(config_path: Path | None) -> Config:

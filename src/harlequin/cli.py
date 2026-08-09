@@ -12,7 +12,7 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
-from harlequin.config import get_config_for_profile
+from harlequin.config import get_config_for_profile, merge_profile_with_cli
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
     HarlequinConfigError,
@@ -312,19 +312,15 @@ def build_cli() -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
-        # prune the kwargs to only those that don't have their default arguments
-        params = list(kwargs.keys())
-        for k in params:
-            if (
-                ctx.get_parameter_source(k) == click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
-            ):
-                kwargs.pop(k)
-            # conn_str is an arg, not an option, so get_paramter_source is always CLI
-            elif k == "conn_str" and kwargs[k] == tuple():
-                kwargs.pop(k)
-
         # merge the config and the cli options
-        config.update(kwargs)  # type: ignore[typeddict-item]
+        explicitly_set = {
+            k
+            for k in kwargs
+            if ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
+        }
+        config = merge_profile_with_cli(
+            profile=config, cli_values=kwargs, explicitly_set=explicitly_set
+        )
 
         # detect and install (if necessary) a tzdatabase on Windows
         if sys.platform == "win32" and not config.pop("no_download_tzdata", None):

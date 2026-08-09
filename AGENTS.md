@@ -92,7 +92,7 @@ import-linter reads the *static* graph, so it cannot tell a deferred import from
 - `harlequin_duckdb`, `harlequin_sqlite` — in-tree adapters, registered through the `harlequin.adapter` entry point group like any third-party adapter. They are the reference implementations of the adapter contract.
 - `harlequin_vscode` — a keymap, registered through `harlequin.keymap`.
 
-`plugins.py` loads both groups via `importlib.metadata.entry_points`; a plugin that fails to import prints a warning instead of taking down the app.
+`plugins.py` loads both groups via `importlib.metadata.entry_points`; a plugin that fails to import prints a warning instead of taking down the app. Loading comes at three grains, because `ep.load()` is the most expensive thing a front end can do at start-up and it grows with every adapter the user installs. `adapter_names()` reads entry point *names* and imports nothing; `load_adapter(name)` imports exactly one, and raises rather than warning, since a caller that named an adapter has nothing to fall back to; `load_adapter_plugins()` imports every one, for the `harlequin` command, whose `--help` describes them all.
 
 ### The execution core (`statements.py`, `query.py`)
 
@@ -146,6 +146,8 @@ The Data Catalog (`components/data_catalog/database_tree.py`) loads by viewport,
 
 Config files are TOML, discovered in order home → user config dir → cwd, merged so **later wins**; `pyproject.toml` is read from its `[tool.harlequin]` section. Profiles supply defaults that CLI options override.
 
+That last sentence is `config.merge_profile_with_cli()`, and it belongs to every command rather than to `cli.py`: **a CLI value beats the profile only if the user actually typed it**, since an option sitting at its default carries no intent and would otherwise clobber what the profile set. It takes the *names* of the options that were set — in click, every parameter whose `ctx.get_parameter_source()` isn't `DEFAULT` — rather than a `Context`, so the rule is testable without building a command. An empty `conn_str` is the documented exception: it's an argument, so click always reports it as coming from the command line.
+
 ### Caches
 
 `editor_cache.py` (open buffers) and `catalog_cache.py` (catalog, query history, S3 tree) pickle into the platformdirs user cache dir, versioned by a `CACHE_VERSION` constant — bump it when the pickled shape changes. Cache entries are keyed by a connection hash derived from `HarlequinAdapter.connection_id`.
@@ -159,6 +161,7 @@ Config files are TOML, discovered in order home → user config dir → cwd, mer
 
 ## Conventions
 
+- **Docstrings and comments are as concise as possible.** One sentence describing the function, and at most a sentence or two on why it works the way it does. They are not the place to relay the design behind a change, the alternatives weighed, or the instructions the author was working from — that belongs in the PR description, or in `docs/plans/` for anything longer-lived.
 - Python 3.10 is the floor (`target-version = "py310"`). Use `from __future__ import annotations`; mypy runs strict, so every def is annotated.
 - Textual and its component libraries (`textual-textarea`, `textual-fastdatatable`) are pinned exactly — bump them together, and expect snapshot churn.
 - **Every PR adds a `CHANGELOG.md` entry under `[Unreleased]`**, referencing the issue it closes. Keep-a-changelog headings: Features, Performance, Bug Fixes, Dependencies, Refactoring. Releases are cut by the `release.yml` workflow, which bumps the version and rolls `[Unreleased]` into a version heading — don't hand-edit released sections or `version` in `pyproject.toml`.
