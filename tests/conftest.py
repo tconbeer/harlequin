@@ -65,6 +65,23 @@ def set_locale_to_enUS() -> None:
 
 
 @pytest.fixture
+def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the machine running the tests out of them.
+
+    Config discovery walks the home directory, the user config dir and the cwd,
+    so without this a developer's own `.harlequin.toml` decides what a test
+    asserts.
+
+    The three search functions are the seam, rather than `load_config` or a
+    command's own `get_config_for_profile`, because they are the only one that
+    both commands share *and* that leaves `--config-path` working -- a test that
+    passes an explicit config file still gets it.
+    """
+    for search in ("_search_home", "_search_config", "_search_cwd"):
+        monkeypatch.setattr(f"harlequin.config.{search}", list)
+
+
+@pytest.fixture
 def data_dir() -> Path:
     here = Path(__file__)
     return here.parent / "data"

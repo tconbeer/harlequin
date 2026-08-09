@@ -53,6 +53,24 @@ def test_headless_imports_do_not_load_the_tui(
     assert not leaked, f"{statement!r} imported {leaked}"
 
 
+def test_building_the_hsql_command_imports_no_adapter(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The point of hsql's two-phase parse, and it regresses quietly.
+
+    `hsql --help` names no adapter, so it renders the adapter-agnostic surface
+    and must not pay `ep.load()` for every adapter installed to do it.
+    """
+    proc = run_python(
+        "import sys\n"
+        "from harlequin.hsql.cli import build_cli\n"
+        "build_cli(['--help'])\n"
+        "print(','.join(m for m in sys.modules if m.startswith('harlequin_')))\n"
+    )
+    loaded = [m for m in proc.stdout.strip().split(",") if m]
+    assert not loaded, f"building `hsql --help` imported {loaded}"
+
+
 def test_public_names_still_resolve() -> None:
     """Every name `harlequin/__init__.py` exported before it went lazy.
 

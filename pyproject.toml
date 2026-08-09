@@ -312,6 +312,10 @@ unmatched_ignore_imports_alerting = "error"
 name = "hsql does not reach the TUI"
 type = "forbidden"
 source_modules = ["harlequin.hsql"]
+# `locale_manager` is not a TUI module, but it is the one trap on this path:
+# the IDE calls set_locale() so a human sees grouped digits, and output that
+# varied with LC_ALL is output a caller cannot predict. hsql casts through
+# duckdb instead, and must never reach the other thing.
 forbidden_modules = [
     "questionary",
     "sqlfmt",
@@ -324,6 +328,7 @@ forbidden_modules = [
     "harlequin.config_wizard",
     "harlequin.copy_widgets",
     "harlequin.keys_app",
+    "harlequin.locale_manager",
     "harlequin.messages",
 ]
 # deferred into pretty_print_warning(), which nothing here calls; the run-time

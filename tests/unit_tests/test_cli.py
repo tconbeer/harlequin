@@ -47,10 +47,8 @@ def mock_harlequin(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 
 @pytest.fixture()
-def mock_empty_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
-    )
+def mock_empty_config(no_discovered_config: None) -> None:
+    """No config file anywhere. See tests/conftest.py."""
 
 
 @pytest.fixture()

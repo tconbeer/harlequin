@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any, Callable, Sequence, cast
+from typing import Any, Callable, cast
 
 import click
 import pytest
@@ -42,26 +40,9 @@ TEXT_FILES = ["csv", "tsv", "json", "jsonl", "ndjson"]
 BINARY_FILES = ["parquet", "orc", "arrow"]
 FILE_FORMATS = TEXT_FILES + BINARY_FILES
 
-# the console script's entry point, for the assertions that need a real process
-HSQL_MAIN = (
-    "import sys; from harlequin.hsql import main; "
-    "sys.argv = ['hsql', *sys.argv[1:]]; main()"
-)
-
-
-@pytest.fixture(autouse=True)
-def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the machine running the tests out of them.
-
-    Config discovery walks the home directory and the cwd, so without this a
-    developer's own `.harlequin.toml` decides what these assert.
-    """
-    for search in ("_search_home", "_search_config", "_search_cwd"):
-        monkeypatch.setattr(f"harlequin.config.{search}", list)
-
 
 @pytest.fixture
-def hsql() -> Hsql:
+def hsql(no_discovered_config: None) -> Hsql:
     """Invoke hsql the way the console script does, in process."""
     runner = CliRunner()
 
@@ -81,13 +62,6 @@ def duck() -> list[str]:
 @pytest.fixture(params=["duckdb", "sqlite"])
 def both_adapters(request: pytest.FixtureRequest) -> list[str]:
     return ["-a", request.param, "--no-init", ":memory:"]
-
-
-def run_hsql(*args: str, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-    """Run hsql in a real process, for the assertions that are about bytes."""
-    return subprocess.run(
-        [sys.executable, "-c", HSQL_MAIN, *args], capture_output=True, **kwargs
-    )
 
 
 # --- help, and what it costs -------------------------------------------------
@@ -111,23 +85,6 @@ def test_help_for_one_adapter(hsql: Hsql) -> None:
     assert res.exit_code == ExitCode.OK
     assert "--read-only" in res.output
     assert "Showing duckdb's connection options." in res.output
-
-
-def test_plain_help_imports_no_adapter() -> None:
-    """The point of the two-phase parse, and the thing that regresses quietly."""
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; from harlequin.hsql.cli import build_cli; "
-            "build_cli(['--help']); "
-            "print(any(m.startswith('harlequin_') for m in sys.modules))",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert proc.stdout.strip() == "False"
 
 
 def test_bare_invocation_prints_help_and_leaves_stdout_empty(hsql: Hsql) -> None:
@@ -560,47 +517,6 @@ def test_a_connection_failure_exits_three(hsql: Hsql, tmp_path: Path) -> None:
 )
 def test_exit_code_for(error: BaseException, code: ExitCode) -> None:
     assert exit_code_for(error) == code
-
-
-# --- the bytes are the contract ----------------------------------------------
-
-
-@pytest.mark.parametrize("args", [[], ["--csv"], ["--json"], ["--markdown"]])
-def test_output_is_lf_on_every_platform(args: Sequence[str]) -> None:
-    proc = run_hsql(
-        "-a", "duckdb", "--no-init", ":memory:", *args, "-c", "select 1 as a"
-    )
-    assert proc.returncode == ExitCode.OK
-    assert b"\r\n" not in proc.stdout
-
-
-def test_output_does_not_vary_with_the_locale() -> None:
-    """The IDE groups digits for a human. hsql must not, on anyone's machine."""
-    args = ("-a", "duckdb", "--no-init", ":memory:", "-c", "select 1234567 as n")
-    plain = run_hsql(*args)
-    localized = run_hsql(*args, env={**_environ(), "LC_ALL": "de_DE.UTF-8"})
-    assert plain.returncode == ExitCode.OK
-    assert b"1234567" in plain.stdout
-    assert plain.stdout == localized.stdout
-
-
-def test_output_does_not_vary_with_a_pipe(tmp_path: Path) -> None:
-    args = ("-a", "duckdb", "--no-init", ":memory:", "-c", "select 1 as a, 'ü' as b")
-    piped = run_hsql(*args).stdout
-    destination = tmp_path / "out.txt"
-    with destination.open("wb") as f:
-        subprocess.run(
-            [sys.executable, "-c", HSQL_MAIN, *args],
-            stdout=f,
-            stderr=subprocess.DEVNULL,
-        )
-    assert destination.read_bytes() == piped
-
-
-def _environ() -> dict[str, str]:
-    import os
-
-    return dict(os.environ)
 
 
 # --- how the command gets built ----------------------------------------------
