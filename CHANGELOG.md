@@ -14,7 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Exporting a query that returned no rows now writes a file with a header and no rows, instead of refusing with "Cannot export empty table."
+- A SQLite query that returns no rows now reports the columns it selected, so the Data Exporter writes their names into the file instead of an empty one.
 - The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
+- The Data Exporter no longer crashes when Arrow rejects an ORC or Feather option, such as a bloom filter column; it shows an error modal.
 - Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)). `select 'café';select 2` ran as `select 'café';s` and `elect 2`, both syntax errors, because tree-sitter reports columns in bytes and the editor read them as characters.
 - A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
 - Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.

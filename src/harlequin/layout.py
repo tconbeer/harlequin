@@ -1,15 +1,12 @@
 """Arranging already-serialized text for a reader.
 
-The three layouts here do padding, pipes and row counts, and nothing else. Every
-string they arrange came from `ResultSet.text_columns()`, which is a duckdb
-`CAST(... AS VARCHAR)` -- the same serializer `harlequin.export` writes a csv
-with -- so a value looks the same whether it is read on a terminal or parsed out
-of a file, and no layout has an opinion about what a timestamp or a blob is.
+The three layouts do padding, pipes and row counts, and nothing else. Their
+strings come from `ResultSet.text_columns()`, the same duckdb cast that
+`harlequin.export` writes a csv with, so a value reads the same on a terminal
+as it does in a file.
 
-`LayoutOptions` is deliberately a set of independent switches rather than a set
-of named styles, because that is how psql's flag algebra already works: `-t` is
-`header=False, footer=False`, `-A` is `aligned=False`, and `-tA` needs no
-special case because it was never one.
+`LayoutOptions` is a set of independent switches, following psql: `-t` is
+`header=False, footer=False`, and `-A` is `aligned=False`.
 """
 
 from __future__ import annotations
@@ -193,10 +190,8 @@ class _TableLayout(_BaseLayout):
 class _MarkdownLayout(_BaseLayout):
     """A GitHub-flavored pipe table.
 
-    This is the one layout that escapes what it prints, because a value holding
-    a `|` or a newline does not make a markdown table hard to read -- it makes
-    it a different table. Same silent-corruption argument that keeps two result
-    sets out of one csv.
+    The one layout that escapes what it prints: an unescaped `|` in a value
+    would start a new cell, and a newline would end the row.
     """
 
     MIN_WIDTH = 3

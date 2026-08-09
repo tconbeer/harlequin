@@ -268,6 +268,34 @@ def test_initialize_adapter_ignores_extra_kwargs() -> None:
     assert adapter.connect()
 
 
+def test_a_query_with_no_rows_still_returns_its_columns() -> None:
+    """A caller handed `None` cannot know what the query selected, so an export
+    or a headless render would lose the header. Arrow rather than a dict of
+    columns, so duplicate names survive."""
+    import pyarrow as pa
+
+    conn = HarlequinSqliteAdapter((":memory:",), no_init=True).connect()
+    cur = conn.execute("select 1 as a, 'x' as b where 1=0")
+    assert cur is not None
+    assert cur.columns() == [("a", "?"), ("b", "?")]
+
+    data = cur.fetchall()
+    assert isinstance(data, pa.Table)
+    assert data.column_names == ["a", "b"]
+    assert data.num_rows == 0
+
+
+def test_duplicate_column_names_survive_an_empty_result() -> None:
+    import pyarrow as pa
+
+    conn = HarlequinSqliteAdapter((":memory:",), no_init=True).connect()
+    cur = conn.execute("select 1 as a, 2 as a where 1=0")
+    assert cur is not None
+    data = cur.fetchall()
+    assert isinstance(data, pa.Table)
+    assert data.column_names == ["a", "a"]
+
+
 def test_limit(small_sqlite: Path) -> None:
     adapter = HarlequinSqliteAdapter((str(small_sqlite),))
     conn = adapter.connect()

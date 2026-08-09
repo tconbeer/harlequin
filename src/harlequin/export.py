@@ -1,16 +1,8 @@
-"""Writing a result set to a file, serialized by duckdb or pyarrow.
+"""Writing an Arrow table to a file, or to a stream.
 
-Nothing here serializes a value itself. duckdb's writers own the rendering of
-every type an adapter can return -- timestamps, decimals, blobs, lists, structs
-and maps -- and getting that from one serializer is what lets a Postgres result
-and a DuckDB result print identically. A hand-rolled writer would not just have
-to get RFC 4180 right; it would have to own a rendering for each of those types,
-and it would get one of them subtly wrong in a way nobody notices until it is
-parsed downstream.
-
-`tsv` and `jsonl` are not new writers, then: they are the csv and json writers
-under different default options. Format defaults are just defaults -- an option
-a caller passes explicitly always wins.
+duckdb and pyarrow do the serializing; this module picks the writer and hands
+it its options. `tsv` and `jsonl` are the csv and json writers under different
+defaults, and any option the caller passes overrides a default.
 """
 
 from __future__ import annotations
@@ -264,7 +256,7 @@ def _export_orc(
             bloom_filter_columns=bloom_filter_columns,  # type: ignore
             **kwargs,
         )
-    except (pl.ArrowException, OSError, IOError, TypeError) as e:
+    except (pl.ArrowException, OSError, IOError, TypeError, ValueError) as e:
         raise HarlequinCopyError(
             str(e),
             title=("Arrow raised an error when writing your data to an ORC file."),
@@ -300,7 +292,7 @@ def _export_feather(
             chunksize=chunksize,
             **kwargs,
         )
-    except (pl.ArrowException, OSError, IOError, TypeError) as e:
+    except (pl.ArrowException, OSError, IOError, TypeError, ValueError) as e:
         raise HarlequinCopyError(
             str(e),
             title=("Arrow raised an error when writing your data to a Feather file."),

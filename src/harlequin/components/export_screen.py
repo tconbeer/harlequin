@@ -18,6 +18,7 @@ from harlequin.components.results_viewer import ResultsTable
 from harlequin.exception import HarlequinCopyError
 from harlequin.export import write_file
 from harlequin.options import AbstractOption, HarlequinCopyFormat
+from harlequin.query import as_arrow_table
 
 ExportOptions = Dict[str, Any]
 
@@ -31,19 +32,23 @@ def export_callback(
     """Write the visible table to the file the export screen collected.
 
     The dialog exports every row it fetched, not the rows on screen, so the
-    data is `source_data` rather than what the row cap left. Naming the columns
-    is this side's job too: the backend may have normalized them (an adapter
-    that returns tuples arrives with `f0`, `f1`, ...), and the labels the user
-    is looking at are the ones they expect in the file.
+    data is `source_data` rather than what the row cap left. The column names
+    come from the labels the user is looking at, since the backend may have
+    normalized its own (an adapter that returns tuples arrives with `f0`,
+    `f1`, ...).
+
+    A result with no rows exports as a file with no rows -- a header and
+    nothing else, or an empty array. That is a true account of what the query
+    returned, and it is what tells a reader "nothing matched" apart from
+    "the query failed".
     """
     path, format_name, options = screen_data
     try:
-        if table.row_count == 0:
-            raise HarlequinCopyError("Cannot export empty table.")
-        assert isinstance(table.backend, ArrowBackend)
-        data = table.backend.source_data
-        if table.plain_column_labels:
-            data = data.rename_columns(table.plain_column_labels)
+        assert table.backend is None or isinstance(table.backend, ArrowBackend)
+        data = as_arrow_table(
+            None if table.backend is None else table.backend.source_data,
+            table.plain_column_labels,
+        )
         write_file(data=data, path=path, format_name=format_name, options=options)
         success_callback()
     except (OSError, HarlequinCopyError) as e:

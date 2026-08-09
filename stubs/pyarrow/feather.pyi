@@ -8,3 +8,8 @@ def write_feather(
     chunksize: int | None = None,
     version: int = 2,
 ) -> None: ...
+def read_table(
+    source: str,
+    columns: list[str] | None = None,
+    memory_map: bool = False,
+) -> Table: ...

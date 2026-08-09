@@ -54,25 +54,36 @@ class HarlequinSqliteCursor(HarlequinCursor):
         return self
 
     def fetchall(self) -> AutoBackendType | None:
-        if self.has_records:
-            try:
-                remaining_rows = (
-                    self.cur.fetchall()
-                    if self._limit is None
-                    else self.cur.fetchmany(self._limit - 1)
-                )
-            except sqlite3.OperationalError:  # maybe canceled here
-                return None
-            except sqlite3.Error as e:
-                raise HarlequinQueryError(
-                    msg=str(e),
-                    title=(
-                        "SQLite raised an error when fetching results for your query:"
-                    ),
-                ) from e
-            return [self._first_row, *remaining_rows]
-        else:
+        if not self.has_records:
+            # A result with no rows still has columns, and a caller handed None
+            # has no way to learn what they were -- so an export or a headless
+            # render would lose the header. An Arrow table carries the names,
+            # duplicates included, which a dict of columns would not.
+            #
+            # pyarrow is deferred: it is a guaranteed dependency, but importing
+            # it at module scope would put ~100ms on every `import
+            # harlequin_sqlite`, which the adapter API is careful not to cost.
+            import pyarrow as pa
+
+            names = [col[0] for col in self.cur.description]
+            return pa.Table.from_arrays(
+                [pa.array([], type=pa.string()) for _ in names], names=names
+            )
+
+        try:
+            remaining_rows = (
+                self.cur.fetchall()
+                if self._limit is None
+                else self.cur.fetchmany(self._limit - 1)
+            )
+        except sqlite3.OperationalError:  # maybe canceled here
             return None
+        except sqlite3.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title=("SQLite raised an error when fetching results for your query:"),
+            ) from e
+        return [self._first_row, *remaining_rows]
 
     def fetchone(self) -> tuple | None:
         return self._first_row
