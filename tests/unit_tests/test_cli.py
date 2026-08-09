@@ -349,10 +349,9 @@ def test_conn_str_overrides_the_profile(
     data_dir: Path,
     filename: str,
 ) -> None:
-    """A conn_str on the command line beats the profile's; an absent one doesn't.
+    """A conn_str on the command line beats the profile's.
 
-    The other half of this pair is test_config_path, where no conn_str is passed
-    and the profile's survives.
+    test_config_path is the other half: with none passed, the profile's survives.
     """
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / filename

@@ -28,13 +28,10 @@ def _adapter_packages(code: str) -> str:
 
 
 def test_adapter_names_agree_with_the_loaded_adapters() -> None:
-    """The cheap listing and the expensive one must not disagree.
+    """The cheap listing and the expensive one must name the same adapters.
 
-    `adapter_names()` exists to avoid importing every adapter just to find out
-    what is installed, so it has to name the same ones. Not equality: an adapter
-    that is installed but won't import is named here and dropped by
-    `load_adapter_plugins()`, which is the difference between the two functions
-    and not a disagreement about what is installed.
+    A subset, not equality: an installed adapter that won't import is named here
+    and dropped by `load_adapter_plugins()`.
     """
     names = adapter_names()
     assert set(load_adapter_plugins().keys()) <= set(names)
@@ -79,12 +76,7 @@ def test_load_adapter_raises_for_an_unknown_name() -> None:
 def test_load_adapter_raises_when_the_adapter_will_not_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A named adapter that won't import is fatal, unlike one found by scanning.
-
-    `load_adapter_plugins()` warns and carries on, because the app can still run
-    with the adapters that did load. Here the caller asked for this one by name,
-    so there is nothing to fall back to.
-    """
+    """A named adapter that won't import is fatal, unlike one found by scanning."""
     ep = MagicMock()
     ep.name = "broken"
     ep.load.side_effect = ImportError("no module named nope", name="nope")

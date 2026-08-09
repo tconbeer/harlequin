@@ -20,11 +20,8 @@ def load_adapter(name: str) -> type[HarlequinAdapter]:
     """
     Import exactly one installed adapter, by its entry point name.
 
-    Unlike load_adapter_plugins(), a failure here is fatal: the caller asked for
-    this adapter by name, so there is nothing to fall back to.
-
-    Raises: HarlequinConfigError if no installed plug-in registers that name, or
-    if the adapter it registers cannot be imported.
+    Raises HarlequinConfigError, where load_adapter_plugins() only warns,
+    because a caller that named an adapter has nothing to fall back to.
     """
     matches = [ep for ep in entry_points(group="harlequin.adapter") if ep.name == name]
     if not matches:

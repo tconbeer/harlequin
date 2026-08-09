@@ -312,8 +312,7 @@ def build_cli() -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
-        # merge the config and the cli options; an option left at its default
-        # must not override the profile
+        # merge the config and the cli options
         explicitly_set = {
             k
             for k in kwargs

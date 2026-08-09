@@ -161,6 +161,7 @@ That last sentence is `config.merge_profile_with_cli()`, and it belongs to every
 
 ## Conventions
 
+- **Docstrings and comments are as concise as possible.** One sentence describing the function, and at most a sentence or two on why it works the way it does. They are not the place to relay the design behind a change, the alternatives weighed, or the instructions the author was working from — that belongs in the PR description, or in `docs/plans/` for anything longer-lived.
 - Python 3.10 is the floor (`target-version = "py310"`). Use `from __future__ import annotations`; mypy runs strict, so every def is annotated.
 - Textual and its component libraries (`textual-textarea`, `textual-fastdatatable`) are pinned exactly — bump them together, and expect snapshot churn.
 - **Every PR adds a `CHANGELOG.md` entry under `[Unreleased]`**, referencing the issue it closes. Keep-a-changelog headings: Features, Performance, Bug Fixes, Dependencies, Refactoring. Releases are cut by the `release.yml` workflow, which bumps the version and rolls `[Unreleased]` into a version heading — don't hand-edit released sections or `version` in `pyproject.toml`.

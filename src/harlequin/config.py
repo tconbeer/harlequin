@@ -126,15 +126,12 @@ def merge_profile_with_cli(
     explicitly_set: Container[str],
 ) -> Profile:
     """
-    Layer the values a user passed on the command line over the profile loaded
-    from their config files. Neither argument is mutated.
+    Layer the CLI values a user typed over the profile from their config files.
 
-    A CLI value wins only if the user actually typed it; `explicitly_set` names
-    those keys, which in click is every parameter whose
-    `ctx.get_parameter_source()` is not `ParameterSource.DEFAULT`. An empty
-    `conn_str` is the exception -- it is an argument, so click always reports it
-    as typed, and letting it through would leave `harlequin -P prod` with
-    nothing to open.
+    A value counts as typed only if `explicitly_set` names it -- in click, every
+    parameter whose `get_parameter_source()` is not `DEFAULT`. An empty
+    `conn_str` never counts: it is an argument, so click always reports it as
+    typed.
     """
     merged: dict[str, Any] = dict(profile)
     for key, value in cli_values.items():

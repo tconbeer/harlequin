@@ -168,8 +168,7 @@ def test_merge_profile_with_cli_prefers_values_the_user_typed() -> None:
         cli_values={"theme": "zenburn", "limit": 100_000},
         explicitly_set={"theme"},
     )
-    # the theme was typed, so it wins; the limit is a click default, which
-    # carries no intent and must not clobber the profile
+    # the theme was typed, so it wins; the limit is a default, so it doesn't
     assert merged == {"theme": "zenburn", "limit": 200_000}
 
 
@@ -185,11 +184,7 @@ def test_merge_profile_with_cli_keeps_options_the_profile_alone_defines() -> Non
 
 
 def test_merge_profile_with_cli_ignores_an_empty_conn_str() -> None:
-    """conn_str is an argument, so click always reports it as typed.
-
-    Letting an absent one through would leave `harlequin -P prod` with nothing
-    to connect to.
-    """
+    """An absent conn_str would otherwise leave `harlequin -P prod` nothing to open."""
     profile: Profile = {"conn_str": ["my-database.db"]}
     merged = merge_profile_with_cli(
         profile=profile,
