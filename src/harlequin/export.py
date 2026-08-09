@@ -121,17 +121,22 @@ def _deduplicate_column_names(data: "pa.Table") -> "pa.Table":
     `select 1 as a, 2 as a` is legal SQL and a legal Arrow table; it is not
     something duckdb will export, or that a csv header or a json object can
     represent unambiguously.
+
+    Character for character the scheme `create_backend()` uses on `data`, so it
+    does not matter which of them ran first: the app exports `source_data`,
+    which still has the duplicates, and a headless caller exports rows that have
+    already been through the backend. Both have to produce the same header for
+    the same query. `test_export.py` pins the two together.
     """
     export_names: list[str] = []
     renamed = False
-    for label in data.column_names:
-        export_label = label
+    for name in data.column_names:
         n = 0
-        while export_label in export_names:
-            export_label = f"{label}_{n}"
-            n += 1
+        while name in export_names:
+            name = f"{name}{n}"
             renamed = True
-        export_names.append(export_label)
+            n += 1
+        export_names.append(name)
     return data.rename_columns(export_names) if renamed else data
 
 

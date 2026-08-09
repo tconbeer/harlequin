@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - Exporting a query that returned no rows now writes a file with a header and no rows, instead of refusing with "Cannot export empty table."
+- Exporting a query with duplicate column names now suffixes the repeats the same way the Results Viewer does, so `select 1 as a, 2 as a` writes `a,a0` rather than `a,a_0`.
 - A SQLite query that returns no rows now reports the columns it selected, so the Data Exporter writes their names into the file instead of an empty one.
 - The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
 - The Data Exporter no longer crashes when Arrow rejects an ORC or Feather option, such as a bloom filter column; it shows an error modal.

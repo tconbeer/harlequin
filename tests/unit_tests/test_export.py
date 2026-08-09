@@ -11,10 +11,16 @@ import pyarrow.feather as pf
 import pyarrow.orc as po
 import pyarrow.parquet as pq
 import pytest
+from textual_fastdatatable.backend import create_backend
 
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS
 from harlequin.exception import HarlequinCopyError
-from harlequin.export import file_format_names, write_file, write_stream
+from harlequin.export import (
+    _deduplicate_column_names,
+    file_format_names,
+    write_file,
+    write_stream,
+)
 from harlequin.options import HarlequinCopyFormat, SelectOption
 
 TEXT_FORMATS = ["csv", "tsv", "json", "jsonl", "ndjson"]
@@ -307,7 +313,38 @@ class TestColumnNames:
         data = pa.Table.from_arrays(
             [pa.array([1]), pa.array([2]), pa.array([3])], names=["a", "a", "a"]
         )
-        assert to_bytes(data, "csv") == b"a,a_0,a_1\n1,2,3\n"
+        assert to_bytes(data, "csv") == b"a,a0,a01\n1,2,3\n"
+
+    @pytest.mark.parametrize(
+        "names",
+        [
+            ["a", "a"],
+            ["a", "a", "a"],
+            ["a", "a0", "a"],
+            ["b", "a", "a", "b"],
+            ["a_0", "a", "a"],
+        ],
+        ids=lambda n: ",".join(n),
+    )
+    def test_it_de_duplicates_exactly_as_the_backend_does(
+        self, names: list[str]
+    ) -> None:
+        """Two things de-duplicate, and they must not disagree.
+
+        The app exports `source_data`, which still holds the duplicates, so
+        `write_file()` resolves them. A headless caller exports rows that have
+        already been through `create_backend()`, which resolved them first. The
+        same query has to produce the same header either way.
+
+        Asserted against what the backend actually does rather than against a
+        copy of its algorithm, so this fails if upstream changes the scheme --
+        at which point Harlequin follows it, rather than forking.
+        """
+        table = pa.Table.from_arrays([pa.array([1]) for _ in names], names=names)
+        assert (
+            _deduplicate_column_names(table).column_names
+            == create_backend(table).data.column_names
+        )
 
     def test_names_that_are_already_unique_are_left_alone(self, data: pa.Table) -> None:
         assert to_bytes(data, "csv").startswith(b"a,b\n")

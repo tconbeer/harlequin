@@ -119,15 +119,11 @@ class ResultSet:
         row that made `truncated` knowable is not in it. (The app's export
         dialog wants all of `source_data` -- it fetched everything on purpose.)
 
-        Sliced from `source_data` rather than read from `backend.data`, which is
-        otherwise the same rows: `data` has unique column names, because
-        `to_pylist()` silently drops duplicate-named fields, and `source_data`
-        has the ones the cursor reported. Names have to survive to
-        `export.write_file()`, which is the one place that decides what a
-        duplicate becomes -- otherwise `select 1 as a, 2 as a` exports a
-        different header here than it does from the app.
+        Duplicate names have already been made unique here, by the backend;
+        `export.write_file()` de-duplicates the same way, so a query exports the
+        same header whichever of them saw it first.
         """
-        return self.backend.source_data.slice(0, self.backend.row_count)
+        return self.backend.data
 
     def text_columns(self) -> pa.Table:
         """Every value in this result set, `CAST(... AS VARCHAR)`.

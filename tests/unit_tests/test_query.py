@@ -210,14 +210,17 @@ class TestArrowTable:
         (executed,) = execute(connection, statements("select 1 as a, 'x' as b"))
         assert fetch(executed).arrow_table().column_names == ["a", "b"]
 
-    def test_duplicate_names_are_kept(
+    def test_duplicate_names_are_made_unique(
         self, all_adapters: type[HarlequinAdapter]
     ) -> None:
-        """Arrow allows them; de-duplicating is the exporter's job, since it is
-        duckdb that cannot take them."""
+        """Arrow allows duplicates and `to_pylist()` silently drops them, so
+        the backend resolves them. `export.write_file()` resolves them the same
+        way, so it does not matter which of the two saw the table first."""
         connection = all_adapters([":memory:"], no_init=True).connect()
         (executed,) = execute(connection, statements("select 1 as a, 2 as a"))
-        assert fetch(executed).arrow_table().column_names == ["a", "a"]
+        assert fetch(executed).arrow_table().column_names == ["a", "a0"]
+        # the names the cursor reported are still available, verbatim
+        assert [name for name, _ in fetch(executed).columns] == ["a", "a"]
 
     def test_zero_rows_keeps_its_columns(
         self, all_adapters: type[HarlequinAdapter]
@@ -279,7 +282,7 @@ class TestTextColumns:
     ) -> None:
         (executed,) = execute(connection, statements("select 1 as a, 2 as a"))
         text = fetch(executed).text_columns()
-        assert text.column_names == ["a", "a"]
+        assert text.column_names == ["a", "a0"]
         assert [column.to_pylist() for column in text.columns] == [["1"], ["2"]]
 
     def test_zero_rows_is_not_an_error(self, connection: HarlequinConnection) -> None:
