@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence, TypedDict, cast
+from typing import Any, Container, Mapping, Sequence, TypedDict, cast
 
 from platformdirs import user_config_path
 from tomlkit.exceptions import TOMLKitError
@@ -118,6 +118,41 @@ def get_config_for_profile(
     ]
 
     return profile, keymaps
+
+
+def merge_profile_with_cli(
+    profile: Profile,
+    cli_values: Mapping[str, Any],
+    explicitly_set: Container[str],
+) -> Profile:
+    """
+    Layer the values a user passed on the command line over the profile loaded
+    from their config files, and return the result. Neither argument is mutated.
+
+    The precedence rule is the same for every Harlequin command, which is why it
+    lives here and not in one of them: **a CLI value wins over the profile only
+    if the user actually typed it.** An option left at its default carries no
+    intent, so it must not overwrite what the profile set -- otherwise every
+    profile value would be clobbered by a default the user never chose.
+
+    `explicitly_set` names the keys of `cli_values` the user set, rather than
+    taking a click Context, so this stays testable and free of the CLI
+    framework. In click that set is every parameter whose
+    `ctx.get_parameter_source()` is not `ParameterSource.DEFAULT`.
+
+    An empty `conn_str` is the one exception: it is an argument rather than an
+    option, so click always reports it as coming from the command line, even
+    when it is absent. Overriding a profile's conn_str with an empty tuple would
+    make `harlequin -P prod` open nothing at all.
+    """
+    merged: dict[str, Any] = dict(profile)
+    for key, value in cli_values.items():
+        if key not in explicitly_set:
+            continue
+        if key == "conn_str" and value == tuple():
+            continue
+        merged[key] = value
+    return cast(Profile, merged)
 
 
 def load_config(config_path: Path | None) -> Config:

@@ -234,6 +234,7 @@ source_modules = [
     "harlequin.adapter",
     "harlequin.autocomplete",
     "harlequin.catalog",
+    "harlequin.config",
     "harlequin.exception",
     "harlequin.keymap",
     "harlequin.options",
@@ -299,6 +300,20 @@ forbidden_modules = [
 # deferred into pretty_print_warning(), which nothing here calls; the run-time
 # test in tests/unit_tests/test_import_hygiene.py is what proves it defers.
 ignore_imports = ["harlequin.exception -> harlequin.colors"]
+unmatched_ignore_imports_alerting = "error"
+
+
+[[tool.importlinter.contracts]]
+
+# `merge_profile_with_cli()` is the precedence rule every Harlequin command
+# implements, so it takes the names of the options the user set rather than a
+# click Context. Keeping the config library free of the CLI framework is what
+# makes that rule testable without one, and shareable by a front end that builds
+# its command differently.
+name = "The config library does not depend on the CLI framework"
+type = "forbidden"
+source_modules = ["harlequin.config"]
+forbidden_modules = ["click", "rich_click"]
 unmatched_ignore_imports_alerting = "error"
 
 

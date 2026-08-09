@@ -92,7 +92,7 @@ import-linter reads the *static* graph, so it cannot tell a deferred import from
 - `harlequin_duckdb`, `harlequin_sqlite` — in-tree adapters, registered through the `harlequin.adapter` entry point group like any third-party adapter. They are the reference implementations of the adapter contract.
 - `harlequin_vscode` — a keymap, registered through `harlequin.keymap`.
 
-`plugins.py` loads both groups via `importlib.metadata.entry_points`; a plugin that fails to import prints a warning instead of taking down the app.
+`plugins.py` loads both groups via `importlib.metadata.entry_points`; a plugin that fails to import prints a warning instead of taking down the app. Loading is deliberately available at two grains, because `ep.load()` is the single most expensive thing a front end can do at start-up — four installed adapters cost ~160ms, and it grows without bound. `adapter_names()` reads entry point *names* and imports nothing; `load_adapter(name)` imports exactly one and raises rather than warning, since a caller that named an adapter has nothing to fall back to. `load_adapter_plugins()` imports every one, and is for the `harlequin` command, whose `--help` describes them all.
 
 ### The execution core (`statements.py`, `query.py`)
 
@@ -145,6 +145,8 @@ The Data Catalog (`components/data_catalog/database_tree.py`) loads by viewport,
 `AbstractOption` subclasses (`TextOption`, `ListOption`, `PathOption`, `SelectOption`, `FlagOption`) each know how to render themselves three ways: `to_click()` for the CLI, `to_widgets()` for the TUI, and `to_questionary()` for the config wizard. Declaring an adapter option once gets all three. `cli.py` builds the click command dynamically from the loaded adapters' `ADAPTER_OPTIONS`.
 
 Config files are TOML, discovered in order home → user config dir → cwd, merged so **later wins**; `pyproject.toml` is read from its `[tool.harlequin]` section. Profiles supply defaults that CLI options override.
+
+That last sentence is `config.merge_profile_with_cli()`, and it belongs to every command rather than to `cli.py`: **a CLI value beats the profile only if the user actually typed it**, since an option sitting at its default carries no intent and would otherwise clobber what the profile set. It takes the *names* of the options that were set — in click, every parameter whose `ctx.get_parameter_source()` isn't `DEFAULT` — rather than a `Context`, so `harlequin.config` stays free of the CLI framework (an import-linter contract pins that) and the rule is testable without one. An empty `conn_str` is the documented exception: it's an argument, so click always reports it as coming from the command line.
 
 ### Caches
 

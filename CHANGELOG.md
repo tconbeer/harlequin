@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Refactoring
 
+- The rule that decides whether a CLI option or a config profile wins is now `harlequin.config.merge_profile_with_cli()`, rather than living inside the `harlequin` command ([#524](https://github.com/tconbeer/harlequin/issues/524)). It takes the names of the options the user actually typed instead of a click `Context`, so the precedence rule can be shared by a command that builds itself differently, and tested without the CLI framework. `harlequin.plugins` gains `adapter_names()`, which lists every installed adapter without importing any of them, and `load_adapter()`, which imports exactly one and fails loudly if it can't. Both are for the planned headless CLI, which uses one adapter per invocation and shouldn't pay to import the rest; the `harlequin` command still loads them all, since its `--help` describes every one.
 - Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)). `harlequin.export.write_file()` and `write_stream()` take an Arrow table and write it to a path or an open binary stream, and `harlequin.layout` arranges a result set as `table`, `markdown` or `vertical` text. Both are for the planned headless CLI and have no user-facing surface yet; the Data Exporter behaves as before. `export.py` also gains `tsv`, `jsonl`/`ndjson` and `arrow` as option variants of formats it already wrote.
 
 ### Performance
