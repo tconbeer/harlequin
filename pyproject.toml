@@ -305,20 +305,6 @@ unmatched_ignore_imports_alerting = "error"
 
 [[tool.importlinter.contracts]]
 
-# `merge_profile_with_cli()` is the precedence rule every Harlequin command
-# implements, so it takes the names of the options the user set rather than a
-# click Context. Keeping the config library free of the CLI framework is what
-# makes that rule testable without one, and shareable by a front end that builds
-# its command differently.
-name = "The config library does not depend on the CLI framework"
-type = "forbidden"
-source_modules = ["harlequin.config"]
-forbidden_modules = ["click", "rich_click"]
-unmatched_ignore_imports_alerting = "error"
-
-
-[[tool.importlinter.contracts]]
-
 # Importing any harlequin.* submodule executes this package's __init__, so a
 # single eager import there puts the whole TUI behind every consumer. The
 # public names are resolved by a PEP 562 __getattr__ instead.

@@ -127,23 +127,14 @@ def merge_profile_with_cli(
 ) -> Profile:
     """
     Layer the values a user passed on the command line over the profile loaded
-    from their config files, and return the result. Neither argument is mutated.
+    from their config files. Neither argument is mutated.
 
-    The precedence rule is the same for every Harlequin command, which is why it
-    lives here and not in one of them: **a CLI value wins over the profile only
-    if the user actually typed it.** An option left at its default carries no
-    intent, so it must not overwrite what the profile set -- otherwise every
-    profile value would be clobbered by a default the user never chose.
-
-    `explicitly_set` names the keys of `cli_values` the user set, rather than
-    taking a click Context, so this stays testable and free of the CLI
-    framework. In click that set is every parameter whose
-    `ctx.get_parameter_source()` is not `ParameterSource.DEFAULT`.
-
-    An empty `conn_str` is the one exception: it is an argument rather than an
-    option, so click always reports it as coming from the command line, even
-    when it is absent. Overriding a profile's conn_str with an empty tuple would
-    make `harlequin -P prod` open nothing at all.
+    A CLI value wins only if the user actually typed it; `explicitly_set` names
+    those keys, which in click is every parameter whose
+    `ctx.get_parameter_source()` is not `ParameterSource.DEFAULT`. An empty
+    `conn_str` is the exception -- it is an argument, so click always reports it
+    as typed, and letting it through would leave `harlequin -P prod` with
+    nothing to open.
     """
     merged: dict[str, Any] = dict(profile)
     for key, value in cli_values.items():

@@ -12,11 +12,6 @@ from harlequin.keymap import HarlequinKeyMap
 def adapter_names() -> list[str]:
     """
     The name of every installed adapter, without importing any of them.
-
-    Reading entry point names costs nothing; `ep.load()` imports the adapter and
-    everything it depends on, which for four installed adapters is ~160ms. A
-    front end that only ever uses one adapter per invocation can name them all
-    from here and then load just the one it needs.
     """
     return sorted({ep.name for ep in entry_points(group="harlequin.adapter")})
 

@@ -46,12 +46,7 @@ def test_adapter_names_agree_with_the_loaded_adapters() -> None:
 def test_adapter_names_imports_no_adapter(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:
-    """Naming the installed adapters must not import any of them.
-
-    This is what makes a headless front end's two-phase parse worth doing: with
-    four adapters installed, `ep.load()` on all of them is ~160ms of a ~380ms
-    invocation, and it grows with every adapter the user installs.
-    """
+    """Naming the installed adapters must not import any of them."""
     proc = run_python(
         _adapter_packages(
             "from harlequin.plugins import adapter_names\n"
