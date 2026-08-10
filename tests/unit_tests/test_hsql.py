@@ -24,7 +24,7 @@ from harlequin.exception import (
     HarlequinQueryError,
 )
 from harlequin.hsql.cli import build_cli
-from harlequin.hsql.diagnostics import ExitCode, exit_code_for
+from harlequin.hsql.diagnostics import IDE_THEMES, ExitCode, exit_code_for
 
 Hsql = Callable[..., Result]
 
@@ -499,6 +499,48 @@ def test_a_connection_failure_exits_three(hsql: Hsql, tmp_path: Path) -> None:
     )
     assert res.exit_code == ExitCode.CONNECTION
     assert res.stdout == ""
+
+
+# --- pointing back at the IDE ------------------------------------------------
+
+
+def test_a_theme_name_after_tuples_only_is_explained(
+    hsql: Hsql, duck: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`-t nord` is the one habit the two commands can silently disagree on.
+
+    In a tmp cwd because it succeeds: DuckDB creates a database file named
+    `nord` rather than refusing, which is the whole reason this is worth a note.
+    """
+    monkeypatch.chdir(tmp_path)
+    res = hsql("-a", "duckdb", "--no-init", "-t", "nord", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.strip() == "1"
+    assert "hsql has no themes" not in res.stdout
+    assert "hsql has no themes" in res.stderr
+    assert "'nord' was read as a connection string" in res.stderr
+
+
+def test_the_theme_hint_needs_both_halves(
+    hsql: Hsql, duck: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A theme name alone is a database, and `-t` alone is just psql's flag."""
+    monkeypatch.chdir(tmp_path)
+    without_dash_t = hsql("-a", "duckdb", "--no-init", "nord", "-c", "select 1")
+    assert "hsql has no themes" not in without_dash_t.stderr
+
+    without_a_theme = hsql(*duck, "-t", "-c", "select 1")
+    assert "hsql has no themes" not in without_a_theme.stderr
+
+
+def test_the_theme_names_are_the_ides() -> None:
+    """The copy in `diagnostics` cannot import the original: it is Textual's.
+
+    So this is the seam where a Textual upgrade that adds a theme shows up.
+    """
+    from harlequin.colors import VALID_THEMES
+
+    assert IDE_THEMES == frozenset(VALID_THEMES)
 
 
 # --- the exit-code mapping ---------------------------------------------------

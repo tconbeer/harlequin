@@ -297,6 +297,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=bool(limit),
         )
 
+        if "tuples_only" in explicitly_set:
+            # ahead of the connection rather than after it: `-t nord` does not
+            # reliably fail, so there may be no error for this to explain.
+            diagnostics.report_theme_confusion(conn_str)
+
         try:
             adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
         except HarlequinConfigError as e:

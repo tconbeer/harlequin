@@ -1,12 +1,21 @@
+import re
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import click
 import pytest
 from click.testing import CliRunner
 
 from harlequin import Harlequin
-from harlequin.cli import DEFAULT_KEYMAP_NAMES, DEFAULT_LIMIT, DEFAULT_THEME, build_cli
+from harlequin.cli import (
+    DEFAULT_KEYMAP_NAMES,
+    DEFAULT_LIMIT,
+    DEFAULT_THEME,
+    HEADLESS_DOCS_URL,
+    HSQL_ONLY_OPTIONS,
+    build_cli,
+)
 from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
@@ -412,3 +421,70 @@ def test_sqlite_extension_not_supported(
     )
     assert res.exit_code == 2
     assert "No such option" in res.stderr
+
+
+# --- pointing at the other command -------------------------------------------
+
+_ANSI = re.compile(r"\x1b(?:\[[0-9;]*[a-zA-Z]|\][^\x1b\x07]*(?:\x1b\\|\x07))")
+
+
+def _said(stderr: str) -> str:
+    """What a reader sees, out of what rich-click wrote.
+
+    rich-click renders errors into a panel at truecolor, so the message arrives
+    styled, wrapped at whatever width the terminal happens to be, and with the
+    option name colored -- which puts escape sequences in the middle of the
+    sentence, not only around it.
+    """
+    return " ".join(_ANSI.sub("", stderr).split())
+
+
+@pytest.mark.parametrize("option", ["-c", "--command", "--csv", "-A", "--null-string"])
+def test_an_hsql_option_names_hsql(
+    mock_adapter: MagicMock, mock_empty_config: None, option: str
+) -> None:
+    """The likeliest first mistake now that there are two commands."""
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=[option, "select 1"])
+    assert res.exit_code == 2
+    # rich-click wraps the panel it renders errors in, so the message arrives
+    # broken across lines at whatever width the terminal happens to be
+    said = _said(res.stderr)
+    assert f"{option} is not a harlequin option" in said
+    assert f"Did you mean 'hsql {option}'?" in said
+    assert HEADLESS_DOCS_URL in said
+
+
+def test_an_unknown_option_that_is_not_hsqls_is_unchanged(
+    mock_adapter: MagicMock, mock_empty_config: None
+) -> None:
+    """click's own message, and its own suggestion, for everything else."""
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=["--thmee", "nord"])
+    assert res.exit_code == 2
+    said = _said(res.stderr)
+    assert "No such option: --thmee" in said
+    assert "hsql" not in said
+
+
+def test_the_hsql_option_list_is_hsqls(
+    monkeypatch: pytest.MonkeyPatch, mock_empty_config: None
+) -> None:
+    """What the hint is exposed to, since it is a copy rather than a lookup.
+
+    With no adapter installed, both commands carry only their own options, so
+    the difference between them is exactly the set worth pointing at.
+    """
+    from harlequin.hsql.cli import build_cli as build_hsql
+
+    monkeypatch.setattr("harlequin.plugins.entry_points", lambda **_: [])
+
+    def spellings(command: click.Command) -> set[str]:
+        return {
+            opt
+            for param in command.params
+            for opt in [*param.opts, *param.secondary_opts]
+            if opt.startswith("-")
+        }
+
+    assert HSQL_ONLY_OPTIONS == spellings(build_hsql([])) - spellings(build_cli())
