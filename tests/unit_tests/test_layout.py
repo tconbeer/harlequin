@@ -269,7 +269,17 @@ class TestFooter:
         unknowable and the footer must not invent one."""
         limit = RowLimit(max_rows=2, detect_overflow=True)
         result = result_set("select * from range(10)", limit=limit)
-        assert render(result).endswith("(2 of 2+ rows)\n")
+        assert render(result).endswith("(2 of >2 rows)\n")
+
+    def test_one_truncated_row_is_plural(self, result_set: ResultSetFactory) -> None:
+        """The noun agrees with the total, not with what was kept.
+
+        A truncated result has a row the limit+1 fetch found and did not keep,
+        so the total is at least two whatever the count says.
+        """
+        limit = RowLimit(max_rows=1, detect_overflow=True)
+        result = result_set("select * from range(10)", limit=limit)
+        assert render(result).endswith("(1 of >1 rows)\n")
 
     @pytest.mark.parametrize("name", ["table", "markdown", "vertical"])
     def test_every_layout_reports_truncation(
@@ -277,7 +287,7 @@ class TestFooter:
     ) -> None:
         limit = RowLimit(max_rows=2, detect_overflow=True)
         result = result_set("select * from range(10)", limit=limit)
-        assert "(2 of 2+ rows)" in render(result, name)
+        assert "(2 of >2 rows)" in render(result, name)
 
 
 class TestColor:

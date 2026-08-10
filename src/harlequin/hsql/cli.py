@@ -146,6 +146,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "--no-header", is_flag=True, help="Omit the header row, keeping other chrome."
     )
     @click.option(
+        "--no-footer",
+        is_flag=True,
+        help="Omit the row-count footer, keeping other chrome.",
+    )
+    @click.option(
         "--null-string",
         metavar="TEXT",
         help="Render NULL as TEXT. Defaults to NULL for text formats, empty for csv.",
@@ -261,6 +266,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         tuples_only: bool = bool(values.pop("tuples_only", False))
         no_align: bool = bool(values.pop("no_align", False))
         no_header: bool = bool(values.pop("no_header", False))
+        no_footer: bool = bool(values.pop("no_footer", False))
         null_string: str | None = values.pop("null_string", None)
         color_when: str = str(values.pop("color", "never"))
         try:
@@ -335,6 +341,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             tuples_only=tuples_only,
             no_align=no_align,
             no_header=no_header,
+            no_footer=no_footer,
             null_string=null_string,
             color=_use_color(color_when, destination),
             format_name=format_name,
@@ -419,7 +426,7 @@ def _execute_all(
     limit: RowLimit,
     on_error: OnError,
     run: _Run,
-) -> list[tuple[ExecutedStatement, float]]:
+) -> list[ExecutedStatement]:
     """Run every statement, keeping the ones that produced a result set.
 
     Execute-then-fetch, in two passes, as the IDE does it: nothing is fetched
@@ -428,22 +435,19 @@ def _execute_all(
     """
     from harlequin.query import execute
 
-    executed: list[tuple[ExecutedStatement, float]] = []
-    started = time.monotonic()
+    executed: list[ExecutedStatement] = []
     for item in execute(connection, statements, limit=limit, on_error=on_error):
-        elapsed = time.monotonic() - started
         run.statements += 1
         if item.error is not None:
             run.failure = item.error
             diagnostics.report_error(item.error)
         elif item.has_result_set:
-            executed.append((item, elapsed))
-        started = time.monotonic()
+            executed.append(item)
     return executed
 
 
 def _emit(
-    selected: Sequence[tuple[ExecutedStatement, float]],
+    selected: Sequence[ExecutedStatement],
     out: BinaryIO,
     *,
     limit: RowLimit,
@@ -456,7 +460,7 @@ def _emit(
     """Fetch each selected result set and write it out."""
     from harlequin.query import fetch
 
-    for item, exec_elapsed in selected:
+    for item in selected:
         try:
             result = fetch(item, limit=limit)
         except Exception as e:  # noqa: BLE001 -- adapters are third-party code
@@ -477,9 +481,6 @@ def _emit(
         run.columns = result.columns
         if result.truncated and limit.max_rows is not None:
             diagnostics.report_truncation(limit.max_rows)
-        diagnostics.report_row_count(
-            result.row_count, exec_elapsed + result.elapsed, result.truncated
-        )
     out.flush()
 
 
@@ -657,8 +658,8 @@ def _resolve_format(values: dict[str, Any], explicitly_set: set[str]) -> str | N
 
 
 def _select_results(
-    executed: Sequence[tuple[ExecutedStatement, float]], spec: str
-) -> list[tuple[ExecutedStatement, float]] | None:
+    executed: Sequence[ExecutedStatement], spec: str
+) -> list[ExecutedStatement] | None:
     """The result sets `--result` asked for, or None having said why not."""
     if spec == "all":
         return list(executed)
@@ -682,6 +683,7 @@ def _output_options(
     tuples_only: bool,
     no_align: bool,
     no_header: bool,
+    no_footer: bool,
     null_string: str | None,
     color: bool,
     format_name: str,
@@ -689,14 +691,15 @@ def _output_options(
     """psql's flag algebra, in the vocabulary each family of format speaks.
 
     `-t` is two independent switches rather than a mode, which is why `-tA`
-    needs no special case: it never was one.
+    needs no special case: it never was one. `--no-header` and `--no-footer`
+    are those same two switches, spelled one at a time.
     """
     from harlequin.layout import LayoutOptions
 
     header = not (tuples_only or no_header)
     layout_options = LayoutOptions(
         header=header,
-        footer=not tuples_only,
+        footer=not (tuples_only or no_footer),
         aligned=not no_align,
         null_string=null_string,
         color=color,
