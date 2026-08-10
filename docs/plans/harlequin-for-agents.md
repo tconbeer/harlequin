@@ -73,8 +73,10 @@ decisions downstream.
    Neither reimplements the other. See §4.
 
 2. **stdout is data; stderr is narration.** Results go to stdout and nothing else does.
-   Timings, row counts, truncation notices, warnings, and errors go to stderr. This is
-   already the intent in `exception.py` — make it a hard, tested contract.
+   Truncation notices, warnings, errors, and `--stats` go to stderr — and nothing that
+   stdout already carries: the row count is the result's own footer, and a timing is a
+   field of `--stats`. This is already the intent in `exception.py` — make it a hard,
+   tested contract.
 
 3. **Exit codes are an API.** Documented, stable, and distinct enough that an agent can
    branch on them without parsing text.
@@ -250,14 +252,14 @@ point — `hsql -P prod -c ...` means the agent never handles a credential.
 ### Behaviors that matter more than the flag list
 
 **Truncation is always announced.** If `--limit` bites, stderr gets
-`note: results truncated at 500 rows (--limit)`, and text formats append a visible
-`… 500 of 500+ rows` footer.
+`note: results truncated at --limit 500; pass -l 0 for all rows`, and text formats
+append a visible `… 500 of >500 rows` footer.
 
 Note that `-l` here is a *hard* limit — it caps what leaves the database, via the
 adapter's `set_limit()`. The TUI's `--limit` is a soft display cap: it fetches everything
 and caps what loads into the viewer, which is why the TUI can report an exact
 `Showing 100,000 of 3,412,887`. `hsql` deliberately doesn't buy that number, so it says
-`500+`; only `-l 0` yields an exact count. The TUI's default of 100,000 is right for a
+`>500`; only `-l 0` yields an exact count. The TUI's default of 100,000 is right for a
 TUI and a catastrophe for an agent; `hsql` defaults to 500.
 
 Detecting truncation at all requires fetching `limit + 1` rows and emitting `limit` —

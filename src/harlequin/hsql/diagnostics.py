@@ -1,8 +1,12 @@
 """Everything hsql writes to stderr, and the code it exits with.
 
-stdout is data: result sets, and nothing else. Timings, row counts, truncation
-notices and errors go here, so `hsql -c ... --csv > out.csv` produces a clean
-file while the caller still sees what happened.
+stdout is data: result sets, and nothing else. Truncation notices, errors and
+`--stats` go here, so `hsql -c ... --csv > out.csv` produces a clean file while
+the caller still sees what happened.
+
+Nothing here restates what stdout already carries. A result's row count is its
+footer, where psql puts it and where `-t` can decline it; timings are a field of
+`--stats`. A quiet run is silent on this stream.
 
 Exit codes are hsql's contract rather than Harlequin's, which is why the
 mapping lives here and not in `harlequin.exception`.
@@ -128,19 +132,12 @@ def report_truncation(max_rows: int) -> None:
 
     Fires even under `-t`, which suppresses stdout chrome and not warnings: a
     flag that silently defeated this would undo the promise it exists beside.
+
+    Names the flag and its remedy rather than the row count: the count is
+    already under the result, as `500 of >500`, and what a caller cannot read
+    off stdout is what to pass to get the rest.
     """
-    note(f"results truncated at {max_rows} rows (--limit)")
-
-
-def report_row_count(rows: int, elapsed: float, truncated: bool) -> None:
-    """The line psql puts under a result, on the stream that isn't the data.
-
-    A truncated count reads `500 of 500+` because the true total is unknowable
-    under a hard fetch limit -- not paying for the rest is the point of it.
-    """
-    noun = "row" if rows == 1 else "rows"
-    count = f"{rows} of {rows}+ {noun}" if truncated else f"{rows} {noun}"
-    _write(f"{count} in {elapsed:.2f}s")
+    note(f"results truncated at --limit {max_rows}; pass -l 0 for all rows")
 
 
 def report_stats(
@@ -174,6 +171,12 @@ def report_stats(
 
 
 def _write(line: str) -> None:
+    # stdout first, always. It is block-buffered when it is a pipe, and stderr
+    # is not, so a diagnostic written now would otherwise overtake the result
+    # set it describes -- and the two streams would interleave differently on a
+    # terminal than in a pipe. Flushing here rather than at each call site keeps
+    # that true for errors and --stats as well as for notes.
+    sys.stdout.flush()
     # sys.stderr is resolved on each call, not bound at import: a test harness
     # that swaps the stream out has to be able to see what was written.
     print(line, file=sys.stderr)

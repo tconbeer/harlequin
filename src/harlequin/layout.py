@@ -144,14 +144,18 @@ class _BaseLayout:
         """The row count, as psql writes it.
 
         Under a hard fetch limit the true total is unknowable -- not fetching it
-        is the point of the limit -- so a truncated result reads `500 of 500+`
-        rather than inventing an N.
+        is the point of the limit -- so a truncated result reads
+        `500 of >500 rows` rather than inventing an N.
+
+        `>500` and not `500+`: the limit+1 fetch proves there is a 501st row, so
+        the total is strictly greater, where the conventional `N+` claims only
+        `at least N` and would be the weaker statement of the two. Always
+        plural, because a truncated result has at least two rows by definition.
         """
         rows = result.row_count
-        noun = "row" if rows == 1 else "rows"
         if result.truncated:
-            return f"({rows} of {rows}+ {noun})"
-        return f"({rows} {noun})"
+            return f"({rows} of >{rows} rows)"
+        return f"({rows} {'row' if rows == 1 else 'rows'})"
 
 
 class _TableLayout(_BaseLayout):

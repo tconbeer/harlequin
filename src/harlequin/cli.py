@@ -58,6 +58,7 @@ HSQL_ONLY_OPTIONS = frozenset(
         "-A",
         "--no-align",
         "--no-header",
+        "--no-footer",
         "--null-string",
         "--result",
         "--on-error",

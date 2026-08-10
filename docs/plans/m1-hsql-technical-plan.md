@@ -282,7 +282,7 @@ product plan ("truncation must always be announced — never silent") is unimple
 without it, and it costs exactly one row.
 
 The asymmetry is real and defensible: the TUI can afford to know the exact total because
-it already paid for every row; `hsql` deliberately hasn't, so it reports `500 of 500+`.
+it already paid for every row; `hsql` deliberately hasn't, so it reports `500 of >500`.
 Under `-l 0` there's no `set_limit` at all, so the count is exact and `--stats` reports
 `"truncated": false` against a real number.
 
@@ -819,7 +819,8 @@ somewhere.
   plan's §5 bullet should move to M5 outright.
 - **§5's truncation footer says `… 500 of N rows`, and N is unknowable.** Under a hard
   fetch limit we deliberately never learn the true total — that's the point of the limit.
-  The footer is `500 of 500+`, and only `-l 0` yields an exact count. (The TUI *can* say
+  The footer is `500 of >500` -- strictly greater, which the limit+1 fetch proves and
+  the conventional `500+` would understate -- and only `-l 0` yields an exact count. (The TUI *can* say
   `100,000 of 3,412,887` because its limit is a display cap over a full fetch; see §3.1.)
 - **§5 lists `--limit` as though it means the same thing in both commands.** It doesn't:
   soft display cap in the TUI, hard fetch limit in `hsql`. Worth one explicit sentence in

@@ -9,7 +9,8 @@ same query renders the same bytes wherever it is run.
 from __future__ import annotations
 
 import json
-import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -113,7 +114,9 @@ def test_select_1(hsql: Hsql, duck: list[str]) -> None:
     res = hsql(*duck, "-c", "select 1 as a")
     assert res.exit_code == ExitCode.OK
     assert res.stdout == " a\n---\n 1\n(1 row)\n"
-    assert re.fullmatch(r"1 row in \d+\.\d\ds\n", res.stderr)
+    # the count is the footer's job. A run with nothing to warn about writes
+    # nothing at all to stderr.
+    assert res.stderr == ""
 
 
 def test_the_tac_idiom(hsql: Hsql, duck: list[str]) -> None:
@@ -130,13 +133,18 @@ def test_the_tac_idiom(hsql: Hsql, duck: list[str]) -> None:
         (["-t"], " 1\n"),
         (["-A"], "a\n1\n(1 row)\n"),
         (["--no-header"], " 1\n(1 row)\n"),
+        (["--no-footer"], " a\n---\n 1\n"),
+        (["--no-header", "--no-footer"], " 1\n"),
         (["-tA"], "1\n"),
     ],
 )
 def test_psql_flag_algebra(
     hsql: Hsql, duck: list[str], args: list[str], expected: str
 ) -> None:
-    """`-t` and `-A` are independent switches, so `-tA` is not a special case."""
+    """`-t` and `-A` are independent switches, so `-tA` is not a special case.
+
+    `--no-header --no-footer` is `-t` spelled out, and has to agree with it.
+    """
     res = hsql(*duck, *args, "-c", "select 1 as a")
     assert res.exit_code == ExitCode.OK
     assert res.stdout == expected
@@ -194,10 +202,10 @@ def test_null_string(hsql: Hsql, duck: list[str]) -> None:
 
 def test_zero_rows_is_not_an_error(hsql: Hsql, duck: list[str]) -> None:
     """A0 vs A3: "matched nothing" has to be distinguishable from "failed"."""
-    res = hsql(*duck, "--csv", "-c", "select 1 as a where false")
+    res = hsql(*duck, "--csv", "--stats", "-c", "select 1 as a where false")
     assert res.exit_code == ExitCode.OK
     assert res.stdout == "a\n"
-    assert "0 rows" in res.stderr
+    assert json.loads(res.stderr.splitlines()[-1])["rows"] == 0
 
 
 # --- stdout is data ----------------------------------------------------------
@@ -261,7 +269,17 @@ def test_truncation(
     body = res.stdout.splitlines()[2:-1]  # between the rule and the footer
     assert len(body) == rows
     assert ("truncated" in res.stderr) is truncated
-    assert (f"({rows} of {rows}+ rows)" in res.stdout) is truncated
+    assert (f"({rows} of >{rows} rows)" in res.stdout) is truncated
+
+
+def test_one_truncated_row_is_still_rows(hsql: Hsql, duck: list[str]) -> None:
+    """`-l 1` is where the count and the noun disagree.
+
+    One row was kept, and the limit+1 fetch proved there is another, so the
+    total the noun has to agree with is at least two.
+    """
+    res = hsql(*duck, "-l", "1", "-c", TEN_ROWS)
+    assert "(1 of >1 rows)" in res.stdout
 
 
 def test_no_limit_counts_exactly(hsql: Hsql, duck: list[str]) -> None:
@@ -272,13 +290,47 @@ def test_no_limit_counts_exactly(hsql: Hsql, duck: list[str]) -> None:
     assert payload["limit"] is None
 
 
-def test_the_truncation_notice_survives_tuples_only(
-    hsql: Hsql, duck: list[str]
+@pytest.mark.parametrize("flag", ["-t", "--no-footer"])
+def test_the_truncation_notice_survives_a_suppressed_footer(
+    hsql: Hsql, duck: list[str], flag: str
 ) -> None:
-    """`-t` suppresses stdout chrome. It does not suppress a warning."""
-    res = hsql(*duck, "-t", "-l", "3", "-c", TEN_ROWS)
-    assert "of 3+" not in res.stdout
-    assert "results truncated at 3 rows (--limit)" in res.stderr
+    """These suppress stdout chrome. They do not suppress a warning.
+
+    The footer is where a truncated result says `3 of >3`, so with it gone the
+    stderr note is the only thing that says so at all.
+    """
+    res = hsql(*duck, flag, "-l", "3", "-c", TEN_ROWS)
+    assert "of >3" not in res.stdout
+    assert "results truncated at --limit 3" in res.stderr
+
+
+def test_diagnostics_follow_the_data_they_describe(tmp_path: Path) -> None:
+    """stdout is block-buffered when it is a pipe; stderr is not.
+
+    Without a flush between them a note overtakes the result set it is about,
+    and `hsql ... 2>&1 | less` reads in an order the terminal never showed. Only
+    a real subprocess can prove it: in-process, `CliRunner`'s stdout is not a
+    pipe and so is not buffered the way the shipped command's is.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from harlequin.hsql import main; sys.argv = sys.argv[1:]; "
+            "main()",
+            "hsql",
+            *["-a", "duckdb", "--no-init", ":memory:"],
+            *["-l", "3", "--stats", "-c", TEN_ROWS],
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+    )
+    assert proc.returncode == ExitCode.OK, proc.stdout
+    combined = proc.stdout
+    assert combined.index("(3 of >3 rows)") < combined.index("results truncated")
+    assert combined.index("results truncated") < combined.index('"status":"ok"')
 
 
 # --- several statements ------------------------------------------------------
