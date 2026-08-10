@@ -47,10 +47,8 @@ def no_use_catalog_cache(
 
 
 @pytest.fixture(autouse=True)
-def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
-    )
+def mock_config_loader(no_discovered_config: None) -> None:
+    """Autouse wrapper over the shared fixture. test_keys_app overrides it."""
 
 
 @pytest.fixture(autouse=True)
