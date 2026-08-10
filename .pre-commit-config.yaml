@@ -1,22 +1,30 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.1
+    rev: v0.16.1
     hooks:
       - id: ruff-format
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v2.0.0
     hooks:
       - id: mypy
+        # this hook resolves its own environment, so every version here is one
+        # that can drift from pyproject.toml's. The three textual pins are the
+        # ones that matter: they are pinned exactly in pyproject.toml because
+        # their APIs move, and a stale copy here fails the hook on code that
+        # `uv run mypy` accepts. Keep all four in step with pyproject.toml.
         additional_dependencies:
           - click
           - duckdb>=1.5.1
           - shandy-sqlfmt[jinjafmt]
-          - "textual>=6.3"
-          - "textual-fastdatatable==0.13.0"
-          - "textual-textarea==0.16.0"
+          - "textual==8.2.8"
+          - "textual-fastdatatable==0.17.1"
+          - "textual-textarea==0.18.1"
           - pytest
+          # reaches this environment transitively in the project's, through
+          # pytest-textual-snapshot, so it has to be asked for by name here
+          - syrupy
           - types-pygments
           - rich-click>=1.7.1
           - questionary
