@@ -126,6 +126,7 @@ Two invariants the tests pin: **the bytes are the contract** — writers go thro
 - **hsql's own flags are the frozen part.** An adapter option whose spelling collides with one loses that spelling (`_adapter_params`), rather than shadowing a documented flag.
 - `diagnostics.py` owns **everything on stderr and the exit-code mapping**. Nothing else in `hsql/` writes to stderr, and nothing writes to stdout except `output.py`.
 - `output.py` picks between the two families of format and writes through **one binary stream**, `-o PATH` included, so a file and a redirect cannot disagree about a byte.
+- **The two commands name each other, out of copied lists.** `harlequin.cli.HSQL_ONLY_OPTIONS` is every spelling `hsql` has and the IDE does not, so `harlequin -c` can point at `hsql -c`; `diagnostics.IDE_THEMES` is every name `harlequin -t` takes, so `hsql -t nord` can say what it did with `nord`. Copies rather than lookups in both directions — `hsql` may not reach `harlequin.colors`, and the IDE should not import `hsql` to render an error — and each is pinned by a test that compares it to the real thing.
 - Two things it must never do: call `set_locale()` (output that varies with `LC_ALL` is output a caller cannot predict) or reach `harlequin.cli` (that module builds the IDE's command). Both are covered by the `hsql does not reach the TUI` import-linter contract and `tests/unit_tests/test_hsql.py`.
 
 ### The adapter contract (`adapter.py`, `catalog.py`, `driver.py`)

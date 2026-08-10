@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Adds `hsql`, Harlequin's headless CLI, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses — so an agent or a CI job never handles a credential. The `harlequin` command is unchanged: no new flags, no new behavior.
+- Adds `hsql`, Harlequin's headless CLI, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses — so an agent or a CI job never handles a credential. The `harlequin` command gains no flags and no behavior of its own.
   - **SQL comes from `-c/--command`, `-f/--file`, or `-f -` for stdin.** Both are repeatable and run in the order given.
   - **Formats** are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none` to report status without rows. Pick one with `-F/--format` or the `--csv`/`--json`/`--jsonl`/`--markdown`/`--vertical` shorthands, and write it to a file with `-o/--output`.
   - **psql's flags, where psql has one**: `-t/--tuples-only`, `-A/--no-align`, `--no-header` and `--null-string`, so `hsql -tAc "select count(*)"` returns a bare number.
@@ -17,10 +17,15 @@ All notable changes to this project will be documented in this file.
   - **`--result all|last|N`** picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script. A format that cannot hold two result sets says so and exits 2, rather than writing a second header into the same csv.
   - **Output is deterministic.** Identical bytes whether stdout is a pipe, a file or a terminal, `\n` on every platform, and unaffected by `LC_ALL`. Color is the exception and is off unless `--color` asks for it.
   - **`hsql --help` costs no adapter import**: it lists the adapter-agnostic options, the formats, the exit codes and the *names* of installed adapters, and points at `hsql --help -a <adapter>` for one adapter's connection options.
+  - **Each command points at the other where they are easy to confuse.** `harlequin -c "select 1"` now answers "`-c` is not a harlequin option. Did you mean `hsql -c`?" instead of click's bare "No such option", and does the same for every option `hsql` has and the IDE does not: `--command`, `-o`, `-F`, `--csv`, `-A`, `--stats` and the rest. Going the other way, `hsql -t nord -c ...` notes on stderr that `hsql` has no themes, that `-t` is `--tuples-only` as in psql, and that `nord` was therefore read as a connection string — which is worth saying because it does not fail: DuckDB will create a database file named `nord`.
 
 ### Performance
 
 - `harlequin.exception` no longer imports `rich` ([#524](https://github.com/tconbeer/harlequin/issues/524)). It is on every headless path — `harlequin.config` imports it — so `hsql --help` was paying 20ms for a panel it never draws.
+
+### Dependencies
+
+- Upgrades `textual-fastdatatable` to 0.17.1 (from 0.17.0), which defers its `rich` import to the first column-width measurement ([#524](https://github.com/tconbeer/harlequin/issues/524)). A headless run never takes one, so `hsql` now reaches a result set without importing `rich` at all: ~50 fewer modules and ~35ms off every invocation. The IDE is unaffected — it renders, so it imports `rich` regardless.
 
 ## [2.8.1] - 2026-08-09
 

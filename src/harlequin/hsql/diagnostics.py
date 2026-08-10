@@ -23,6 +23,37 @@ from harlequin.exception import (
 
 PROGRAM = "hsql"
 
+IDE_THEMES = frozenset(
+    {
+        "atom-one-dark",
+        "atom-one-light",
+        "catppuccin-frappe",
+        "catppuccin-latte",
+        "catppuccin-macchiato",
+        "catppuccin-mocha",
+        "dracula",
+        "flexoki",
+        "gruvbox",
+        "harlequin",
+        "monokai",
+        "nord",
+        "rose-pine",
+        "rose-pine-dawn",
+        "rose-pine-moon",
+        "solarized-dark",
+        "solarized-light",
+        "textual-dark",
+        "textual-light",
+        "tokyo-night",
+    }
+)
+"""Every name `harlequin -t` takes, spelled out rather than imported.
+
+`harlequin.colors` is where these live, and reaching it would import Textual --
+the one thing this package may never do. So they are copied, and
+`tests/unit_tests/test_hsql.py` asserts the copy still matches.
+"""
+
 
 class ExitCode(IntEnum):
     OK = 0
@@ -68,6 +99,28 @@ def report_error(exception: BaseException) -> None:
 
 def note(message: str) -> None:
     _write(f"note: {message}")
+
+
+def report_theme_confusion(conn_str: Sequence[str]) -> None:
+    """Say what `-t` did, when it was probably meant as `--theme`.
+
+    `-t` is `--theme` in the IDE and "tuples only" in psql, and hsql takes
+    psql's meaning because `-tAc` is one idiom rather than three flags. So
+    `hsql -t nord -c ...` parses cleanly and wrongly: `-t` is a switch and
+    `nord` becomes a connection string. Nothing here fails -- DuckDB will
+    happily create a database file named `nord` -- which is exactly why it is
+    worth a line on stderr.
+
+    Only called when `-t` was passed on the command line, so a theme name is a
+    coincidence rather than the explanation.
+    """
+    themed = next((s for s in conn_str if s in IDE_THEMES), None)
+    if themed is None:
+        return
+    note(
+        f"hsql has no themes; -t is --tuples-only, as in psql, "
+        f"so {themed!r} was read as a connection string."
+    )
 
 
 def report_truncation(max_rows: int) -> None:

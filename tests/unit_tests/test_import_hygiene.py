@@ -37,7 +37,14 @@ HEADLESS_IMPORTS = [
     "from textual_fastdatatable.backend import create_backend",
 ]
 
-FORBIDDEN = ("textual", "questionary", "prompt_toolkit", "sqlfmt")
+FORBIDDEN = ("textual", "questionary", "prompt_toolkit", "sqlfmt", "rich")
+"""`rich` is here for the same reason as the rest: nothing headless renders.
+
+It is the one that arrives sideways rather than from an import of ours --
+`textual_fastdatatable.backend` pulled it in until 0.17.1 deferred it -- so the
+guard is worth more here than the import-linter contracts, which only see this
+repo's own graph.
+"""
 
 
 @pytest.mark.parametrize("statement", HEADLESS_IMPORTS)

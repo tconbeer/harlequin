@@ -38,6 +38,41 @@ DEFAULT_KEYMAP_NAMES = ["vscode"]
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
+HEADLESS_DOCS_URL = "https://harlequin.sh/docs/headless"
+
+HSQL_ONLY_OPTIONS = frozenset(
+    {
+        "-c",
+        "--command",
+        "--file",
+        "-o",
+        "--output",
+        "-F",
+        "--format",
+        "--csv",
+        "--json",
+        "--jsonl",
+        "--markdown",
+        "--vertical",
+        "--tuples-only",
+        "-A",
+        "--no-align",
+        "--no-header",
+        "--null-string",
+        "--result",
+        "--on-error",
+        "--stats",
+        "--color",
+    }
+)
+"""Options that belong to the other command, so that this one can say so.
+
+Every spelling `hsql` has and `harlequin` does not. Deliberately not derived
+from `harlequin.hsql` at run time: this command starts by importing the whole
+IDE, and the headless CLI exists precisely so that it need not go the other
+way. `tests/unit_tests/test_cli.py` asserts the list still matches what `hsql`
+actually takes, which is the drift this would otherwise be exposed to.
+"""
 
 # general
 click.rich_click.TEXT_MARKUP = "rich"
@@ -110,6 +145,32 @@ click.rich_click.OPTION_GROUPS = {
 }
 
 
+class HarlequinCommand(click.RichCommand):
+    """The IDE's command, with one thing to say about the other one.
+
+    `harlequin -c "select 1"` is the likeliest first mistake now that there are
+    two front doors, and click's "No such option: -c" leaves a reader to guess
+    which one they wanted. Naming `hsql` costs one line and saves a search.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        try:
+            return super().parse_args(ctx, args)
+        except click.NoSuchOption as e:
+            if e.option_name not in HSQL_ONLY_OPTIONS:
+                raise
+            # a plain UsageError rather than a NoSuchOption with a longer
+            # message: click's would append "Did you mean --config?" from the
+            # options this command does have, which is the opposite of the
+            # point.
+            raise click.UsageError(
+                f"{e.option_name} is not a harlequin option. Did you mean "
+                f"'hsql {e.option_name}'? hsql is Harlequin's headless CLI: it "
+                f"runs SQL and exits. See {HEADLESS_DOCS_URL}",
+                ctx=ctx,
+            ) from None
+
+
 def _version_option() -> str:
     """
     Build the string printed by harlequin --version
@@ -167,7 +228,7 @@ def build_cli() -> click.Command:
     """
     adapters = load_adapter_plugins()
 
-    @click.command()
+    @click.command(cls=HarlequinCommand)
     @click.version_option(package_name="harlequin", message=_version_option())
     @click.argument(
         "conn_str",
