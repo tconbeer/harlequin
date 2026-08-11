@@ -214,7 +214,7 @@ hsql <SUBCOMMAND> [OPTIONS]         catalog, describe, fmt, spec, info,
   -c, --command TEXT     Execute SQL. Repeatable.
   -f, --file PATH        Execute SQL from a file (or `-` for stdin). Repeatable.
   -o, --output PATH      Write results to PATH instead of stdout.
-  -F, --format NAME      Output format (see below). Default: table.
+      --format NAME      Output format (see below). Default: table.
       --csv/--json/--jsonl/--markdown/--vertical    Format shorthands.
   -t, --tuples-only      Rows only: no header, no footer. As in psql.
   -A, --no-align         Unaligned output. As in psql.
@@ -248,6 +248,13 @@ point — `hsql -P prod -c ...` means the agent never handles a credential.
 | `vertical` | psql `\x`. One column per line — best for inspecting a single wide row. |
 | `parquet`, `arrow`, `orc` | Bulk handoff. Already implemented in `export.py`. |
 | `none` | Discard rows; report status only. For DDL/DML/ETL. |
+
+> **Amended in implementation.** There is no `-F`: that is psql's
+> `--field-separator`, and a flag that sets a delimiter in one command and picks a
+> format in the other is a mistake waiting for a script — the same reasoning that
+> keeps `-l` off `--limit`. The format is chosen by `--format` spelled out, or by
+> the `--csv`/`--json`/`--jsonl`/`--markdown`/`--vertical` shorthands, which cover
+> the choices anyone types often enough to want a short flag for.
 
 ### Behaviors that matter more than the flag list
 
@@ -786,7 +793,7 @@ Because the CLI is a separate command, **every milestone here is purely additive
 | Milestone | Theme | Contents |
 | --- | --- | --- |
 | **M0** | Secure the name | Publish `hsql` to PyPI as a metapackage depending on `harlequin`, so `pip install hsql` works today and the name can't be taken while the rest of this ships. |
-| **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `-F` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
+| **M1** | `hsql` | Second console script; extract the shared execution core; import-linter rule and cold-start benchmark in CI. `-c`, `-f`, stdin, `-o`, `--format` + shorthands, default `--limit 500`, truncation notices, `--stats`, exit codes, `--on-error`, `--color`/`NO_COLOR`, plain errors. Unknown-option hint on `harlequin`. Docs: the "Headless & Agents" topic, seeded. **Closes #524.** |
 | **M2** | Self-description & safety | `catalog` (one level below the match, child counts, node budget), `describe`, `info --json`, `spec --json`, `fmt`, `config validate/show/schema/init`, capability flags, secret option type + declarative redaction (**#667**), env interpolation (**#898**), `--read-only`, `--timeout`, `--dry-run`. Published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional `fetch_descendants`. |
 | **M3** | Docs for machines | `llms.txt`, `llms-full.txt`, raw `.md` routes, Docs API v1, copy-as-markdown, homepage positioning, `AGENTS.md`. |
 | **M4** | Skill & handoff | Skill, `hsql open`, JSONL history, "Copy CLI command", external-command hook. |
@@ -832,8 +839,8 @@ the flag that makes everything else socially acceptable.
 
 ### If only three things get built
 
-1. **`hsql`** with `-c` / `-f` / `-o` / `-F`, a strict stdout/stderr split, documented
-   exit codes, and honest truncation.
+1. **`hsql`** with `-c` / `-f` / `-o` / `--format`, a strict stdout/stderr split,
+   documented exit codes, and honest truncation.
 2. **`hsql catalog --format compact`**.
 3. **`llms.txt` + raw markdown docs + the "Headless & Agents" topic + the skill.**
 
