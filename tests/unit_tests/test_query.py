@@ -161,9 +161,24 @@ class TestFetch:
         """The app fetches everything and caps what it displays, so the backend
         knows the exact total -- which is what lets it say '5 of 100'."""
         (executed,) = execute(connection, statements("select * from range(100)"))
-        result = fetch(executed, limit=RowLimit(max_rows=5))
+        result = fetch(executed, display_limit=5)
         assert result.row_count == 5
-        assert result.backend.source_row_count == 100
+        assert result.fetched_row_count == 100
+        assert result.truncated is False
+
+    def test_the_display_cap_applies_over_the_fetch_limit(
+        self, connection: HarlequinConnection
+    ) -> None:
+        """Both at once: fifty fetched of an unknown number, five kept of the
+        fifty -- and the extra row that proved there were more is in neither."""
+        limit = RowLimit(max_rows=50, detect_overflow=True)
+        (executed,) = execute(
+            connection, statements("select * from range(100)"), limit=limit
+        )
+        result = fetch(executed, limit=limit, display_limit=5)
+        assert result.row_count == 5
+        assert result.fetched_row_count == 50
+        assert result.truncated is True
 
 
 class TestTruncation:
@@ -197,6 +212,30 @@ class TestTruncation:
         )
         result = fetch(executed, limit=limit)
         assert result.row_count == 100
+        assert result.truncated is False
+
+    def test_a_limit_of_zero_rows_still_detects_the_rest(
+        self, all_adapters: type[HarlequinAdapter]
+    ) -> None:
+        """`limit 0` asks what the columns are, and gets an answer that does
+        not pretend the table was empty."""
+        connection = all_adapters([":memory:"], no_init=True).connect()
+        limit = RowLimit(max_rows=0, detect_overflow=True)
+        (executed,) = execute(
+            connection, statements("select 1 as a union all select 2"), limit=limit
+        )
+        result = fetch(executed, limit=limit)
+        assert result.row_count == 0
+        assert result.fetched_row_count == 0
+        assert result.truncated is True
+        assert result.arrow_table().column_names == ["a"]
+
+    def test_a_soft_cap_is_not_truncation(
+        self, connection: HarlequinConnection
+    ) -> None:
+        """Nothing was left in the database, so nothing was cut short."""
+        (executed,) = execute(connection, statements("select * from range(100)"))
+        result = fetch(executed, display_limit=5)
         assert result.truncated is False
 
 
