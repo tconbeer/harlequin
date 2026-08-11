@@ -85,11 +85,24 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    # two questions, because they are two limits: what leaves the database,
+    # and what the Results Viewer holds of it.
     limit = int(
         questionary.text(
-            message="How many rows should the data table show?",
+            message="How many rows should each query fetch from the database?",
+            instruction="Enter -1 for no limit.",
             validate=_validate_int,
-            default=str(selected_profile.get("limit", 100000)),
+            default=str(selected_profile.get("limit", -1)),
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
+    )
+
+    viewer_max_rows = int(
+        questionary.text(
+            message="How many rows should the Results Viewer hold?",
+            instruction="Enter -1 for no limit.",
+            validate=_validate_int,
+            default=str(selected_profile.get("viewer_max_rows", 100000)),
             style=HARLEQUIN_QUESTIONARY_STYLE,
         ).unsafe_ask()
     )
@@ -156,9 +169,14 @@ def _wizard(config_path: Path | None) -> None:
     new_profile: Profile = {
         "adapter": adapter,
         "theme": theme,
-        "limit": limit,
+        "viewer_max_rows": viewer_max_rows,
         "keymap_name": keymap_name,
     }
+
+    if limit >= 0:
+        # only when there is one: an unlimited fetch is the default, and a key
+        # that says so is a line the reader has to work out the meaning of.
+        new_profile["limit"] = limit
 
     if show_files:
         new_profile["show_files"] = show_files

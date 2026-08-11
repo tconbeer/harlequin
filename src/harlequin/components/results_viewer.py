@@ -143,7 +143,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             column_labels=formatted_labels,  # type: ignore
             plain_column_labels=[col_name for (col_name, _) in result.columns],
             # the backend was built by `harlequin.query.fetch()`, which already
-            # applied `max_results` as its row cap.
+            # applied `viewer_max_rows` as its row cap.
             backend=result.backend,
             fetched_row_count=result.fetched_row_count,
             fetch_truncated=result.truncated,

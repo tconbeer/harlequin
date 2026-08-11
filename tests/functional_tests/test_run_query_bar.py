@@ -7,6 +7,7 @@ import pytest
 from textual.message import Message
 
 from harlequin import Harlequin
+from harlequin.adapter import HarlequinAdapter
 
 
 @pytest.mark.asyncio
@@ -144,3 +145,58 @@ async def test_transaction_button(
 
         assert all(snap_results)
 
+
+@pytest.mark.asyncio
+async def test_a_configured_limit_is_in_force_from_the_first_query(
+    duckdb_adapter: type[HarlequinAdapter],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """`--limit` sets the input and checks the box, so it actually limits.
+
+    Which is the whole of what makes it the same option as `hsql -l`: the
+    number in the bar is what `cursor.set_limit()` receives.
+    """
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="limited",
+        query_limit=10,
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        bar = app.run_query_bar
+        assert bar.limit_checkbox.value is True
+        assert bar.limit_input.value == "10"
+        assert bar.limit_value == 10
+
+        app.editor.text = "select * from range(100)"
+        await pilot.press("ctrl+j")
+        for _ in range(3):
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        table = app.results_viewer.get_visible_table()
+        assert table is not None
+        assert table.row_count == 10
+        assert table.fetch_truncated is True
+        assert app.results_viewer.border_title == (
+            "Query Results (Showing 10 of >10 Records)"
+        )
+
+
+@pytest.mark.asyncio
+async def test_no_configured_limit_leaves_the_box_unchecked(
+    app_small_duck: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A human watching a viewport can afford a full fetch, so nothing configured
+    means nothing limited -- with 500 in the input to start from."""
+    app = app_small_duck
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        assert app.run_query_bar.limit_checkbox.value is False
+        assert app.run_query_bar.limit_input.value == "500"
+        assert app.run_query_bar.limit_value is None

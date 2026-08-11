@@ -9,6 +9,7 @@ from textual.message import Message
 from textual_fastdatatable import DataTable
 
 from harlequin import Harlequin
+from harlequin.adapter import HarlequinAdapter
 from harlequin.components.results_viewer import ResultsViewer
 
 
@@ -143,3 +144,39 @@ async def test_infinity_timestamp(
         ]
 
         assert await app_snapshot(app, "hover over truncated value")
+
+
+@pytest.mark.asyncio
+async def test_the_viewer_cap_is_a_soft_one(
+    duckdb_adapter: type[HarlequinAdapter],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Everything is fetched and the viewer holds the first N.
+
+    Which is why it can report the exact total it is showing a part of --
+    unlike the Run Query Bar's limit, where the rest was never fetched.
+    """
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="capped",
+        viewer_max_rows=10,
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select * from range(100)"
+        await pilot.press("ctrl+j")
+        await wait_for_workers(app)
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        table = app.results_viewer.get_visible_table()
+        assert table is not None
+        assert table.row_count == 10
+        assert table.fetched_row_count == 100
+        assert table.fetch_truncated is False
+        assert app.results_viewer.border_title == (
+            "Query Results (Showing 10 of 100 Records)"
+        )

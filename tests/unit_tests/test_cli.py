@@ -10,8 +10,8 @@ from click.testing import CliRunner
 from harlequin import Harlequin
 from harlequin.cli import (
     DEFAULT_KEYMAP_NAMES,
-    DEFAULT_LIMIT,
     DEFAULT_THEME,
+    DEFAULT_VIEWER_MAX_ROWS,
     HEADLESS_DOCS_URL,
     HSQL_ONLY_OPTIONS,
     build_cli,
@@ -104,7 +104,8 @@ def test_default(
         adapter=mock_adapter.return_value,
         profile_name=None,
         connection_hash=mock_adapter.return_value.connection_id,
-        max_results=DEFAULT_LIMIT,
+        viewer_max_rows=DEFAULT_VIEWER_MAX_ROWS,
+        query_limit=None,
         keymap_names=DEFAULT_KEYMAP_NAMES,
         user_defined_keymaps=[],
         theme=DEFAULT_THEME,
@@ -163,19 +164,21 @@ def test_theme(
 
 
 @pytest.mark.parametrize(
-    "harlequin_args",
+    ("harlequin_args", "expected"),
     [
-        "--limit 10",
-        "-l 1000000",
-        ":memory: -l 10",
-        "foo.db --limit 5000000000",
-        "--limit 0",
+        ("--viewer-max-rows 10", 10),
+        (":memory: --viewer-max-rows 1000000", 1_000_000),
+        ("foo.db --viewer-max-rows 5000000000", 5_000_000_000),
+        # both spellings of "hold everything"
+        ("--viewer-max-rows 0", None),
+        ("--viewer-max-rows -1", None),
     ],
 )
-def test_limit(
+def test_viewer_max_rows(
     mock_harlequin: MagicMock,
     mock_adapter: MagicMock,
     harlequin_args: str,
+    expected: int | None,
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
@@ -183,7 +186,84 @@ def test_limit(
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
-    assert mock_harlequin.call_args.kwargs["max_results"] != 100_000
+    assert mock_harlequin.call_args.kwargs["viewer_max_rows"] == expected
+    # the display cap says nothing about what is fetched
+    assert mock_harlequin.call_args.kwargs["query_limit"] is None
+
+
+@pytest.mark.parametrize(
+    ("harlequin_args", "expected"),
+    [
+        ("--limit 10", 10),
+        ("-l 10", 10),
+        (":memory: -l 10", 10),
+        # a header and no rows, which is how you ask what a query returns
+        ("--limit 0", 0),
+        # every row, which is what an unset limit does too
+        ("--limit -1", None),
+    ],
+)
+def test_limit_is_the_hard_fetch_limit(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    expected: int | None,
+    mock_empty_config: None,
+) -> None:
+    """The same limit hsql applies, and the Run Query Bar shows it."""
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args=harlequin_args)
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["query_limit"] == expected
+    # the viewer's cap is untouched by it
+    assert mock_harlequin.call_args.kwargs["viewer_max_rows"] == DEFAULT_VIEWER_MAX_ROWS
+
+
+def test_unset_limit_fetches_everything(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    mock_empty_config: None,
+) -> None:
+    """Naming nothing is the full fetch the IDE has always done."""
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args="")
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["query_limit"] is None
+
+
+def test_the_two_limits_are_independent(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = runner.invoke(build_cli(), args="-l 10 --viewer-max-rows 20")
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["query_limit"] == 10
+    assert mock_harlequin.call_args.kwargs["viewer_max_rows"] == 20
+
+
+def test_a_profile_limit_is_a_fetch_limit(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    data_dir: Path,
+) -> None:
+    """The profile that motivated the split, read the new way.
+
+    `limit = 200_000` in a config file both commands share now means the same
+    thing in both: 200,000 rows leave the database, and nothing has an opinion
+    about what the Results Viewer does with them.
+    """
+    runner = CliRunner()
+    config_path = data_dir / "unit_tests" / "config" / "good_config.toml"
+    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["query_limit"] == 200_000
+    assert mock_harlequin.call_args.kwargs["viewer_max_rows"] == DEFAULT_VIEWER_MAX_ROWS
 
 
 @pytest.mark.parametrize("harlequin_args", ["--show-files .", "-f .", "foo.db -f ."])
@@ -319,7 +399,7 @@ def test_config_path(
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
     # should use default profile of my-duckdb-profile
-    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+    assert mock_harlequin.call_args.kwargs["query_limit"] == 200_000
     mock_adapter.assert_called_once()
     assert mock_adapter.call_args.kwargs["conn_str"] == ["my-database.db"]
     assert mock_adapter.call_args.kwargs["read_only"] is False
@@ -342,7 +422,7 @@ def test_config_path_fron_env(
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
     # should use default profile of my-duckdb-profile
-    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+    assert mock_harlequin.call_args.kwargs["query_limit"] == 200_000
     mock_adapter.assert_called_once()
     assert mock_adapter.call_args.kwargs["conn_str"] == ["my-database.db"]
     assert mock_adapter.call_args.kwargs["read_only"] is False
@@ -370,7 +450,7 @@ def test_conn_str_overrides_the_profile(
     assert mock_adapter.call_args.kwargs["conn_str"] == ("other.db",)
     # unrelated profile values are untouched
     assert mock_adapter.call_args.kwargs["extension"] == ["httpfs", "spatial"]
-    assert mock_harlequin.call_args.kwargs["max_results"] == 200_000
+    assert mock_harlequin.call_args.kwargs["query_limit"] == 200_000
 
 
 def test_bad_config_exits(
