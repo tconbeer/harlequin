@@ -34,6 +34,15 @@ def format_names() -> list[str]:
     return [*layout_names(), *file_format_names(), NONE]
 
 
+def is_layout(format_name: str) -> bool:
+    """Whether `harlequin.layout` arranges this format, rather than a writer.
+
+    Which is what decides whose options apply to it: the row cap and the psql
+    switches are the layouts', and a file format has neither.
+    """
+    return format_name in layout_names()
+
+
 def holds_many(format_name: str) -> bool:
     """Whether a format can hold more than one result set.
 

@@ -28,9 +28,11 @@ import click
 from harlequin.config import (
     DEFAULT_ADAPTER,
     TUI_ONLY_KEYS,
+    UNLIMITED,
     Profile,
     get_config_for_profile,
     merge_profile_with_cli,
+    parse_row_count,
 )
 from harlequin.exception import (
     HarlequinConfigError,
@@ -44,7 +46,7 @@ from harlequin.plugins import adapter_names, load_adapter
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
     from harlequin.layout import LayoutOptions
-    from harlequin.query import ExecutedStatement, OnError, RowLimit
+    from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
     from harlequin.statements import Statement
 
 PROGRAM = "hsql"
@@ -52,11 +54,12 @@ PROGRAM = "hsql"
 DEFAULT_FORMAT = "table"
 
 DEFAULT_LIMIT = 500
-"""Small on purpose. The IDE's 100,000 is right for a viewport and wrong here.
+"""Small on purpose: fetching a million rows to print forty of them is waste.
 
-`hsql -l` is also the *hard* limit -- `cursor.set_limit()`, so fewer rows leave
-the database -- where the IDE's is a soft cap over a full fetch. Same spelling,
-different promise, and the docs say so.
+`-l` is the *hard* limit -- `cursor.set_limit()`, so fewer rows leave the
+database -- and it is the same promise the `limit` key makes in the IDE.
+`-1` is unlimited, and `0` fetches a header and no rows, which is how a caller
+asks what a query's columns are.
 """
 
 SHORTHANDS = {
@@ -187,8 +190,17 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         default=DEFAULT_LIMIT,
         show_default=True,
         metavar="N",
-        type=click.IntRange(min=0),
-        help="Maximum rows per result set. 0 for no limit.",
+        type=click.IntRange(min=UNLIMITED),
+        help="Maximum rows fetched per result set. -1 for no limit.",
+    )
+    @click.option(
+        "--display-rows",
+        metavar="N",
+        type=click.IntRange(min=UNLIMITED),
+        help=(
+            "Rows printed per result set by the text layouts. -1 for all of them. "
+            f"[default: {_default_display_rows()}]"
+        ),
     )
     @click.option(
         "--result",
@@ -269,11 +281,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         no_footer: bool = bool(values.pop("no_footer", False))
         null_string: str | None = values.pop("null_string", None)
         color_when: str = str(values.pop("color", "never"))
-        try:
-            limit = int(values.pop("limit", DEFAULT_LIMIT))
-        except (TypeError, ValueError):
-            diagnostics.error("--limit must be a whole number of rows, or 0.")
-            ctx.exit(ExitCode.USAGE)
+        raw_limit = values.pop("limit", DEFAULT_LIMIT)
+        raw_display_rows = values.pop("display_rows", None)
 
         format_name = _resolve_format(values, explicitly_set)
         if format_name is None:
@@ -293,14 +302,23 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             diagnostics.error(f"could not read {e.filename}: {e.strerror}")
             ctx.exit(ExitCode.USAGE)
 
+        # after the usage checks above, so that a run with nothing to run says
+        # only that, rather than first remarking on flags it never reached
+        try:
+            limit = parse_row_count(raw_limit, key="--limit")
+            display_limit = _display_limit(raw_display_rows, format_name)
+        except HarlequinConfigError as e:
+            diagnostics.report_error(e)
+            ctx.exit(ExitCode.USAGE)
+
         from harlequin.query import RowLimit
 
         row_limit = RowLimit(
-            max_rows=limit or None,
+            max_rows=limit,
             # one row more than we intend to keep is the only way to know a
             # result was cut short: set_limit(n) then fetchall() returns at most
             # n rows and says nothing about an n+1th.
-            detect_overflow=bool(limit),
+            detect_overflow=limit is not None,
         )
 
         if "tuples_only" in explicitly_set:
@@ -345,6 +363,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             null_string=null_string,
             color=_use_color(color_when, destination),
             format_name=format_name,
+            display_limit=display_limit,
         )
 
         try:
@@ -481,7 +500,22 @@ def _emit(
         run.columns = result.columns
         if result.truncated and limit.max_rows is not None:
             diagnostics.report_truncation(limit.max_rows)
+        _report_hidden_rows(result, layout_options)
     out.flush()
+
+
+def _report_hidden_rows(result: ResultSet, layout_options: LayoutOptions) -> None:
+    """Say on stderr that the row cap dropped rows, when nothing else can.
+
+    Only with the footer suppressed: `40 of 500 rows` already says it, and this
+    stream does not restate what stdout carries. `-t` is where it matters --
+    that is the invocation whose output a script reads, and the one where the
+    result would otherwise be short and silent about it.
+    """
+    cap = layout_options.max_rows
+    if layout_options.footer or cap is None or result.row_count <= cap:
+        return
+    diagnostics.report_row_cap(shown=cap, of=result.fetched_row_count)
 
 
 @dataclass(frozen=True)
@@ -678,6 +712,40 @@ def _select_results(
     return [executed[index - 1]]
 
 
+def _display_limit(raw: Any, format_name: str) -> int | None:
+    """How many rows the layout prints: the caller's number, or the layout's.
+
+    None where the format has no layout to cap -- a csv or a parquet is written
+    for a machine, and dropping rows out of a file is a different promise from
+    not filling a screen with them.
+
+    Raises: HarlequinConfigError if the value is not a whole number of rows.
+    """
+    from harlequin.layout import default_max_rows
+
+    if not output.is_layout(format_name):
+        if raw is not None:
+            # asking for five rows and getting five hundred is the kind of
+            # surprise this command is supposed to not have.
+            diagnostics.report_row_cap_ignored(format_name)
+        return None
+    if raw is None:
+        return default_max_rows(format_name)
+    return parse_row_count(raw, key="--display-rows")
+
+
+def _default_display_rows() -> str:
+    """Each layout's own row cap, for `--help`."""
+    from harlequin.layout import default_max_rows, layout_names
+
+    by_rows: dict[int, list[str]] = {}
+    for name in layout_names():
+        by_rows.setdefault(default_max_rows(name), []).append(name)
+    return "; ".join(
+        f"{rows} for {', '.join(names)}" for rows, names in by_rows.items()
+    )
+
+
 def _output_options(
     *,
     tuples_only: bool,
@@ -687,6 +755,7 @@ def _output_options(
     null_string: str | None,
     color: bool,
     format_name: str,
+    display_limit: int | None = None,
 ) -> tuple[LayoutOptions, dict[str, Any]]:
     """psql's flag algebra, in the vocabulary each family of format speaks.
 
@@ -703,6 +772,7 @@ def _output_options(
         aligned=not no_align,
         null_string=null_string,
         color=color,
+        max_rows=display_limit,
     )
     file_options: dict[str, Any] = {}
     if format_name in ("csv", "tsv"):
@@ -771,6 +841,11 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
         )
     blocks = [
         f"Formats:\n  {formats}",
+        (
+            "Limits:\n"
+            "  -l N              rows fetched from the database. -1 for all\n"
+            "  --display-rows N  rows the text layouts print, of those fetched"
+        ),
         (
             "Exit codes:\n"
             "  0 success           1 query error       2 usage/config error\n"
