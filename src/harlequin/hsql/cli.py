@@ -70,7 +70,7 @@ SHORTHANDS = {
     "markdown": "markdown",
     "vertical": "vertical",
 }
-"""`--csv` and friends, as flags, spelling the `-F` they stand for."""
+"""`--csv` and friends, as flags, spelling the `--format` they stand for."""
 
 SOURCES = f"{__name__}.sources"
 """Context key under which `-c` and `-f` record themselves, in order."""
@@ -123,8 +123,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         metavar="PATH",
         help="Write results to PATH instead of stdout.",
     )
+    # long spelling only: -F is psql's --field-separator, and a flag that sets
+    # a delimiter in one command and picks a format in the other is a mistake
+    # waiting for a script. The shorthand flags below cover the common choices.
     @click.option(
-        "-F",
         "--format",
         default=DEFAULT_FORMAT,
         show_default=True,
@@ -132,11 +134,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         type=click.Choice(output.format_names(), case_sensitive=False),
         help="Output format. See below for the list.",
     )
-    @click.option("--csv", is_flag=True, help="Shorthand for -F csv.")
-    @click.option("--json", is_flag=True, help="Shorthand for -F json.")
-    @click.option("--jsonl", is_flag=True, help="Shorthand for -F jsonl.")
-    @click.option("--markdown", is_flag=True, help="Shorthand for -F markdown.")
-    @click.option("--vertical", is_flag=True, help="Shorthand for -F vertical.")
+    @click.option("--csv", is_flag=True, help="Shorthand for --format csv.")
+    @click.option("--json", is_flag=True, help="Shorthand for --format json.")
+    @click.option("--jsonl", is_flag=True, help="Shorthand for --format jsonl.")
+    @click.option("--markdown", is_flag=True, help="Shorthand for --format markdown.")
+    @click.option("--vertical", is_flag=True, help="Shorthand for --format vertical.")
     @click.option(
         "-t",
         "--tuples-only",
@@ -686,7 +688,7 @@ def _resolve_format(values: dict[str, Any], explicitly_set: set[str]) -> str | N
         )
         return None
     if chosen and "format" in explicitly_set:
-        diagnostics.error(f"--{chosen[0]} and -F {named} are two output formats.")
+        diagnostics.error(f"--{chosen[0]} and --format {named} are two output formats.")
         return None
     format_name = (chosen[0] if chosen else named).lower()
     if format_name not in output.format_names():

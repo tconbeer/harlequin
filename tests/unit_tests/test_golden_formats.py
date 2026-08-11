@@ -1,11 +1,12 @@
 """Every format, against one result set holding every type that is hard.
 
 The point of routing both files and text layouts through duckdb is that a value
-looks the same however it leaves: `-F table` and `-F csv` are supposed to agree
-cell for cell, and a Postgres timestamp and a DuckDB timestamp are supposed to
-agree with each other. Neither property is visible from inside one format, so
-these are snapshots -- what changes here is a change to Harlequin's output
-contract, and it should be read in a diff rather than discovered by an agent.
+looks the same however it leaves: `--format table` and `--format csv` are
+supposed to agree cell for cell, and a Postgres timestamp and a DuckDB timestamp
+are supposed to agree with each other. Neither property is visible from inside
+one format, so these are snapshots -- what changes here is a change to
+Harlequin's output contract, and it should be read in a diff rather than
+discovered by an agent.
 
 They are single-file snapshots, one per format, in binary write mode: the bytes
 are the contract, so nothing here may re-encode a newline on the way to disk or
@@ -143,7 +144,8 @@ def test_the_snapshots_were_checked_out_with_lf(request: pytest.FixtureRequest) 
 
 def test_the_layouts_and_the_files_agree_cell_for_cell(result: ResultSet) -> None:
     """The reason `text_columns()` casts through duckdb rather than calling
-    `str()`: every string `-F table` prints is a string `-F csv` writes.
+    `str()`: every string `--format table` prints is a string `--format csv`
+    writes.
 
     Parsed back with the stdlib reader, not split on the delimiter: quoting is
     csv's framing of a value, not part of it, and unwrapping it is the only way

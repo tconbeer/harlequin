@@ -171,8 +171,8 @@ class _BaseLayout:
 
         Padding the last column puts trailing spaces on every line, and
         rstripping the line afterwards is not the same thing: a value may
-        legitimately end in a space, and trimming it would make `-F table`
-        disagree with `-F csv` about the data.
+        legitimately end in a space, and trimming it would make
+        `--format table` disagree with `--format csv` about the data.
         """
         return [*widths[:-1], 0] if widths else []
 
