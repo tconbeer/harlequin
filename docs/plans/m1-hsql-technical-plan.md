@@ -251,6 +251,15 @@ struct come out" — in two places, and the disagreement would surface as `hsql`
 TUI showing different data for the same query. That is the worst possible place for
 these two front doors to diverge.
 
+> **Superseded, after M1 shipped.** The collision described below was resolved by
+> [#1026](https://github.com/tconbeer/harlequin/issues/1026): the display cap has its own
+> key, `viewer_max_rows`, `limit` is the hard fetch limit in both commands, and the text
+> layouts grew a soft cap of their own (`--display-rows`). `harlequin --limit` now fills
+> in the Run Query Bar's limit and checks it, so the TUI does detect overflow — the
+> premise below, that it always fetched every row, stopped holding the moment a user
+> checked that box, and no longer holds at start-up either. See `AGENTS.md` for the
+> current vocabulary. The rest of this section is the reasoning as it stood.
+
 **Harlequin already has two different limits, and `hsql` wants the other one.** This is
 worth spelling out, because the names collide and I had it wrong in an earlier draft:
 
