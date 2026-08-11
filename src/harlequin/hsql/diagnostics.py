@@ -137,7 +137,7 @@ def report_truncation(max_rows: int) -> None:
     already under the result, as `500 of >500`, and what a caller cannot read
     off stdout is what to pass to get the rest.
     """
-    note(f"results truncated at --limit {max_rows}; pass -l -1 for all rows")
+    note(f"results truncated at --limit {max_rows}; pass --limit -1 for all rows")
 
 
 def report_row_cap(shown: int, of: int) -> None:

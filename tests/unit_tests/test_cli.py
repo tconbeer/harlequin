@@ -195,8 +195,8 @@ def test_viewer_max_rows(
     ("harlequin_args", "expected"),
     [
         ("--limit 10", 10),
-        ("-l 10", 10),
-        (":memory: -l 10", 10),
+        (":memory: --limit 10", 10),
+        ("foo.db --limit 10", 10),
         # a header and no rows, which is how you ask what a query returns
         ("--limit 0", 0),
         # every row, which is what an unset limit does too
@@ -239,7 +239,7 @@ def test_the_two_limits_are_independent(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args="-l 10 --viewer-max-rows 20")
+    res = runner.invoke(build_cli(), args="--limit 10 --viewer-max-rows 20")
     assert res.exit_code == 0
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["query_limit"] == 10

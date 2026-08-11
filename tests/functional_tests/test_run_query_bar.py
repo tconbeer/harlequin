@@ -153,7 +153,7 @@ async def test_a_configured_limit_is_in_force_from_the_first_query(
 ) -> None:
     """`--limit` sets the input and checks the box, so it actually limits.
 
-    Which is the whole of what makes it the same option as `hsql -l`: the
+    Which is the whole of what makes it the same option as `hsql --limit`: the
     number in the bar is what `cursor.set_limit()` receives.
     """
     app = Harlequin(

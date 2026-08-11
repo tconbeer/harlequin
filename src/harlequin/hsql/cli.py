@@ -56,10 +56,13 @@ DEFAULT_FORMAT = "table"
 DEFAULT_LIMIT = 500
 """Small on purpose: fetching a million rows to print forty of them is waste.
 
-`-l` is the *hard* limit -- `cursor.set_limit()`, so fewer rows leave the
-database -- and it is the same promise the `limit` key makes in the IDE.
-`-1` is unlimited, and `0` fetches a header and no rows, which is how a caller
-asks what a query's columns are.
+`--limit` is the *hard* limit -- `cursor.set_limit()`, so fewer rows leave the
+database -- and it is the same promise the `limit` key makes in the IDE. `-1`
+is unlimited, and `0` fetches a header and no rows, which is how a caller asks
+what a query's columns are.
+
+No `-l`: that is psql's `--list`, and a flag that lists databases in one
+command and truncates results in the other is a mistake waiting for a script.
 """
 
 SHORTHANDS = {
@@ -185,7 +188,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         help="Read this config file instead of the ones hsql discovers.",
     )
     @click.option(
-        "-l",
         "--limit",
         default=DEFAULT_LIMIT,
         show_default=True,
@@ -843,7 +845,7 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
         f"Formats:\n  {formats}",
         (
             "Limits:\n"
-            "  -l N              rows fetched from the database. -1 for all\n"
+            "  --limit N         rows fetched from the database. -1 for all\n"
             "  --display-rows N  rows the text layouts print, of those fetched"
         ),
         (

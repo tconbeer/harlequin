@@ -265,7 +265,8 @@ TUI and a catastrophe for an agent; `hsql` defaults to 500.
 > **Amended by [#1026](https://github.com/tconbeer/harlequin/issues/1026).** One key
 > naming both of those limits was the bug, not the design: the TUI's display cap is now
 > `viewer_max_rows`, `limit` is the hard fetch limit in both commands, and unlimited is
-> spelled `-1` rather than `0`, so that `-l 0` can fetch a header and no rows. The text
+> spelled `-1` rather than `0`, so that `--limit 0` can fetch a header and no rows (and
+> there is no `-l`, which is psql's `--list`). The text
 > layouts additionally cap what they *print* (`--display-rows`, 40 rows or 10 records),
 > since fetching 500 rows and printing 500 rows are separate questions.
 

@@ -37,7 +37,7 @@ TEN_ROWS = (
 """Ten rows, in a spelling both bundled adapters accept."""
 
 HUNDRED_ROWS = TEN_ROWS.replace("n < 10", "n < 100")
-"""More rows than any layout prints by default, and fewer than -l fetches."""
+"""More rows than any layout prints by default, and fewer than --limit fetches."""
 
 LAYOUTS = ["table", "markdown", "md", "vertical"]
 TEXT_FILES = ["csv", "tsv", "json", "jsonl", "ndjson"]
@@ -226,7 +226,7 @@ def test_stats_does_not_touch_stdout(
 
 
 def test_stats_payload(hsql: Hsql, duck: list[str]) -> None:
-    res = hsql(*duck, "-F", "none", "--stats", "-l", "3", "-c", TEN_ROWS)
+    res = hsql(*duck, "-F", "none", "--stats", "--limit", "3", "-c", TEN_ROWS)
     payload = json.loads(res.stderr.splitlines()[-1])
     assert payload == {
         "status": "ok",
@@ -267,7 +267,7 @@ def test_truncation(
     hsql: Hsql, both_adapters: list[str], limit: int, rows: int, truncated: bool
 ) -> None:
     """Exactly at the limit is the ambiguous case, and the reason for limit+1."""
-    res = hsql(*both_adapters, "-l", str(limit), "-c", TEN_ROWS)
+    res = hsql(*both_adapters, "--limit", str(limit), "-c", TEN_ROWS)
     assert res.exit_code == ExitCode.OK
     body = res.stdout.splitlines()[2:-1]  # between the rule and the footer
     assert len(body) == rows
@@ -281,12 +281,12 @@ def test_one_truncated_row_is_still_rows(hsql: Hsql, duck: list[str]) -> None:
     One row was kept, and the limit+1 fetch proved there is another, so the
     total the noun has to agree with is at least two.
     """
-    res = hsql(*duck, "-l", "1", "-c", TEN_ROWS)
+    res = hsql(*duck, "--limit", "1", "-c", TEN_ROWS)
     assert "(1 of >1 rows)" in res.stdout
 
 
 def test_no_limit_counts_exactly(hsql: Hsql, duck: list[str]) -> None:
-    res = hsql(*duck, "-l", "-1", "--stats", "-F", "none", "-c", TEN_ROWS)
+    res = hsql(*duck, "--limit", "-1", "--stats", "-F", "none", "-c", TEN_ROWS)
     payload = json.loads(res.stderr.splitlines()[-1])
     assert payload["rows"] == 10
     assert payload["truncated"] is False
@@ -301,7 +301,7 @@ def test_limit_zero_fetches_a_header_and_no_rows(
     So 0 is zero rows, and -1 is the spelling for "all of them" -- the reverse
     would spend the idiom on a synonym for a flag that already exists.
     """
-    res = hsql(*both_adapters, "-l", "0", "-c", TEN_ROWS)
+    res = hsql(*both_adapters, "--limit", "0", "-c", TEN_ROWS)
     assert res.exit_code == ExitCode.OK
     lines = res.stdout.splitlines()
     assert lines[0].strip() == "n"
@@ -317,7 +317,7 @@ def test_the_truncation_notice_survives_a_suppressed_footer(
     The footer is where a truncated result says `3 of >3`, so with it gone the
     stderr note is the only thing that says so at all.
     """
-    res = hsql(*duck, flag, "-l", "3", "-c", TEN_ROWS)
+    res = hsql(*duck, flag, "--limit", "3", "-c", TEN_ROWS)
     assert "of >3" not in res.stdout
     assert "results truncated at --limit 3" in res.stderr
 
@@ -347,7 +347,7 @@ def test_the_footer_says_what_was_not_printed(hsql: Hsql, duck: list[str]) -> No
 
 def test_both_caps_at_once_keep_their_own_meanings(hsql: Hsql, duck: list[str]) -> None:
     """Fifty fetched of an unknown number, forty printed of the fifty."""
-    res = hsql(*duck, "-l", "50", "-c", HUNDRED_ROWS)
+    res = hsql(*duck, "--limit", "50", "-c", HUNDRED_ROWS)
     assert res.stdout.splitlines()[-1] == "(40 of >50 rows)"
 
 
@@ -355,7 +355,9 @@ def test_both_caps_at_once_keep_their_own_meanings(hsql: Hsql, duck: list[str]) 
 def test_display_rows_sets_the_cap(
     hsql: Hsql, duck: list[str], value: str, expected: int
 ) -> None:
-    res = hsql(*duck, "-tA", "-l", "-1", "--display-rows", value, "-c", HUNDRED_ROWS)
+    res = hsql(
+        *duck, "-tA", "--limit", "-1", "--display-rows", value, "-c", HUNDRED_ROWS
+    )
     assert res.exit_code == ExitCode.OK
     assert len([line for line in res.stdout.splitlines() if line]) == expected
 
@@ -423,7 +425,7 @@ def test_diagnostics_follow_the_data_they_describe(tmp_path: Path) -> None:
             "main()",
             "hsql",
             *["-a", "duckdb", "--no-init", ":memory:"],
-            *["-l", "3", "--stats", "-c", TEN_ROWS],
+            *["--limit", "3", "--stats", "-c", TEN_ROWS],
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -616,7 +618,7 @@ def test_the_default_profile_applies(hsql: Hsql, config_file: Path) -> None:
 
 
 def test_a_cli_option_beats_the_profile(hsql: Hsql, config_file: Path) -> None:
-    res = hsql("--config-path", str(config_file), "-tA", "-l", "2", "-c", TEN_ROWS)
+    res = hsql("--config-path", str(config_file), "-tA", "--limit", "2", "-c", TEN_ROWS)
     assert res.stdout == "1\n2\n"
 
 

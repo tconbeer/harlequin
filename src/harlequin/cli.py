@@ -314,12 +314,11 @@ def build_cli() -> click.Command:
     )
     @click.option(
         "--limit",
-        "-l",
         type=click.IntRange(min=-1),
         help=(
             "Limit every query to this many rows, as if you had typed it into "
             "the Run Query Bar and checked the box: fewer rows leave the "
-            "database. The same limit [bold]hsql -l[/] applies. Unset, queries "
+            "database. The same limit [bold]hsql --limit[/] applies. Unset, queries "
             "fetch every row."
         ),
     )
