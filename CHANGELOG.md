@@ -36,20 +36,16 @@ All notable changes to this project will be documented in this file.
 
 - The Results Viewer no longer reports a truncated fetch as an exact total ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). With the Run Query Bar's limit checked, a query over three million rows returned 500 and the viewer said `(500 Records)`, which read as "that was all of them". It now fetches one row more than the limit — the only way to tell 500 rows from 500-and-more — and says `(Showing 500 of >500 Records)`. The viewer's own cap is unaffected and still counts exactly: `(Showing 100,000 of 3,412,887 Records)`.
 - The SQLite adapter now honors a limit of one row, and of no rows. It fetches the first row eagerly to read the result's types, and asked for the rest with `fetchmany(limit - 1)` — but `sqlite3` reads `fetchmany(0)` as "all of them", so `set_limit(1)` returned the whole table.
-- A config file that sets `default_profile` and defines no profiles at all is now reported as the config error it is, instead of escaping as an unhandled `KeyError`.
+- A config file that sets `default_profile` and defines no profiles at all is now reported as the config error it is, instead of crashing ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
 
 ### Performance
 
 - `harlequin.exception` no longer imports `rich` ([#524](https://github.com/tconbeer/harlequin/issues/524)). It is on every headless path — `harlequin.config` imports it — so `hsql --help` was paying 20ms for a panel it never draws.
-- Config files are now **read** with `tomllib` and only **written** with tomlkit. Start-up reads config, and `_search_cwd` picks up whatever `pyproject.toml` is in the working directory — so running `hsql` from any Python project paid tomlkit's style-preserving parser to read a file that usually has no `[tool.harlequin]` section at all. On this repo's own 10KB `pyproject.toml` that parse is 46ms against tomllib's 1.5ms. Writes still go through tomlkit, because a user's comments have to survive `harlequin --config`; nothing imports it until something writes.
-- `harlequin.layout` defers its `wcwidth` import to the first non-ASCII cell it measures. `_width()` has an `isascii()` fast path that returns without calling `wcswidth`, so an all-ASCII run — most of them — was paying ~25ms to import a module it never called.
-- `hsql --version` no longer imports an adapter to print a version string. It takes the same early exit `hsql --help` already took, which is worth 73ms of DuckDB import.
-
-Measured end to end, warm, against `select 1`: **328ms → 258ms** from a directory containing a `pyproject.toml`, 274ms → 264ms without one, and `hsql --version` 166ms → 93ms.
+- `hsql` starts faster ([#1032](https://github.com/tconbeer/harlequin/pull/1032)): `hsql -c "select 1"` goes from 328ms to 258ms run from a directory with a `pyproject.toml` in it, and from 274ms to 264ms without one; `hsql --version` goes from 166ms to 93ms.
 
 ### Dependencies
 
-- Adds `tomli` on Python 3.10, which is `tomllib` before it was stdlib.
+- Adds `tomli` on Python 3.10 only ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
 
 - Upgrades `textual-fastdatatable` to 0.17.1 (from 0.17.0), which defers its `rich` import to the first column-width measurement ([#524](https://github.com/tconbeer/harlequin/issues/524)). A headless run never takes one, so `hsql` now reaches a result set without importing `rich` at all: ~50 fewer modules and ~35ms off every invocation. The IDE is unaffected — it renders, so it imports `rich` regardless.
 
