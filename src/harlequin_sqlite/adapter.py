@@ -54,7 +54,7 @@ class HarlequinSqliteCursor(HarlequinCursor):
         return self
 
     def fetchall(self) -> AutoBackendType | None:
-        if not self.has_records:
+        if not self.has_records or self._limit == 0:
             # A result with no rows still has columns, and a caller handed None
             # has no way to learn what they were -- so an export or a headless
             # render would lose the header. An Arrow table carries the names,
@@ -71,11 +71,15 @@ class HarlequinSqliteCursor(HarlequinCursor):
             )
 
         try:
-            remaining_rows = (
-                self.cur.fetchall()
-                if self._limit is None
-                else self.cur.fetchmany(self._limit - 1)
-            )
+            if self._limit is None:
+                remaining_rows = self.cur.fetchall()
+            elif self._limit > 1:
+                # the first row is already in hand, so one fewer is wanted here
+                remaining_rows = self.cur.fetchmany(self._limit - 1)
+            else:
+                # `fetchmany(0)` reads as "all of them" in sqlite3, so a limit
+                # of one row is a call that must not be made at all.
+                remaining_rows = []
         except sqlite3.OperationalError:  # maybe canceled here
             return None
         except sqlite3.Error as e:
