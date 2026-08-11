@@ -11,6 +11,7 @@ from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
     merge_profile_with_cli,
+    parse_row_count,
 )
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
@@ -225,3 +226,24 @@ def test_merge_profile_with_cli_falsy_values_are_still_values() -> None:
         explicitly_set={"limit", "no_init"},
     )
     assert merged == {"limit": 0, "no_init": True}
+
+
+class TestParseRowCount:
+    """-1 is unlimited everywhere; 0 is zero rows, except for the viewer."""
+
+    @pytest.mark.parametrize("value,expected", [(500, 500), ("500", 500), (0, 0)])
+    def test_a_number_of_rows(self, value: object, expected: int) -> None:
+        assert parse_row_count(value, key="limit") == expected
+
+    def test_minus_one_is_unlimited(self) -> None:
+        assert parse_row_count(-1, key="limit") is None
+
+    def test_zero_is_unlimited_only_where_it_always_was(self) -> None:
+        """A Results Viewer holding no rows serves nobody, so 0 keeps the
+        meaning it has had there since before there was another key."""
+        assert parse_row_count(0, key="viewer_max_rows", zero_is_unlimited=True) is None
+
+    @pytest.mark.parametrize("value", ["all", None, 1.5, -2])
+    def test_what_is_not_a_number_of_rows(self, value: object) -> None:
+        with pytest.raises(HarlequinConfigError):
+            parse_row_count(value, key="limit")

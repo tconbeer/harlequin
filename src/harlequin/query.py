@@ -34,22 +34,22 @@ OnError = Literal["stop", "continue"]
 
 @dataclass(frozen=True)
 class RowLimit:
-    """How many rows to ask for, and whether to detect that there were more.
+    """How many rows to ask the database for, and whether to detect more.
 
-    Harlequin has two different limits and they are not interchangeable. The
-    app's `--limit` is a *soft* display cap: it fetches everything and caps what
-    is loaded into the viewer, which is why it can report an exact total. A
-    headless caller wants the *hard* one -- fewer rows leave the database --
-    and so can never learn the true total.
+    This is the *hard* limit, in both front ends: `cursor.set_limit()`, so fewer
+    rows leave the database. The soft caps -- how many rows the Results Viewer
+    holds, how many a text layout prints -- are applied downstream of this, over
+    rows that have already been fetched, and are `display_limit` here and
+    `LayoutOptions.max_rows` there.
 
-    That is what `detect_overflow` is for: `set_limit(n)` followed by
-    `fetchall()` returns at most n rows and says nothing about whether an n+1th
-    existed, so exactly n is ambiguous. Asking for one row more than we intend
-    to keep is what makes truncation knowable, and it costs exactly one row.
+    `detect_overflow` is what makes a hard limit's truncation knowable:
+    `set_limit(n)` followed by `fetchall()` returns at most n rows and says
+    nothing about whether an n+1th existed, so exactly n is ambiguous. Asking
+    for one row more than we intend to keep settles it, and costs one row.
     """
 
     max_rows: int | None = None
-    """None means unlimited."""
+    """None means unlimited. 0 fetches no rows, which is a header and no data."""
 
     detect_overflow: bool = False
 
@@ -95,13 +95,26 @@ class ResultSet:
     """
 
     truncated: bool
-    """Whether the database had more rows than this result set holds."""
+    """Whether the database had more rows than were fetched.
+
+    Only ever true under a hard limit with `detect_overflow`; a soft cap keeps
+    fewer rows than were fetched and leaves the total known exactly.
+    """
+
+    fetched_row_count: int
+    """How many rows the database returned, the overflow probe row excluded.
+
+    Exact when `truncated` is false, and the hard limit when it is true. Not
+    `backend.source_row_count`, which counts the probe row that only exists to
+    prove there was one.
+    """
 
     elapsed: float
     """Seconds spent fetching, not including execution."""
 
     @property
     def row_count(self) -> int:
+        """How many rows this result set holds, after any soft cap."""
         return self.backend.row_count
 
     # Deliberately no row iterator. Every consumer of a result set works
@@ -227,13 +240,18 @@ def execute(
             yield ExecutedStatement(statement=statement, cursor=cursor)
 
 
-def fetch(executed: ExecutedStatement, limit: RowLimit | None = None) -> ResultSet:
+def fetch(
+    executed: ExecutedStatement,
+    limit: RowLimit | None = None,
+    display_limit: int | None = None,
+) -> ResultSet:
     """Drain one executed statement's cursor into a `ResultSet`.
 
-    `limit.max_rows` caps the rows the result set holds, which is not
-    necessarily the number fetched: under `detect_overflow` `execute()` asked
-    for one more than this, and the extra row is what `truncated` is inferred
-    from.
+    `limit` is the hard limit `execute()` was given, and is passed here too so
+    that the extra row `detect_overflow` fetched is dropped rather than kept.
+    `display_limit` is a *soft* cap on top of it, for a caller that fetched more
+    rows than it intends to show: the result set holds that many, and still
+    knows exactly how many the database returned.
 
     Raises whatever the adapter raises; a caller that runs several statements
     decides for itself whether one failure ends the batch.
@@ -249,20 +267,28 @@ def fetch(executed: ExecutedStatement, limit: RowLimit | None = None) -> ResultS
     columns = executed.cursor.columns()
     elapsed = time.monotonic() - started_at
 
+    kept = [n for n in (limit.max_rows, display_limit) if n is not None]
     # `data` may be None, an empty sequence, or rows with no names on them --
     # none of which carry the columns the cursor just described. Handing those
     # names to `create_backend()` is what makes a result with no rows an empty
     # table with a header.
     backend = create_backend(
         data,
-        max_rows=limit.max_rows,
+        max_rows=min(kept) if kept else None,
         column_names=[name for name, _ in columns],
+    )
+
+    truncated = (
+        limit.detect_overflow
+        and limit.max_rows is not None
+        and backend.source_row_count > limit.max_rows
     )
 
     return ResultSet(
         statement=executed.statement,
         columns=columns,
         backend=backend,
-        truncated=backend.source_row_count > backend.row_count,
+        truncated=truncated,
+        fetched_row_count=backend.source_row_count - (1 if truncated else 0),
         elapsed=elapsed,
     )

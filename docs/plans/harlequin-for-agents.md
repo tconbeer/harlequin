@@ -262,6 +262,14 @@ and caps what loads into the viewer, which is why the TUI can report an exact
 `>500`; only `-l 0` yields an exact count. The TUI's default of 100,000 is right for a
 TUI and a catastrophe for an agent; `hsql` defaults to 500.
 
+> **Amended by [#1026](https://github.com/tconbeer/harlequin/issues/1026).** One key
+> naming both of those limits was the bug, not the design: the TUI's display cap is now
+> `viewer_max_rows`, `limit` is the hard fetch limit in both commands, and unlimited is
+> spelled `-1` rather than `0`, so that `--limit 0` can fetch a header and no rows (and
+> there is no `-l`, which is psql's `--list`). The text
+> layouts additionally cap what they *print* (`--display-rows`, 40 rows or 10 records),
+> since fetching 500 rows and printing 500 rows are separate questions.
+
 Detecting truncation at all requires fetching `limit + 1` rows and emitting `limit` —
 `set_limit(n)` followed by `fetchall()` returns at most n rows and cannot say whether an
 n+1th existed. Worth stating here rather than leaving to implementation, because it's the

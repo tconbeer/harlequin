@@ -6,7 +6,12 @@ from typing import Callable
 import pytest
 from wcwidth import wcswidth
 
-from harlequin.layout import LayoutOptions, get_layout, layout_names
+from harlequin.layout import (
+    LayoutOptions,
+    default_max_rows,
+    get_layout,
+    layout_names,
+)
 from harlequin.query import ResultSet, RowLimit
 
 ResultSetFactory = Callable[..., ResultSet]
@@ -288,6 +293,60 @@ class TestFooter:
         limit = RowLimit(max_rows=2, detect_overflow=True)
         result = result_set("select * from range(10)", limit=limit)
         assert "(2 of >2 rows)" in render(result, name)
+
+    def test_a_capped_result_counts_every_row_it_holds(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """The rows were fetched, so this total is exact, unlike a truncated
+        one -- and the footer is the only thing that says they exist."""
+        result = result_set("select * from range(10)")
+        assert render(result, options=LayoutOptions(max_rows=3)).endswith(
+            "(3 of 10 rows)\n"
+        )
+
+    def test_a_capped_and_truncated_result_reports_both(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        limit = RowLimit(max_rows=5, detect_overflow=True)
+        result = result_set("select * from range(10)", limit=limit)
+        assert render(result, options=LayoutOptions(max_rows=3)).endswith(
+            "(3 of >5 rows)\n"
+        )
+
+
+class TestRowCap:
+    def test_each_layout_declares_its_own_default(self) -> None:
+        assert default_max_rows("table") == 40
+        assert default_max_rows("markdown") == default_max_rows("md") == 40
+        assert default_max_rows("vertical") == 10
+
+    def test_an_unknown_name_has_no_default(self) -> None:
+        with pytest.raises(ValueError):
+            default_max_rows("yaml")
+
+    def test_nothing_is_capped_by_default(self, result_set: ResultSetFactory) -> None:
+        """The layouts print what they are given; the cap is the caller's."""
+        result = result_set("select * from range(100)")
+        assert render(result).count("\n") == 103  # header, rule, 100 rows, footer
+
+    @pytest.mark.parametrize("name", ["table", "markdown", "vertical"])
+    def test_every_layout_honors_the_cap(
+        self, result_set: ResultSetFactory, name: str
+    ) -> None:
+        result = result_set("select * from range(100)")
+        rendered = render(result, name, options=LayoutOptions(max_rows=2))
+        assert "99" not in rendered
+        assert "(2 of 100 rows)" in rendered
+
+    def test_the_cap_sets_the_column_widths(self, result_set: ResultSetFactory) -> None:
+        """A value in a row nobody sees should not pad the rows they do."""
+        result = result_set(
+            "select 'a' as v union all select 'a considerably wider value' order by v"
+        )
+        rendered = render(
+            result, options=LayoutOptions(max_rows=1, footer=False, header=False)
+        )
+        assert rendered == " a\n"
 
 
 class TestColor:

@@ -137,7 +137,31 @@ def report_truncation(max_rows: int) -> None:
     already under the result, as `500 of >500`, and what a caller cannot read
     off stdout is what to pass to get the rest.
     """
-    note(f"results truncated at --limit {max_rows}; pass -l 0 for all rows")
+    note(f"results truncated at --limit {max_rows}; pass --limit -1 for all rows")
+
+
+def report_row_cap(shown: int, of: int) -> None:
+    """Say that the layout printed fewer rows than were fetched.
+
+    Unlike truncation this is only worth saying when the footer cannot: it
+    reads `40 of 500 rows` there, and this stream does not restate stdout. With
+    `-t` or `--no-footer` there is no footer, and a short result that says
+    nothing about being short is the thing a caller cannot detect.
+    """
+    note(f"printed {shown} of {of} rows; pass --display-rows -1 for all of them")
+
+
+def report_row_cap_ignored(format_name: str) -> None:
+    """Say that `--display-rows` does not reach the format that was chosen.
+
+    It caps a layout, and a file format has no layout. Silence here would read
+    as a cap that was applied, which is the one way this could mislead: the
+    file would hold every row the caller thought they had capped.
+    """
+    note(
+        f"--display-rows caps the text layouts, so it had no effect on "
+        f"{format_name}; use --limit to fetch fewer rows"
+    )
 
 
 def report_stats(

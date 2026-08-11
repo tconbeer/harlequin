@@ -311,6 +311,21 @@ def test_limit(small_sqlite: Path) -> None:
     assert len(results) == 100  # type: ignore
 
 
+@pytest.mark.parametrize("limit", [0, 1, 2])
+def test_a_tiny_limit(small_sqlite: Path, limit: int) -> None:
+    """The first row is fetched eagerly, and 0 and 1 are where that shows.
+
+    `fetchmany(0)` reads as "all of them" in sqlite3, so a limit of one row is
+    a call that must not be made -- and a limit of no rows is a header.
+    """
+    conn = HarlequinSqliteAdapter((str(small_sqlite),)).connect()
+    cur = conn.execute("select * from drivers")
+    assert cur
+    results = cur.set_limit(limit).fetchall()
+    assert results is not None
+    assert len(results) == limit
+
+
 @pytest.mark.py12
 @pytest.mark.skipif(
     sys.version_info < (3, 12), reason="Transactions only supported on py3.12+"

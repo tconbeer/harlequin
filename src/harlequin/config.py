@@ -14,6 +14,14 @@ from harlequin.keymap import HarlequinKeyMap, RawKeyBinding
 DEFAULT_ADAPTER = "duckdb"
 """The adapter both commands connect with when nothing names one."""
 
+UNLIMITED = -1
+"""What every row-count option takes to mean "no limit".
+
+Not 0, which asks for zero rows: `select * from t` under `limit = 0` is how a
+caller asks a database what a query's columns are, and an option that spent
+that spelling on "unlimited" would take the idiom away.
+"""
+
 TUI_ONLY_KEYS = (
     "theme",
     "keymap_name",
@@ -21,6 +29,7 @@ TUI_ONLY_KEYS = (
     "show_s3",
     "locale",
     "no_download_tzdata",
+    "viewer_max_rows",
 )
 """Profile keys the IDE reads and a headless caller must drop.
 
@@ -36,6 +45,8 @@ class Profile(TypedDict, total=False):
     conn_str: Sequence[str] | str
     adapter: str
     limit: str | int
+    viewer_max_rows: str | int
+    display_rows: str | int
     theme: str
     keymap_name: list[str]
     show_files: Path | str | None
@@ -161,6 +172,39 @@ def merge_profile_with_cli(
             continue
         merged[key] = value
     return cast(Profile, merged)
+
+
+def parse_row_count(
+    value: Any, *, key: str, zero_is_unlimited: bool = False
+) -> int | None:
+    """A row-count option's value as a number of rows, or None for unlimited.
+
+    A config file can put anything under a key, so this is where a row count is
+    made a number, for both commands. `zero_is_unlimited` is for the Results
+    Viewer's cap alone, where 0 has always meant "hold everything" and a viewer
+    holding no rows would serve nobody.
+
+    Raises: HarlequinConfigError if the value is not a whole number of rows.
+    """
+
+    def refuse(detail: str) -> HarlequinConfigError:
+        return HarlequinConfigError(
+            f"{key}={value!r} is {detail}.",
+            title="Harlequin couldn't load your config file.",
+        )
+
+    # a bool is an int in Python, and `limit = true` is not one row
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        raise refuse("not a whole number of rows")
+    try:
+        rows = int(value)
+    except (TypeError, ValueError):
+        raise refuse("not a whole number of rows") from None
+    if rows < UNLIMITED:
+        raise refuse(f"not a number of rows. Pass {UNLIMITED} for no limit")
+    if rows == UNLIMITED or (rows == 0 and zero_is_unlimited):
+        return None
+    return rows
 
 
 def load_config(config_path: Path | None) -> Config:

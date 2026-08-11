@@ -14,8 +14,10 @@ from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
+    Profile,
     get_config_for_profile,
     merge_profile_with_cli,
+    parse_row_count,
 )
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
@@ -31,7 +33,7 @@ from harlequin.plugins import load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
 # configure defaults
-DEFAULT_LIMIT = 100_000
+DEFAULT_VIEWER_MAX_ROWS = 100_000
 DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())
 DEFAULT_KEYMAP_NAMES = ["vscode"]
@@ -60,6 +62,7 @@ HSQL_ONLY_OPTIONS = frozenset(
         "--no-header",
         "--no-footer",
         "--null-string",
+        "--display-rows",
         "--result",
         "--on-error",
         "--stats",
@@ -127,6 +130,7 @@ click.rich_click.OPTION_GROUPS = {
                 "--show-s3",
                 "--theme",
                 "--keymap-name",
+                "--viewer-max-rows",
                 "--limit",
                 "--config-path",
                 "--locale",
@@ -170,6 +174,30 @@ class HarlequinCommand(click.RichCommand):
                 f"runs SQL and exits. See {HEADLESS_DOCS_URL}",
                 ctx=ctx,
             ) from None
+
+
+def _resolve_row_limits(config: Profile) -> tuple[int | None, int | None]:
+    """The two limits, as `(query_limit, viewer_max_rows)`.
+
+    They are different questions and no longer one key: `limit` is the hard
+    fetch limit, which `hsql` has always meant by it and which the IDE now
+    hands to the Run Query Bar; `viewer_max_rows` is the soft cap on what the
+    Results Viewer holds of what came back. Unset, the first is a full fetch
+    and the second is 100,000 rows -- today's behavior, for a profile that
+    names neither.
+
+    Both keys are popped either way: whatever is left goes to the adapter.
+
+    Raises: HarlequinConfigError if either value is not a number of rows.
+    """
+    limit = config.pop("limit", None)
+    viewer_max_rows = config.pop("viewer_max_rows", None)
+    return (
+        parse_row_count(limit, key="limit") if limit is not None else None,
+        parse_row_count(viewer_max_rows, key="viewer_max_rows", zero_is_unlimited=True)
+        if viewer_max_rows is not None
+        else DEFAULT_VIEWER_MAX_ROWS,
+    )
 
 
 def _version_option() -> str:
@@ -276,13 +304,21 @@ def build_cli() -> click.Command:
         ),
     )
     @click.option(
-        "--limit",
-        "-l",
-        default=DEFAULT_LIMIT,
-        type=click.IntRange(min=0),
+        "--viewer-max-rows",
+        default=DEFAULT_VIEWER_MAX_ROWS,
+        type=click.IntRange(min=-1),
         help=(
             "Set the maximum number of rows that can be loaded into Harlequin's "
-            "Results Viewer. Set to 0 for no limit. Default is 100,000"
+            "Results Viewer. Set to -1 for no limit. Default is "
+            f"{DEFAULT_VIEWER_MAX_ROWS:,}"
+        ),
+    )
+    @click.option(
+        "--limit",
+        type=click.IntRange(min=-1),
+        help=(
+            "Default value for the limit control; if set, the limit will be "
+            "applied by default. If unset, queries fetch all rows."
         ),
     )
     @click.option(
@@ -408,7 +444,11 @@ def build_cli() -> click.Command:
         conn_str: Sequence[str] = config.pop("conn_str", tuple())
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
-        max_results: str | int = config.pop("limit", DEFAULT_LIMIT)
+        try:
+            query_limit, viewer_max_rows = _resolve_row_limits(config)
+        except HarlequinConfigError as e:
+            pretty_print_error(e)
+            ctx.exit(2)
         theme: str = config.pop("theme", DEFAULT_THEME)
         keymap_names: list[str] = config.pop("keymap_name", DEFAULT_KEYMAP_NAMES)
         if isinstance(keymap_names, str):
@@ -445,7 +485,8 @@ def build_cli() -> click.Command:
             keymap_names=keymap_names,
             user_defined_keymaps=user_defined_keymaps,
             connection_hash=connection_id,
-            max_results=max_results,
+            viewer_max_rows=viewer_max_rows,
+            query_limit=query_limit,
             theme=theme,
             show_files=show_files,
             show_s3=show_s3,
