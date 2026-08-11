@@ -6,11 +6,12 @@ without importing any of them; the second builds the real command with that
 adapter's connection options on it. An invocation only ever uses one adapter,
 so for execution this is not a compromise.
 
-`--help` is the exception, and works the other way round: with no adapter named
-it renders the adapter-agnostic surface plus the *names* of what is installed,
-importing nothing at all. `hsql --help -a postgres` imports postgres alone.
-That keeps the first thing a caller reads small and stable, and keeps it true
-for every adapter rather than for whichever one is the default.
+`--help` and `--version` are the exception, and work the other way round: with
+no adapter named they answer without importing one at all -- help renders the
+adapter-agnostic surface plus the *names* of what is installed. `hsql --help -a
+postgres` imports postgres alone. That keeps the first thing a caller reads
+small and stable, and keeps it true for every adapter rather than for whichever
+one is the default.
 """
 
 from __future__ import annotations
@@ -553,9 +554,11 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
                 type=click.Path(path_type=Path),
                 envvar="HARLEQUIN_CONFIG_PATH",
             ),
-            # click's own --help is eager and would exit; this is the same
-            # spelling as a plain flag, so the probe can see it was asked for.
+            # click's own --help and --version are eager and would exit; these
+            # are the same spellings as plain flags, so the probe can see that
+            # one was asked for.
             click.Option(["--help"], is_flag=True),
+            click.Option(["--version"], is_flag=True),
         ],
         add_help_option=False,
     )
@@ -586,8 +589,13 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
     name = ctx.params.get("adapter") or profile.get("adapter")
     # bare `hsql` and `hsql --help` render the adapter-agnostic surface, which
     # is the one help that is true for every adapter -- and imports none.
+    # `--version` prints the same string whatever is installed, so it takes the
+    # same exit: an answer that does not depend on an adapter should not wait
+    # for one to import. Both still load a *named* adapter, so that
+    # `hsql --help -a postgres` documents it and its options parse either way.
     wants_help = not argv or bool(ctx.params.get("help"))
-    if name is None and wants_help:
+    wants_version = bool(ctx.params.get("version"))
+    if name is None and (wants_help or wants_version):
         return _Preflight(profile=profile, adapter=None, error=error)
 
     by_name = {n.lower(): n for n in installed}

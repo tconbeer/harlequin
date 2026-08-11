@@ -21,8 +21,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, Protocol, Sequence, TextIO
 
-from wcwidth import wcswidth
-
 if TYPE_CHECKING:
     from harlequin.query import ResultSet
 
@@ -333,6 +331,10 @@ def _width(text: str) -> int:
         # the overwhelming majority of cells. `isascii()` is a C-level flag
         # check, and every printable ASCII character is exactly one cell.
         return len(text)
+    # deferred, not module-scope: the fast path above returns without it, so an
+    # all-ASCII run -- most of them -- never pays wcwidth's ~25ms import.
+    from wcwidth import wcswidth
+
     width = wcswidth(text)
     # -1 means the string holds a control character, whose effect on the cursor
     # we cannot predict anyway -- that row is misaligned whatever we return, so

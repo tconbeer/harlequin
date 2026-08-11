@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from harlequin.config import (
+    ConfigFile,
     Profile,
     _find_config_files,
     get_config_for_profile,
@@ -103,6 +104,9 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
     "filename,key_words",
     [
         ("default_no_exist.toml", ["default_profile", "foo"]),
+        # a file that names a default and defines no profiles at all used to
+        # escape as a KeyError rather than being reported
+        ("default_no_profiles.toml", ["default_profile", "foo"]),
         ("extra_key.toml", ["unexpected key"]),
         ("none_profile.toml", ["None", "not allowed"]),
         ("not_toml.toml", ["Attempted to load"]),
@@ -247,3 +251,108 @@ class TestParseRowCount:
     def test_what_is_not_a_number_of_rows(self, value: object) -> None:
         with pytest.raises(HarlequinConfigError):
             parse_row_count(value, key="limit")
+
+
+class TestConfigFileRoundTrip:
+    """Reading and writing use different parsers, so writing has to be tested.
+
+    `ConfigFile` reads with `tomllib` because every start-up reads config, and
+    writes with tomlkit because a user's comments have to survive the write.
+    Nothing catches the two drifting apart except these.
+    """
+
+    def test_a_write_preserves_the_comments_around_what_it_did_not_touch(
+        self, tmp_path: Path
+    ) -> None:
+        """Which is why writing still goes through tomlkit.
+
+        Note the limit, which is not new: `relevant_config` hands back plain
+        data, so `update()` replaces a whole table rather than editing inside
+        it, and comments *within* a rewritten table do not survive. Comments
+        elsewhere in the file do.
+        """
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "# a file someone wrote by hand\n"
+            'default_profile = "one"\n'
+            "\n"
+            "# and a note further down\n"
+            "[profiles.one]\n"
+            'theme = "fruity"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        config["profiles"]["two"] = {"theme": "monokai"}
+        config_file.update(config)
+        config_file.write()
+
+        written = path.read_text()
+        assert "# a file someone wrote by hand" in written
+        assert "# and a note further down" in written
+        # and the new profile arrived, without disturbing the old one
+        reread = load_config(config_path=path)
+        assert reread["profiles"]["two"] == {"theme": "monokai"}
+        assert reread["profiles"]["one"] == {"theme": "fruity"}
+        assert reread["default_profile"] == "one"
+
+    def test_a_write_to_pyproject_touches_only_the_harlequin_table(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "pyproject.toml"
+        path.write_text(
+            "[project]\n"
+            'name = "someone-elses-project"\n'
+            "\n"
+            "[tool.harlequin.profiles.one]\n"
+            'theme = "fruity"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        config["default_profile"] = "one"
+        config_file.update(config)
+        config_file.write()
+
+        reread = ConfigFile(path)
+        assert reread.relevant_config["default_profile"] == "one"
+        assert reread.relevant_config["profiles"]["one"] == {"theme": "fruity"}
+        # the rest of the file is not ours to rewrite
+        assert 'name = "someone-elses-project"' in path.read_text()
+
+    def test_a_write_creates_a_file_that_does_not_exist_yet(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "nested" / ".harlequin.toml"
+
+        config_file = ConfigFile(path)
+        assert config_file.relevant_config == {}
+        config_file.update(
+            {"default_profile": "one", "profiles": {"one": {"theme": "fruity"}}}
+        )
+        config_file.write()
+
+        assert path.exists()
+        assert load_config(config_path=path) == {
+            "default_profile": "one",
+            "profiles": {"one": {"theme": "fruity"}},
+        }
+
+    def test_a_write_adds_the_harlequin_table_to_a_pyproject_without_one(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "pyproject.toml"
+        path.write_text('[project]\nname = "someone-elses-project"\n')
+
+        config_file = ConfigFile(path)
+        assert config_file.relevant_config == {}
+        config_file.update({"default_profile": "one"})
+        config_file.write()
+
+        assert ConfigFile(path).relevant_config == {"default_profile": "one"}
+
+    def test_an_unreadable_file_raises_before_anything_is_written(
+        self, data_dir: Path
+    ) -> None:
+        with pytest.raises(HarlequinConfigError):
+            ConfigFile(data_dir / "unit_tests" / "config" / "not_toml.toml")

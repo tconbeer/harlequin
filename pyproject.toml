@@ -49,7 +49,14 @@ dependencies = [
     "duckdb>=1.1.1; python_version < '3.14'",
     "shandy-sqlfmt>=0.28.2",
     "platformdirs>=3.10,<5.0",
+
+    # tomlkit writes config files: it is the parser that keeps a user's
+    # comments and key order across `harlequin --config`. Reading goes through
+    # stdlib `tomllib` instead, which is ~30x faster on the pyproject.toml that
+    # start-up finds in any Python project's working directory. `tomli` is that
+    # same parser, and is what 3.10 has instead.
     "tomlkit>=0.12.5,<0.14.0",
+    "tomli>=2.0.1; python_version < '3.11'",
     "questionary==2.0.1",
     # imported directly by components/error_modal.py; also a textual-textarea dep
     "pyperclip>=1.9,<2",
