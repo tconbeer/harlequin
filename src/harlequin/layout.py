@@ -7,6 +7,13 @@ as it does in a file.
 
 `LayoutOptions` is a set of independent switches, following psql: `-t` is
 `header=False, footer=False`, and `-A` is `aligned=False`.
+
+One of them is a row cap, and it is a *soft* one: a layout is something a
+person reads, and a thousand rows scrolled past is neither read nor useful.
+Each layout declares the default that suits its shape -- `DEFAULT_MAX_ROWS`,
+which a caller reads with `default_max_rows()` -- and it caps what is printed
+only. The rows the result set holds are what the footer counts, so a capped
+result reads `40 of 500 rows` and says what it is not showing.
 """
 
 from __future__ import annotations
@@ -59,6 +66,13 @@ class LayoutOptions:
     can never change what a column lines up with.
     """
 
+    max_rows: int | None = None
+    """Print at most this many rows. None prints every row the result holds.
+
+    A soft cap: the rows are already fetched, so the footer still counts them
+    all. `default_max_rows()` is the number each layout would choose.
+    """
+
 
 class Layout(Protocol):
     def write(self, result: "ResultSet", out: TextIO) -> None:
@@ -76,6 +90,18 @@ def layout_names() -> list[str]:
     return list(_LAYOUTS)
 
 
+def default_max_rows(name: str) -> int:
+    """How many rows `name` prints when its caller has no preference.
+
+    Per layout rather than one number: `vertical` spends a line per column, so
+    the ten records that fill a screen there are forty rows of a table.
+    """
+    try:
+        return _LAYOUTS[name].DEFAULT_MAX_ROWS
+    except KeyError as e:
+        raise ValueError(f"{name} is not a layout Harlequin can render.") from e
+
+
 def get_layout(name: str, options: LayoutOptions | None = None) -> Layout:
     try:
         layout = _LAYOUTS[name]
@@ -88,6 +114,8 @@ def get_layout(name: str, options: LayoutOptions | None = None) -> Layout:
 
 
 class _BaseLayout:
+    DEFAULT_MAX_ROWS = 40
+
     def __init__(self, options: LayoutOptions) -> None:
         self.options = options
         self.null = (
@@ -103,8 +131,18 @@ class _BaseLayout:
         return [name for name, _ in result.columns]
 
     def _rows(self, result: "ResultSet") -> list[Row]:
+        """The rows this layout prints, which the row cap may cut short.
+
+        Cut here rather than at each layout, so that the columns are only as
+        wide as what is printed: a value in a row nobody sees should not pad the
+        rows they do.
+        """
         columns = [column.to_pylist() for column in result.text_columns().columns]
-        return [list(row) for row in zip(*columns, strict=False)] if columns else []
+        rows: list[Row] = (
+            [list(row) for row in zip(*columns, strict=False)] if columns else []
+        )
+        cap = self.options.max_rows
+        return rows if cap is None else rows[:cap]
 
     def _style(self, text: str, *, bold: bool = False, dim: bool = False) -> str:
         if not self.options.color:
@@ -140,21 +178,27 @@ class _BaseLayout:
         """
         return [*widths[:-1], 0] if widths else []
 
-    def _footer(self, result: "ResultSet") -> str:
+    def _footer(self, result: "ResultSet", shown: int) -> str:
         """The row count, as psql writes it.
 
-        Under a hard fetch limit the true total is unknowable -- not fetching it
-        is the point of the limit -- so a truncated result reads
-        `500 of >500 rows` rather than inventing an N.
+        Three numbers can differ and the footer has to hold all of them: the
+        rows printed, the rows fetched, and whether there were more. So a row
+        cap reads `40 of 500 rows`, a hard fetch limit reads `500 of >500 rows`,
+        and the two together read `40 of >500 rows`.
 
-        `>500` and not `500+`: the limit+1 fetch proves there is a 501st row, so
-        the total is strictly greater, where the conventional `N+` claims only
-        `at least N` and would be the weaker statement of the two. Always
-        plural, because a truncated result has at least two rows by definition.
+        Under a hard fetch limit the true total is unknowable -- not fetching it
+        is the point of the limit -- so the footer must not invent one. `>500`
+        and not `500+`: the limit+1 fetch proves there is a 501st row, so the
+        total is strictly greater, where the conventional `N+` claims only
+        `at least N` and would be the weaker statement of the two. The noun
+        agrees with the total rather than with what was printed, which is why a
+        truncated result is always plural.
         """
-        rows = result.row_count
+        rows = result.fetched_row_count
         if result.truncated:
-            return f"({rows} of >{rows} rows)"
+            return f"({shown} of >{rows} rows)"
+        if shown < rows:
+            return f"({shown} of {rows} rows)"
         return f"({rows} {'row' if rows == 1 else 'rows'})"
 
 
@@ -188,7 +232,7 @@ class _TableLayout(_BaseLayout):
                 out.write("|".join(cells) + "\n")
 
         if self.options.footer:
-            out.write(self._footer(result) + "\n")
+            out.write(self._footer(result, shown=len(rows)) + "\n")
 
 
 class _MarkdownLayout(_BaseLayout):
@@ -234,7 +278,7 @@ class _MarkdownLayout(_BaseLayout):
         if self.options.footer:
             # italic and set off by a blank line, so it reads as a caption
             # rather than as a broken row.
-            out.write(f"\n_{self._footer(result)}_\n")
+            out.write(f"\n_{self._footer(result, shown=len(rows))}_\n")
 
 
 class _VerticalLayout(_BaseLayout):
@@ -243,6 +287,9 @@ class _VerticalLayout(_BaseLayout):
     The layout to reach for when one row is wider than the terminal, which is
     the case that makes every other text layout unreadable.
     """
+
+    DEFAULT_MAX_ROWS = 10
+    """A record here is as many lines as the result has columns."""
 
     def write(self, result: "ResultSet", out: TextIO) -> None:
         headers = self._headers(result)
@@ -266,7 +313,7 @@ class _VerticalLayout(_BaseLayout):
                 out.write(f"{label}{separator}{self._cell(value, 0)}\n")
 
         if self.options.footer:
-            out.write(self._footer(result) + "\n")
+            out.write(self._footer(result, shown=len(rows)) + "\n")
 
     def _record_rule(self, index: int, width: int) -> str:
         rule = f"-[ RECORD {index} ]"
