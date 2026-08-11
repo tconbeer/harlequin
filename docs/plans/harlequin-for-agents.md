@@ -221,7 +221,7 @@ hsql <SUBCOMMAND> [OPTIONS]         catalog, describe, fmt, spec, info,
       --no-header        Omit the header row (keep other chrome).
       --null-string STR  Render NULL as STR. Default: empty for csv, "NULL" for table.
   -P, --profile NAME     Same profiles as the TUI.
-  -l, --limit N          Max rows per result set. Default: 500. 0 = no limit.
+      --limit N          Max rows fetched per result set. Default: 500. -1 = no limit.
       --result all|last|N  Which result set(s) to emit. Default: all.
       --on-error stop|continue    Default: stop.
       --stats            Write a one-line JSON summary to stderr.
@@ -259,15 +259,15 @@ point — `hsql -P prod -c ...` means the agent never handles a credential.
 ### Behaviors that matter more than the flag list
 
 **Truncation is always announced.** If `--limit` bites, stderr gets
-`note: results truncated at --limit 500; pass -l 0 for all rows`, and text formats
+`note: results truncated at --limit 500; pass --limit -1 for all rows`, and text formats
 append a visible `… 500 of >500 rows` footer.
 
-Note that `-l` here is a *hard* limit — it caps what leaves the database, via the
+Note that `--limit` here is a *hard* limit — it caps what leaves the database, via the
 adapter's `set_limit()`. The TUI's `--limit` is a soft display cap: it fetches everything
 and caps what loads into the viewer, which is why the TUI can report an exact
 `Showing 100,000 of 3,412,887`. `hsql` deliberately doesn't buy that number, so it says
-`>500`; only `-l 0` yields an exact count. The TUI's default of 100,000 is right for a
-TUI and a catastrophe for an agent; `hsql` defaults to 500.
+`>500`; only `--limit -1` yields an exact count. The TUI's default of 100,000 is
+right for a TUI and a catastrophe for an agent; `hsql` defaults to 500.
 
 > **Amended by [#1026](https://github.com/tconbeer/harlequin/issues/1026).** One key
 > naming both of those limits was the bug, not the design: the TUI's display cap is now
