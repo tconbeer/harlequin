@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-from typing import Any, Container, Mapping, Sequence, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Container, Mapping, Sequence, TypedDict, cast
 
 from platformdirs import user_config_path
-from tomlkit.exceptions import TOMLKitError
-from tomlkit.toml_document import TOMLDocument
-from tomlkit.toml_file import TOMLFile
 
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap, RawKeyBinding
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+if TYPE_CHECKING:
+    from tomlkit.toml_document import TOMLDocument
 
 DEFAULT_ADAPTER = "duckdb"
 """The adapter both commands connect with when nothing names one."""
@@ -63,29 +69,40 @@ class Config(TypedDict, total=False):
 
 
 class ConfigFile:
+    """One TOML file on disk, read cheaply and written back without reflowing.
+
+    Reading and writing use different parsers on purpose. Every start-up reads
+    config -- including `hsql`, and including the `pyproject.toml` that happens
+    to be in the working directory of any Python project -- so reads go through
+    `tomllib`, which is C and about 30x faster than tomlkit on a file that size.
+
+    Writes are rare (`harlequin --config`, and the keymap editor) and have a
+    requirement reads do not: a user's comments, key order and quoting have to
+    survive being rewritten. That is what tomlkit is for, so `update()` re-reads
+    the file through it, and nothing imports tomlkit until something writes.
+    """
+
     def __init__(self, path: Path) -> None:
         """
         Opens and reads the TOML file at path. Can be used to create
         a new file if one does not already exist.
 
-        Stores references to the TOMLFile, TOMLDocument, and tracks
-        whether or not the file is a pyproject.toml file.
-
         Raises: HarlequinConfigError if we can't read the TOML file.
         """
         self.path = path
-        self.toml_file = TOMLFile(path)
+        self.is_pyproject = path.stem == "pyproject"
+        self._doc: TOMLDocument | None = None
         try:
-            self.toml_doc = self.toml_file.read()
+            with open(path, "rb") as f:
+                self._data: dict[str, Any] = tomllib.load(f)
         except OSError:
-            self.toml_doc = TOMLDocument()
-        except TOMLKitError as e:
+            self._data = {}
+        except tomllib.TOMLDecodeError as e:
             raise HarlequinConfigError(
                 f"Attempted to load the config file at {path}, but encountered an "
                 f"error:\n\n{e}",
                 title="Harlequin could not load the config file.",
             ) from e
-        self.is_pyproject = path.stem == "pyproject"
 
     @property
     def relevant_config(self) -> Config:
@@ -96,32 +113,63 @@ class ConfigFile:
         """
         relevant_config: Config = cast(
             Config,
-            self.toml_doc.unwrap()
+            self._data
             if not self.is_pyproject
-            else self.toml_doc.unwrap().get("tool", {}).get("harlequin", {}),
+            else self._data.get("tool", {}).get("harlequin", {}),
         )
         return relevant_config
+
+    def _editable(self) -> TOMLDocument:
+        """The same file, re-read through tomlkit so a write keeps its style.
+
+        Built on demand rather than in `__init__`: this is the expensive parse,
+        and only the two commands that write a config file ever need it.
+        """
+        if self._doc is not None:
+            return self._doc
+
+        from tomlkit.exceptions import TOMLKitError
+        from tomlkit.toml_document import TOMLDocument
+        from tomlkit.toml_file import TOMLFile
+
+        try:
+            self._doc = TOMLFile(self.path).read()
+        except OSError:
+            self._doc = TOMLDocument()
+        except TOMLKitError as e:
+            # `__init__` already parsed this file, so reaching here means the
+            # two parsers disagree about it -- rare, but not something to write
+            # a half-understood file over.
+            raise HarlequinConfigError(
+                f"Attempted to load the config file at {self.path}, but encountered "
+                f"an error:\n\n{e}",
+                title="Harlequin could not load the config file.",
+            ) from e
+        return self._doc
 
     def update(self, config: Config) -> None:
         """
         Replace the relevant section of the in-memory TOML doc with the updated
         Config.
         """
+        doc = self._editable()
         if self.is_pyproject:
-            if "tool" not in self.toml_doc:
-                self.toml_doc["tool"] = {"harlequin": {}}
-            elif "harlequin" not in self.toml_doc["tool"]:  # type: ignore
-                self.toml_doc["tool"]["harlequin"] = {}  # type: ignore
-            self.toml_doc["tool"]["harlequin"].update(config)  # type: ignore
+            if "tool" not in doc:
+                doc["tool"] = {"harlequin": {}}
+            elif "harlequin" not in doc["tool"]:  # type: ignore
+                doc["tool"]["harlequin"] = {}  # type: ignore
+            doc["tool"]["harlequin"].update(config)  # type: ignore
         else:
-            self.toml_doc.update(config)
+            doc.update(config)
 
     def write(self) -> None:
         """
         Write the in-memory TOML doc to disk, at self.path.
         """
+        from tomlkit.toml_file import TOMLFile
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.toml_file.write(self.toml_doc)
+        TOMLFile(self.path).write(self._editable())
 
 
 def get_config_for_profile(
@@ -359,9 +407,12 @@ def _raise_on_bad_schema(config: Config) -> None:
     elif (
         default is not None
         and isinstance(default, str)
-        and isinstance(config["profiles"], dict)
+        # `.get`, not `[...]`: a file may set default_profile and define no
+        # profiles at all, and that is a config error to report, not a KeyError
+        # to crash on. The next clause is what reports it.
+        and isinstance(config.get("profiles", {}), dict)
         and default != "None"
-        and config["profiles"].get(default, None) is None
+        and config.get("profiles", {}).get(default, None) is None
     ):
         raise HarlequinConfigError(
             f"Config files set the default_profile to {default}, but do not define a "
