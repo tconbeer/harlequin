@@ -155,7 +155,7 @@ def test_psql_flag_algebra(
 
 @pytest.mark.parametrize("format_name", LAYOUTS + FILE_FORMATS + ["none"])
 def test_every_format_runs(hsql: Hsql, duck: list[str], format_name: str) -> None:
-    res = hsql(*duck, "-F", format_name, "-c", "select 1 as a, null as b")
+    res = hsql(*duck, "--format", format_name, "-c", "select 1 as a, null as b")
     assert res.exit_code == ExitCode.OK
     assert bool(res.stdout_bytes) is (format_name != "none")
 
@@ -176,12 +176,13 @@ def test_format_shorthands(
     sql = "select 1 as a"
     assert (
         hsql(*duck, flag, "-c", sql).stdout_bytes
-        == hsql(*duck, "-F", format_name, "-c", sql).stdout_bytes
+        == hsql(*duck, "--format", format_name, "-c", sql).stdout_bytes
     )
 
 
 @pytest.mark.parametrize(
-    "args", [["--csv", "--json"], ["--csv", "-F", "json"], ["-F", "json", "--csv"]]
+    "args",
+    [["--csv", "--json"], ["--csv", "--format", "json"], ["--format", "json", "--csv"]],
 )
 def test_two_formats_is_a_usage_error(
     hsql: Hsql, duck: list[str], args: list[str]
@@ -219,14 +220,14 @@ def test_stats_does_not_touch_stdout(
     hsql: Hsql, duck: list[str], format_name: str
 ) -> None:
     sql = "select 1 as a, 'x' as b"
-    plain = hsql(*duck, "-F", format_name, "-c", sql)
-    with_stats = hsql(*duck, "-F", format_name, "--stats", "-c", sql)
+    plain = hsql(*duck, "--format", format_name, "-c", sql)
+    with_stats = hsql(*duck, "--format", format_name, "--stats", "-c", sql)
     assert plain.stdout_bytes == with_stats.stdout_bytes
     assert with_stats.stderr != plain.stderr
 
 
 def test_stats_payload(hsql: Hsql, duck: list[str]) -> None:
-    res = hsql(*duck, "-F", "none", "--stats", "--limit", "3", "-c", TEN_ROWS)
+    res = hsql(*duck, "--format", "none", "--stats", "--limit", "3", "-c", TEN_ROWS)
     payload = json.loads(res.stderr.splitlines()[-1])
     assert payload == {
         "status": "ok",
@@ -286,7 +287,7 @@ def test_one_truncated_row_is_still_rows(hsql: Hsql, duck: list[str]) -> None:
 
 
 def test_no_limit_counts_exactly(hsql: Hsql, duck: list[str]) -> None:
-    res = hsql(*duck, "--limit", "-1", "--stats", "-F", "none", "-c", TEN_ROWS)
+    res = hsql(*duck, "--limit", "-1", "--stats", "--format", "none", "-c", TEN_ROWS)
     payload = json.loads(res.stderr.splitlines()[-1])
     assert payload["rows"] == 10
     assert payload["truncated"] is False
@@ -332,7 +333,7 @@ def test_each_layout_has_its_own_default_cap(
     hsql: Hsql, duck: list[str], format_name: str, expected: int
 ) -> None:
     """A screen holds ten records vertically and forty rows as a table."""
-    res = hsql(*duck, "-tA", "-F", format_name, "-c", HUNDRED_ROWS)
+    res = hsql(*duck, "-tA", "--format", format_name, "-c", HUNDRED_ROWS)
     assert res.exit_code == ExitCode.OK
     printed = [line for line in res.stdout.splitlines() if line]
     assert len(printed) == expected
@@ -552,8 +553,8 @@ def test_output_file_and_redirect_agree(
 ) -> None:
     """The one thing a second write path could plausibly get wrong."""
     destination = tmp_path / f"out.{format_name}"
-    written = hsql(*duck, "-F", format_name, "-o", str(destination), "-c", sql)
-    piped = hsql(*duck, "-F", format_name, "-c", sql)
+    written = hsql(*duck, "--format", format_name, "-o", str(destination), "-c", sql)
+    piped = hsql(*duck, "--format", format_name, "-c", sql)
     assert written.exit_code == ExitCode.OK
     assert written.stdout_bytes == b""
     assert destination.read_bytes() == piped.stdout_bytes
@@ -780,7 +781,7 @@ def test_an_adapter_option_cannot_shadow_an_hsql_flag() -> None:
     # an option whose only spelling hsql already owns is dropped whole, so the
     # command is left with hsql's own --format and no duplicate
     (fmt,) = by_name["format"]
-    assert "-F" in fmt.opts
+    assert fmt.opts == ["--format"]
     # anything that doesn't collide arrives untouched
     (fine,) = by_name["fine"]
     assert set(fine.opts) == {"--fine", "-Z"}

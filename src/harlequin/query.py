@@ -144,10 +144,10 @@ class ResultSet:
         The text layouts need strings, and this is where they get them: through
         duckdb, the same serializer `export.write_file()` writes csv and json
         with. Deriving them any other way -- `str()`, or the data table's
-        display formatter -- would make `-F table` and `-F csv` disagree about
-        what a timestamp, a decimal or a blob looks like, and the display
-        formatter would additionally render `1234567` as `1,234,567` under a
-        locale that groups digits.
+        display formatter -- would make `--format table` and `--format csv`
+        disagree about what a timestamp, a decimal or a blob looks like, and
+        the display formatter would additionally render `1234567` as
+        `1,234,567` under a locale that groups digits.
 
         SQL `NULL` comes back as Python `None`, so a null stays distinguishable
         from the literal string a caller chose to render nulls as.

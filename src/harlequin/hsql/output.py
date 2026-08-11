@@ -4,7 +4,7 @@ Two families of format, and the difference between them is who serializes.
 `harlequin.export` hands an Arrow table to duckdb or pyarrow; `harlequin.layout`
 arranges the strings `ResultSet.text_columns()` already produced. Neither is
 reimplemented here, and nothing here renders a value itself -- which is what
-makes `-F table` and `-F csv` agree cell for cell.
+makes `--format table` and `--format csv` agree cell for cell.
 
 Everything leaves through one binary stream, `-o PATH` included, so a file and
 a redirect cannot disagree about a byte. Text is encoded UTF-8 explicitly: the
@@ -30,7 +30,7 @@ _HOLD_MANY = frozenset({*layout_names(), "jsonl", "ndjson", NONE})
 
 
 def format_names() -> list[str]:
-    """Every name `-F` accepts, aliases included, in the order help lists them."""
+    """Every name `--format` accepts, aliases included, in the order help lists them."""
     return [*layout_names(), *file_format_names(), NONE]
 
 

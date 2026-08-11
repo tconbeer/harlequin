@@ -49,7 +49,6 @@ HSQL_ONLY_OPTIONS = frozenset(
         "--file",
         "-o",
         "--output",
-        "-F",
         "--format",
         "--csv",
         "--json",
