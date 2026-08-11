@@ -10,13 +10,7 @@ from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Input
 
 DEFAULT_LIMIT = 500
-"""What the limit input offers, unchecked, when nothing configured a limit.
-
-A number to start from rather than a limit in force: unchecked, it does
-nothing until someone checks the box. Nothing bounds it -- this is the hard
-fetch limit, and the Results Viewer's cap is a different number about a
-different thing, which once bounded this input back when one option set both.
-"""
+"""What the limit input offers, unchecked, when nothing configured a limit."""
 
 
 class RunQueryBar(Horizontal):
@@ -33,8 +27,7 @@ class RunQueryBar(Horizontal):
         self.query_limit = query_limit
         """The limit `--limit` configured, in force from the first query.
 
-        None leaves the box unchecked, which is a full fetch: a human watching
-        a viewport can afford one, and it is what the IDE has always done.
+        None leaves the box unchecked, which is a full fetch.
         """
 
         self.show_cancel_button = show_cancel_button

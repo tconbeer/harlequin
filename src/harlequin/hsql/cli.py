@@ -60,9 +60,6 @@ DEFAULT_LIMIT = 500
 database -- and it is the same promise the `limit` key makes in the IDE. `-1`
 is unlimited, and `0` fetches a header and no rows, which is how a caller asks
 what a query's columns are.
-
-No `-l`: that is psql's `--list`, and a flag that lists databases in one
-command and truncates results in the other is a mistake waiting for a script.
 """
 
 SHORTHANDS = {
@@ -200,7 +197,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         metavar="N",
         type=click.IntRange(min=UNLIMITED),
         help=(
-            "Rows printed per result set by the text layouts. -1 for all of them. "
+            "Rows printed per result set by the text layouts. -1 for all rows. "
             f"[default: {_default_display_rows()}]"
         ),
     )

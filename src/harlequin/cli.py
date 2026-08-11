@@ -309,17 +309,16 @@ def build_cli() -> click.Command:
         type=click.IntRange(min=-1),
         help=(
             "Set the maximum number of rows that can be loaded into Harlequin's "
-            "Results Viewer. Set to -1 for no limit. Default is 100,000"
+            "Results Viewer. Set to -1 for no limit. Default is "
+            f"{DEFAULT_VIEWER_MAX_ROWS:,}"
         ),
     )
     @click.option(
         "--limit",
         type=click.IntRange(min=-1),
         help=(
-            "Limit every query to this many rows, as if you had typed it into "
-            "the Run Query Bar and checked the box: fewer rows leave the "
-            "database. The same limit [bold]hsql --limit[/] applies. Unset, queries "
-            "fetch every row."
+            "Default value for the limit control; if set, the limit will be "
+            "applied by default. If unset, queries fetch all rows."
         ),
     )
     @click.option(

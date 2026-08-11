@@ -26,12 +26,11 @@ All notable changes to this project will be documented in this file.
   - `harlequin --config` now asks for both, and writes `limit` only when there is one.
   - **`-1` is "no limit" everywhere**, in both commands and every row-count option. `0` still means no limit for `viewer_max_rows` alone, where it always has and where zero rows would serve nobody; everywhere else `0` is zero rows, so that `limit 0` can ask a database what a query's columns are.
   - The Run Query Bar's limit input is no longer bounded by the viewer's cap, which only made sense while one option set both, and no longer starts at `min(500, limit)`.
-  - **`--limit` has no short spelling**, in either command. `-l` is psql's `--list`, and a flag that lists databases in one client and truncates results in another is a mistake waiting for a script — the more so now that `--limit` decides what leaves the database.
 
 ### Breaking Changes
 
-- `limit` and `--limit` now limit what the IDE **fetches**, where they used to cap what the Results Viewer **displayed** ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). A profile with `limit = 100_000` used to fetch every row and show the first 100,000; it now fetches 100,000 and says `(Showing 100,000 of >100,000 Records)`. On screen the two are nearly the same thing — what changes is what leaves the database, which is the point. To keep the old meaning, rename the key to `viewer_max_rows`; the number does not change. Nothing warns at start-up because nothing needs to: the limit is visible in the Run Query Bar, checked, with the number in it.
-- `harlequin -l` is gone; the option is `--limit`, spelled out ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). `-l` is psql's "list databases", and the two meanings are too far apart to leave sitting on the same letter. Losing the shorthand in the same release that changes what the option does is deliberate: a script that passes `-l` now fails loudly instead of quietly fetching fewer rows than it used to.
+- `limit` and `--limit` now cap what the IDE **fetches**, not what the Results Viewer **displays** ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). To keep the old meaning, rename the key to `viewer_max_rows`; the number does not change.
+- `-l` is gone, in both commands; the option is `--limit` ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). `-l` is psql's "list databases".
 
 ### Bug Fixes
 
