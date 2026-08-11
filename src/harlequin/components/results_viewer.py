@@ -59,12 +59,19 @@ class ResultsTable(DataTable, inherit_bindings=False):
         disabled: bool = False,
         null_rep: str = "",
         render_markup: bool = True,
+        fetched_row_count: int | None = None,
+        fetch_truncated: bool = False,
     ):
         self.plain_column_labels: list[str] = (
             [str(label) for label in plain_column_labels]
             if plain_column_labels is not None
             else []
         )
+        # what the database returned, which `source_row_count` cannot say on its
+        # own: under a hard fetch limit it counts the overflow probe row, and
+        # there were more rows behind it that nobody fetched.
+        self.fetched_row_count = fetched_row_count
+        self.fetch_truncated = fetch_truncated
         super().__init__(
             backend=backend,
             data=data,
@@ -97,12 +104,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
         "results-viewer--type-label",
     }
 
-    def __init__(
-        self,
-        max_results: int = 10_000,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.max_results = max_results
 
     def on_mount(self) -> None:
         self.query_one(Tabs).can_focus = False
@@ -142,6 +145,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
             # the backend was built by `harlequin.query.fetch()`, which already
             # applied `max_results` as its row cap.
             backend=result.backend,
+            fetched_row_count=result.fetched_row_count,
+            fetch_truncated=result.truncated,
             cursor_type="range",
             max_column_content_width=self.max_col_width,
             null_rep="[dim]∅ null[/]",
@@ -171,11 +176,8 @@ class ResultsViewer(TabbedContent, can_focus=True):
         else:
             table = self.get_visible_table()
             if table is not None:
-                rows = table.source_row_count
-                if rows > 0:
-                    self.border_title = (
-                        f"Query Results {self._human_row_count(table.source_row_count)}"
-                    )
+                if table.source_row_count > 0:
+                    self.border_title = f"Query Results {self._human_row_count(table)}"
                 else:
                     self.border_title = "Query Returned No Records"
             else:
@@ -194,9 +196,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
         message.stop()
         maybe_table = self.get_visible_table()
         if maybe_table is not None:
-            self.border_title = (
-                f"Query Results {self._human_row_count(maybe_table.source_row_count)}"
-            )
+            self.border_title = f"Query Results {self._human_row_count(maybe_table)}"
             maybe_table.focus()
 
     def action_switch_tab(self, offset: int) -> None:
@@ -227,11 +227,24 @@ class ResultsViewer(TabbedContent, can_focus=True):
         if maybe_table is not None:
             maybe_table.focus()
 
-    def _human_row_count(self, total_rows: int) -> str:
-        if self.max_results > 0 and total_rows > self.max_results:
-            return f"(Showing {self.max_results:,} of {total_rows:,} Records)"
-        else:
-            return f"({total_rows:,} Records)"
+    def _human_row_count(self, table: ResultsTable) -> str:
+        """What the table holds, and what it is holding it out of.
+
+        A hard fetch limit stops the total from being knowable -- not fetching
+        the rest is the point of it -- so a truncated fetch reads `>500` rather
+        than claiming the 500 rows that arrived were all there were.
+        """
+        shown = table.row_count
+        total = (
+            table.fetched_row_count
+            if table.fetched_row_count is not None
+            else table.source_row_count
+        )
+        if table.fetch_truncated:
+            return f"(Showing {shown:,} of >{total:,} Records)"
+        if shown < total:
+            return f"(Showing {shown:,} of {total:,} Records)"
+        return f"({total:,} Records)"
 
     def _format_column_label(self, col_name: str, col_type: str) -> Text:
         type_label_style = self.get_component_rich_style("results-viewer--type-label")

@@ -35,6 +35,10 @@ def export_callback(
     already carries the names the cursor reported, duplicates and all, which
     `write_file()` makes unique for duckdb.
 
+    Minus the overflow probe row, where there is one: under the Run Query Bar's
+    limit the fetch asks for one row more than the limit, to learn there were
+    more, and a file of 501 rows under a limit of 500 is not what was asked for.
+
     A result with no rows exports as a file with no rows -- a header and
     nothing else, or an empty array. That is a true account of what the query
     returned, and it is what tells a reader "nothing matched" apart from
@@ -43,8 +47,11 @@ def export_callback(
     path, format_name, options = screen_data
     try:
         assert isinstance(table.backend, ArrowBackend)
+        data = table.backend.source_data
+        if table.fetch_truncated and table.fetched_row_count is not None:
+            data = data.slice(0, table.fetched_row_count)
         write_file(
-            data=table.backend.source_data,
+            data=data,
             path=path,
             format_name=format_name,
             options=options,

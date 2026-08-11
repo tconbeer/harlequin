@@ -132,12 +132,15 @@ class QueriesExecuted(Message):
         cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
         ddl_queries: list[str],
+        limit: RowLimit,
     ) -> None:
         super().__init__()
         self.query_count = query_count
         self.cursors = cursors
         self.submitted_at = submitted_at
         self.ddl_queries = ddl_queries
+        self.limit = limit
+        """The limit these cursors were executed under; the fetch needs it too."""
 
 
 class QueriesCanceled(Message):
@@ -215,6 +218,9 @@ class Harlequin(AppBase):
         try:
             self.max_results = int(max_results)
         except ValueError:
+            # assigned anyway: `self.exit()` schedules the exit rather than
+            # taking it, and the rest of __init__ still runs.
+            self.max_results = 0
             self.exit(
                 return_code=2,
                 message=pretty_error_message(
@@ -257,7 +263,7 @@ class Harlequin(AppBase):
         editor_placeholder = Lazy(widget=self.editor_collection)
         editor_placeholder.border_title = self.editor_collection.border_title
         editor_placeholder.loading = True
-        self.results_viewer = ResultsViewer(max_results=self.max_results)
+        self.results_viewer = ResultsViewer()
         self.run_query_bar = RunQueryBar(
             max_results=self.max_results,
             classes="non-responsive",
@@ -642,7 +648,7 @@ class Harlequin(AppBase):
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
         if message.cursors:  # select query
-            self._fetch_data(message.cursors, message.submitted_at)
+            self._fetch_data(message.cursors, message.submitted_at, message.limit)
         else:
             self.run_query_bar.set_responsive()
             self.results_viewer.show_table(did_run=message.query_count > 0)
@@ -669,10 +675,11 @@ class Harlequin(AppBase):
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
         for id_, result in message.results.items():
-            table = await self.results_viewer.push_table(table_id=id_, result=result)
+            await self.results_viewer.push_table(table_id=id_, result=result)
             self.append_to_history(
                 query_text=result.statement.sql,
-                result_row_count=table.source_row_count,
+                # the rows the database returned, not the rows the viewer kept
+                result_row_count=result.fetched_row_count,
                 elapsed=message.elapsed,
             )
         if message.errors:
@@ -1074,14 +1081,18 @@ class Harlequin(AppBase):
         cursors: Dict[str, ExecutedStatement] = {}
         ddl_queries: list[str] = []
         statements = [Statement(sql=q, index=i) for i, q in enumerate(message.queries)]
-        # the Run Query Bar's limit is a hard fetch limit. The app's own
-        # `--limit` is a soft display cap and is applied in _fetch_data; since
-        # the app fetches every row, it knows the exact total and needs no
-        # overflow detection.
+        # the Run Query Bar's limit is a hard fetch limit, so the true total
+        # stops being knowable and one extra row is what tells the Results
+        # Viewer to say `500 of >500` instead of claiming the 500 was all of it.
+        # the app's own `--limit` is a soft cap over that fetch and is applied
+        # in _fetch_data, which is why it needs no overflow detection of its own.
+        limit = RowLimit(
+            max_rows=message.limit, detect_overflow=message.limit is not None
+        )
         for executed in execute(
             connection=self.connection,
             statements=statements,
-            limit=RowLimit(max_rows=message.limit, detect_overflow=False),
+            limit=limit,
         ):
             if executed.error is not None:
                 self.post_message(
@@ -1097,6 +1108,7 @@ class Harlequin(AppBase):
                 cursors=cursors,
                 submitted_at=message.submitted_at,
                 ddl_queries=ddl_queries,
+                limit=limit,
             )
         )
 
@@ -1146,15 +1158,19 @@ class Harlequin(AppBase):
         self,
         cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
+        limit: RowLimit,
     ) -> None:
         errors: list[tuple[BaseException, str]] = []
         results: Dict[str, ResultSet] = {}
-        # the app's `--limit` is a soft display cap over a full fetch, so the
-        # backend keeps `max_results` rows but knows the true total.
-        limit = RowLimit(max_rows=self.max_results, detect_overflow=False)
+        # `limit` is the hard limit the queries were executed under, passed back
+        # so the overflow probe row is dropped rather than displayed;
+        # `max_results` is the soft cap on top of it, which leaves the number
+        # of rows fetched known exactly.
         for id_, executed in cursors.items():
             try:
-                results[id_] = fetch(executed, limit=limit)
+                results[id_] = fetch(
+                    executed, limit=limit, display_limit=self.max_results
+                )
             except BaseException as e:
                 errors.append((e, executed.statement.sql))
         # each ResultSet times its own fetch; the app reports the batch,

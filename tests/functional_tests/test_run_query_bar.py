@@ -44,6 +44,9 @@ async def test_run_query_bar(
         table = app.results_viewer.get_visible_table()
         assert table
         assert table.row_count == table.source_row_count == 857
+        assert table.fetch_truncated is False
+        # nothing was cut short, so the count is exact and says so
+        assert app.results_viewer.border_title == "Query Results (857 Records)"
         snap_results.append(await app_snapshot(app, "No limit"))
 
         # apply a limit by clicking the limit checkbox
@@ -60,7 +63,14 @@ async def test_run_query_bar(
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
         assert table
-        assert table.row_count == table.source_row_count == 500
+        # 501 fetched: one row more than the limit is what proves there are
+        # more, and it is not kept.
+        assert table.row_count == 500
+        assert table.source_row_count == 501
+        assert table.fetch_truncated is True
+        assert app.results_viewer.border_title == (
+            "Query Results (Showing 500 of >500 Records)"
+        )
         snap_results.append(await app_snapshot(app, "Limit 500"))
 
         # type an invalid limit, checkbox should be unchecked
@@ -95,7 +105,8 @@ async def test_run_query_bar(
         await pilot.wait_for_scheduled_animations()
         table = app.results_viewer.get_visible_table()
         assert table
-        assert table.row_count == table.source_row_count == 100
+        assert table.row_count == 100
+        assert table.source_row_count == 101
         snap_results.append(await app_snapshot(app, "Limit 100"))
 
         if not transaction_button_visible(app):
@@ -132,3 +143,4 @@ async def test_transaction_button(
         snap_results.append(await app_snapshot(app, "After click with Tx: Manual"))
 
         assert all(snap_results)
+

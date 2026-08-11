@@ -120,3 +120,42 @@ async def test_export_result_with_no_rows(
         assert export_path.read_text() == "a,b\n"
         # back on the main screen, i.e. no error modal
         assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_export_under_a_limit_stops_at_the_limit(
+    app: Harlequin,
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The fetch asks for one row more than the limit, to learn there are more.
+
+    That row proves the truncation and is not part of what was asked for, so a
+    limit of 5 exports five rows.
+    """
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.run_query_bar.limit_input.value = "5"
+        app.editor.text = "select * from range(100)"
+        await pilot.press("ctrl+j")
+        for _ in range(3):
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        table = app.results_viewer.get_visible_table()
+        assert table is not None
+        assert table.fetch_truncated is True
+
+        await pilot.press("ctrl+e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportScreen)
+        export_path = tmp_path / "limited.csv"
+        app.screen.file_input.value = str(export_path)
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert len(export_path.read_text().splitlines()) == 6  # header and 5 rows
