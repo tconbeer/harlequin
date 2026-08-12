@@ -21,7 +21,9 @@ pip install hsql
 
 This package is a metapackage: the `hsql` command itself ships in the
 `harlequin` distribution, which this installs. `pip install harlequin` gets you
-the same two commands — `harlequin` and `hsql` — by the other name.
+the same two commands — `harlequin` and `hsql` — by the other name. The two are
+released together and share a version number, so `hsql 2.9.0` is exactly
+`harlequin 2.9.0`.
 
 ## What it does
 

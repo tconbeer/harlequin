@@ -1,5 +1,11 @@
 name: Build and Publish Package
 
+# Publishes two distributions from one release: `harlequin`, and the `hsql`
+# metapackage in packaging/hsql, which carries the same version number and
+# pins this release exactly. Both are registered with PyPI's trusted publisher
+# against this filename and the `publish` environment below; renaming either
+# one breaks publishing, for both projects.
+
 on:
   pull_request:
     branches:
@@ -38,7 +44,19 @@ jobs:
       - name: Build package
         run: uv build --all-packages
 
-      - name: Publish package to PyPI
+      - name: Build hsql metapackage
+        run: uv build packaging/hsql --out-dir dist
+
+      - name: Check that hsql pins this release
+        run: |
+          version="${{ steps.harlequin_version.outputs.harlequin_version }}"
+          if [ ! -f "dist/hsql-$version.tar.gz" ]; then
+            echo "::error::dist/ has no hsql-$version; hsql is out of step with harlequin."
+            ls -la dist/
+            exit 1
+          fi
+
+      - name: Publish packages to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create a Github Release
@@ -52,3 +70,5 @@ jobs:
             LICENSE
             dist/*harlequin*.whl
             dist/*harlequin*.tar.gz
+            dist/*hsql*.whl
+            dist/*hsql*.tar.gz

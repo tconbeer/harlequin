@@ -36,10 +36,16 @@ jobs:
           git push --set-upstream origin release/v${{ github.event.inputs.newVersion }}
 
       - name: Bump version
-        run: uv version ${{ github.event.inputs.newVersion }}
+        # the hsql metapackage ships with this release, carrying the same
+        # version and pinning it; the script sets both from the number above.
+        run: |
+          uv version ${{ github.event.inputs.newVersion }}
+          uv run scripts/sync_hsql_version.py
 
-      - name: Ensure package can be built
-        run: uv build --all-packages
+      - name: Ensure packages can be built
+        run: |
+          uv build --all-packages
+          uv build packaging/hsql --out-dir dist
 
       - name: Update CHANGELOG
         uses: thomaseizinger/keep-a-changelog-new-release@v3

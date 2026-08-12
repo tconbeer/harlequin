@@ -817,7 +817,9 @@ A few things worth getting right the first time:
   under a second name would put duplicate modules on disk and conflict outright if a user
   installed both.
 - **Version it independently and float the dependency** — `hsql 0.1.0` requiring
-  `harlequin>=2.x` — so it doesn't need a release every time Harlequin cuts one.
+  `harlequin>=2.x` — so it doesn't need a release every time Harlequin cuts one. (Also
+  reversed once M1 shipped: it now takes Harlequin's version and pins it. See the status
+  note below.)
 - **No placeholder console script.** It's tempting to ship an `hsql` command that prints
   "coming soon," but from M1 the `harlequin` distribution itself provides that entry
   point, and two installed distributions claiming the same script name is a mess to
@@ -831,16 +833,22 @@ A few things worth getting right the first time:
 This is a genuine, working package rather than a squat, which also keeps it on the right
 side of PyPI's naming policy.
 
-*Status: the metapackage lives in `packaging/hsql/` and publishes via the manual
-`publish-hsql.yml` workflow. It is versioned independently and deliberately kept out of
-the Harlequin release, so shipping it is one `workflow_dispatch`.*
+*Status: the metapackage lives in `packaging/hsql/`, and M1 changed two of the decisions
+above.*
 
-*Now that M1 ships the command, the metapackage declares `hsql = "harlequin.hsql:main"`
-too — the same entry point Harlequin's own script uses, so the two console scripts are
-byte-identical and co-installing them is a no-op. Without it, `uvx hsql` still ran, but
-uv warned that the executable came from a dependency and suggested `uvx --from harlequin
-hsql`, on the one command line this package exists to make short. Its dependency floor
-must therefore never float below the release that ships the command.*
+*It declares `hsql = "harlequin.hsql:main"` — the same entry point Harlequin's own script
+uses, so the two console scripts are byte-identical and co-installing them is a no-op.
+Without it, `uvx hsql` still ran, but uv warned that the executable came from a
+dependency and suggested `uvx --from harlequin hsql`, on the one command line this
+package exists to make short.*
+
+*And it ships with Harlequin rather than on its own cadence: `publish.yml` builds and
+uploads both from one release, the metapackage carries Harlequin's version number and
+pins that release exactly, and `scripts/sync_hsql_version.py` — which the release
+workflow runs — is what keeps the three numbers equal. So `hsql 2.9.0` is `harlequin
+2.9.0`, whichever name a caller installs by. The independent cadence was the right call
+while this package was a reserved name and nothing else; once it points at an entry point
+that only some releases have, a floating floor is a promise the metapackage cannot keep.*
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's
