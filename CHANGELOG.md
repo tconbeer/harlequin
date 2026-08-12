@@ -4,62 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Features
-
-- Adds `hsql`, Harlequin's headless CLI, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses — so an agent or a CI job never handles a credential. The `harlequin` command gains no flags and no behavior of its own.
-  - **SQL comes from `-c/--command`, `-f/--file`, or `-f -` for stdin.** Both are repeatable and run in the order given.
-  - **Formats** are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none` to report status without rows. Pick one with `--format` or the `--csv`/`--json`/`--jsonl`/`--markdown`/`--vertical` shorthands, and write it to a file with `-o/--output`. There is no `-F`: that is psql's `--field-separator`, and the shorthand flags already spell the common choices.
-  - **psql's flags, where psql has one**: `-t/--tuples-only`, `-A/--no-align`, `--no-header`, `--no-footer` and `--null-string`, so `hsql -tAc "select count(*)"` returns a bare number. `-t` is `--no-header --no-footer`, and either half can be asked for on its own.
-  - **stdout is data; stderr is narration.** Truncation notices, errors and `--stats` go to stderr, so `hsql -c ... --csv > out.csv` produces a clean file. Errors are one plain line — `hsql: error: ...` — rather than a panel. Nothing on stderr restates what stdout already carries: the row count is the result's footer, where psql puts it and where `-t` can decline it, and timings are a field of `--stats`. A run with nothing to warn about writes nothing to stderr at all, and every diagnostic follows the data it describes even when both streams are the same pipe.
-  - **Exit codes are an API**: 0 success, 1 query error, 2 usage or config error, 3 connection error, 130 interrupted.
-  - **`--limit` defaults to 500 and truncation is never silent.** It is a *hard* limit — `cursor.set_limit()`, so fewer rows leave the database. A truncated result says `(500 of >500 rows)` in its footer, and notes on stderr what to pass to get the rest, `-t` included; `--limit -1` fetches everything and counts exactly, and `--limit 0` fetches a header and no rows, which is how a caller asks what a query's columns are. There is no `-l`: that is psql's `--list`, and a flag that lists databases in one command and truncates results in the other is a mistake waiting for a script.
-  - **`--display-rows` caps what the text layouts print, of what `--limit` fetched.** Two limits, because they answer different questions: 500 rows in memory is cheap and 500 rows on a screen is unreadable. It defaults to 40 rows for `table` and `markdown` and 10 records for `vertical`, where a record is a line per column, and the footer says what it did not print — `(40 of 100 rows)`, or `(40 of >500 rows)` when the fetch was truncated as well. `-1` prints every row that was fetched. File formats are untouched: dropping rows out of a csv is a different promise from not filling a screen with them. With `-t` or `--no-footer` there is no footer to say so, so the note moves to stderr.
-  - **`--stats`** writes one line of JSON to stderr — statement count, rows, truncation, elapsed time and the result's columns — whatever stdout is carrying.
-  - **`--result all|last|N`** picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script. A format that cannot hold two result sets says so and exits 2, rather than writing a second header into the same csv.
-  - **Output is deterministic.** Identical bytes whether stdout is a pipe, a file or a terminal, `\n` on every platform, and unaffected by `LC_ALL`. Color is the exception and is off unless `--color` asks for it.
-  - **`hsql --help` costs no adapter import**: it lists the adapter-agnostic options, the formats, the exit codes and the *names* of installed adapters, and points at `hsql --help -a <adapter>` for one adapter's connection options.
-  - **Each command points at the other where they are easy to confuse.** `harlequin -c "select 1"` now answers "`-c` is not a harlequin option. Did you mean `hsql -c`?" instead of click's bare "No such option", and does the same for every option `hsql` has and the IDE does not: `--command`, `-o`, `--format`, `--csv`, `-A`, `--stats` and the rest. Going the other way, `hsql -t nord -c ...` notes on stderr that `hsql` has no themes, that `-t` is `--tuples-only` as in psql, and that `nord` was therefore read as a connection string — which is worth saying because it does not fail: DuckDB will create a database file named `nord`.
-  - **`uvx hsql` runs it without installing anything**, and `uv tool install hsql` or `pip install hsql` keeps it around. The `hsql` distribution on PyPI is a metapackage that installs Harlequin, and it now declares the same `hsql` console script from the same entry point, so the name you install by and the command you type are the same word. `pip install harlequin` still gets you both commands.
-  - **`hsql` and `harlequin` are released together and share a version number**, and the metapackage pins the release it ships with: `hsql 2.9.0` is `harlequin 2.9.0`. Nothing to work out about which versions go together, because there is only ever the one.
-
-- The Results Viewer's row cap is now its own option, `viewer_max_rows` (`harlequin --viewer-max-rows`), and `limit` means the same thing in both commands ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). One profile serves both, and `limit` named two different things in them: a display cap over a full fetch in the IDE, and the hard `cursor.set_limit()` in `hsql`. So a profile written for the IDE — `limit = 100_000`, meaning "the viewer holds 100k rows" — had `hsql` pull a hundred thousand rows over the wire, and nothing warned.
-  - `limit` is now the **hard fetch limit** in the IDE too: `harlequin --limit 500` fills in the Run Query Bar's limit and checks the box, so 500 rows leave the database. See Breaking Changes.
-  - `viewer_max_rows` is the **soft cap** on what the Results Viewer holds of what came back, with the 100,000 default `limit` used to carry. Unset, both are what the IDE has always done: fetch everything, hold the first 100,000.
-  - `harlequin --config` now asks for both, and writes `limit` only when there is one.
-  - **`-1` is "no limit" everywhere**, in both commands and every row-count option. `0` still means no limit for `viewer_max_rows` alone, where it always has and where zero rows would serve nobody; everywhere else `0` is zero rows, so that `limit 0` can ask a database what a query's columns are.
-  - The Run Query Bar's limit input is no longer bounded by the viewer's cap, which only made sense while one option set both, and no longer starts at `min(500, limit)`.
 
 ### Breaking Changes
 
-- `limit` and `--limit` now cap what the IDE **fetches**, not what the Results Viewer **displays** ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). To keep the old meaning, rename the key to `viewer_max_rows`; the number does not change.
-- `-l` is gone, in both commands; the option is `--limit` ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). `-l` is psql's "list databases".
+- Harlequin's Results Viewer's row cap is now its own option, `viewer_max_rows` (`harlequin --viewer-max-rows`); the existing `limit` option is now a hard database fetch limit ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+- `-l` is no longer shorthand for `--limit` ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+
+### Features
+
+- **Adds `hsql`, Harlequin's headless CLI**, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses.
+  - SQL comes from `-c/--command`, `-f/--file`, or `-f -` for stdin. Both are repeatable and run in the order given.
+  - Formats are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none`, and can be modified by flags, including `-t` and `-A`, which are the same as psql.
+  - stdout is data; stderr is narration. Truncation notices, errors and `--stats` go to stderr, so `hsql -c ... --csv > out.csv` produces a clean file.
+  - Exit codes are an API: 0 success, 1 query error, 2 usage or config error, 3 is a retryable connection error, 130 interrupted.
+  - `--limit` defaults to 500 and truncation is never silent. It is a *hard* limit, so fewer rows leave the database. `--display-rows` caps what the text layouts print, but does not limit the data fetched. `--limit -1` fetches all records.
+  - `--result all|last|N` picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script.
+  - For more information, see `hsql --help` and `hsql -a my_adapter --help`.
 
 ### Bug Fixes
 
-- The Results Viewer no longer reports a truncated fetch as an exact total ([#1026](https://github.com/tconbeer/harlequin/issues/1026)). With the Run Query Bar's limit checked, a query over three million rows returned 500 and the viewer said `(500 Records)`, which read as "that was all of them". It now fetches one row more than the limit — the only way to tell 500 rows from 500-and-more — and says `(Showing 500 of >500 Records)`. The viewer's own cap is unaffected and still counts exactly: `(Showing 100,000 of 3,412,887 Records)`.
-- The SQLite adapter now honors a limit of one row, and of no rows. It fetches the first row eagerly to read the result's types, and asked for the rest with `fetchmany(limit - 1)` — but `sqlite3` reads `fetchmany(0)` as "all of them", so `set_limit(1)` returned the whole table.
-- A config file that sets `default_profile` and defines no profiles at all is now reported as the config error it is, instead of crashing ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
-
-### Performance
-
-- `harlequin.exception` no longer imports `rich` ([#524](https://github.com/tconbeer/harlequin/issues/524)). It is on every headless path — `harlequin.config` imports it — so `hsql --help` was paying 20ms for a panel it never draws.
-- `hsql` starts faster ([#1032](https://github.com/tconbeer/harlequin/pull/1032)): `hsql -c "select 1"` goes from 328ms to 258ms run from a directory with a `pyproject.toml` in it, and from 274ms to 264ms without one; `hsql --version` goes from 166ms to 93ms.
+- The Results Viewer no longer reports a truncated fetch as an exact total ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+- The SQLite adapter now honors a limit of `1` or `0`.
+- A config file that sets `default_profile` and defines no profiles at all is now reported as a `HarlequinConfigError`, instead of crashing ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
 
 ### Dependencies
 
 - Adds `tomli` on Python 3.10 only ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
 
-- Upgrades `textual-fastdatatable` to 0.17.1 (from 0.17.0), which defers its `rich` import to the first column-width measurement ([#524](https://github.com/tconbeer/harlequin/issues/524)). A headless run never takes one, so `hsql` now reaches a result set without importing `rich` at all: ~50 fewer modules and ~35ms off every invocation. The IDE is unaffected — it renders, so it imports `rich` regardless.
-
 ## [2.8.1] - 2026-08-09
 
 ### Refactoring
 
-- Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)). `harlequin.export.write_file()` and `write_stream()` take an Arrow table and write it to a path or an open binary stream, and `harlequin.layout` arranges a result set as `table`, `markdown` or `vertical` text. Both are for the planned headless CLI and have no user-facing surface yet; the Data Exporter behaves as before. `export.py` also gains `tsv`, `jsonl`/`ndjson` and `arrow` as option variants of formats it already wrote.
+- Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)).
 
 ### Performance
 
-- Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms, since neither pulls in Textual, questionary, prompt_toolkit or sqlfmt any more. Adapter authors feel this on every test run; the TUI's own start-up is unchanged.
+- Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms.
 
 ### Bug Fixes
 
@@ -68,19 +48,13 @@ All notable changes to this project will be documented in this file.
 - A SQLite query that returns no rows now reports the columns it selected, so the Data Exporter writes their names into the file instead of an empty one.
 - The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
 - The Data Exporter no longer crashes when Arrow rejects an ORC or Feather option, such as a bloom filter column; it shows an error modal.
-- Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)). `select 'café';select 2` ran as `select 'café';s` and `elect 2`, both syntax errors, because tree-sitter reports columns in bytes and the editor read them as characters.
-- A plug-in that fails to import now reports it on stderr instead of stdout, so the message can no longer contaminate piped output.
-- Warnings raised while setting the locale or installing the Windows timezone database now go to stderr, for the same reason. Errors already did.
+- Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)).
+- A plug-in that fails to import now reports it on `stderr` instead of `stdout`.
+- Warnings raised while setting the locale or installing the Windows timezone database now go to `stderr`, for the same reason.
 
 ### Dependencies
 
-- `wcwidth` is now a direct dependency of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). It was already installed for everyone, transitively via `prompt_toolkit`; the planned headless CLI measures text with it to align columns, and that code must not depend on `prompt_toolkit` being present. It is pure Python with no dependencies of its own.
-
-- `tree-sitter` and `tree-sitter-sql` are now direct dependencies of Harlequin ([#524](https://github.com/tconbeer/harlequin/issues/524)). Both were already installed for everyone, transitively via `textual[syntax]`; Harlequin now drives the SQL grammar itself to split statements, so it depends on them explicitly. Consequently the Query Editor no longer has a degraded, regex-based splitting mode, and no longer warns that tree-sitter is unavailable — statements split correctly even when the editor cannot syntax-highlight.
-
-- Reserves the `hsql` name on PyPI for Harlequin's planned headless CLI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql` is a metapackage that only depends on `harlequin`; it ships no modules and no `hsql` command yet, so `pip install hsql` simply installs Harlequin.
-
-- Upgrades `textual-fastdatatable` to 0.17.0 (from 0.16.0). 0.16.1 makes the `DataTable` widget a lazy import and defers `pyarrow.parquet`, so the backend Harlequin's adapter interface types against can be imported without Textual; 0.17.0 lets `create_backend()` take the column names a cursor reported, so a result with no rows carries its header through normalization instead of arriving empty.
+- `wcwidth`, `tree-sitter`, and `tree-sitter-sql` are now direct dependencies of Harlequin. Previously these packages were transitive dependencies.
 
 ## [2.8.0] - 2026-08-06
 
@@ -100,23 +74,20 @@ All notable changes to this project will be documented in this file.
 
 ### Dependencies
 
-- Upgrades Textual to 8.2.8 (from 6.4.0), with matching updates to textual-textarea and textual-fastdatatable.
-- Raises the minimum DuckDB version to 1.1.1 (from 0.8.0) on Python &lt; 3.14.
-- Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of textual-textarea.
+- Upgrades `textual` to 8.2.8 (from 6.4.0).
+- Raises the minimum `duckdb` version to 1.1.1 (from 0.8.0) on Python &lt; 3.14.
+- Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of `textual-textarea`.
 
 ### Bug Fixes
 
-- Fixes `harlequin --help`, which printed the help text and then crashed.
-- Harlequin no longer prints a `UserWarning` for each duplicated CLI flag (`The parameter -u is used more than once`) on every invocation.
-- Copying the text of an error modal, a catalog label, or a data selection now works over ssh and in terminals where pyperclip has no backend, and reports a useful message when it fails.
+- Copying the text of an error modal, a catalog label, or a data selection now works over ssh and in terminals where `pyperclip` has no backend, and reports a useful message when it fails ([#950](https://github.com/tconbeer/harlequin/issues/950)).
 - Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
 - Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
 - Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
 ### Refactoring
 
-- The Data Catalog now uses Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
-- The Query Editor now uses Textual's `Click.chain` for double-, triple-, and quadruple-click selection, instead of tracking consecutive clicks with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+- The Data Catalog and Query Editor now use Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
 
 ## [2.6.0] - 2026-08-03
 
