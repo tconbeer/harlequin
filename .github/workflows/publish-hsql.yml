@@ -6,10 +6,6 @@ name: Build and Publish hsql Metapackage
 # than part of the harlequin release. Bump the version in
 # packaging/hsql/pyproject.toml, merge, then run this.
 #
-# Run it *after* the harlequin release it floors on is on PyPI: this package is
-# nothing but that dependency, so publishing ahead of it ships an hsql that
-# cannot resolve.
-#
 # The filename and the environment name below are both registered with PyPI's
 # trusted publisher for the hsql project. Renaming either one breaks publishing.
 
