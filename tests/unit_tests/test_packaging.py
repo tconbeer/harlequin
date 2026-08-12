@@ -6,14 +6,13 @@ Harlequin release, carrying the same version number and pinning that release
 exactly -- so `pip install hsql==2.9.0` and `pip install harlequin==2.9.0`
 install the same two commands, and the number means one thing.
 
-That is three values in two files that have to agree, kept that way by
-`scripts/sync_hsql_version.py`. This is what notices when they don't, on the
-release PR rather than after the upload: PyPI does not take a version back.
+That is three values in two files that have to agree. `release.yml` sets all
+three; this is what notices when something else didn't, on the release PR
+rather than after the upload, since PyPI does not take a version back.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, cast
@@ -27,6 +26,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HARLEQUIN_PYPROJECT = REPO_ROOT / "pyproject.toml"
 HSQL_PYPROJECT = REPO_ROOT / "packaging" / "hsql" / "pyproject.toml"
 
+# what the release workflow runs, and what to run by hand after editing either
+# version. --frozen because the pin names a release that does not exist yet.
+FIX = (
+    "uv version --project packaging/hsql --frozen VERSION && "
+    "uv add --project packaging/hsql --frozen harlequin==VERSION"
+)
+
 
 def _project(path: Path) -> dict[str, Any]:
     with path.open("rb") as f:
@@ -36,16 +42,15 @@ def _project(path: Path) -> dict[str, Any]:
 def test_hsql_metapackage_tracks_harlequin_version() -> None:
     harlequin = _project(HARLEQUIN_PYPROJECT)
     hsql = _project(HSQL_PYPROJECT)
+    fix = FIX.replace("VERSION", harlequin["version"])
 
     assert hsql["version"] == harlequin["version"], (
-        "the hsql metapackage's version must match Harlequin's; "
-        "run `python scripts/sync_hsql_version.py`"
+        f"the hsql metapackage's version must match Harlequin's: {fix}"
     )
 
     (dependency,) = hsql["dependencies"]
     assert dependency == f"harlequin=={harlequin['version']}", (
-        "the hsql metapackage must pin this release of Harlequin exactly; "
-        "run `python scripts/sync_hsql_version.py`"
+        f"the hsql metapackage must pin this release of Harlequin exactly: {fix}"
     )
 
 
@@ -60,27 +65,3 @@ def test_hsql_metapackage_declares_harlequins_console_script() -> None:
     hsql = _project(HSQL_PYPROJECT)
 
     assert hsql["scripts"] == {"hsql": harlequin["scripts"]["hsql"]}
-
-
-def test_sync_script_finds_what_it_edits() -> None:
-    """The script the release workflow runs must still fit this file.
-
-    It reaches for `[project]`, a version and a one-element `harlequin==` pin,
-    and reports anything else as an error rather than writing a release with a
-    dependency it did not understand. Run against an already-synced tree it
-    must change nothing and exit 0; the assertions above are what prove the
-    tree is synced.
-    """
-    before = HSQL_PYPROJECT.read_text()
-    try:
-        result = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "scripts" / "sync_hsql_version.py")],
-            capture_output=True,
-            text=True,
-        )
-        after = HSQL_PYPROJECT.read_text()
-    finally:
-        HSQL_PYPROJECT.write_text(before)
-
-    assert result.returncode == 0, result.stderr
-    assert after == before

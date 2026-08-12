@@ -843,12 +843,13 @@ dependency and suggested `uvx --from harlequin hsql`, on the one command line th
 package exists to make short.*
 
 *And it ships with Harlequin rather than on its own cadence: `publish.yml` builds and
-uploads both from one release, the metapackage carries Harlequin's version number and
-pins that release exactly, and `scripts/sync_hsql_version.py` — which the release
-workflow runs — is what keeps the three numbers equal. So `hsql 2.9.0` is `harlequin
-2.9.0`, whichever name a caller installs by. The independent cadence was the right call
-while this package was a reserved name and nothing else; once it points at an entry point
-that only some releases have, a floating floor is a promise the metapackage cannot keep.*
+uploads both from one release, and the metapackage carries Harlequin's version number and
+pins that release exactly — `release.yml` sets all three numbers with `uv version` and
+`uv add`, and `test_packaging.py` fails the release PR if they ever disagree. So `hsql
+2.9.0` is `harlequin 2.9.0`, whichever name a caller installs by. The independent cadence
+was the right call while this package was a reserved name and nothing else; once it
+points at an entry point that only some releases have, a floating floor is a promise the
+metapackage cannot keep.*
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's
