@@ -817,21 +817,39 @@ A few things worth getting right the first time:
   under a second name would put duplicate modules on disk and conflict outright if a user
   installed both.
 - **Version it independently and float the dependency** — `hsql 0.1.0` requiring
-  `harlequin>=2.x` — so it doesn't need a release every time Harlequin cuts one.
+  `harlequin>=2.x` — so it doesn't need a release every time Harlequin cuts one. (Also
+  reversed once M1 shipped: it now takes Harlequin's version and pins it. See the status
+  note below.)
 - **No placeholder console script.** It's tempting to ship an `hsql` command that prints
   "coming soon," but from M1 the `harlequin` distribution itself provides that entry
   point, and two installed distributions claiming the same script name is a mess to
   unwind. `pip install hsql` giving you Harlequin, plus a README that says what's coming,
-  is honest enough.
+  is honest enough. (M1 shipped, and the metapackage does declare the script now — see
+  the status note below. The half of this that held up is "no *placeholder*": it points
+  at Harlequin's entry point rather than standing in for it.)
 - Reserve the same name anywhere else Harlequin is published or packaged while we're at
   it.
 
 This is a genuine, working package rather than a squat, which also keeps it on the right
 side of PyPI's naming policy.
 
-*Status: the metapackage lives in `packaging/hsql/` and publishes via the manual
-`publish-hsql.yml` workflow. It is versioned independently and deliberately kept out of
-the Harlequin release, so shipping it is one `workflow_dispatch`.*
+*Status: the metapackage lives in `packaging/hsql/`, and M1 changed two of the decisions
+above.*
+
+*It declares `hsql = "harlequin.hsql:main"` — the same entry point Harlequin's own script
+uses, so the two console scripts are byte-identical and co-installing them is a no-op.
+Without it, `uvx hsql` still ran, but uv warned that the executable came from a
+dependency and suggested `uvx --from harlequin hsql`, on the one command line this
+package exists to make short.*
+
+*And it ships with Harlequin rather than on its own cadence: `publish.yml` builds and
+uploads both from one release, and the metapackage carries Harlequin's version number and
+pins that release exactly — `release.yml` sets all three numbers with `uv version` and
+`uv add`, and `test_packaging.py` fails the release PR if they ever disagree. So `hsql
+2.9.0` is `harlequin 2.9.0`, whichever name a caller installs by. The independent cadence
+was the right call while this package was a reserved name and nothing else; once it
+points at an entry point that only some releases have, a floating floor is a promise the
+metapackage cannot keep.*
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's

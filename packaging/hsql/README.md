@@ -5,36 +5,49 @@
 engine and the same database adapters, without the TUI, for scripts, CI, and
 coding agents.
 
-## Status
-
-**This package is a placeholder that installs Harlequin.** The `hsql` command
-itself is not here yet; it will ship as part of the `harlequin` distribution,
-and this package will then require the version that provides it.
-
-Installing it today gets you Harlequin:
+## Install
 
 ```bash
-pip install hsql
-harlequin --help
+uvx hsql --help
 ```
 
-If that is what you want, `pip install harlequin` is the more direct way to
-say so.
+or, to keep it around:
 
-## What it will be
+```bash
+uv tool install hsql
+# or
+pip install hsql
+```
+
+This package is a metapackage: the `hsql` command itself ships in the
+`harlequin` distribution, which this installs. `pip install harlequin` gets you
+the same two commands — `harlequin` and `hsql` — by the other name. The two are
+released together and share a version number, so `hsql 2.9.0` is exactly
+`harlequin 2.9.0`.
+
+## What it does
 
 One CLI contract across every database Harlequin supports — DuckDB, SQLite,
 Postgres, MySQL, BigQuery, Trino, Databricks, ODBC, ADBC and more — reusing
-the profiles you already have in `.harlequin.toml`:
+the profiles you already have in `.harlequin.toml`, so a script or an agent
+never handles a credential:
 
 ```bash
 hsql -P prod -c "select count(*) from orders"
-hsql -P prod catalog analytics
+hsql -P prod -c "select * from orders" --csv -o orders.csv
 hsql -P prod -tAc "select count(*) from orders"
 ```
 
 Same flags, same output formats, same exit codes, whichever database is on the
-other end.
+other end. stdout is data and stderr is narration, so redirecting stdout gives
+you a clean file; exit codes are an API (0 success, 1 query error, 2 usage or
+config error, 3 connection error, 130 interrupted).
+
+Adapters install alongside it:
+
+```bash
+uvx --with harlequin-postgres hsql -P prod -c "select 1"
+```
 
 ## Links
 
