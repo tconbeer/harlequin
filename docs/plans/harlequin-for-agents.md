@@ -822,7 +822,9 @@ A few things worth getting right the first time:
   "coming soon," but from M1 the `harlequin` distribution itself provides that entry
   point, and two installed distributions claiming the same script name is a mess to
   unwind. `pip install hsql` giving you Harlequin, plus a README that says what's coming,
-  is honest enough.
+  is honest enough. (M1 shipped, and the metapackage does declare the script now — see
+  the status note below. The half of this that held up is "no *placeholder*": it points
+  at Harlequin's entry point rather than standing in for it.)
 - Reserve the same name anywhere else Harlequin is published or packaged while we're at
   it.
 
@@ -832,6 +834,13 @@ side of PyPI's naming policy.
 *Status: the metapackage lives in `packaging/hsql/` and publishes via the manual
 `publish-hsql.yml` workflow. It is versioned independently and deliberately kept out of
 the Harlequin release, so shipping it is one `workflow_dispatch`.*
+
+*Now that M1 ships the command, the metapackage declares `hsql = "harlequin.hsql:main"`
+too — the same entry point Harlequin's own script uses, so the two console scripts are
+byte-identical and co-installing them is a no-op. Without it, `uvx hsql` still ran, but
+uv warned that the executable came from a dependency and suggested `uvx --from harlequin
+hsql`, on the one command line this package exists to make short. Its dependency floor
+must therefore never float below the release that ships the command.*
 
 `--read-only` sits in M2 rather than M1 only because it requires an adapter-interface
 addition and therefore an ecosystem rollout; if that lands early, pull it forward. It's

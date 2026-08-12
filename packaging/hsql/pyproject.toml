@@ -1,7 +1,7 @@
 [project]
 
 name = "hsql"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 description = "The headless SQL client for scripts and agents. Installs Harlequin."
 authors = [
@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 readme = "README.md"
 keywords = ["sql", "cli", "harlequin", "agents", "headless"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 4 - Beta",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -25,12 +25,26 @@ classifiers = [
 
 # hsql is a metapackage: it ships no modules of its own, it just installs
 # Harlequin. The floor floats deliberately so this package does not need a
-# release every time Harlequin cuts one. When Harlequin starts shipping the
-# `hsql` console script, raise the floor to that version -- do not add a
-# console script here, or two installed distributions would claim one name.
+# release every time Harlequin cuts one -- but it may never float below the
+# release that ships the `hsql` console script, since the entry point declared
+# below points into it. Keep this in step with that release.
 dependencies = [
-    "harlequin>=2.8",
+    "harlequin>=2.9",
 ]
+
+
+[project.scripts]
+
+# The `harlequin` distribution provides this same script, from this same entry
+# point -- so the two console scripts are byte-identical and whichever is
+# written second is a no-op. Declaring it here anyway is what makes
+# `uvx hsql --help` work without uv's "an executable named `hsql` is not
+# provided by package `hsql`; consider `uvx --from harlequin hsql`" warning,
+# which is the one install story this package exists to serve. The cost is that
+# `pip uninstall hsql` takes the shared script with it and leaves an installed
+# Harlequin without its `hsql` command; `pip install --force-reinstall
+# harlequin` puts it back.
+hsql = "harlequin.hsql:main"
 
 
 [project.urls]
