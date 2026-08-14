@@ -406,14 +406,16 @@ all-adapters import stay off every other invocation.
 ```python
 @dataclass(frozen=True)
 class CatalogPath:
-    segments: tuple[str, ...]           # positional; the adapter names the levels
-    glob: str | None = None             # a trailing wildcard only
+    segments: tuple[str, ...]  # positional; the adapter names the levels
+    glob: str | None = None  # a trailing wildcard only
+
 
 @dataclass
 class Listing:
-    parent: CatalogItem | None          # None at the top level
+    parent: CatalogItem | None  # None at the top level
     items: list[CatalogItem]
     round_trips: int
+
 
 def resolve(connection, path) -> tuple[CatalogItem | None, int]: ...
 def list_children(connection, path) -> Listing: ...
@@ -448,7 +450,7 @@ The one field this needs on the contract:
 @dataclass
 class CatalogItem:
     ...
-    type_name: str | None = None    # the adapter's own full type: DECIMAL(18,2), TIMESTAMPTZ
+    type_name: str | None = None  # the adapter's own full type, e.g. DECIMAL(18,2)
 ```
 
 It defaults to None and is populated in-tree from data the adapters already fetch (§1.3).
@@ -495,9 +497,9 @@ columns of `orders`, with their names, types and quoted identifiers — which is
 
 ```python
 class HarlequinAdapter(ABC):
-    IMPLEMENTS_CANCEL = False          # exists
-    IMPLEMENTS_READ_ONLY = False       # new: connect() honors read_only=True
-    IMPLEMENTS_VALIDATE_SQL = False    # new: the connection's validate_sql() is real
+    IMPLEMENTS_CANCEL = False  # exists
+    IMPLEMENTS_READ_ONLY = False  # new: connect() honors read_only=True
+    IMPLEMENTS_VALIDATE_SQL = False  # new: the connection's validate_sql() is real
     IMPLEMENTS_CATALOG_SEARCH = False  # new, stretch: search_catalog() (§3.8)
 ```
 
@@ -548,7 +550,7 @@ Provenance falls out of doing the merge properly:
 @dataclass(frozen=True)
 class Provenance:
     value: Any
-    path: Path        # which file this key's winning value came from
+    path: Path  # which file this key's winning value came from
     overrode: list[Path]
 ```
 
@@ -667,8 +669,9 @@ that would drive it, plus the channel a script can use today.
 
 ```python
 class HarlequinConnection:
-    def search_catalog(self, term: str, kind: Literal["tables", "columns", "all"]
-                       ) -> list[CatalogItem]: ...   # raises NotImplementedError
+    def search_catalog(
+        self, term: str, kind: Literal["tables", "columns", "all"]
+    ) -> list[CatalogItem]: ...  # raises NotImplementedError
 ```
 
 One `information_schema`-style query where the adapter can serve it, an explicit "not
