@@ -471,6 +471,11 @@ hsql find <TERM> [--in tables|columns|all]
 > so "report child counts wherever the adapter can get them cheaply" cannot be implemented
 > as written. What a listing can report is what it fetched, which it already does.
 >
+> **`describe` is `catalog` on a relation, so there is no separate verb.** One level below
+> a relation *is* its columns, with their names, real types and quoted identifiers. All a
+> second mode could add is detail the contract does not carry (comments) or that costs a
+> table scan (row counts).
+>
 > **`--format compact` needs a field that doesn't exist.** `CatalogItem.type_label` is a
 > 1–3 character label for a tree column (`##`, `s`, `ts`), so today's honest rendering is
 > `total #.#`, not `total DECIMAL(18,2)`. The full type is fetched and discarded by the
@@ -892,14 +897,14 @@ writing it; §8 there lists them. PRs 1–6 shipped and PR 7, the docs topic, is
 PR 8, the agent eval suite, was not built.
 
 **On M2.** Likewise in [the M2 technical plan](./m2-hsql-technical-plan.md), across three
-releases rather than one: the catalog modes first, since they need nothing outside this
-repo; then self-description; then the safety flags, which need additive fields on the
-adapter contract and therefore an ecosystem rollout. The amendments marked above are the
-corrections that came out of measuring it. Two additions and several subtractions to this
-table's M2 row: `--single-transaction` belongs to M2 (M1 deferred it here), the
-introspection surface is mode options rather than subcommands, and `fmt`, `--dry-run`,
-recursive `--depth`, the node budget and child counts are all cut — each for a reason
-given in §7 of that plan.
+releases rather than one: the catalog first, since it needs nothing outside this repo; then
+self-description; then the safety flags, which need additive fields on the adapter contract
+and therefore an ecosystem rollout. The amendments marked above are the corrections that
+came out of measuring it. One addition and several subtractions to this table's M2 row:
+`--single-transaction` belongs to M2 (M1 deferred it here), the introspection surface is
+mode options rather than subcommands, and `describe`, `fmt`, `--dry-run`, recursive
+`--depth`, the node budget and child counts are all cut — each for a reason given in §7 of
+that plan.
 
 **On M0.** Name availability is the only thing in this plan that someone else can take
 while we deliberate, which is why it's a milestone rather than a task. It's also cheap

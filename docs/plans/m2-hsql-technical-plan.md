@@ -6,8 +6,8 @@ following [the M1 technical plan](./m1-hsql-technical-plan.md). The product plan
 letting an agent learn a database before it queries one, and about the flags that let a
 human hand an agent a warehouse credential.
 
-**M2's scope, from the roadmap:** `catalog` (one level below the match), `describe`,
-`info --json`, `spec --json`, `config validate/show/schema/init`, capability flags, the
+**M2's scope, from the roadmap:** `catalog` (one level below the match), `info --json`,
+`spec --json`, `config validate/show/schema/init`, capability flags, the
 secret option type and declarative redaction
 ([#667](https://github.com/tconbeer/harlequin/issues/667)), env interpolation
 ([#898](https://github.com/tconbeer/harlequin/issues/898)), `--read-only`, `--timeout`, and
@@ -15,8 +15,8 @@ a published JSON Schema. Stretch: `find` + `implements_catalog_search`, optional
 `fetch_descendants`. `--single-transaction` is here too — M1 §7 deferred it to M2 even
 though the roadmap's cell omits it.
 
-**Cut from the roadmap's M2 list in review** (§7 has the reasoning): `fmt`, `--dry-run`,
-recursive `--depth`, the node budget, and child counts.
+**Cut from the roadmap's M2 list in review** (§7 has the reasoning): `describe`, `fmt`,
+`--dry-run`, recursive `--depth`, the node budget, and child counts.
 
 **Where M1 actually got to.** PRs 1–6 shipped: the import-hygiene work, the statement
 splitter and execution core, `export`/`layout`, the shared profile-merge and one-adapter
@@ -35,7 +35,7 @@ are unimplementable without them — the catalog knows a column is `##` but not 
 below, not feared.
 
 **On the shape of the CLI.** Every capability here is a **mode option** on the one `hsql`
-command — `--catalog`, `--describe`, `--info`, `--spec`, `--config MODE` — not a subcommand
+command — `--catalog`, `--info`, `--spec`, `--config MODE` — not a subcommand
 (Ted's call). It matches `harlequin --config`, and it removes an ambiguity subcommands
 would have created: `hsql` takes `CONN_STR` positionally, so a database file named
 `catalog` would have collided with the verb. There is no collision to rule on if there is
@@ -299,7 +299,7 @@ Two more things I measured while establishing what a deadline can do:
 2. **Resolution is a walk, and recursion is unbounded.** One round trip per path segment,
    and 403 for a single recursive listing of a wide schema. The answer M2 takes is to ship
    one level and no recursion at all, rather than to ship a knob with a cliff behind it.
-3. **`hsql` grows five modes without losing a 90ms `--help`.** Two of them need imports the
+3. **`hsql` grows four modes without losing a 90ms `--help`.** Two of them need imports the
    query path must never pay — every installed adapter at once, and tomlkit — and one of
    them (`--info`) has to work when the database is unreachable, which is precisely when a
    diagnostic is worth most.
@@ -332,10 +332,10 @@ harlequin/
   hsql/
     cli.py        MOD  + the mode options, and which of them attaches adapter options
     timeout.py    NEW  a wall clock over a run, and how it exits
-    modes/        NEW  catalog.py describe.py find.py info.py spec.py config.py
+    modes/        NEW  catalog.py find.py info.py spec.py config.py
 ```
 
-M1's rule stands and now covers five modes as well as the run form:
+M1's rule stands and now covers four modes as well as the run form:
 
 > **stdout is written only by `harlequin.layout` and `harlequin.export`. stderr is written
 > only by `harlequin.hsql.diagnostics`.**
@@ -352,7 +352,6 @@ M2 adds a second, which is the whole milestone in a sentence and is also testabl
 hsql [OPTIONS] [CONN_STR]...
 
   --catalog          List catalog objects one level below --path.
-  --describe         Describe the object at --path in full.
   --path TEXT        Where in the catalog to look. Dotted segments; default is the top.
   --info             Report versions, config files, adapters and capabilities. JSON.
   --spec             Dump the installed CLI surface, including adapter options. JSON.
@@ -374,16 +373,15 @@ or `--relation` as alternatives; `--path` is the one to take. `-c` is `--command
 *SQL* in this CLI, in psql, and in duckdb, and the whole premise of principle 4 is that a
 flag should not change meaning with context. An agent that has learned `-c` types
 `hsql --catalog -c "select 1"` sooner or later, and the right outcome is an error, not a
-lookup for a relation named `select 1`. `--path` also reads correctly for `--describe`,
-which needs the same argument, and it leaves `-c` free to mean what it means if a later
-milestone wants `--catalog` and a query in one invocation.
+lookup for a relation named `select 1`. `--path` also leaves `-c` free to mean what it
+means, if a later milestone wants `--catalog` and a query in one invocation.
 
 **Which mode needs what**, because this is the table that keeps §3's second rule true:
 
 | mode | adapter import | connection | notable import |
 | --- | --- | --- | --- |
 | (none — run SQL) | one | yes | — |
-| `--catalog`, `--describe`, `--find` | one | yes | — |
+| `--catalog`, `--find` | one | yes | — |
 | `--info` | all, for capability flags; one under `-a` | **no** | — |
 | `--spec` | all, or one under `-a` | no | — |
 | `--config show/validate/schema` | all, for adapter options | no | — |
@@ -396,8 +394,8 @@ of the adapter class, but never a connection.
 
 `--info` and `--spec` emit JSON documents rather than rows, so `--format` does not apply to
 them; a caller who sets it explicitly gets the same kind of stderr note `--display-rows`
-already produces when it cannot reach the chosen format. `--catalog`, `--describe` and
-`--find` produce rows, and every format applies (§3.3).
+already produces when it cannot reach the chosen format. `--catalog` and `--find` produce
+rows, and every format applies (§3.3).
 
 The modes live one module apiece under `harlequin/hsql/modes/`, imported by the callback
 when that mode is chosen — which is how `--config init`'s tomlkit and `--spec`'s
@@ -489,10 +487,9 @@ all VARCHAR.
 item; emitting it means the agent never guesses whether this backend wants `"Orders"` or
 `` `orders` ``. It costs nothing and no other client does it.
 
-`--describe` is the same rows for one object, plus whatever the adapter can add cheaply. It
-resolves and lists exactly as `--catalog` does; what earns it a mode of its own is the extra
-detail per object, and if that detail turns out to be nothing for most adapters then it
-should collapse into `--catalog` rather than persist as a synonym (§6, still open).
+**Describing a relation is listing it.** `--catalog --path mydb.analytics.orders` is the
+columns of `orders`, with their names, types and quoted identifiers — which is everything a
+`describe` was going to print. There is no second mode for it (§7).
 
 ### 3.4 Capabilities are declared, not detected
 
@@ -705,7 +702,7 @@ ecosystem rollout.
 
 Numbering assumes M1's remaining work releases as 2.9.
 
-### Release A — `--catalog` and `--describe` (2.10)
+### Release A — `--catalog` (2.10)
 
 **PR 1 — Mode options, and `--catalog` at one level.** The mode flags and their mutual
 exclusion, `--path`, and which modes attach adapter options. `harlequin.navigate` with path
@@ -718,53 +715,51 @@ contract, populated by the DuckDB and SQLite adapters from data they already fet
 `round_trips` in `--stats`; the `compact` and `tree` layouts. This is the PR that makes
 `--catalog --format compact` print `total DECIMAL(18,2)` instead of `total #.#`.
 
-**PR 3 — `--describe`.** One object in full, one round trip below the resolve.
-
-**PR 4 (stretch) — `--find`.** `IMPLEMENTS_CATALOG_SEARCH`, `search_catalog()` on the
+**PR 3 (stretch) — `--find`.** `IMPLEMENTS_CATALOG_SEARCH`, `search_catalog()` on the
 connection, implemented for DuckDB and SQLite; explicit refusal elsewhere.
 
-**PR 5 — Docs.** Catalog and Introspection in the "Headless & Agents" topic (a
+**PR 4 — Docs.** Catalog and Introspection in the "Headless & Agents" topic (a
 `harlequin-web` PR), plus the adapter-author note for `type_name`.
 
 ### Release B — self-description (2.11)
 
-**PR 6 — `AbstractOption.to_dict()` and `--spec`.** Concrete, never abstract, with a base
+**PR 5 — `AbstractOption.to_dict()` and `--spec`.** Concrete, never abstract, with a base
 implementation that works for a subclass that predates it. `--spec` covers hsql's own options
 and every installed adapter's; `-a NAME` narrows it to one. (It cannot cover `harlequin`'s
 own flags: `hsql` may not import `harlequin.cli`, which builds the IDE's command. Say so in
 the output rather than pretending the list is exhaustive.)
 
-**PR 7 — `--info`.** Versions, platform, discovered config files in precedence order, active
+**PR 6 — `--info`.** Versions, platform, discovered config files in precedence order, active
 profile, and declared capabilities per adapter. No connection.
 
-**PR 8 — Config: per-key merge and provenance, `--config show` and `--config validate`.** The
+**PR 7 — Config: per-key merge and provenance, `--config show` and `--config validate`.** The
 merge fix is a behavior change and a bug fix; it lands with the mode that reveals it.
 
-**PR 9 — `--config schema` and the packaged base schema.** Depends on PR 6's serialization.
+**PR 8 — `--config schema` and the packaged base schema.** Depends on PR 5's serialization.
 
-**PR 10 — `--config init`.** tomlkit deferred; no questionary.
+**PR 9 — `--config init`.** tomlkit deferred; no questionary.
 
-**PR 11 — Docs.** Self-description pages, the config spec page, and the site's JSON Schema
+**PR 10 — Docs.** Self-description pages, the config spec page, and the site's JSON Schema
 route.
 
 ### Release C — safety (2.12)
 
-**PR 12 — Capability declarations and `--read-only`.** `IMPLEMENTS_READ_ONLY` and
+**PR 11 — Capability declarations and `--read-only`.** `IMPLEMENTS_READ_ONLY` and
 `IMPLEMENTS_VALIDATE_SQL` on the contract, declared by both in-tree adapters, reported by
 `--info`, and refused where undeclared. Companion issues filed against the out-of-tree
 adapters we maintain.
 
-**PR 13 — `--timeout`.** The deadline, the cancel, the grace period, the `os._exit`, and the
+**PR 12 — `--timeout`.** The deadline, the cancel, the grace period, the `os._exit`, and the
 attribution that keeps a cancelled query from printing as an empty one.
 
-**PR 14 — `--single-transaction`**, plus a transaction mode for the DuckDB adapter.
+**PR 13 — `--single-transaction`**, plus a transaction mode for the DuckDB adapter.
 
-**PR 15 — Secret options and redaction.** `secret=` on options, `harlequin.redact`, DSN
+**PR 14 — Secret options and redaction.** `secret=` on options, `harlequin.redact`, DSN
 redaction, masked wizard input, `--password-stdin`. Closes #667's structural half.
 
-**PR 16 — `${VAR}` interpolation.** Closes #898.
+**PR 15 — `${VAR}` interpolation.** Closes #898.
 
-**PR 17 — Docs.** Safety page, the psql differences table, and the secrets guidance.
+**PR 16 — Docs.** Safety page, the psql differences table, and the secrets guidance.
 
 **Ordering rationale.** Within each release the contract change lands with the first consumer
 that needs it, as in M1 — a field nothing reads is a field nobody notices is wrong. Across
@@ -789,7 +784,7 @@ identically on every machine.
 - **A fake adapter that declares nothing** proves every refusal path: `--read-only`,
   `--timeout` and `--single-transaction` each exit 2 with a message naming the adapter,
   before any connection is opened.
-- **Golden files** for `--catalog`, `--describe`, `--info`, `--spec` and `--config show` in
+- **Golden files** for `--catalog`, `--info`, `--spec` and `--config show` in
   every format they support, as syrupy snapshots alongside the M1 output snapshots. Fixtures
   with unicode labels, a zero-child node, and an adapter that populates no `type_name` — the
   degradation path is the one nobody exercises.
@@ -829,7 +824,8 @@ would land.
   `fetch_descendants()`, which is what would make it one round trip instead of 403.
 - *No `child_count` field* (§1.3). A count is only knowable by fetching, and `len(children)`
   after a listing is the honest version of it.
-- *Three releases* — catalog/describe, then self-description, then safety (Ted's call, §4).
+- *Three releases* — the catalog, then self-description, then safety (Ted's call, §4).
+- *No `--describe`* (Ted's call, §7). `--catalog --path db.schema.relation` is a describe.
 - *`--read-only` is a declared capability and refuses when it is absent* (Ted's call, §3.4).
   The flag works on two of fifteen adapters on the day it ships, and says so on the other
   thirteen instead of quietly not working.
@@ -844,22 +840,14 @@ would land.
 - *No `fmt`, no `--dry-run`* (Ted's call, §7).
 - *No shell-command interpolation* in config values (§3.5).
 
-**Still open.**
+**Still open.** Nothing.
 
-- **Whether `--describe` earns its own mode.** It resolves and lists exactly as `--catalog`
-  does; the difference is meant to be per-object detail (comments, row counts) that most
-  adapters may not supply. If PR 3 finds there is nothing to add beyond what a listing
-  already shows, the right move is to drop the mode rather than ship a synonym.
-- **Whether `--describe` should report row counts.** For most adapters that is a `count(*)`
-  — a query against user data rather than a catalog lookup, and arbitrarily expensive. My
-  inclination is to leave it out and add `--with-row-counts` later if it is asked for, rather
-  than have a describe surprise someone with a table scan.
-- **Whether `--catalog` should reuse the IDE's catalog cache.** `catalog_cache.py` pickles a
-  catalog per connection, and an agent making six navigation calls re-resolves the same
-  prefix six times. Reusing it would cut §1.1's per-segment cost to zero on repeat calls, and
-  would warm the IDE for the M4 handoff — but a stale catalog an agent then writes a query
-  against is a worse failure than a slow one. Deferred until there is evidence of the cost in
-  practice.
+*Two questions an earlier draft left open are closed rather than answered.* `--describe`
+does not exist, so neither does the question of whether it should report row counts. And
+`--catalog` does not reuse the IDE's catalog cache: `catalog_cache.py` is kept for
+compatibility and is not a live cache to warm or read (Ted). Repeat navigation re-resolves
+its prefix, which is one round trip per segment and the price of not serving an agent a
+stale catalog to write a query against.
 
 ---
 
@@ -867,6 +855,12 @@ would land.
 
 **Cut in review, from the roadmap's own M2 list:**
 
+- **`describe`.** `--catalog --path mydb.analytics.orders` already returns the columns of
+  `orders` with their names, real types and quoted identifiers, in one round trip below the
+  resolve — which is the whole of what a describe was going to print. The only thing a
+  separate mode could add is per-object detail the adapter contract does not carry
+  (comments) or that costs a table scan (row counts), and neither is worth a second mode
+  that would otherwise be a synonym.
 - **`hsql fmt`.** sqlfmt is already a dependency and the wrapper would be small, but the case
   for it is thin: an agent that wants formatted SQL can run `sqlfmt` itself, and this is the
   one mode that would have forced a 196ms import into a package whose import graph is
@@ -908,6 +902,9 @@ reasoning behind each is written down.
   starts from: depth 2 from the root is one round trip per database, and depth 2 from a
   schema is 403 round trips and 2.3 seconds against a local file. M2 ships one level and no
   flag, and recursion returns with the adapter capability that would make it a single query.
+- **§6's `describe` is `catalog` on a relation.** Listing one level below a relation is its
+  columns, so the two would differ only in the per-object detail the contract doesn't carry.
+  There is no `--describe`.
 - **§6's child counts have no cheap case.** A count is only knowable by fetching the
   children, so the mitigation the product plan proposes cannot be implemented as stated; what
   a listing can report is what it fetched.
