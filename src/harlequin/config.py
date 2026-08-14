@@ -325,11 +325,69 @@ def _search_home() -> list[Path]:
 
 
 def _merge_config_files(paths: list[Path]) -> Config:
+    """Merge discovered config files. Later paths win.
+
+    `profiles` and `keymaps` are merged by name rather than replaced, so a
+    project-local file that defines one profile does not hide every profile
+    in an earlier file. Within a profile, later files win key by key. A
+    later keymap of the same name replaces the earlier one.
+    """
     config: Config = {}
     for p in paths:
-        config_file = ConfigFile(p)
-        config.update(config_file.relevant_config)
+        _apply_config(config, ConfigFile(p).relevant_config)
     return config
+
+
+def _apply_config(base: Config, incoming: Config) -> None:
+    incoming_profiles = incoming.get("profiles")
+    incoming_keymaps = incoming.get("keymaps")
+    for key, value in incoming.items():
+        if key in ("profiles", "keymaps"):
+            continue
+        base[key] = value  # type: ignore[literal-required]
+    if incoming_profiles is not None:
+        existing = base.get("profiles")
+        if isinstance(incoming_profiles, dict) and (
+            existing is None or isinstance(existing, dict)
+        ):
+            base["profiles"] = _merge_profiles(existing, incoming_profiles)
+        else:
+            # Leave a bad value for `_raise_on_bad_schema` to report.
+            base["profiles"] = incoming_profiles
+    if incoming_keymaps is not None:
+        existing_keymaps = base.get("keymaps")
+        if isinstance(incoming_keymaps, dict) and (
+            existing_keymaps is None or isinstance(existing_keymaps, dict)
+        ):
+            merged_keymaps = dict(existing_keymaps or {})
+            merged_keymaps.update(incoming_keymaps)
+            base["keymaps"] = merged_keymaps
+        else:
+            base["keymaps"] = incoming_keymaps
+
+
+def _merge_profiles(
+    existing: dict[str, Profile] | None,
+    incoming: dict[str, Profile],
+) -> dict[str, Profile]:
+    merged: dict[str, Profile] = {}
+    for name, profile in (existing or {}).items():
+        if isinstance(profile, dict):
+            merged[name] = cast(Profile, dict(profile))
+        else:
+            merged[name] = profile
+    for name, profile in incoming.items():
+        if (
+            name in merged
+            and isinstance(merged[name], dict)
+            and isinstance(profile, dict)
+        ):
+            merged[name] = cast(Profile, {**merged[name], **profile})
+        elif isinstance(profile, dict):
+            merged[name] = cast(Profile, dict(profile))
+        else:
+            merged[name] = profile
+    return merged
 
 
 def _raise_on_bad_schema(config: Config) -> None:

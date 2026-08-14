@@ -8,6 +8,7 @@ from harlequin.config import (
     ConfigFile,
     Profile,
     _find_config_files,
+    _merge_config_files,
     get_config_for_profile,
     get_highest_priority_existing_config_file,
     load_config,
@@ -164,6 +165,124 @@ def test_config_file_discovery(
     expected_paths.pop()
     assert _find_config_files(config_path=None) == expected_paths
     assert get_highest_priority_existing_config_file() == expected_paths[-1]
+
+
+class TestMergeConfigFiles:
+    """Later files win key-by-key; they must not replace whole tables."""
+
+    def test_a_later_file_keeps_earlier_profiles(self, tmp_path: Path) -> None:
+        home = tmp_path / "home.toml"
+        home.write_text(
+            'default_profile = "personal"\n'
+            "\n"
+            "[profiles.personal]\n"
+            'adapter = "duckdb"\n'
+            'theme = "nord"\n'
+            "\n"
+            "[profiles.shared]\n"
+            'adapter = "duckdb"\n'
+            'theme = "gruvbox"\n'
+        )
+        cwd = tmp_path / "cwd.toml"
+        cwd.write_text('[profiles.project]\nadapter = "sqlite"\n')
+
+        merged = _merge_config_files([home, cwd])
+        assert merged["default_profile"] == "personal"
+        assert set(merged["profiles"]) == {"personal", "shared", "project"}
+        assert merged["profiles"]["personal"] == {
+            "adapter": "duckdb",
+            "theme": "nord",
+        }
+        assert merged["profiles"]["project"] == {"adapter": "sqlite"}
+
+    def test_a_later_file_overrides_keys_inside_a_shared_profile(
+        self, tmp_path: Path
+    ) -> None:
+        earlier = tmp_path / "earlier.toml"
+        earlier.write_text(
+            '[profiles.personal]\nadapter = "duckdb"\nlimit = 200000\ntheme = "nord"\n'
+        )
+        later = tmp_path / "later.toml"
+        later.write_text("[profiles.personal]\nlimit = 50\n")
+
+        merged = _merge_config_files([earlier, later])
+        assert merged["profiles"]["personal"] == {
+            "adapter": "duckdb",
+            "limit": 50,
+            "theme": "nord",
+        }
+
+    def test_a_later_file_keeps_earlier_keymaps(self, tmp_path: Path) -> None:
+        earlier = tmp_path / "earlier.toml"
+        earlier.write_text('[[keymaps.home]]\nkeys = "ctrl+k"\naction = "quit"\n')
+        later = tmp_path / "later.toml"
+        later.write_text('[[keymaps.project]]\nkeys = "ctrl+p"\naction = "print"\n')
+
+        merged = _merge_config_files([earlier, later])
+        assert set(merged["keymaps"]) == {"home", "project"}
+        assert merged["keymaps"]["home"][0]["action"] == "quit"
+        assert merged["keymaps"]["project"][0]["action"] == "print"
+
+    def test_a_later_keymap_of_the_same_name_replaces_the_earlier_one(
+        self, tmp_path: Path
+    ) -> None:
+        earlier = tmp_path / "earlier.toml"
+        earlier.write_text('[[keymaps.shared]]\nkeys = "ctrl+k"\naction = "quit"\n')
+        later = tmp_path / "later.toml"
+        later.write_text('[[keymaps.shared]]\nkeys = "ctrl+q"\naction = "quit"\n')
+
+        merged = _merge_config_files([earlier, later])
+        assert merged["keymaps"]["shared"] == [{"keys": "ctrl+q", "action": "quit"}]
+
+    def test_a_later_default_profile_still_wins(self, tmp_path: Path) -> None:
+        earlier = tmp_path / "earlier.toml"
+        earlier.write_text(
+            'default_profile = "personal"\n[profiles.personal]\nadapter = "duckdb"\n'
+        )
+        later = tmp_path / "later.toml"
+        later.write_text(
+            'default_profile = "project"\n[profiles.project]\nadapter = "sqlite"\n'
+        )
+
+        merged = _merge_config_files([earlier, later])
+        assert merged["default_profile"] == "project"
+        assert set(merged["profiles"]) == {"personal", "project"}
+
+    def test_load_config_keeps_a_home_default_when_cwd_adds_a_profile(
+        self,
+        tmp_path_factory: pytest.TempPathFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The #1040 reproduction: cwd must not hide the home default profile."""
+        mock_home = tmp_path_factory.mktemp("home")
+        mock_config = tmp_path_factory.mktemp("config")
+        mock_cwd = tmp_path_factory.mktemp("cwd")
+        (mock_home / ".harlequin.toml").write_text(
+            'default_profile = "personal"\n'
+            "\n"
+            "[profiles.personal]\n"
+            'adapter = "duckdb"\n'
+            'theme = "nord"\n'
+            "\n"
+            "[profiles.shared]\n"
+            'adapter = "duckdb"\n'
+            'theme = "gruvbox"\n'
+        )
+        (mock_cwd / ".harlequin.toml").write_text(
+            '[profiles.project]\nadapter = "sqlite"\n'
+        )
+        monkeypatch.setattr(Path, "cwd", lambda: mock_cwd)
+        monkeypatch.setattr(Path, "home", lambda: mock_home)
+        monkeypatch.setattr(
+            "harlequin.config.user_config_path", lambda **_: mock_config
+        )
+
+        loaded = load_config(config_path=None)
+        assert loaded["default_profile"] == "personal"
+        assert set(loaded["profiles"]) == {"personal", "shared", "project"}
+        profile, _ = get_config_for_profile(config_path=None, profile_name=None)
+        assert profile["adapter"] == "duckdb"
+        assert profile["theme"] == "nord"
 
 
 def test_merge_profile_with_cli_prefers_values_the_user_typed() -> None:

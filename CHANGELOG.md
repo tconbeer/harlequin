@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Config files now merge `profiles` and `keymaps` by name, so a project-local file no longer hides profiles defined in an earlier file ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
 - The Results Viewer no longer reports a truncated fetch as an exact total ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
 - The SQLite adapter now honors a limit of `1` or `0`.
 - A config file that sets `default_profile` and defines no profiles at all is now reported as a `HarlequinConfigError`, instead of crashing ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
