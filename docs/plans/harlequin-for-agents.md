@@ -317,6 +317,13 @@ identically whether stdout is CSV or Parquet.
 > that result, and exits 4. It also refuses up front on an adapter that can't cancel,
 > since there is otherwise no way to stop the work.
 >
+> **`--single-transaction` is cut too.** Adapters name their transaction modes freely —
+> SQLite and Postgres offer "Auto"/"Manual", DuckDB overrides nothing and reports none, and
+> a third-party adapter may name its modes anything and default to whatever its driver
+> does — so core cannot ask for "the manual one" through that interface without first
+> reworking what a transaction mode is. Story A6's guarantee comes from `begin` and
+> `commit` in the caller's own script until then.
+>
 > **`--dry-run` is cut**, from M2 and possibly for good. Only DuckDB implements
 > `validate_sql` at all, and there it is a parse check rather than an existence check:
 > `select * from no_such_table` validates clean, because the adapter treats every
@@ -476,11 +483,14 @@ hsql find <TERM> [--in tables|columns|all]
 > second mode could add is detail the contract does not carry (comments) or that costs a
 > table scan (row counts).
 >
-> **`--format compact` needs a field that doesn't exist.** `CatalogItem.type_label` is a
-> 1–3 character label for a tree column (`##`, `s`, `ts`), so today's honest rendering is
-> `total #.#`, not `total DECIMAL(18,2)`. The full type is fetched and discarded by the
-> in-tree adapters already; M2 adds an optional `type_name` to keep it, and falls back to
-> the short label for adapters that never populate it.
+> **`--format compact` is cut, and the type it wanted is added.** `CatalogItem.type_label`
+> is a 1–3 character label for a tree column (`##`, `s`, `ts`), so the type an agent needs
+> is not in the contract at all — M2 adds an optional `type_name`, which the in-tree
+> adapters already fetch and discard, falling back to the short label where an adapter
+> never populates it. The *format* goes: `parent(child TYPE, …)` only reads for a relation
+> and its columns, and what a level is belongs to the adapter, so a database's schemas
+> would render as a signature they are not. `-tA --format csv` over the same rows is as
+> cheap and is true at every level.
 
 ### `hsql find` — the real gap
 
@@ -623,6 +633,14 @@ and a wrong guess produces a confusing runtime error. The config is shared betwe
 > `tomllib` change introduced. M2 makes the merge per-key and treats it as a bug fix; the
 > spec page should describe that rather than what exists today.
 >
+> **Validation runs on the merged document, so no error can name a file.** `load_config()`
+> merges every discovered file and then validates the result, which means a diagnostic can
+> only ever point at a key in a structure nobody wrote. M2 validates each file as it is
+> read and merges only valid ones, which is what makes deliverable 2's file-and-line
+> diagnostics possible. It also adds `hsql --config list-profiles`, since the first
+> question a human asks is what they can pass to `-P`, and a missing name is how the merge
+> bug above becomes visible.
+>
 > **`${VAR}` interpolation has to be a read-path transform.** `harlequin --config` reads
 > the config and writes it back, so resolving values too early bakes a plaintext password
 > into the user's file on their next wizard run. The syntax is `${VAR}` and
@@ -650,9 +668,12 @@ Combine that with `${VAR}` interpolation (#898) and the secrets story closes:
   redaction everywhere else.
 - **Never prompt in headless mode.** A prompt that blocks on stdin is the *worst*
   failure mode for an agent: no output, no exit code, the whole turn burned until
-  something times out. `hsql` must fail fast with a message pointing at the profile, the
-  env var, or `--password-stdin` — and `--password-stdin` conflicts with `-f -`, so that
-  pair needs an explicit error rather than a mysterious hang.
+  something times out. `hsql` must fail fast with a message pointing at the profile or the
+  env var.
+
+  > **Amended in M2's plan: no `--password-stdin` either.** Between profiles, `${VAR}`
+  > interpolation and the variables every driver already reads, it fills no gap worth a
+  > flag — and the gap it does fill, it fills by consuming the stream `-f -` wants.
 - **`spec --json` marks secret options.** This is what teaches an agent *not* to
   construct `hsql --password hunter2`, which would leak through `ps` and shell history
   to every other user on the box. The skill should say it too, but the machine-readable
@@ -897,14 +918,15 @@ writing it; §8 there lists them. PRs 1–6 shipped and PR 7, the docs topic, is
 PR 8, the agent eval suite, was not built.
 
 **On M2.** Likewise in [the M2 technical plan](./m2-hsql-technical-plan.md), across three
-releases rather than one: the catalog first, since it needs nothing outside this repo; then
-self-description; then the safety flags, which need additive fields on the adapter contract
-and therefore an ecosystem rollout. The amendments marked above are the corrections that
-came out of measuring it. One addition and several subtractions to this table's M2 row:
-`--single-transaction` belongs to M2 (M1 deferred it here), the introspection surface is
-mode options rather than subcommands, and `describe`, `fmt`, `--dry-run`, recursive
-`--depth`, the node budget and child counts are all cut — each for a reason given in §7 of
-that plan.
+releases rather than one: **config and self-description first**, since they fix bugs that
+exist today and need no adapter change at all; then the catalog, with search implemented for
+both in-tree adapters rather than left as a stretch; then the safety flags, which need
+additive members on the adapter contract and therefore an ecosystem rollout. The amendments
+marked above are the corrections that came out of measuring it. This table's M2 row is
+otherwise all subtraction: the introspection surface is mode options rather than
+subcommands, and `describe`, `fmt`, `--dry-run`, `--single-transaction`, `--password-stdin`,
+recursive `--depth`, the node budget, child counts and the `compact` format are all cut —
+each for a reason given in §7 of that plan.
 
 **On M0.** Name availability is the only thing in this plan that someone else can take
 while we deliberate, which is why it's a milestone rather than a task. It's also cheap
