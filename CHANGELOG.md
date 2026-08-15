@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-08-15
 
 ### Breaking Changes
 
@@ -17,7 +18,7 @@ All notable changes to this project will be documented in this file.
   - Formats are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none`, and can be modified by flags, including `-t` and `-A`, which are the same as psql.
   - stdout is data; stderr is narration. Truncation notices, errors and `--stats` go to stderr, so `hsql -c ... --csv > out.csv` produces a clean file.
   - Exit codes are an API: 0 success, 1 query error, 2 usage or config error, 3 is a retryable connection error, 130 interrupted.
-  - `--limit` defaults to 500 and truncation is never silent. It is a *hard* limit, so fewer rows leave the database. `--display-rows` caps what the text layouts print, but does not limit the data fetched. `--limit -1` fetches all records.
+  - `--limit` defaults to 500 and truncation is never silent. It is a _hard_ limit, so fewer rows leave the database. `--display-rows` caps what the text layouts print, but does not limit the data fetched. `--limit -1` fetches all records.
   - `--result all|last|N` picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script.
   - For more information, see `hsql --help` and `hsql -a my_adapter --help`.
 
@@ -968,7 +969,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.8.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.9.0...HEAD
+[2.9.0]: https://github.com/tconbeer/harlequin/compare/2.8.1...2.9.0
 [2.8.1]: https://github.com/tconbeer/harlequin/compare/2.8.0...2.8.1
 [2.8.0]: https://github.com/tconbeer/harlequin/compare/2.7.0...2.8.0
 [2.7.0]: https://github.com/tconbeer/harlequin/compare/2.6.0...2.7.0
