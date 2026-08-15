@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `hsql --format markdown` no longer breaks the table when `--null-string` contains a `|` or a newline.
+
 ## [2.9.0] - 2026-08-15
 
 ### Breaking Changes

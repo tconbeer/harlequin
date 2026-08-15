@@ -243,6 +243,13 @@ class _MarkdownLayout(_BaseLayout):
     MIN_WIDTH = 3
     """The shortest delimiter row GFM accepts is `---`."""
 
+    def __init__(self, options: LayoutOptions) -> None:
+        super().__init__(options)
+        # `_cell()` is shared with the other layouts and prints `self.null` as
+        # it finds it, so a null string a caller chose is escaped once, here,
+        # rather than at every place that renders one.
+        self.null = _escape(self.null)
+
     def write(self, result: "ResultSet", out: TextIO) -> None:
         headers = [_escape(name) for name in self._headers(result)]
         rows: list[Row] = [
@@ -251,7 +258,7 @@ class _MarkdownLayout(_BaseLayout):
         ]
         widths = [
             max(width, self.MIN_WIDTH)
-            for width in _column_widths(headers, rows, _escape(self.null))
+            for width in _column_widths(headers, rows, self.null)
         ]
 
         if self.options.header:
