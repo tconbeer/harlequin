@@ -597,7 +597,14 @@ anything is the winning one, and `get_profile()` — the read path both commands
 want a profile and not the keymaps beside it — returns at the file that defines it. The
 files behind that one are never opened, parsed or validated. `-P None` reads nothing at all.
 `load_config()` is the whole document, for `--config show` and the IDE's keymaps, and has no
-reason to stop. Measured with four candidate files present, the skipped reads pay for most
+reason to stop.
+
+Resolving a name is separated from reading the document in the same PR, because otherwise the
+two commands disagree about a config file neither of them is using: a `default_profile` that
+names no profile is raised where the name is *used*, so `-P other` and `-P None` start rather
+than being refused over a key they overrode. What remains is the honest half of the
+difference — `hsql` cannot report a problem in a file it stopped before opening — and
+`--config validate` (PR 3) is the mode that reads everything and reports everything. Measured with four candidate files present, the skipped reads pay for most
 of msgspec's import: `hsql -c "select 1"` is +7ms against the pre-PR-1 command, and
 `hsql -P None -c "select 1"` is 7ms faster than it.
 

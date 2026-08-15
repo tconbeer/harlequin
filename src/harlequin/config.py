@@ -256,11 +256,12 @@ def get_config_for_profile(
     wants the profile should call `get_profile()`, which stops at the file that
     defines it.
     """
-    config = load_config(config_path)
+    config, named_by = _load(config_path)
     profile = _select_profile(
         config.get("profiles", {}),
         requested=profile_name,
         default=config.get("default_profile", None),
+        default_from=named_by,
     )
 
     raw_keymaps: dict[str, list[RawKeyBinding]] = config.get("keymaps", {})
@@ -427,6 +428,18 @@ def load_config(config_path: Path | None) -> Config:
     project-local file that defines one profile leaves the rest of them --
     and the `default_profile` that names one of them -- alone.
     """
+    return _load(config_path)[0]
+
+
+def _load(config_path: Path | None) -> tuple[Config, Path | None]:
+    """The merged config, and which file named the default profile.
+
+    That second value is only ever an error message: a `default_profile` that
+    names no profile is a problem with the file that set it, and reporting it
+    belongs to whoever resolves a name (`_select_profile`) rather than to
+    reading -- an invocation that passed `-P` has overridden the key, and
+    refusing to start over one nobody read is the failure #1040 was.
+    """
     config: Config = {}
     profiles: dict[str, Profile] = {}
     keymaps: dict[str, list[RawKeyBinding]] = {}
@@ -445,10 +458,7 @@ def load_config(config_path: Path | None) -> Config:
     if keymaps:
         config["keymaps"] = keymaps
 
-    default = config.get("default_profile", None)
-    if default is not None and default != "None" and default not in profiles:
-        raise _no_such_profile(default, path=names_default)
-    return config
+    return config, names_default
 
 
 def get_highest_priority_existing_config_file() -> Path | None:
@@ -537,16 +547,23 @@ def _search_home() -> list[Path]:
 
 
 def _select_profile(
-    profiles: Mapping[str, Profile], *, requested: str | None, default: str | None
+    profiles: Mapping[str, Profile],
+    *,
+    requested: str | None,
+    default: str | None,
+    default_from: Path | None,
 ) -> Profile:
-    """The profile a name resolves to, out of an already-merged config."""
+    """The profile a name resolves to, out of an already-merged config.
+
+    Which name went missing decides the message: a requested one is the
+    caller's problem, and a default one is the problem of the file that named
+    it -- which is why `default_from` is carried this far.
+    """
     name = requested or default
     if name is None or name == "None":
         return {}
     if name not in profiles:
-        # only a requested name can be missing here: `load_config()` has
-        # already reported a default that names no profile, and named the file
-        raise _no_such_profile(name, path=None)
+        raise _no_such_profile(name, path=None if requested else default_from)
     return profiles[name]
 
 

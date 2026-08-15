@@ -62,8 +62,14 @@ def mock_empty_config(no_discovered_config: None) -> None:
 
 @pytest.fixture()
 def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
+    """A merged config, in place of whatever is on the machine running this.
+
+    `_load()` rather than `load_config()`: reading also reports which file
+    named the default profile, so that an error about one can name it, and
+    that is the seam both of its callers go through.
+    """
     config: Config = {"profiles": {"test-profile": {"theme": "fruity"}}}
-    monkeypatch.setattr("harlequin.config.load_config", lambda *_: config)
+    monkeypatch.setattr("harlequin.config._load", lambda *_: (config, None))
     return config
 
 

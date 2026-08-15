@@ -106,10 +106,6 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
 @pytest.mark.parametrize(
     "filename,key_words",
     [
-        ("default_no_exist.toml", ["default_profile", "foo"]),
-        # a file that names a default and defines no profiles at all used to
-        # escape as a KeyError rather than being reported
-        ("default_no_profiles.toml", ["default_profile", "foo"]),
         ("extra_key.toml", ["unexpected key"]),
         ("none_profile.toml", ["None", "not allowed"]),
         ("not_toml.toml", ["Attempted to load"]),
@@ -134,6 +130,52 @@ def test_bad_config_raises(
     # every message names the file the key is written in, which is what
     # validating each file ahead of the merge is for
     assert filename in err.msg
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "default_no_exist.toml",
+        # a file that names a default and defines no profiles at all used to
+        # escape as a KeyError rather than being reported
+        "default_no_profiles.toml",
+    ],
+)
+def test_a_default_that_names_no_profile_raises_where_it_is_resolved(
+    data_dir: Path, filename: str
+) -> None:
+    """Both commands report it, and both name the file that set the key."""
+    config_path = data_dir / "unit_tests" / "config" / filename
+
+    for resolve in (
+        lambda: get_config_for_profile(config_path=config_path, profile_name=None),
+        lambda: get_profile(config_path=config_path, profile_name=None),
+    ):
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            resolve()
+        assert all(
+            w in exc_info.value.msg for w in ["default_profile", "foo", filename]
+        )
+
+
+@pytest.mark.parametrize("profile_name", ["None", "my-duckdb-profile"])
+def test_a_default_that_names_no_profile_is_not_an_error_for_a_caller_that_overrode_it(
+    data_dir: Path, profile_name: str
+) -> None:
+    """A key nobody read cannot be what stops a command starting.
+
+    That is the shape of #1040, and it is also the only thing that kept the two
+    commands from agreeing: `hsql -P other` never consults `default_profile`,
+    so `harlequin -P other` must not refuse over it either.
+    """
+    config_path = data_dir / "unit_tests" / "config" / "default_no_exist.toml"
+
+    profile, _ = get_config_for_profile(
+        config_path=config_path, profile_name=profile_name
+    )
+    assert profile == get_profile(config_path=config_path, profile_name=profile_name)
+    # and reading the document is not resolving a name, so it does not raise
+    assert load_config(config_path=config_path)["default_profile"] == "foo"
 
 
 def test_config_file_discovery(
