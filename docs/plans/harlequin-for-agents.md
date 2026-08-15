@@ -151,6 +151,13 @@ Everything in Workstream B lands as `hsql` subcommands: `hsql catalog`,
 `hsql mcp`, `hsql open`. Bare `hsql` with no arguments prints help; it never launches
 the TUI.
 
+> **Amended in M2's plan: these are mode options, not subcommands.** `hsql --catalog`,
+> `hsql --info`, `hsql --spec`, `hsql --config show`. It matches `harlequin --config`, so
+> one shape covers both commands — and it sidesteps the objection this section raises
+> against subcommands, which applies here too: `hsql` takes `CONN_STR` positionally, so
+> `hsql catalog` and a database file named `catalog` would have needed a disambiguation
+> rule, docs for the rule, and a test for the rule. No verb, no rule.
+
 ### Consequences
 
 - **The `-f` collision disappears, and with it the plan's only breaking change.**
@@ -301,6 +308,29 @@ identically whether stdout is CSV or Parquet.
 **Errors are plain.** No Rich panels, no ANSI, no box drawing:
 `hsql: error: relation "usres" does not exist` on stderr. The panel is a TUI affordance.
 
+> **Amended in M2's plan**, on two of the safety flags above.
+>
+> **`--timeout` has to attribute the cancellation itself.** A cancelled DuckDB query comes
+> back as an empty result set with no error — `fetchall()` swallows the interrupt and
+> returns `None`, which is also what an empty result looks like — so a timeout that trusts
+> the adapter prints "no rows" and exits 0. `hsql` knows it fired the deadline, discards
+> that result, and exits 4. It also refuses up front on an adapter that can't cancel,
+> since there is otherwise no way to stop the work.
+>
+> **`--single-transaction` is cut too.** Adapters name their transaction modes freely —
+> SQLite and Postgres offer "Auto"/"Manual", DuckDB overrides nothing and reports none, and
+> a third-party adapter may name its modes anything and default to whatever its driver
+> does — so core cannot ask for "the manual one" through that interface without first
+> reworking what a transaction mode is. Story A6's guarantee comes from `begin` and
+> `commit` in the caller's own script until then.
+>
+> **`--dry-run` is cut**, from M2 and possibly for good. Only DuckDB implements
+> `validate_sql` at all, and there it is a parse check rather than an existence check:
+> `select * from no_such_table` validates clean, because the adapter treats every
+> non-parser error as valid so that DDL passes. Making it honest would mean a `PREPARE`
+> pass in the DuckDB adapter plus a refusal path on every other adapter — a lot of
+> machinery for a flag that would be truthful on one backend.
+
 **Exit codes:**
 
 | Code | Meaning |
@@ -428,6 +458,40 @@ hsql find <TERM> [--in tables|columns|all]
 - **`describe`** returns one object in full — columns, types, comments, row counts where
   the adapter can supply them. One round trip.
 
+> **Amended in M2's plan**, on four things this section assumes the catalog contract can
+> already do.
+>
+> **A listing is one round trip per path segment, plus one** — four for
+> `--catalog --path mydb.analytics.orders`, not one. An item can only be reached through
+> its ancestors, so the resolve in front of the listing is itself a walk. The listing stays
+> single-level and cheap; the resolve is what a network database charges for.
+>
+> **`--depth N` is one number over levels with wildly different costs, so M2 ships no
+> recursion at all.** Depth 2 from the root fetches each database's schema names — one
+> round trip per database, and databases are few. Depth 2 from a *schema* is one round trip
+> per relation: measured, 400 relations is **403 round trips and 2.3 seconds against a
+> local DuckDB file**, on the call an agent would most want to make. Recursion comes back
+> with `fetch_descendants()`, which is what would make it a single query rather than a
+> walk with a budget bolted on.
+>
+> **Child counts have no cheap case.** A count is only knowable by fetching the children,
+> so "report child counts wherever the adapter can get them cheaply" cannot be implemented
+> as written. What a listing can report is what it fetched, which it already does.
+>
+> **`describe` is `catalog` on a relation, so there is no separate verb.** One level below
+> a relation *is* its columns, with their names, real types and quoted identifiers. All a
+> second mode could add is detail the contract does not carry (comments) or that costs a
+> table scan (row counts).
+>
+> **`--format compact` is cut, and the type it wanted is added.** `CatalogItem.type_label`
+> is a 1–3 character label for a tree column (`##`, `s`, `ts`), so the type an agent needs
+> is not in the contract at all — M2 adds an optional `type_name`, which the in-tree
+> adapters already fetch and discard, falling back to the short label where an adapter
+> never populates it. The *format* goes: `parent(child TYPE, …)` only reads for a relation
+> and its columns, and what a level is belongs to the adapter, so a database's schemas
+> would render as a signature they are not. `-tA --format csv` over the same rows is as
+> cheap and is true at every level.
+
 ### `hsql find` — the real gap
 
 What an agent most often needs isn't "list this schema," it's *"where does `orders`
@@ -486,6 +550,15 @@ redacted.
 Capability flags matter: they let an agent know *not* to try `--dry-run` on an adapter
 that can't validate, instead of trying and failing.
 
+> **Amended in M2's plan.** The flags have to be *declared* on the adapter class, not
+> detected on the connection. Reflection can't answer the question:
+> `HarlequinSqliteConnection` defines `validate_sql` and raises `NotImplementedError` from
+> it, so an override check reports SQLite as validating SQL. Nothing is broken by that
+> today — the app catches the error at the call site — but a class variable is the pattern
+> that can be read *before* the call, and the only one `hsql --info` can read while the
+> database is unreachable, which is when a diagnostic is worth most. So `--info` imports
+> adapters and opens no connection.
+
 - **B5.** As an agent debugging a human's setup, I run `hsql info --json` and can tell
   them exactly which config file is winning and why.
 - **B6.** As an agent, I check capability flags before offering the human a feature their
@@ -497,6 +570,12 @@ Expose sqlfmt, which is already a dependency. `hsql fmt query.sql`,
 `hsql fmt -c "select 1"`, `--check` for CI. Agents write inconsistent SQL; this
 normalizes it before it lands in a human's repo. Cheap, and a genuinely nice human
 feature too.
+
+> **Cut in M2's plan.** An agent that wants formatted SQL can run `sqlfmt`, which is what
+> this would have wrapped. It is also the only headless mode that would have forced a
+> 196ms sqlfmt import into a package whose import graph is otherwise an enforced contract —
+> paid by the mode alone, but a deferral to maintain forever for a wrapper nobody asked
+> for.
 
 ### `hsql history`
 
@@ -541,6 +620,34 @@ and a wrong guess produces a confusing runtime error. The config is shared betwe
 6. **A formal spec page on the site**: discovery order, merge semantics, precedence,
    every key with its type and default, and the reserved/invalid names.
 
+> **Amended in M2's plan**, on two things this workstream would otherwise document as they
+> stand.
+>
+> **The merge is per top-level key, not per profile, and the result is a start-up
+> failure.** `_merge_config_files()` is a `dict.update()` per file, so a cwd config file
+> that defines any profile replaces the home file's whole `profiles` table — while leaving
+> its `default_profile` in place, since that is a different top-level key. Both commands
+> then refuse to start: *"Config files set the default_profile to personal, but do not
+> define a profile with that name."* Reproduced on this checkout, and against the
+> pre-refactor `config.py` as well, so it is long-standing rather than something the
+> `tomllib` change introduced. M2 makes the merge per-key and treats it as a bug fix; the
+> spec page should describe that rather than what exists today.
+>
+> **Validation runs on the merged document, so no error can name a file.** `load_config()`
+> merges every discovered file and then validates the result, which means a diagnostic can
+> only ever point at a key in a structure nobody wrote. M2 validates each file as it is
+> read and merges only valid ones, which is what makes deliverable 2's file-and-line
+> diagnostics possible. It also adds `hsql --config list-profiles`, since the first
+> question a human asks is what they can pass to `-P`, and a missing name is how the merge
+> bug above becomes visible.
+>
+> **`${VAR}` interpolation has to be a read-path transform.** `harlequin --config` reads
+> the config and writes it back, so resolving values too early bakes a plaintext password
+> into the user's file on their next wizard run. The syntax is `${VAR}` and
+> `${VAR:-default}` — a bare `{` never triggers it, so nothing anyone has in a password
+> today needs escaping — and an unset variable with no default is a config error naming
+> the variable and its file, never an empty string.
+
 ### Secrets: #667, #898, and redaction are one feature
 
 [#667](https://github.com/tconbeer/harlequin/issues/667) asks for a password prompt, and
@@ -561,9 +668,12 @@ Combine that with `${VAR}` interpolation (#898) and the secrets story closes:
   redaction everywhere else.
 - **Never prompt in headless mode.** A prompt that blocks on stdin is the *worst*
   failure mode for an agent: no output, no exit code, the whole turn burned until
-  something times out. `hsql` must fail fast with a message pointing at the profile, the
-  env var, or `--password-stdin` — and `--password-stdin` conflicts with `-f -`, so that
-  pair needs an explicit error rather than a mysterious hang.
+  something times out. `hsql` must fail fast with a message pointing at the profile or the
+  env var.
+
+  > **Amended in M2's plan: no `--password-stdin` either.** Between profiles, `${VAR}`
+  > interpolation and the variables every driver already reads, it fills no gap worth a
+  > flag — and the gap it does fill, it fills by consuming the stream `-f -` wants.
 - **`spec --json` marks secret options.** This is what teaches an agent *not* to
   construct `hsql --password hunter2`, which would leak through `ps` and shell history
   to every other user on the box. The skill should say it too, but the machine-readable
@@ -804,7 +914,19 @@ Because the CLI is a separate command, **every milestone here is purely additive
 [the M1 technical plan](./m1-hsql-technical-plan.md): the module architecture, the
 refactors that have to land first, and an eight-PR sequence across two releases. A few
 figures and defaults in this document were corrected against measurements taken while
-writing it; §8 there lists them.
+writing it; §8 there lists them. PRs 1–6 shipped and PR 7, the docs topic, is in flight;
+PR 8, the agent eval suite, was not built.
+
+**On M2.** Likewise in [the M2 technical plan](./m2-hsql-technical-plan.md), across three
+releases rather than one: **config and self-description first**, since they fix bugs that
+exist today and need no adapter change at all; then the catalog, with search implemented for
+both in-tree adapters rather than left as a stretch; then the safety flags, which need
+additive members on the adapter contract and therefore an ecosystem rollout. The amendments
+marked above are the corrections that came out of measuring it. This table's M2 row is
+otherwise all subtraction: the introspection surface is mode options rather than
+subcommands, and `describe`, `fmt`, `--dry-run`, `--single-transaction`, `--password-stdin`,
+recursive `--depth`, the node budget, child counts and the `compact` format are all cut —
+each for a reason given in §7 of that plan.
 
 **On M0.** Name availability is the only thing in this plan that someone else can take
 while we deliberate, which is why it's a milestone rather than a task. It's also cheap
