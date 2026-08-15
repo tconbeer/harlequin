@@ -570,34 +570,17 @@ Bug Fixes changelog entry and a test that pins the new semantics against both fi
 
 **On declaring the schema as a model rather than hand-rolling it.** Ted asked to explore a
 Pydantic model that declares the config, validates it, generates the JSON Schema and grows a
-`merge()` of its own — for simplicity and for speed. The simplicity is real and the plan
-should take it; **Pydantic specifically is the one thing here that can't pay for itself**,
-and it is worth the measurement rather than the argument:
+`merge()` of its own — for simplicity and for speed. Pydantic, msgspec and cattrs were all
+measured against a Harlequin-shaped config; the numbers and the four facts that decide it
+are in §6.1, and the short version is that **Pydantic costs +135ms on every invocation and
+so fails on the axis it was proposed to improve**, cattrs cannot generate the schema this
+section needs, and msgspec is the one that pays for itself at +37ms. None of them removes
+the hand-written part: adapter options are unknown keys, which every candidate either drops
+or rejects.
 
-| | cost over a bare interpreter | modules |
-| --- | --- | --- |
-| `import pydantic` | +52ms | 99 |
-| defining the `Config`/`Profile` models | **+135ms** | 207 |
-| validating a config, or emitting its JSON Schema | free, once defined | — |
-| `import msgspec` | +37ms | 104 |
-| defining the same as `msgspec.Struct`s | free, once imported | 104 |
-| `msgspec.convert()`, or `msgspec.json.schema()` | free | 104 |
-
-The cost is model *construction*, not import: Pydantic builds a core schema per model at
-class-definition time, and **config is read on every invocation of both commands**, so that
-135ms lands on `hsql -c "select 1"` — 257ms today — and takes it to roughly 390ms, past the
-300ms the product plan tracks in CI. There is no lazy way out, because the read path is the
-validating path.
-
-`msgspec` gets the same three things — a declared schema, path-aware validation errors, and
-`msgspec.json.schema()` for §3.5's generated schema — for 37ms, with definition, validation
-and schema generation all free after the import. It requires Python ≥3.10, which is exactly
-Harlequin's floor, and ships cp310–cp314 wheels, which is exactly Harlequin's CI matrix.
-
-So: **restructure the validation first, since that costs nothing and is what fixes the error
-messages, and take `msgspec` for the model if we want it declared rather than hand-rolled.**
-37ms is still 14% of a `hsql -c` invocation, so it is a real trade rather than a free win,
-and it is Ted's call whether declaring the schema is worth that. Pydantic is a no.
+So the plan is to **restructure the validation first, since that costs nothing and is what
+fixes the error messages**, and to treat the model as a separate, reversible decision to
+settle in PR 1's review.
 
 Provenance falls out of doing the merge properly:
 
@@ -933,12 +916,59 @@ would land.
 
 **Still open.**
 
-- **Whether the config schema is declared as a model, and at what cost** (§3.5). Pydantic is
-  measured at +135ms on every invocation and is therefore a no; `msgspec` buys the same
-  declaration, validation and JSON Schema for +37ms, which is 14% of a `hsql -c` run and a
-  real trade rather than a free win. The reordering and the per-key merge are worth doing
+- **Whether the config is declared as a model, or stays hand-rolled** (§3.5). The three
+  candidates are measured in §6.1 below. The reordering and the per-key merge are worth doing
   either way, so this can be settled in PR 1's review — but not later than that, because
   PR 1's validation and PR 6's schema both read whatever it decides.
+
+### 6.1 The config model, measured
+
+Three libraries were suggested or considered for declaring `Config`/`Profile` rather than
+hand-rolling `_raise_on_bad_schema()`. All of them were run against a Harlequin-shaped
+config on this checkout, because the deciding facts are not the ones the READMEs lead with.
+
+| | Pydantic 2.13 | msgspec 0.21 | cattrs 26.1 | hand-rolled |
+| --- | --- | --- | --- | --- |
+| cost on **every** invocation | +135ms | +37ms | +63ms | 0 |
+| new runtime dependencies | pydantic, pydantic-core | msgspec (C ext) | attrs, cattrs, exceptiongroup (3.10) | none |
+| unknown keys — i.e. adapter options | preserved (`extra="allow"`) | **dropped** | **dropped** | n/a |
+| `limit = true` | coerced to `1` | rejected | coerced to `1` | rejected today |
+| `limit = "500"` | coerced to `500` | rejected | coerced to `500` | rejected today |
+| error carries a path | yes | in the message | via `transform_error()` | ours to write |
+| generates JSON Schema | yes | yes | **no** | ours to write |
+
+Four things decide it, and none is the headline benchmark:
+
+- **The cost is model *construction*, not import, and config is read on every invocation of
+  both commands.** Pydantic builds a core schema per model at class-definition time, so its
+  135ms lands on `hsql -c "select 1"` — 257ms today — taking it to roughly 390ms, past the
+  300ms the product plan tracks in CI. There is no lazy way out, because the read path *is*
+  the validating path. Pydantic is a no on the one axis it was proposed to improve.
+- **Adapter options are unknown keys, and two of the three eat them.** A `Profile` model with
+  declared fields turns `{"adapter": "postgres", "dbname": "warehouse"}` into a profile with
+  no `dbname`, which is the value the adapter needed. msgspec and cattrs both drop unknown
+  keys (their only alternative is to *reject* them), so under either, `profiles` stays
+  `dict[str, dict[str, Any]]` with a model validating the keys core owns and the raw dict
+  carried alongside. Only Pydantic's `extra="allow"` preserves them — the one place it is
+  genuinely the better tool.
+- **Two of the three would reintroduce a bug we already guard.** `limit = true` structures to
+  `1` under Pydantic and cattrs. `parse_row_count()` rejects it today, with a comment saying
+  why: a bool is an int in Python, and `true` is not one row. msgspec is strict and rejects
+  it, which is the behavior we want and currently hand-write.
+- **cattrs cannot generate the schema**, and `--config schema` is the deliverable that would
+  most justify declaring a model at all. It is also the most expensive of the two viable
+  options. Its advantages — pure Python, so no wheel per Python version, and a very stable
+  ecosystem — do not pay for that here.
+
+**The recommendation is to keep it hand-rolled for now.** Validating per file ahead of the
+merge is what fixes the diagnostics, and it costs nothing and needs no dependency. A model
+would replace less code than it looks: the adapter-options tail stays hand-validated under
+every candidate, and `--config schema` has to graft adapter options on by hand regardless,
+since none of these libraries knows the installed plug-ins exist. If we do want one,
+**msgspec is the one that pays for itself** — strict where it matters, +37ms, JSON Schema
+included, Python ≥3.10 and cp310–cp314 wheels, which are exactly our floor and our matrix —
+with the caveat that it is pre-1.0 and effectively a one-maintainer project, the same class
+of bet M1 knowingly took on `tree-sitter`.
 
 *Two questions an earlier draft left open are closed rather than answered.* `--describe`
 does not exist, so neither does the question of whether it should report row counts. And
