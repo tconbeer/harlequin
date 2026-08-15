@@ -543,7 +543,13 @@ def test_an_unknown_option_that_is_not_hsqls_is_unchanged(
     res = runner.invoke(build_cli(), args=["--thmee", "nord"])
     assert res.exit_code == 2
     said = _said(res.stderr)
-    assert "No such option: --thmee" in said
+    # click has reworded this message across releases (8.4 quotes the option
+    # and lists every near match), so assert on its parts rather than on one
+    # release's sentence
+    assert "No such option" in said
+    assert "--thmee" in said
+    # click's own suggestion, drawn from this command's options
+    assert "--theme" in said
     assert "hsql" not in said
 
 

@@ -156,9 +156,9 @@ class ConfigFile:
         if self.is_pyproject:
             if "tool" not in doc:
                 doc["tool"] = {"harlequin": {}}
-            elif "harlequin" not in doc["tool"]:  # type: ignore
-                doc["tool"]["harlequin"] = {}  # type: ignore
-            doc["tool"]["harlequin"].update(config)  # type: ignore
+            elif "harlequin" not in doc["tool"]:
+                doc["tool"]["harlequin"] = {}
+            doc["tool"]["harlequin"].update(config)
         else:
             doc.update(config)
 
