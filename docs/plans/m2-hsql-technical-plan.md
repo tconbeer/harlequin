@@ -346,7 +346,7 @@ harlequin/
   catalog.py      MOD  + CatalogItem.type_name
   navigate.py     NEW  resolving a catalog path and listing one level below it
   options.py      MOD  + secret=..., + to_dict()
-  config.py       MOD  per-key merge, provenance, ${VAR} interpolation
+  config.py       MOD  per-profile merge, provenance, ${VAR} interpolation
   config_schema.py NEW the JSON Schema for a config file, generated from what is installed
   redact.py       NEW  redaction helpers, driven by the options that declare themselves secret
   query.py        MOD  text_columns() returns string data unchanged
@@ -578,11 +578,28 @@ def load_config(config_path: Path | None) -> Config:
 
 That reordering is free, and it is most of what makes `--config validate` worth having.
 
-**The merge becomes per-key** (§1.6). `profiles` merges per profile name, and a profile
-merges per option. This is a behavior change for both commands and a bug fix for a failure
-mode that is worse than losing a profile: today a project-local file that names one profile,
-plus a home file that sets `default_profile`, makes both commands refuse to start. It gets a
-Bug Fixes changelog entry and a test that pins the new semantics against both files.
+**The merge becomes per profile, and files are read nearest first** (§1.6; amended in PR 1,
+Ted's call). `profiles` merges per profile name and `keymaps` per keymap name, and the
+nearest file that defines one supplies it whole. An earlier draft of this section had a
+profile merge per *option* as well; that is what PR 1 traded away, because it is
+incompatible with the early stop below — a profile's keys are not known to be complete until
+every file has been read, so per-option merging means no file can ever be skipped. Half a
+connection from each of two files is also not a connection either of them describes.
+
+This is a behavior change for both commands and a bug fix for a failure mode that is worse
+than losing a profile: before it, a project-local file that names one profile, plus a home
+file that sets `default_profile`, makes both commands refuse to start. It gets a Bug Fixes
+changelog entry and a test that pins the new semantics against both files.
+
+**Discovery is reversed, and the profile read path stops early** (Ted's call, PR 1).
+`_find_config_files()` returns candidates highest priority first, so the first definition of
+anything is the winning one, and `get_profile()` — the read path both commands use when they
+want a profile and not the keymaps beside it — returns at the file that defines it. The
+files behind that one are never opened, parsed or validated. `-P None` reads nothing at all.
+`load_config()` is the whole document, for `--config show` and the IDE's keymaps, and has no
+reason to stop. Measured with four candidate files present, the skipped reads pay for most
+of msgspec's import: `hsql -c "select 1"` is +7ms against the pre-PR-1 command, and
+`hsql -P None -c "select 1"` is 7ms faster than it.
 
 **Validation itself runs in two passes, and the second one is new ground** (Ted's design).
 Pass 1 validates what core owns, per file, before the merge: the top-level keys, the shape
@@ -808,7 +825,7 @@ Numbering assumes M1's remaining work releases as 2.9.
 
 ### Release A — config and self-description (2.10)
 
-**PR 1 — Validate per file, then merge per key.** The reordering, the per-profile merge, the
+**PR 1 — Validate per file, then merge per profile.** The reordering, the per-profile merge, the
 second pass over the selected profile's adapter options, and the errors that can finally name
 a file. This is where msgspec arrives as a dependency, or doesn't. Fixes
 [#1040](https://github.com/tconbeer/harlequin/issues/1040), which is a hard stop for anyone
@@ -919,9 +936,12 @@ identically on every machine.
   declared adapter option are each accepted in a profile, and a misspelling of one is
   rejected naming the adapter — with `port = 5432` and `port = "5432"` both still accepted,
   since the adapter contract promises values may arrive uncast.
-- **The merge fix is asserted per key, not just per profile**: a profile defined in two
-  files takes the nearer file's value for the key it sets and the farther file's for the
-  rest, which is the half of "later wins" that a table-level replace also gets wrong.
+- **The merge fix is asserted per profile, not just per table**: a profile defined in two
+  files is the nearer file's, whole, and the profiles only the farther file defines survive
+  beside it — which is the half of "later wins" that a table-level replace gets wrong.
+- **Early stopping is asserted with an unreadable file**: a home file containing invalid
+  TOML, and a cwd file defining the wanted profile. A file that is opened at all takes the
+  test down with it, which is a guard that cannot pass by accident.
 
 Not tested, because it was dropped from M1: an agent eval suite. §13 of the product plan
 calls it the metric that actually matters, and M2 widens the surface an agent has to choose
@@ -971,13 +991,22 @@ would land.
 - *No `fmt`, no `--dry-run`* (Ted's call, §7).
 - *No shell-command interpolation* in config values (§3.5).
 
+- *Config files are read nearest first, and the profile read path stops at the file that
+  defines what it was asked for* (Ted's call, §3.5). The cost of that is per-option merging
+  within a profile, which PR 1 gave up to get it: a profile is the nearest file's, whole.
+- *The config is declared as msgspec models* (settled in PR 1, §3.5 and §6.1). Measured on
+  the shipped code, the import is ~30ms rather than the +37ms §6.1 predicted, and it is
+  deferred into the functions that validate, so an invocation that finds no config file with
+  anything in it pays nothing. Two things it did not replace, both for the message rather
+  than the check: the top-level unknown-key error, and pass 2's misspelled-option error,
+  which is where `difflib` says *did you mean `read_only`*. msgspec owns shape, types and
+  declared choices, and `--config schema` will read the same declarations.
+
 **Still open.**
 
-- **Whether the config is declared as a model, or stays hand-rolled** (§3.5). Leaning
-  msgspec, for the reasons in §6.1 — the deciding one being that §3.5's second pass makes the
-  adapter options declarable rather than a hand-validated tail. The reordering and the
-  per-key merge are worth doing either way, so this becomes real in PR 1 — and not later,
-  because PR 1's validation and PR 6's schema both read whatever it decides.
+- Nothing from PR 1. §6.1's reversal conditions — the import cost mattering more once
+  `--info` and `--spec` are real, or wanting Pydantic's `extra="allow"` — are still the
+  things that would reopen it.
 
 ### 6.1 The config model, measured
 

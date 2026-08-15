@@ -10,12 +10,15 @@ from harlequin.config import (
     _find_config_files,
     get_config_for_profile,
     get_highest_priority_existing_config_file,
+    get_profile,
     load_config,
     merge_profile_with_cli,
     parse_row_count,
+    validate_profile_options,
 )
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
+from harlequin.options import FlagOption, SelectOption, TextOption
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
@@ -110,8 +113,8 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
         ("extra_key.toml", ["unexpected key"]),
         ("none_profile.toml", ["None", "not allowed"]),
         ("not_toml.toml", ["Attempted to load"]),
-        ("profiles_not_table.toml", ["profiles", "key", "table"]),
-        ("profile_not_table.toml", ["members", "profiles", "table"]),
+        ("profiles_not_table.toml", ["profiles", "table"]),
+        ("profile_not_table.toml", ["profiles.foo", "table"]),
         ("bad_option_name.toml", ["option", "invalid", "read-only", "read_only"]),
         ("keymaps_not_array.toml", ["keymaps", "array"]),
     ],
@@ -128,6 +131,9 @@ def test_bad_config_raises(
     assert isinstance(err, HarlequinConfigError)
     assert "config" in err.title
     assert all([w in err.msg for w in key_words])
+    # every message names the file the key is written in, which is what
+    # validating each file ahead of the merge is for
+    assert filename in err.msg
 
 
 def test_config_file_discovery(
@@ -140,16 +146,17 @@ def test_config_file_discovery(
     mock_cwd = tmp_path_factory.mktemp("cwd")
     custom = tmp_path_factory.mktemp("custom") / "foo.toml"
 
-    # create empty config files in our mock dirs
+    # create empty config files in our mock dirs, highest priority first
     expected_paths = [
-        mock_home / "pyproject.toml",
-        mock_home / ".harlequin.toml",
-        mock_config / "config.toml",
-        mock_config / "harlequin.toml",
-        mock_cwd / "pyproject.toml",
-        mock_cwd / ".harlequin.toml",
-        mock_cwd / "harlequin.toml",
         custom,
+        mock_cwd / "harlequin.toml",
+        mock_cwd / ".harlequin.toml",
+        mock_cwd / "pyproject.toml",
+        mock_config / "harlequin.toml",
+        mock_config / "config.toml",
+        mock_home / "harlequin.toml",
+        mock_home / ".harlequin.toml",
+        mock_home / "pyproject.toml",
     ]
     for p in expected_paths:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -161,9 +168,9 @@ def test_config_file_discovery(
 
     assert _find_config_files(config_path=custom) == expected_paths
 
-    expected_paths.pop()
+    expected_paths.pop(0)
     assert _find_config_files(config_path=None) == expected_paths
-    assert get_highest_priority_existing_config_file() == expected_paths[-1]
+    assert get_highest_priority_existing_config_file() == expected_paths[0]
 
 
 def test_merge_profile_with_cli_prefers_values_the_user_typed() -> None:
@@ -356,3 +363,250 @@ class TestConfigFileRoundTrip:
     ) -> None:
         with pytest.raises(HarlequinConfigError):
             ConfigFile(data_dir / "unit_tests" / "config" / "not_toml.toml")
+
+
+@pytest.fixture
+def config_dirs(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """A cwd and a home directory to write config files into, and nothing else.
+
+    Returns them nearest first, which is the order the files in them are read.
+    """
+    mock_cwd = tmp_path_factory.mktemp("cwd")
+    mock_home = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr(Path, "cwd", lambda: mock_cwd)
+    monkeypatch.setattr(Path, "home", lambda: mock_home)
+    monkeypatch.setattr("harlequin.config._search_config", list)
+    return mock_cwd, mock_home
+
+
+class TestMergingConfigFiles:
+    """Later files merge into earlier ones per profile, not per table.
+
+    Every case here is a config that two files disagree about, which is the
+    only place the merge is visible at all.
+    """
+
+    def test_a_project_file_does_not_displace_the_profiles_in_a_home_file(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The failing case from #1040, which used to refuse to start.
+
+        A `profiles` table used to replace another file's outright while the
+        `default_profile` naming one of them survived, so the two contradicted
+        each other and both commands exited 2.
+        """
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "personal"\n'
+            "[profiles.personal]\n"
+            'adapter = "duckdb"\n'
+            "[profiles.shared]\n"
+            'adapter = "sqlite"\n'
+        )
+        (cwd / ".harlequin.toml").write_text('[profiles.project]\nadapter = "sqlite"\n')
+
+        config = load_config(config_path=None)
+
+        assert sorted(config["profiles"]) == ["personal", "project", "shared"]
+        assert config["default_profile"] == "personal"
+        assert get_profile(config_path=None, profile_name=None) == {"adapter": "duckdb"}
+
+    def test_the_nearest_file_that_defines_a_profile_is_the_one_that_defines_it(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """A profile is one file's, whole: its keys are not merged with another's.
+
+        Half a connection from each of two files is not a connection either of
+        them describes, and it is not something a reader of either can predict.
+        """
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            "[profiles.prod]\n"
+            'adapter = "postgres"\n'
+            'conn_str = ["postgres://prod"]\n'
+            "[profiles.other]\n"
+            "limit = 10\n"
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 100\n")
+
+        assert get_profile(config_path=None, profile_name="prod") == {"limit": 100}
+        assert get_profile(config_path=None, profile_name="other") == {"limit": 10}
+
+    def test_the_nearest_file_that_names_a_default_is_the_one_that_names_it(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "personal"\n[profiles.personal]\nlimit = 1\n'
+        )
+        (cwd / ".harlequin.toml").write_text(
+            'default_profile = "project"\n[profiles.project]\nlimit = 2\n'
+        )
+
+        assert load_config(config_path=None)["default_profile"] == "project"
+        assert get_profile(config_path=None, profile_name=None) == {"limit": 2}
+
+    def test_a_default_named_in_one_file_can_be_defined_in_another(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """And the nearer file's copy of it still wins.
+
+        The name is not known until the file that sets `default_profile` is
+        read, so the files read before it are held rather than skipped.
+        """
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "prod"\n[profiles.prod]\nlimit = 1\n'
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 2\n")
+
+        assert get_profile(config_path=None, profile_name=None) == {"limit": 2}
+
+    def test_keymaps_merge_by_name_too(self, config_dirs: tuple[Path, Path]) -> None:
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            '[[keymaps.mine]]\nkeys = "w"\naction = "results_viewer.cursor_up"\n'
+            '[[keymaps.theirs]]\nkeys = "s"\naction = "results_viewer.cursor_down"\n'
+        )
+        (cwd / ".harlequin.toml").write_text(
+            '[[keymaps.mine]]\nkeys = "a"\naction = "results_viewer.cursor_left"\n'
+        )
+
+        _, keymaps = get_config_for_profile(config_path=None, profile_name=None)
+
+        by_name = {keymap.name: keymap for keymap in keymaps}
+        assert sorted(by_name) == ["mine", "theirs"]
+        assert by_name["mine"].bindings[0].keys == "a"
+
+    def test_an_explicit_config_path_outranks_every_discovered_file(
+        self, config_dirs: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 1\n")
+        explicit = tmp_path / "explicit.toml"
+        explicit.write_text("[profiles.prod]\nlimit = 2\n")
+
+        assert get_profile(config_path=explicit, profile_name="prod") == {"limit": 2}
+
+
+class TestReadingNoMoreThanItMust:
+    """Files are read nearest first, so the far ones often need not be read.
+
+    Each of these puts something unreadable in a file that must not be reached
+    -- a file that is opened at all takes the test down with it.
+    """
+
+    def test_a_profile_found_near_stops_the_search(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 1\n")
+        (home / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        assert get_profile(config_path=None, profile_name="prod") == {"limit": 1}
+
+    def test_the_default_profile_stops_the_search_too(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            'default_profile = "prod"\n[profiles.prod]\nlimit = 1\n'
+        )
+        (home / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        assert get_profile(config_path=None, profile_name=None) == {"limit": 1}
+
+    def test_the_profile_named_None_reads_nothing_at_all(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """`-P None` asks for Harlequin's defaults, and that is answerable here."""
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        assert get_profile(config_path=None, profile_name="None") == {}
+
+    def test_a_file_it_did_reach_is_still_validated(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = true\n")
+        (home / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            get_profile(config_path=None, profile_name="prod")
+        assert "limit" in exc_info.value.msg
+
+    def test_reading_the_whole_config_still_reads_the_whole_config(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """`load_config()` is the document, so it has no reason to stop early."""
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 1\n")
+        (home / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        with pytest.raises(HarlequinConfigError):
+            load_config(config_path=None)
+
+
+class TestValidatingAgainstAnAdapter:
+    """The second pass: a profile's keys against the options its adapter declares.
+
+    Nothing else in the stack can do this -- an adapter takes supersets of what
+    it declares, so a key it has never heard of reaches its constructor and is
+    dropped there in silence.
+    """
+
+    OPTIONS = [
+        FlagOption(name="read_only", description="x"),
+        TextOption(name="port", description="x"),
+        SelectOption(name="mode", description="x", choices=["ro", "rw"]),
+    ]
+
+    def test_a_misspelled_option_is_refused_and_the_spelling_suggested(self) -> None:
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            validate_profile_options(
+                {"reed_only": True},  # type: ignore[typeddict-unknown-key]
+                adapter="duckdb",
+                options=self.OPTIONS,
+            )
+        message = exc_info.value.msg
+        assert "reed_only" in message
+        assert "read_only" in message
+        assert "duckdb" in message
+
+    @pytest.mark.parametrize(
+        "profile",
+        [
+            {"read_only": True, "port": 5432, "mode": "ro"},
+            {"limit": 100, "conn_str": ["my.db"]},  # keys a command owns
+            {"theme": "fruity", "keymap_name": ["vscode"]},  # keys the IDE owns
+            {"port": "5432"},  # the contract promises values may arrive uncast
+            {"mode": "RO"},  # click matches choices case-insensitively
+        ],
+    )
+    def test_what_a_profile_may_hold(self, profile: Profile) -> None:
+        validate_profile_options(profile, adapter="duckdb", options=self.OPTIONS)
+
+    def test_a_value_outside_the_declared_choices_is_refused(self) -> None:
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            validate_profile_options(
+                {"mode": "reed-only"},  # type: ignore[typeddict-unknown-key]
+                adapter="duckdb",
+                options=self.OPTIONS,
+            )
+        message = exc_info.value.msg
+        assert "mode" in message
+        assert "'ro'" in message and "'rw'" in message
+
+    def test_an_adapter_that_declares_nothing_still_takes_the_keys_core_owns(
+        self,
+    ) -> None:
+        validate_profile_options({"limit": 100}, adapter="fake", options=None)
+        with pytest.raises(HarlequinConfigError):
+            validate_profile_options(
+                {"anything": 1},  # type: ignore[typeddict-unknown-key]
+                adapter="fake",
+                options=None,
+            )

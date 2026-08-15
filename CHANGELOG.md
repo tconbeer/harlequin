@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Config files now merge profile by profile, and the **nearest file wins**. A profile is supplied whole by the closest file that defines it, instead of by the file read last; a file that redefines a profile no longer inherits the keys it leaves out ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- A profile that sets an option its adapter does not declare is now an error naming the option and the adapter, instead of being silently dropped. `reed_only = true` used to leave you connected read-write.
+
+### Bug Fixes
+
+- A project-local config file that defines a profile no longer hides the profiles defined in your home config file, and no longer contradicts the `default_profile` set there — which made both commands refuse to start ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- Config file errors now name the file the problem is written in, and the key it is written under.
+
+### Performance
+
+- `hsql` and `harlequin` read config files in priority order and stop at the file that defines the profile they were asked for, so the files behind it are never opened. `hsql -P None` now reads none at all.
+
+### Dependencies
+
+- Adds `msgspec`.
+
 ## [2.9.0] - 2026-08-15
 
 ### Breaking Changes

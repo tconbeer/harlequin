@@ -31,9 +31,10 @@ from harlequin.config import (
     TUI_ONLY_KEYS,
     UNLIMITED,
     Profile,
-    get_config_for_profile,
+    get_profile,
     merge_profile_with_cli,
     parse_row_count,
+    validate_profile_options,
 )
 from harlequin.exception import (
     HarlequinConfigError,
@@ -91,6 +92,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     if found.adapter is not None and setup_error is None:
         try:
             adapter_cls = load_adapter(found.adapter)
+            # the second validation pass, here because this is where both halves
+            # are in hand: the profile, and the adapter that was going to be
+            # imported anyway. An option it does not declare would otherwise be
+            # swallowed by its constructor.
+            validate_profile_options(
+                found.profile,
+                adapter=found.adapter,
+                options=adapter_cls.ADAPTER_OPTIONS,
+            )
         except HarlequinConfigError as e:
             setup_error = e
 
@@ -579,7 +589,10 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
     profile: Profile = {}
     error: HarlequinConfigError | None = None
     try:
-        profile, _ = get_config_for_profile(
+        # the profile, and not the keymaps beside it: keymaps are the IDE's, and
+        # wanting them would mean reading every config file rather than stopping
+        # at the one that defines this profile.
+        profile = get_profile(
             config_path=ctx.params.get("config_path"),
             profile_name=ctx.params.get("profile"),
         )

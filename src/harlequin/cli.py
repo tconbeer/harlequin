@@ -18,6 +18,7 @@ from harlequin.config import (
     get_config_for_profile,
     merge_profile_with_cli,
     parse_row_count,
+    validate_profile_options,
 )
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
@@ -405,7 +406,7 @@ def build_cli() -> click.Command:
         """
         # load config from any config files
         try:
-            config, user_defined_keymaps = get_config_for_profile(
+            profile_config, user_defined_keymaps = get_config_for_profile(
                 config_path=config_path, profile_name=profile
             )
         except HarlequinConfigError as e:
@@ -419,8 +420,23 @@ def build_cli() -> click.Command:
             if ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
         }
         config = merge_profile_with_cli(
-            profile=config, cli_values=kwargs, explicitly_set=explicitly_set
+            profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
         )
+
+        # the second validation pass: the profile's own keys, against the
+        # options the adapter it names declares. Only the profile's -- click has
+        # already vetted everything typed on the command line.
+        adapter_name = str(config.get("adapter", None) or DEFAULT_ADAPTER)
+        if (declaring := adapters.get(adapter_name)) is not None:
+            try:
+                validate_profile_options(
+                    profile_config,
+                    adapter=adapter_name,
+                    options=declaring.ADAPTER_OPTIONS,
+                )
+            except HarlequinConfigError as e:
+                pretty_print_error(e)
+                ctx.exit(2)
 
         # detect and install (if necessary) a tzdatabase on Windows
         if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
