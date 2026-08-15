@@ -286,6 +286,35 @@ class TestFooter:
         result = result_set("select * from range(10)", limit=limit)
         assert render(result).endswith("(1 of >1 rows)\n")
 
+    def test_a_truncated_empty_result_drops_the_ratio(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """`0 of >0` reads as a ratio between two zeroes, and is not one.
+
+        `--limit 0` keeps nothing, so there is no count to compare the total
+        against; the bound the probe row proves is the whole of what the footer
+        knows, so it says that and nothing else.
+        """
+        limit = RowLimit(max_rows=0, detect_overflow=True)
+        result = result_set("select * from range(10)", limit=limit)
+        assert render(result).endswith("(>0 rows)\n")
+
+    def test_an_empty_result_is_not_truncated(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """Nothing was left behind, so `--limit 0`'s bound must not appear."""
+        limit = RowLimit(max_rows=0, detect_overflow=True)
+        result = result_set("select * from range(10) where false", limit=limit)
+        assert render(result).endswith("(0 rows)\n")
+
+    @pytest.mark.parametrize("name", ["table", "markdown", "vertical"])
+    def test_every_layout_reports_a_truncated_empty_result(
+        self, result_set: ResultSetFactory, name: str
+    ) -> None:
+        limit = RowLimit(max_rows=0, detect_overflow=True)
+        result = result_set("select * from range(10)", limit=limit)
+        assert "(>0 rows)" in render(result, name)
+
     @pytest.mark.parametrize("name", ["table", "markdown", "vertical"])
     def test_every_layout_reports_truncation(
         self, result_set: ResultSetFactory, name: str

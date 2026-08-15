@@ -306,7 +306,7 @@ def test_limit_zero_fetches_a_header_and_no_rows(
     assert res.exit_code == ExitCode.OK
     lines = res.stdout.splitlines()
     assert lines[0].strip() == "n"
-    assert lines[-1] == "(0 of >0 rows)"
+    assert lines[-1] == "(>0 rows)"
 
 
 @pytest.mark.parametrize("flag", ["-t", "--no-footer"])

@@ -191,10 +191,16 @@ class _BaseLayout:
         `at least N` and would be the weaker statement of the two. The noun
         agrees with the total rather than with what was printed, which is why a
         truncated result is always plural.
+
+        `--limit 0` is the one place the ratio degenerates: nothing was kept and
+        the limit is the total's lower bound, so `0 of >0` puts two zeroes on
+        either side of a word that promises they differ. The claim is still the
+        one worth making -- the probe row proves a first row exists -- so the
+        ratio goes and the bound stays, as `>0 rows`.
         """
         rows = result.fetched_row_count
         if result.truncated:
-            return f"({shown} of >{rows} rows)"
+            return f"(>{rows} rows)" if rows == 0 else f"({shown} of >{rows} rows)"
         if shown < rows:
             return f"({shown} of {rows} rows)"
         return f"({rows} {'row' if rows == 1 else 'rows'})"

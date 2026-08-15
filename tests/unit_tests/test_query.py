@@ -230,6 +230,21 @@ class TestTruncation:
         assert result.truncated is True
         assert result.arrow_table().column_names == ["a"]
 
+    def test_a_limit_of_zero_over_an_empty_result_is_not_truncation(
+        self, all_adapters: type[HarlequinAdapter]
+    ) -> None:
+        """The probe row is what makes truncation knowable, and there was none
+        to fetch, so `limit 0` over an empty result is exactly empty."""
+        connection = all_adapters([":memory:"], no_init=True).connect()
+        limit = RowLimit(max_rows=0, detect_overflow=True)
+        (executed,) = execute(
+            connection, statements("select 1 as a where false"), limit=limit
+        )
+        result = fetch(executed, limit=limit)
+        assert result.row_count == 0
+        assert result.fetched_row_count == 0
+        assert result.truncated is False
+
     def test_a_soft_cap_is_not_truncation(
         self, connection: HarlequinConnection
     ) -> None:

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `hsql --limit 0` no longer prints a footer that reads `(0 of >0 rows)`; a result truncated to no rows now reads `(>0 rows)`.
+
 ## [2.9.0] - 2026-08-15
 
 ### Breaking Changes
