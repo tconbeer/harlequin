@@ -164,7 +164,7 @@ class variables, so reporting *those* costs the import; §3.4.) And anything tha
 adapter's *options* pays 300ms and rising, which is fine for `--spec`, a once-per-task
 lookup, and not fine for anything on the query path.
 
-### 1.5 Options can be declared but not described, and nothing marks a secret
+### 1.5 Options can be declared but not described, validated, or marked secret
 
 `AbstractOption` renders three ways — `to_click()`, `to_widgets()`, `to_questionary()` — and
 has no fourth. There is no serialization, so `--spec` has nothing to call, and the
@@ -181,6 +181,22 @@ declares twelve options, of which `password` is a plain `TextOption`, `sslkey` i
 `TextOption`, and `passfile` is a `PathOption`. So `--spec` would today teach an agent that
 `--password` exists and say nothing about why it must not be typed on a command line, where
 `ps` and shell history can read it.
+
+**And nothing validates an adapter option that arrives from a profile.** Options typed on the
+command line go through click, which rejects what it doesn't know; options read out of a
+config file go straight to the adapter's constructor as keyword arguments, and the adapter
+contract tells adapters to tolerate supersets of what they declare. So a misspelled key is
+accepted in silence, by design, all the way down:
+
+```python
+>>> DuckDbAdapter(conn_str=(":memory:",), reed_only=True, dbnmae="warehouse")
+constructed fine | read_only = False
+```
+
+That is the safety-relevant version of §1.6: a human who put `reed_only = true` in a profile
+believes they handed an agent a read-only connection, and did not. Nobody in the stack is in
+a position to notice — except a step that knows both the profile and the adapter's declared
+options, which is §3.5's second pass.
 
 ### 1.6 Config files merge per top-level key, and it is worse than losing a profile
 
@@ -568,19 +584,53 @@ mode that is worse than losing a profile: today a project-local file that names 
 plus a home file that sets `default_profile`, makes both commands refuse to start. It gets a
 Bug Fixes changelog entry and a test that pins the new semantics against both files.
 
-**On declaring the schema as a model rather than hand-rolling it.** Ted asked to explore a
-Pydantic model that declares the config, validates it, generates the JSON Schema and grows a
-`merge()` of its own — for simplicity and for speed. Pydantic, msgspec and cattrs were all
-measured against a Harlequin-shaped config; the numbers and the four facts that decide it
-are in §6.1, and the short version is that **Pydantic costs +135ms on every invocation and
-so fails on the axis it was proposed to improve**, cattrs cannot generate the schema this
-section needs, and msgspec is the one that pays for itself at +37ms. None of them removes
-the hand-written part: adapter options are unknown keys, which every candidate either drops
-or rejects.
+**Validation itself runs in two passes, and the second one is new ground** (Ted's design).
+Pass 1 validates what core owns, per file, before the merge: the top-level keys, the shape
+of `profiles` and `keymaps`, and the profile keys with meaning to `harlequin` or `hsql`. It
+cannot reject what it does not recognize, because every adapter's options live in the same
+table.
 
-So the plan is to **restructure the validation first, since that costs nothing and is what
-fixes the error messages**, and to treat the model as a separate, reversible decision to
-settle in PR 1's review.
+Pass 2 is what makes that safe. Once the adapter is known — which `_preflight` already
+settles, and `load_adapter()` has already imported for the run about to happen — its
+`ADAPTER_OPTIONS` say exactly which further keys are legal, so the selected profile can be
+validated in full:
+
+```python
+declared = {sluggify(o.name) for o in adapter_cls.ADAPTER_OPTIONS}
+allowed = core_keys | TUI_ONLY_KEYS | declared
+```
+
+**This validates a surface nothing validates today** (§1.5): `reed_only = true` in a profile
+is silently discarded by the adapter's `**kwargs`, and the user believes they are connected
+read-only. Pass 2 is the only place in the stack that knows both the profile and the
+adapter's declared options, so it is the only place that can say `unknown option 'reed_only'
+for adapter duckdb; did you mean 'read_only'?`
+
+Two things bound how strict it can be:
+
+- **"Valid" is a union of three sets** — core keys, `TUI_ONLY_KEYS` (a profile written for
+  the IDE has to work headlessly), and the adapter's declared options. Get the union wrong
+  and configs that work today start failing, so each set gets a test.
+- **Values may legitimately arrive uncast.** `adapter.py` tells adapters to "check the types
+  of options, as they may not be cast to the correct types", and TOML gives us whatever the
+  user typed — `port = 5432` and `port = "5432"` both work today and must keep working. So
+  pass 2 checks **names and declared choices**, which is where the value is, and stays
+  permissive about scalar types.
+
+Which mode validates what follows from the passes: the run path validates the one selected
+profile, with the one adapter it was going to import anyway, while `--config validate`
+validates every profile and imports each adapter its profiles name — 309ms for four (§1.4),
+which is the right trade for the mode whose whole job is to check.
+
+**On declaring the schema as a model rather than hand-rolling it.** Pydantic, msgspec and
+cattrs were all measured against a Harlequin-shaped config; the numbers and the facts that
+decide it are in §6.1. The short version: **Pydantic costs +135ms on every invocation and so
+fails on the axis it was proposed to improve**, cattrs cannot generate the JSON Schema this
+section needs, and **msgspec is the one that pays for itself** at +37ms — strict where it
+matters, and `msgspec.defstruct()` builds pass 2's per-adapter struct in 0.022ms, which is
+what makes the two-pass design declarative rather than another hand-written loop. Ted is
+leaning toward msgspec; §6.1 records what would reverse that, and PR 1 is where it becomes
+real.
 
 Provenance falls out of doing the merge properly:
 
@@ -758,8 +808,9 @@ Numbering assumes M1's remaining work releases as 2.9.
 
 ### Release A — config and self-description (2.10)
 
-**PR 1 — Validate per file, then merge per key.** The reordering, the per-profile merge, and
-the errors that can finally name a file. Fixes
+**PR 1 — Validate per file, then merge per key.** The reordering, the per-profile merge, the
+second pass over the selected profile's adapter options, and the errors that can finally name
+a file. This is where msgspec arrives as a dependency, or doesn't. Fixes
 [#1040](https://github.com/tconbeer/harlequin/issues/1040), which is a hard stop for anyone
 whose home config sets `default_profile` and who then adds a project-local file. Behavior
 change, Bug Fixes entry, and the failing case as its test.
@@ -864,6 +915,10 @@ identically on every machine.
 - **A listing is as deterministic as a result set**: identical bytes whether stdout is a
   pipe, a file or a pty, `\n` on every platform, and unaffected by `LC_ALL` — the M1
   properties, now over rows that never went through a database.
+- **Pass 2's allowed set is asserted per source**: a core key, a `TUI_ONLY_KEYS` key and a
+  declared adapter option are each accepted in a profile, and a misspelling of one is
+  rejected naming the adapter — with `port = 5432` and `port = "5432"` both still accepted,
+  since the adapter contract promises values may arrive uncast.
 - **The merge fix is asserted per key, not just per profile**: a profile defined in two
   files takes the nearer file's value for the key it sets and the farther file's for the
   rest, which is the half of "later wins" that a table-level replace also gets wrong.
@@ -896,8 +951,10 @@ would land.
   says is not a shape the catalog contract promises.
 - *No round-trip counting* (Ted's call, §3.2). Without recursion the number is `len(path) +
   1`, which a caller can read off the path they typed.
-- *Validation runs per file, ahead of the merge* (Ted's call, §3.5), so an error can name the
-  file it came from.
+- *Validation runs in two passes* (Ted's design, §3.5): per file ahead of the merge for the
+  keys core owns, so an error can name the file it came from, and then the selected profile
+  against the adapter's declared options — which catches a misspelled adapter option that
+  today is discarded in silence (§1.5).
 - *`--config list-profiles`* (Ted's call, §3.5).
 - *`--read-only` is a declared capability and refuses when it is absent* (Ted's call, §3.4).
   The flag works on two of fifteen adapters on the day it ships, and says so on the other
@@ -916,10 +973,11 @@ would land.
 
 **Still open.**
 
-- **Whether the config is declared as a model, or stays hand-rolled** (§3.5). The three
-  candidates are measured in §6.1 below. The reordering and the per-key merge are worth doing
-  either way, so this can be settled in PR 1's review — but not later than that, because
-  PR 1's validation and PR 6's schema both read whatever it decides.
+- **Whether the config is declared as a model, or stays hand-rolled** (§3.5). Leaning
+  msgspec, for the reasons in §6.1 — the deciding one being that §3.5's second pass makes the
+  adapter options declarable rather than a hand-validated tail. The reordering and the
+  per-key merge are worth doing either way, so this becomes real in PR 1 — and not later,
+  because PR 1's validation and PR 6's schema both read whatever it decides.
 
 ### 6.1 The config model, measured
 
@@ -960,15 +1018,33 @@ Four things decide it, and none is the headline benchmark:
   options. Its advantages — pure Python, so no wheel per Python version, and a very stable
   ecosystem — do not pay for that here.
 
-**The recommendation is to keep it hand-rolled for now.** Validating per file ahead of the
-merge is what fixes the diagnostics, and it costs nothing and needs no dependency. A model
-would replace less code than it looks: the adapter-options tail stays hand-validated under
-every candidate, and `--config schema` has to graft adapter options on by hand regardless,
-since none of these libraries knows the installed plug-ins exist. If we do want one,
-**msgspec is the one that pays for itself** — strict where it matters, +37ms, JSON Schema
-included, Python ≥3.10 and cp310–cp314 wheels, which are exactly our floor and our matrix —
-with the caveat that it is pre-1.0 and effectively a one-maintainer project, the same class
-of bet M1 knowingly took on `tree-sitter`.
+**The two-pass design changes the conclusion, and is the reason to take msgspec.** An earlier
+draft of this section recommended staying hand-rolled, on the grounds that a model would
+replace less code than it looked — the adapter-options tail would stay hand-validated
+whatever we chose. §3.5's second pass is what dissolves that objection: those options are not
+an untyped tail, they are a set the adapter *declares*, and a struct can be built from the
+declaration at run time. Measured, `msgspec.defstruct()` for a twelve-option adapter costs
+**0.022ms** and validating a profile against it **0.5µs**, so the per-adapter model is free
+at the point of use.
+
+What that buys is not a tidier version of validation we already do. It is validation of a
+surface **nothing validates today** (§1.5) — the difference between `reed_only = true`
+silently connecting read-write and an error naming the option and the adapter. It also comes
+with the declared choices, so `sslmode = "verify-ful"` is caught by the same pass; and the
+same declarations feed `--config schema`, so one source describes the config, validates it,
+and documents it.
+
+**So: msgspec, at +37ms on every invocation.** Strict where it matters (`limit = true` is
+rejected rather than silently made `1`), path-carrying errors, JSON Schema included, Python
+≥3.10 and cp310–cp314 wheels — exactly our floor and our matrix. The bet is that it is
+pre-1.0 and effectively a one-maintainer project, which is the same class of bet M1
+knowingly took on `tree-sitter`; if it goes bad, the fallback is the hand-rolled version of
+the same two passes, which is a contained loss because the *design* is what matters here and
+it survives the library.
+
+What would reverse it: the 37ms mattering more than it looks once `--info` and `--spec` are
+real, or wanting `extra="allow"`-style preservation badly enough to prefer Pydantic's cost.
+Both are visible in PR 1, which is where this becomes real.
 
 *Two questions an earlier draft left open are closed rather than answered.* `--describe`
 does not exist, so neither does the question of whether it should report row counts. And
