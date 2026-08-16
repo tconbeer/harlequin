@@ -5,20 +5,21 @@ from pathlib import Path
 import pytest
 
 from harlequin.config import (
+    TUI_ONLY_KEYS,
     ConfigFile,
     Profile,
-    _find_config_files,
-    get_config_for_profile,
+    _discover_config_files,
     get_highest_priority_existing_config_file,
-    get_profile,
     load_config,
+    load_profile,
+    load_profile_and_keymaps,
     merge_profile_with_cli,
+    parse_profile_options,
     parse_row_count,
-    validate_profile_options,
 )
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
-from harlequin.options import FlagOption, SelectOption, TextOption
+from harlequin.options import FlagOption, ListOption, SelectOption, TextOption
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
@@ -54,7 +55,9 @@ def test_load_keymap(data_dir: Path) -> None:
         ]
     )
 
-    _, keymaps = get_config_for_profile(config_path=good_config_path, profile_name=None)
+    _, keymaps = load_profile_and_keymaps(
+        config_path=good_config_path, profile_name=None
+    )
     assert len(keymaps) == 1
     assert isinstance(keymaps[0], HarlequinKeyMap)
     assert keymaps[0].name == keymap_name
@@ -75,7 +78,7 @@ def test_load_bad_keymap_raises(
 ) -> None:
     config_path = data_dir / "unit_tests" / "config" / filename
     with pytest.raises(HarlequinConfigError) as exc_info:
-        _ = get_config_for_profile(config_path=config_path, profile_name=None)
+        _ = load_profile_and_keymaps(config_path=config_path, profile_name=None)
     err = exc_info.value
     print(err)
     assert isinstance(err, HarlequinConfigError)
@@ -86,17 +89,17 @@ def test_load_bad_keymap_raises(
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
 def test_load_named_profile(data_dir: Path, filename: str) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / filename
-    profile, keymaps = get_config_for_profile(
+    profile, keymaps = load_profile_and_keymaps(
         config_path=good_config_path, profile_name="local-postgres"
     )
-    assert profile["port"] == 5432  # type: ignore[typeddict-item]
+    assert profile["port"] == 5432
     assert profile["theme"] == "fruity"
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
 def test_load_default_profile(data_dir: Path, filename: str) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / filename
-    profile, keymaps = get_config_for_profile(
+    profile, keymaps = load_profile_and_keymaps(
         config_path=good_config_path, profile_name=None
     )
     assert profile["adapter"] == "duckdb"
@@ -110,7 +113,7 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
         ("none_profile.toml", ["None", "not allowed"]),
         ("not_toml.toml", ["Attempted to load"]),
         ("profiles_not_table.toml", ["profiles", "table"]),
-        ("profile_not_table.toml", ["profiles.foo", "table"]),
+        ("profile_not_table.toml", ["profiles", "table"]),
         ("bad_option_name.toml", ["option", "invalid", "read-only", "read_only"]),
         ("keymaps_not_array.toml", ["keymaps", "array"]),
     ],
@@ -144,18 +147,16 @@ def test_bad_config_raises(
 def test_a_default_that_names_no_profile_raises_where_it_is_resolved(
     data_dir: Path, filename: str
 ) -> None:
-    """Both commands report it, and both name the file that set the key."""
+    """Both commands report it, and neither reads it as a profile of its own."""
     config_path = data_dir / "unit_tests" / "config" / filename
 
     for resolve in (
-        lambda: get_config_for_profile(config_path=config_path, profile_name=None),
-        lambda: get_profile(config_path=config_path, profile_name=None),
+        lambda: load_profile_and_keymaps(config_path=config_path, profile_name=None),
+        lambda: load_profile(config_path=config_path, profile_name=None),
     ):
         with pytest.raises(HarlequinConfigError) as exc_info:
             resolve()
-        assert all(
-            w in exc_info.value.msg for w in ["default_profile", "foo", filename]
-        )
+        assert all(w in exc_info.value.msg for w in ["default_profile", "foo"])
 
 
 @pytest.mark.parametrize("profile_name", ["None", "my-duckdb-profile"])
@@ -170,10 +171,10 @@ def test_a_default_that_names_no_profile_is_not_an_error_for_a_caller_that_overr
     """
     config_path = data_dir / "unit_tests" / "config" / "default_no_exist.toml"
 
-    profile, _ = get_config_for_profile(
+    profile, _ = load_profile_and_keymaps(
         config_path=config_path, profile_name=profile_name
     )
-    assert profile == get_profile(config_path=config_path, profile_name=profile_name)
+    assert profile == load_profile(config_path=config_path, profile_name=profile_name)
     # and reading the document is not resolving a name, so it does not raise
     assert load_config(config_path=config_path)["default_profile"] == "foo"
 
@@ -208,10 +209,10 @@ def test_config_file_discovery(
     monkeypatch.setattr(Path, "home", lambda: mock_home)
     monkeypatch.setattr("harlequin.config.user_config_path", lambda **_: mock_config)
 
-    assert _find_config_files(config_path=custom) == expected_paths
+    assert list(_discover_config_files(config_path=custom)) == expected_paths
 
     expected_paths.pop(0)
-    assert _find_config_files(config_path=None) == expected_paths
+    assert list(_discover_config_files(config_path=None)) == expected_paths
     assert get_highest_priority_existing_config_file() == expected_paths[0]
 
 
@@ -228,7 +229,7 @@ def test_merge_profile_with_cli_prefers_values_the_user_typed() -> None:
 
 def test_merge_profile_with_cli_keeps_options_the_profile_alone_defines() -> None:
     """Adapter options live in the profile under names the CLI never saw."""
-    profile: Profile = {"adapter": "postgres", "dbname": "prod"}  # type: ignore[typeddict-unknown-key]
+    profile: Profile = {"adapter": "postgres", "dbname": "prod"}
     merged = merge_profile_with_cli(
         profile=profile,
         cli_values={"username": "ted"},
@@ -272,7 +273,7 @@ def test_merge_profile_with_cli_leaves_its_arguments_alone() -> None:
 
 def test_merge_profile_with_cli_falsy_values_are_still_values() -> None:
     """`--limit 0` and `--no-init` mean what they say."""
-    profile: Profile = {"limit": 200_000, "no_init": False}  # type: ignore[typeddict-unknown-key]
+    profile: Profile = {"limit": 200_000, "no_init": False}
     merged = merge_profile_with_cli(
         profile=profile,
         cli_values={"limit": 0, "no_init": True},
@@ -417,9 +418,13 @@ def config_dirs(
     """
     mock_cwd = tmp_path_factory.mktemp("cwd")
     mock_home = tmp_path_factory.mktemp("home")
-    monkeypatch.setattr(Path, "cwd", lambda: mock_cwd)
-    monkeypatch.setattr(Path, "home", lambda: mock_home)
-    monkeypatch.setattr("harlequin.config._search_config", list)
+    monkeypatch.setattr(
+        "harlequin.config._search_directories",
+        lambda: [
+            (mock_cwd, (".harlequin.toml",)),
+            (mock_home, (".harlequin.toml",)),
+        ],
+    )
     return mock_cwd, mock_home
 
 
@@ -453,7 +458,9 @@ class TestMergingConfigFiles:
 
         assert sorted(config["profiles"]) == ["personal", "project", "shared"]
         assert config["default_profile"] == "personal"
-        assert get_profile(config_path=None, profile_name=None) == {"adapter": "duckdb"}
+        assert load_profile(config_path=None, profile_name=None) == {
+            "adapter": "duckdb"
+        }
 
     def test_the_nearest_file_that_defines_a_profile_is_the_one_that_defines_it(
         self, config_dirs: tuple[Path, Path]
@@ -473,8 +480,8 @@ class TestMergingConfigFiles:
         )
         (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 100\n")
 
-        assert get_profile(config_path=None, profile_name="prod") == {"limit": 100}
-        assert get_profile(config_path=None, profile_name="other") == {"limit": 10}
+        assert load_profile(config_path=None, profile_name="prod") == {"limit": 100}
+        assert load_profile(config_path=None, profile_name="other") == {"limit": 10}
 
     def test_the_nearest_file_that_names_a_default_is_the_one_that_names_it(
         self, config_dirs: tuple[Path, Path]
@@ -488,7 +495,7 @@ class TestMergingConfigFiles:
         )
 
         assert load_config(config_path=None)["default_profile"] == "project"
-        assert get_profile(config_path=None, profile_name=None) == {"limit": 2}
+        assert load_profile(config_path=None, profile_name=None) == {"limit": 2}
 
     def test_a_default_named_in_one_file_can_be_defined_in_another(
         self, config_dirs: tuple[Path, Path]
@@ -504,7 +511,7 @@ class TestMergingConfigFiles:
         )
         (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 2\n")
 
-        assert get_profile(config_path=None, profile_name=None) == {"limit": 2}
+        assert load_profile(config_path=None, profile_name=None) == {"limit": 2}
 
     def test_keymaps_merge_by_name_too(self, config_dirs: tuple[Path, Path]) -> None:
         cwd, home = config_dirs
@@ -516,7 +523,7 @@ class TestMergingConfigFiles:
             '[[keymaps.mine]]\nkeys = "a"\naction = "results_viewer.cursor_left"\n'
         )
 
-        _, keymaps = get_config_for_profile(config_path=None, profile_name=None)
+        _, keymaps = load_profile_and_keymaps(config_path=None, profile_name=None)
 
         by_name = {keymap.name: keymap for keymap in keymaps}
         assert sorted(by_name) == ["mine", "theirs"]
@@ -530,7 +537,7 @@ class TestMergingConfigFiles:
         explicit = tmp_path / "explicit.toml"
         explicit.write_text("[profiles.prod]\nlimit = 2\n")
 
-        assert get_profile(config_path=explicit, profile_name="prod") == {"limit": 2}
+        assert load_profile(config_path=explicit, profile_name="prod") == {"limit": 2}
 
 
 class TestReadingNoMoreThanItMust:
@@ -547,7 +554,7 @@ class TestReadingNoMoreThanItMust:
         (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = 1\n")
         (home / ".harlequin.toml").write_text("this is not toml at all [[[")
 
-        assert get_profile(config_path=None, profile_name="prod") == {"limit": 1}
+        assert load_profile(config_path=None, profile_name="prod") == {"limit": 1}
 
     def test_the_default_profile_stops_the_search_too(
         self, config_dirs: tuple[Path, Path]
@@ -558,7 +565,7 @@ class TestReadingNoMoreThanItMust:
         )
         (home / ".harlequin.toml").write_text("this is not toml at all [[[")
 
-        assert get_profile(config_path=None, profile_name=None) == {"limit": 1}
+        assert load_profile(config_path=None, profile_name=None) == {"limit": 1}
 
     def test_the_profile_named_None_reads_nothing_at_all(
         self, config_dirs: tuple[Path, Path]
@@ -567,18 +574,20 @@ class TestReadingNoMoreThanItMust:
         cwd, _ = config_dirs
         (cwd / ".harlequin.toml").write_text("this is not toml at all [[[")
 
-        assert get_profile(config_path=None, profile_name="None") == {}
+        assert load_profile(config_path=None, profile_name="None") == {}
 
     def test_a_file_it_did_reach_is_still_validated(
         self, config_dirs: tuple[Path, Path]
     ) -> None:
         cwd, home = config_dirs
-        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nlimit = true\n")
+        (cwd / ".harlequin.toml").write_text(
+            "nonsense = 1\n[profiles.prod]\nlimit = 1\n"
+        )
         (home / ".harlequin.toml").write_text("this is not toml at all [[[")
 
         with pytest.raises(HarlequinConfigError) as exc_info:
-            get_profile(config_path=None, profile_name="prod")
-        assert "limit" in exc_info.value.msg
+            load_profile(config_path=None, profile_name="prod")
+        assert "nonsense" in exc_info.value.msg
 
     def test_reading_the_whole_config_still_reads_the_whole_config(
         self, config_dirs: tuple[Path, Path]
@@ -592,7 +601,7 @@ class TestReadingNoMoreThanItMust:
             load_config(config_path=None)
 
 
-class TestValidatingAgainstAnAdapter:
+class TestParsingAgainstAnAdapter:
     """The second pass: a profile's keys against the options its adapter declares.
 
     Nothing else in the stack can do this -- an adapter takes supersets of what
@@ -603,16 +612,22 @@ class TestValidatingAgainstAnAdapter:
     OPTIONS = [
         FlagOption(name="read_only", description="x"),
         TextOption(name="port", description="x"),
+        ListOption(name="extension", description="x"),
         SelectOption(name="mode", description="x", choices=["ro", "rw"]),
     ]
+    COMMAND_OPTIONS = {"adapter", "conn_str", "limit", *TUI_ONLY_KEYS}
+
+    def parse(self, profile: Profile, adapter: str = "duckdb") -> Profile:
+        return parse_profile_options(
+            profile,
+            adapter=adapter,
+            adapter_options=self.OPTIONS,
+            command_options=self.COMMAND_OPTIONS,
+        )
 
     def test_a_misspelled_option_is_refused_and_the_spelling_suggested(self) -> None:
         with pytest.raises(HarlequinConfigError) as exc_info:
-            validate_profile_options(
-                {"reed_only": True},  # type: ignore[typeddict-unknown-key]
-                adapter="duckdb",
-                options=self.OPTIONS,
-            )
+            self.parse({"reed_only": True})
         message = exc_info.value.msg
         assert "reed_only" in message
         assert "read_only" in message
@@ -621,34 +636,56 @@ class TestValidatingAgainstAnAdapter:
     @pytest.mark.parametrize(
         "profile",
         [
-            {"read_only": True, "port": 5432, "mode": "ro"},
+            {"read_only": True, "port": "5432", "mode": "ro"},
+            {"extension": ["httpfs", "spatial"]},
             {"limit": 100, "conn_str": ["my.db"]},  # keys a command owns
             {"theme": "fruity", "keymap_name": ["vscode"]},  # keys the IDE owns
-            {"port": "5432"},  # the contract promises values may arrive uncast
-            {"mode": "RO"},  # click matches choices case-insensitively
         ],
     )
     def test_what_a_profile_may_hold(self, profile: Profile) -> None:
-        validate_profile_options(profile, adapter="duckdb", options=self.OPTIONS)
+        assert self.parse(profile) == profile
 
-    def test_a_value_outside_the_declared_choices_is_refused(self) -> None:
-        with pytest.raises(HarlequinConfigError) as exc_info:
-            validate_profile_options(
-                {"mode": "reed-only"},  # type: ignore[typeddict-unknown-key]
-                adapter="duckdb",
-                options=self.OPTIONS,
-            )
-        message = exc_info.value.msg
-        assert "mode" in message
-        assert "'ro'" in message and "'rw'" in message
-
-    def test_an_adapter_that_declares_nothing_still_takes_the_keys_core_owns(
-        self,
+    @pytest.mark.parametrize(
+        "written,parsed",
+        [
+            ({"port": 5432}, {"port": "5432"}),  # the type a TOML file reaches for
+            ({"read_only": "true"}, {"read_only": True}),
+            ({"read_only": 1}, {"read_only": True}),
+            ({"mode": "RO"}, {"mode": "ro"}),  # click matches choices this way
+        ],
+    )
+    def test_a_value_arrives_as_the_type_its_option_declares(
+        self, written: Profile, parsed: Profile
     ) -> None:
-        validate_profile_options({"limit": 100}, adapter="fake", options=None)
+        assert self.parse(written) == parsed
+
+    @pytest.mark.parametrize(
+        "profile,words",
+        [
+            ({"mode": "reed-only"}, ["mode", "'ro'", "'rw'"]),
+            ({"read_only": "yes"}, ["read_only", "boolean"]),
+            ({"extension": "httpfs"}, ["extension", "array"]),
+            ({"port": True}, ["port", "string"]),
+        ],
+    )
+    def test_a_value_the_option_cannot_take(
+        self, profile: Profile, words: list[str]
+    ) -> None:
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            self.parse(profile)
+        assert all(word in exc_info.value.msg for word in words)
+
+    def test_an_adapter_that_declares_nothing_takes_no_options(self) -> None:
+        assert parse_profile_options(
+            {"limit": 100},
+            adapter="fake",
+            adapter_options=None,
+            command_options=self.COMMAND_OPTIONS,
+        ) == {"limit": 100}
         with pytest.raises(HarlequinConfigError):
-            validate_profile_options(
-                {"anything": 1},  # type: ignore[typeddict-unknown-key]
+            parse_profile_options(
+                {"anything": 1},
                 adapter="fake",
-                options=None,
+                adapter_options=None,
+                command_options=self.COMMAND_OPTIONS,
             )

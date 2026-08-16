@@ -593,7 +593,7 @@ changelog entry and a test that pins the new semantics against both files.
 
 **Discovery is reversed, and the profile read path stops early** (Ted's call, PR 1).
 `_find_config_files()` returns candidates highest priority first, so the first definition of
-anything is the winning one, and `get_profile()` — the read path both commands use when they
+anything is the winning one, and `load_profile()` — the read path `hsql` uses when it
 want a profile and not the keymaps beside it — returns at the file that defines it. The
 files behind that one are never opened, parsed or validated. `-P None` reads nothing at all.
 `load_config()` is the whole document, for `--config show` and the IDE's keymaps, and has no
@@ -605,8 +605,9 @@ names no profile is raised where the name is *used*, so `-P other` and `-P None`
 than being refused over a key they overrode. What remains is the honest half of the
 difference — `hsql` cannot report a problem in a file it stopped before opening — and
 `--config validate` (PR 3) is the mode that reads everything and reports everything. Measured with four candidate files present, the skipped reads pay for most
-of msgspec's import: `hsql -c "select 1"` is +7ms against the pre-PR-1 command, and
-`hsql -P None -c "select 1"` is 7ms faster than it.
+of msgspec's import: with four candidate files present, `hsql -c "select 1"` and `hsql --help`
+are both within noise of the pre-PR-1 command (±3ms), and so is a run that finds exactly one
+config file.
 
 **Validation itself runs in two passes, and the second one is new ground** (Ted's design).
 Pass 1 validates what core owns, per file, before the merge: the top-level keys, the shape
@@ -1001,13 +1002,14 @@ would land.
 - *Config files are read nearest first, and the profile read path stops at the file that
   defines what it was asked for* (Ted's call, §3.5). The cost of that is per-option merging
   within a profile, which PR 1 gave up to get it: a profile is the nearest file's, whole.
-- *The config is declared as msgspec models* (settled in PR 1, §3.5 and §6.1). Measured on
-  the shipped code, the import is ~30ms rather than the +37ms §6.1 predicted, and it is
-  deferred into the functions that validate, so an invocation that finds no config file with
-  anything in it pays nothing. Two things it did not replace, both for the message rather
-  than the check: the top-level unknown-key error, and pass 2's misspelled-option error,
-  which is where `difflib` says *did you mean `read_only`*. msgspec owns shape, types and
-  declared choices, and `--config schema` will read the same declarations.
+- *The config is declared as msgspec models* (settled in PR 1, §3.5 and §6.1). `Config` is
+  the TypedDict *and* the model, so there is one declaration of what a config file may say
+  and `msgspec.convert(raw, Config)` is the whole of pass 1; pass 2 builds a struct from the
+  adapter's own `ADAPTER_OPTIONS` and parses the profile into it, so an option arrives as the
+  type its adapter declared. The import is ~30ms and is deferred into the functions that use
+  it. Two errors are still written by hand, because the message is the point: the unknown
+  top-level key (msgspec drops what a TypedDict does not declare rather than refusing it) and
+  the misspelled adapter option, which is where `difflib` says *did you mean `read_only`*.
 
 **Still open.**
 

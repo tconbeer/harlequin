@@ -16,8 +16,8 @@ from harlequin.config import (
     Config,
     ConfigFile,
     Profile,
-    get_config_for_profile,
     get_highest_priority_existing_config_file,
+    load_profile_and_keymaps,
     sluggify_option_name,
 )
 from harlequin.exception import HarlequinWizardError, pretty_print_error
@@ -187,7 +187,7 @@ def _wizard(config_path: Path | None) -> None:
     if locale:
         new_profile["locale"] = locale
 
-    new_profile.update(adapter_options)  # type: ignore[typeddict-item]
+    new_profile.update(adapter_options)
 
     _confirm_profile_generation(default_profile, profile_name, new_profile)
 
@@ -263,7 +263,7 @@ def _prompt_to_set_adapter_options(
 
 
 def _prompt_to_set_default_profile(
-    profile_name: str, config: Config, profiles: dict[str, Profile]
+    profile_name: str, config: dict[str, Any], profiles: dict[str, Profile]
 ) -> str | None:
     possible_names = set([profile_name, *profiles.keys()])
     NO_DEFAULT_SENTINEL = "[No default]"
@@ -312,7 +312,7 @@ def _confirm_profile_generation(
 
 
 def _all_keymap_names(config_path: Path | None) -> list[str]:
-    _, user_defined_keymaps = get_config_for_profile(
+    _, user_defined_keymaps = load_profile_and_keymaps(
         config_path=config_path, profile_name=None
     )
     all_keymaps = load_keymap_plugins(user_defined_keymaps=user_defined_keymaps)

@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Breaking Changes
 
 - Config files now merge profile by profile, and the **nearest file wins**. A profile is supplied whole by the closest file that defines it, instead of by the file read last; a file that redefines a profile no longer inherits the keys it leaves out ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
-- A profile that sets an option its adapter does not declare is now an error naming the option and the adapter, instead of being silently dropped. `reed_only = true` used to leave you connected read-write.
+- A profile's adapter options are now checked against what that adapter declares, instead of being passed along unread. An option the adapter does not declare is an error naming it (with a suggestion), where `reed_only = true` used to be dropped in silence and leave you connected read-write; a value it cannot take is an error too, so `mode = "reed-only"` names the choices it could have been. Values reach the adapter as the type it declared: `port = 5432` arrives as `"5432"`, and an option declared as a list has to be written as one (`extension = ["httpfs"]`, not `extension = "httpfs"`).
 
 ### Bug Fixes
 

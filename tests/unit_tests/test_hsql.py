@@ -756,13 +756,13 @@ def test_the_config_is_read_once(
     import harlequin.config
 
     reads: list[object] = []
-    real = harlequin.config.get_profile
+    real = harlequin.config.load_profile
 
     def counting(config_path: Any, profile_name: Any) -> Any:
         reads.append(config_path)
         return real(config_path=config_path, profile_name=profile_name)
 
-    monkeypatch.setattr("harlequin.hsql.cli.get_profile", counting)
+    monkeypatch.setattr("harlequin.hsql.cli.load_profile", counting)
     res = hsql(*duck, "-c", "select 1")
     assert res.exit_code == ExitCode.OK
     assert len(reads) == 1

@@ -15,10 +15,11 @@ from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
     Profile,
-    get_config_for_profile,
+    load_profile_and_keymaps,
     merge_profile_with_cli,
+    parse_profile_options,
     parse_row_count,
-    validate_profile_options,
+    sluggify_option_name,
 )
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
@@ -76,6 +77,17 @@ from `harlequin.hsql` at run time: this command starts by importing the whole
 IDE, and the headless CLI exists precisely so that it need not go the other
 way. `tests/unit_tests/test_cli.py` asserts the list still matches what `hsql`
 actually takes, which is the drift this would otherwise be exposed to.
+"""
+
+HSQL_ONLY_KEYS = frozenset(
+    sluggify_option_name(spelling)
+    for spelling in HSQL_ONLY_OPTIONS
+    if spelling.startswith("--")
+)
+"""The same options, as the profile keys they are read under.
+
+A profile serves both commands, so these are keys this command has to leave
+alone rather than mistake for an option of the adapter.
 """
 
 # general
@@ -406,37 +418,42 @@ def build_cli() -> click.Command:
         """
         # load config from any config files
         try:
-            profile_config, user_defined_keymaps = get_config_for_profile(
+            profile_config, user_defined_keymaps = load_profile_and_keymaps(
                 config_path=config_path, profile_name=profile
             )
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
 
-        # merge the config and the cli options
         explicitly_set = {
             k
             for k in kwargs
             if ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
         }
-        config = merge_profile_with_cli(
-            profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
-        )
 
-        # the second validation pass: the profile's own keys, against the
-        # options the adapter it names declares. Only the profile's -- click has
-        # already vetted everything typed on the command line.
-        adapter_name = str(config.get("adapter", None) or DEFAULT_ADAPTER)
+        # the profile's remaining keys are its adapter's options, and the
+        # adapter is about to be handed them. Before the merge, because click
+        # has already vetted everything typed on the command line.
+        adapter_name = str(
+            (kwargs.get("adapter", None) if "adapter" in explicitly_set else None)
+            or profile_config.get("adapter", None)
+            or DEFAULT_ADAPTER
+        )
         if (declaring := adapters.get(adapter_name)) is not None:
             try:
-                validate_profile_options(
+                profile_config = parse_profile_options(
                     profile_config,
                     adapter=adapter_name,
-                    options=declaring.ADAPTER_OPTIONS,
+                    adapter_options=declaring.ADAPTER_OPTIONS,
+                    command_options=harlequin_options,
                 )
             except HarlequinConfigError as e:
                 pretty_print_error(e)
                 ctx.exit(2)
+
+        config = merge_profile_with_cli(
+            profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
+        )
 
         # detect and install (if necessary) a tzdatabase on Windows
         if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
@@ -483,7 +500,7 @@ def build_cli() -> click.Command:
         adapter: str = config.pop("adapter", DEFAULT_ADAPTER)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]
         try:
-            adapter_instance = adapter_cls(conn_str=conn_str, **config)  # type: ignore[misc]
+            adapter_instance = adapter_cls(conn_str=conn_str, **config)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -526,6 +543,10 @@ def build_cli() -> click.Command:
         click.rich_click.OPTION_GROUPS["harlequin"].append(
             {"name": f"{adapter_name} Adapter Options", "options": option_name_list}
         )
+
+    # this command's own options, before any adapter's are added to it: the
+    # profile keys that are not an adapter's to declare or to receive
+    harlequin_options = {param.name for param in inner_cli.params} | HSQL_ONLY_KEYS
 
     fn = inner_cli
     for option in options.values():
