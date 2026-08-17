@@ -119,7 +119,11 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     def to_dict(self) -> dict[str, Any]:
         """What this config would look like written back to a file."""
         return {
-            key: value for key, value in msgspec.structs.asdict(self).items() if value
+            key: value
+            for key, value in msgspec.structs.asdict(self).items()
+            # the one thing TOML cannot write. Everything else is kept, however
+            # falsy: `default_profile = ""` is a mistake worth being able to see.
+            if value is not None
         }
 
 
