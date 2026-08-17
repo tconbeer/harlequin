@@ -1,4 +1,4 @@
-# Warm sessions for `hsql` — a design for `hsql --server`
+# Warm sessions for `hsql` — a design for `hsql --serve`
 
 A design for a long-lived `hsql` process that holds an open connection, so that repeated
 invocations pay neither the import cost nor the connection cost again. Written against
@@ -23,7 +23,7 @@ this document I would argue about; §1–§2 are mostly arithmetic.
 Recommended shape, in one line:
 
 ```bash
-hsql --server prod ./warehouse.db     # foreground, holds the connection
+hsql --serve prod ./warehouse.db      # foreground, holds the connection
 HSQL_SESSION=prod hsql -c "select 1"  # 20ms, same bytes, same exit code
 ```
 
@@ -155,7 +155,7 @@ wants to interleave `hsql` with `jq` and `git` cannot either. Batch mode solves 
 statements known up front." The daemon solves "many invocations, each decided after seeing
 the last one's output" — which is what an agent loop is.
 
-Worth noting they compose: `hsql --server` is a batch mode whose batch arrives over a
+Worth noting they compose: `hsql --serve` is a batch mode whose batch arrives over a
 socket.
 
 ### 3.3 Not MCP instead — but this is the closest call
@@ -195,7 +195,7 @@ rather than by multiplying connections, and §7 leaves read-only pools as future
 
 ### 4.1 One command, two roles
 
-`hsql --server NAME [CONN_STR] [connection options]` runs the server **in the foreground**.
+`hsql --serve NAME [CONN_STR] [connection options]` runs the server **in the foreground**.
 Not a `start`/`stop`/`status` subcommand family, and not a self-daemonizing fork:
 
 - Foreground is what every supervisor already knows how to run — `&`, `systemd`, a
@@ -206,8 +206,42 @@ Not a `start`/`stop`/`status` subcommand family, and not a self-daemonizing fork
   `--config MODE`) rather than introducing the subcommand ambiguity that shape exists to
   avoid: `hsql` takes `CONN_STR` positionally, so `hsql server foo.db` would be ambiguous
   in the same way `hsql catalog` was.
-- `--server` takes the session name as its value, so one flag carries both "be a server"
+- `--serve` takes the session name as its value, so one flag carries both "be a server"
   and "be *this* server."
+
+#### Why `--serve` and `--session`, and not two nouns
+
+The first draft of this document paired `--server NAME` with `--session NAME`, and that is
+the wrong pair: in database vocabulary "server" and "session" are near-synonyms, and
+neither word tells a reader which of the two processes it belongs to. The client half is
+effectively pinned — `HSQL_SESSION` is the ambient spelling and nobody wants to write
+`HSQL_SERVER` for a thing that is not one — so the question is only what the server's flag
+is called, and the answer should be a **verb**:
+
+> **`--serve` is a mode option; `--session` is not.** M2's grammar is that mode options say
+> what an invocation *is* (`--catalog`, `--info`, `--spec`, `--config MODE`) and plain
+> options modify a normal invocation. `hsql --session prod -c "select 1"` *is* an ordinary
+> query invocation — it just runs somewhere warm — so `--session` is a plain option, and
+> `--serve` joins the modes. The grammar already encodes the asymmetry the names need.
+
+Considered and not taken:
+
+| Spelling | Why not |
+| --- | --- |
+| **`hsqld NAME CONN_STR`** + `hsql --session NAME` | The clearest of all, on forty years of `sshd`/`dockerd`, and it frees the daemon's own knobs from any prefix. Costs a third console script to package and document, and worse discoverability than `hsql` — which the product plan already lists as a risk. **The runner-up**; take it if the daemon's flag surface ever outgrows one command. |
+| `--listen NAME` | Accurate about the mechanism, unambiguous about direction, but reads network-y: someone will look for the port. Wrong prior for a design that refuses TCP on purpose (§4.7). |
+| `--daemon NAME` | Unambiguous and false. This process runs in the foreground; a `--daemon` flag that does not daemonize is a lie the user finds out about when they try to background it. |
+| `--host-session NAME` | "Host a session" reads well, but `-h/--host` is a connection option on the postgres, mysql and trino adapters — and **hsql's own flags win collisions** (`_attach_adapter_options`), so this would quietly take `--host` away from them. Every new flag in this design needs that check; `--serve`, `--session`, `--idle-timeout` and `--max-lifetime` pass it against the in-tree adapters, and should be checked against the ecosystem before PR 1. |
+| `--attach NAME` | tmux/docker vocabulary, and every agent knows it — but `ATTACH` is a DuckDB statement for attaching a database. Collides with the subject matter, in a tool whose subject matter is databases. |
+| `--connect NAME` | Overloaded with the connection every other part of this CLI is about. |
+| No server flag: infer the role from argument shape (a CONN_STR and no SQL means serve) | This is principle 7's "never make the agent guess," inverted. |
+
+One consequence of the rename, applied through the rest of this document: the daemon's own
+knobs lose the `--server-` prefix they only carried to disambiguate — `--idle-timeout`,
+`--max-lifetime`, `--queue-timeout` — since they appear only next to `--serve`. And the two
+that are *client* operations are named for what the caller is addressing:
+**`--session-status`** and **`--session-reset`**, both of which are things you ask a running
+session, not things you configure a server with.
 
 Clients opt in two ways, and the distinction matters:
 
@@ -236,7 +270,7 @@ harlequin/hsql/
                   client.py's half needs no imports the client cannot afford.
   server.py       accept loop, one worker, lifecycle, the uid check.
   session.py      socket path derivation, stale-socket handling, the identity record.
-  cli.py          unchanged, plus --server / --session
+  cli.py          unchanged, plus --serve / --session
 ```
 
 **The server parses the flags; the client does not.** The client scans `sys.argv` for the
@@ -302,7 +336,7 @@ client automatically finds the right server. Rejected:
   would hash differently, or the same hash would mean two databases.
 - Hashing secrets to name a file is a bad habit even when the hash is sound.
 
-Instead: **the name is the caller's, and the server owns the identity.** `hsql --server
+Instead: **the name is the caller's, and the server owns the identity.** `hsql --serve
 prod -P prod` connects however `-P prod` says to, and records what it resolved to. A client
 that sends connection-affecting options gets one of two answers:
 
@@ -314,8 +348,17 @@ the database under a caller is the worst possible behavior), and not "ignore the
 (a client that typed `-a postgres` and got DuckDB has been lied to).
 
 Socket path: `$XDG_RUNTIME_DIR/hsql/<name>.sock`, falling back to a 0700 directory under
-the platformdirs user runtime/cache dir when `XDG_RUNTIME_DIR` is unset (macOS). The name
-is validated as `[A-Za-z0-9_-]{1,64}` so it cannot escape the directory.
+the platformdirs user runtime/cache dir when `XDG_RUNTIME_DIR` is unset — which is macOS,
+and also WSL2 without systemd, and also this container (§4.8). The fallback is the common
+path, not the exotic one. The name is validated as `[A-Za-z0-9_-]{1,64}` so it cannot escape
+the directory.
+
+**No `--session-socket PATH` in v1.** Letting a caller name the socket file directly is the
+obvious escape hatch and the obvious way to end up with a socket on a mode-0777 shared
+directory, or on a filesystem that cannot host one (§4.8). If it ever ships it has to
+re-derive §4.7's guarantees for a path it did not choose — verify the directory's owner and
+mode, and refuse anything that is not a real local filesystem — which is most of the reason
+it is not in v1.
 
 ### 4.5 One request at a time
 
@@ -330,15 +373,15 @@ unsuccessful or closed pending query result')
 — and this is not a DuckDB quirk. The adapter contract says nothing about thread-safety,
 and the TUI has never needed it: its database work runs in `@work(thread=True,
 exclusive=True)` workers, which is to say *one at a time, and cancel the previous one*.
-`hsql --server` inherits that invariant rather than inventing a new one.
+`hsql --serve` inherits that invariant rather than inventing a new one.
 
 So: **a single worker thread, and a request queue.** A second client waits. Waiting is
-bounded by `--server-queue-timeout` (default: the same value as `--timeout`, once M2 ships
+bounded by `--queue-timeout` (default: the same value as `--timeout`, once M2 ships
 it), and a client that times out in the queue exits 4 with a message that says it never
 reached the database — which is a different fact from a query that ran too long, and the
 caller needs to be able to tell them apart.
 
-The accept loop stays responsive while a query runs, so `--server-status` and cancellation
+The accept loop stays responsive while a query runs, so `--session-status` and cancellation
 (§4.6) are answerable mid-query. That is the whole reason the queue is in the server rather
 than implicit in a single-threaded accept loop.
 
@@ -391,26 +434,50 @@ is no password on the wire and there does not need to be — the socket *is* the
 - **`SO_PEERCRED` / `LOCAL_PEERCRED` uid check on accept.** Reject and log any peer whose
   uid is not the server's. Belt and braces over the directory mode, and the thing that
   makes a shared `/tmp` misconfiguration fail closed.
-- **`--server-max-lifetime`** (default 8h) and **`--server-idle-timeout`** (default 30m,
+- **`--max-lifetime`** (default 8h) and **`--idle-timeout`** (default 30m,
   `0` to disable). A credential held forever because someone opened a tmux tab in March is
   the predictable bad outcome; these two make the default outcome "it goes away."
-- **No secrets in `--server-status`.** It reports the adapter, the session name, the
+- **No secrets in `--session-status`.** It reports the adapter, the session name, the
   redacted connection identity, uptime, request count, and current state — through M2's
   declarative redaction (#667), not through a hand-written allowlist.
 
-### 4.8 Windows
+### 4.8 Windows — and WSL2, which is not the same question
 
 `socket.AF_UNIX` is **not available in CPython on Windows**, through 3.14. The alternatives
 are a named pipe with a hand-built DACL, or loopback TCP with a token — the first is real
 work with a security model that has to be got right on a platform none of the maintainers
 run daily, and the second is the thing §4.7 rejects.
 
-**v1 is POSIX-only.** `hsql --server` on Windows exits 2 with a message saying so, and
-`HSQL_SESSION` on Windows warns once and runs cold — which is exactly the ambient-fallback
-behavior §4.1 already specifies, so nothing special is needed on the client side. A named
-pipe transport is a clean later addition behind the same `protocol.py`, and pretending
-otherwise in v1 would mean shipping a weaker security model to every platform to
+**v1 is POSIX-only.** `hsql --serve` on native Windows exits 2 with a message saying so, and
+`HSQL_SESSION` on native Windows warns once and runs cold — which is exactly the
+ambient-fallback behavior §4.1 already specifies, so nothing special is needed on the client
+side. A named pipe transport is a clean later addition behind the same `protocol.py`, and
+pretending otherwise in v1 would mean shipping a weaker security model to every platform to
 accommodate one.
+
+**WSL2 gets the feature, because WSL2 is Linux.** It runs a real kernel in a VM, its Python
+is a Linux CPython with `AF_UNIX` present, and a server and client both inside it need
+nothing special — no branch, no fallback, no separate transport. That matters more than it
+sounds: the Windows users most likely to want a warm session for an agent are already
+working inside WSL, so "POSIX-only" costs much less than the phrase implies, and the docs
+should say *native Windows* rather than *Windows* everywhere so nobody in WSL concludes the
+feature is not for them.
+
+Two WSL-specific notes, both of which §4.4's path derivation already handles:
+
+- **Do not put the socket on a DrvFs/9p mount.** Binding a unix socket under `/mnt/c` does
+  not work. The socket lives in the runtime dir, so this is right by construction — but it
+  is one of the reasons §4.4 keeps `--session-socket PATH` out of v1.
+- **`XDG_RUNTIME_DIR` is often unset under WSL2**, since systemd is opt-in there. That is
+  exactly the fallback branch §4.4 specifies (a 0700 directory under the platformdirs
+  runtime dir), and it is not hypothetical — it is unset in the container these
+  measurements were taken in, too. The fallback is the common path, not the exotic one, and
+  should be tested as such.
+
+What does **not** work, and cannot be made to: a native-Windows `hsql.exe` reaching a
+session running inside WSL2. That is not a socket-routing problem to solve — they are two
+different Python installations on two different filesystems, and the Windows one has no
+`AF_UNIX` to offer regardless. Stay on one side of the boundary.
 
 ### 4.9 Lifecycle, and the four ways this goes wrong
 
@@ -428,7 +495,7 @@ category of bug nobody will diagnose quickly.
 
 ### 4.10 Observability
 
-`hsql --session prod --server-status` returns JSON on stdout:
+`hsql --session prod --session-status` returns JSON on stdout:
 
 ```json
 {"session":"prod","pid":8123,"version":"2.9.0","adapter":"duckdb",
@@ -453,7 +520,7 @@ session is the opposite, and the difference is observable in ways a caller will 
   the one nobody will read the docs to discover.
 - **Session settings persist.** `SET`, `search_path`, `SET TIME ZONE`, DuckDB `PRAGMA`s,
   installed extensions. A `SET` in invocation 3 changes the results of invocation 12.
-- **In-memory databases persist.** `hsql --server scratch :memory:` is a scratch warehouse
+- **In-memory databases persist.** `hsql --serve scratch :memory:` is a scratch warehouse
   that survives between calls — genuinely good, genuinely a semantic change.
 - **Transactions persist, and this is the sharp edge.** A caller who runs `BEGIN` and then
   exits has left an open transaction holding locks, and every subsequent request in that
@@ -466,11 +533,11 @@ Three responses, and I would take all three:
    already in §4.1. This is the reason for them: the feature changes semantics, so it must
    be something a caller asked for.
 2. **The server reports transaction state whenever it is not the default** — on stderr
-   after the request, and in `--server-status`. `HarlequinConnection.transaction_mode`
+   after the request, and in `--session-status`. `HarlequinConnection.transaction_mode`
    already exists on the contract, so this costs nothing and turns the worst failure mode
    into a visible one. A session sitting in an open transaction is a thing the caller
    should be told about every single time, not once.
-3. **`hsql --session prod --server-reset`** rolls back, closes, and reconnects, without
+3. **`hsql --session prod --session-reset`** rolls back, closes, and reconnects, without
    restarting the process (so the imports are still warm). This is the escape hatch for
    "the agent left the session in a weird state," and it is a much better answer than
    asking someone to find and kill a pid.
@@ -481,7 +548,7 @@ half of the win that is `connect()` — and against a warehouse, that is the lar
 
 ### 5.1 Documenting it as a session, not as a cache
 
-The docs framing follows from this: **`hsql --server` is not "hsql, but faster." It is "a
+The docs framing follows from this: **`hsql --serve` is not "hsql, but faster." It is "a
 database session you can send commands to."** The speed is a consequence. A caller who
 holds the second model in their head will predict the temp-table behavior correctly; a
 caller who holds the first will file a bug.
@@ -527,7 +594,7 @@ feature is likely to have.
 - **Connection pooling / parallel requests.** §3.4. A read-only pool is a plausible later
   addition, but only for `--read-only` sessions, where "which connection" is unobservable.
 - **Multiple databases per server.** One session, one connection. Two databases is two
-  `--server` processes, and they cost 200MB of RSS each at most, which is not the
+  `--serve` processes, and they cost 200MB of RSS each at most, which is not the
   constraint here.
 - **A session for the TUI.** `harlequin --session prod` sounds appealing and is not: the
   IDE holds its own connection for its whole run, so it has nothing to gain, and it would
@@ -558,7 +625,7 @@ feature is likely to have.
   building both connection lifecycles would be the expensive mistake.
 - **Idle servers as an operational nuisance.** Idle timeout defaults to 30m for this
   reason. Expect the first bug report to be "my session died between calls"; the answer is
-  `--server-idle-timeout 0`, and the docs should say so before the report arrives.
+  `--idle-timeout 0`, and the docs should say so before the report arrives.
 - **Nobody uses it.** The honest risk. The feature is only reachable by someone who set it
   up deliberately, which §5 says it must be. Mitigations are the docs framing, a
   `SessionStart`-hook example, and the fallback warning — which is the one place a caller
@@ -575,15 +642,15 @@ them; everything after is additive and independently revertible.
    which is testable on its own. Ships the two import-linter contracts and the client
    benchmark.
 2. **The server: accept loop, one worker, the queue, the uid check, socket lifecycle.**
-   `hsql --server NAME`, `--session NAME`, `HSQL_SESSION`. Ships §6's parametrized suite
+   `hsql --serve NAME`, `--session NAME`, `HSQL_SESSION`. Ships §6's parametrized suite
    with it, not after it — this is the PR where equivalence is cheap to establish and
    expensive to retrofit.
 3. **Identity and rejection.** The server's recorded connection identity, the
-   differing-options rejection, `--server-status`.
+   differing-options rejection, `--session-status`.
 4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
-5. **Lifecycle and state hygiene.** `--server-idle-timeout`, `--server-max-lifetime`,
-   `--server-reset`, transaction-mode reporting.
+5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`,
+   `--session-reset`, transaction-mode reporting.
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
    `SessionStart`-hook example and an `hsql --help` mention. Not optional and not last in
    spirit — a feature that must be deliberately adopted is a feature that lives or dies by
