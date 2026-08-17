@@ -104,25 +104,6 @@ def test_reading_config_does_not_import_tomlkit(
     assert proc.stdout.strip() == "False"
 
 
-def test_a_config_with_nothing_in_it_imports_no_validator(
-    run_python: Callable[[str], subprocess.CompletedProcess[str]],
-) -> None:
-    """msgspec validates config files, and costs ~30ms to import to do it.
-
-    An invocation that discovers no config file with anything in it has nothing
-    to validate, so it should not pay that -- which is only true while the
-    import stays inside the function that validates.
-    """
-    proc = run_python(
-        "import sys\n"
-        "import harlequin.config as config\n"
-        "config._search_home = config._search_config = config._search_cwd = list\n"
-        "config.load_config(config_path=None)\n"
-        "print('msgspec' in sys.modules)\n"
-    )
-    assert proc.stdout.strip() == "False"
-
-
 def test_an_all_ascii_run_defers_the_slow_startup_imports(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:

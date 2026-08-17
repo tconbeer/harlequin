@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - A project-local config file that defines a profile no longer hides the profiles defined in your home config file, and no longer contradicts the `default_profile` set there — which made both commands refuse to start ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
-- Config file errors now name the file the problem is written in, and the key it is written under.
+- Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does, so `read-only`, `reed_only` and `keymap_names` each name the option they were probably meant to be.
 - A `default_profile` that names no profile now only stops an invocation that was going to use it: `harlequin -P other` and `harlequin -P None` start, as `hsql` does, instead of refusing over a key neither of them read.
 
 ### Performance

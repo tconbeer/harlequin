@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from functools import lru_cache
 from importlib.metadata import entry_points, version
 from pathlib import Path
 from typing import Any, Sequence
@@ -19,7 +20,6 @@ from harlequin.config import (
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
-    sluggify_option_name,
 )
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
@@ -44,51 +44,38 @@ DEFAULT_KEYMAP_NAMES = ["vscode"]
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
 HEADLESS_DOCS_URL = "https://harlequin.sh/docs/headless"
 
-HSQL_ONLY_OPTIONS = frozenset(
-    {
-        "-c",
-        "--command",
-        "--file",
-        "-o",
-        "--output",
-        "--format",
-        "--csv",
-        "--json",
-        "--jsonl",
-        "--markdown",
-        "--vertical",
-        "--tuples-only",
-        "-A",
-        "--no-align",
-        "--no-header",
-        "--no-footer",
-        "--null-string",
-        "--display-rows",
-        "--result",
-        "--on-error",
-        "--stats",
-        "--color",
-    }
-)
-"""Options that belong to the other command, so that this one can say so.
 
-Every spelling `hsql` has and `harlequin` does not. Deliberately not derived
-from `harlequin.hsql` at run time: this command starts by importing the whole
-IDE, and the headless CLI exists precisely so that it need not go the other
-way. `tests/unit_tests/test_cli.py` asserts the list still matches what `hsql`
-actually takes, which is the drift this would otherwise be exposed to.
-"""
+@lru_cache(maxsize=1)
+def _hsql_command() -> click.Command:
+    """`hsql`, as a command, so this one can ask what it takes.
 
-HSQL_ONLY_KEYS = frozenset(
-    sluggify_option_name(spelling)
-    for spelling in HSQL_ONLY_OPTIONS
-    if spelling.startswith("--")
-)
-"""The same options, as the profile keys they are read under.
+    Read rather than copied: the two commands' options drift otherwise. It
+    costs ~10ms and imports no adapter, and nothing on the way to `--help` or
+    `--version` asks for it.
+    """
+    from harlequin.hsql.cli import bare_command
 
-A profile serves both commands, so these are keys this command has to leave
-alone rather than mistake for an option of the adapter.
-"""
+    return bare_command()
+
+
+def hsql_spellings() -> frozenset[str]:
+    """Every `--option` spelling `hsql` takes."""
+    return frozenset(
+        opt
+        for param in _hsql_command().params
+        for opt in param.opts
+        if opt.startswith("-")
+    )
+
+
+def hsql_profile_keys() -> frozenset[str]:
+    """Every profile key `hsql` reads for itself.
+
+    One profile serves both commands, so these are keys this command has to
+    leave alone rather than hand to an adapter that never declared them.
+    """
+    return frozenset(param.name for param in _hsql_command().params if param.name)
+
 
 # general
 click.rich_click.TEXT_MARKUP = "rich"
@@ -174,7 +161,9 @@ class HarlequinCommand(click.RichCommand):
         try:
             return super().parse_args(ctx, args)
         except click.NoSuchOption as e:
-            if e.option_name not in HSQL_ONLY_OPTIONS:
+            # click has already established the spelling is not this command's,
+            # so hsql having it is the whole of the question
+            if e.option_name not in hsql_spellings():
                 raise
             # a plain UsageError rather than a NoSuchOption with a longer
             # message: click's would append "Did you mean --config?" from the
@@ -445,7 +434,7 @@ def build_cli() -> click.Command:
                     profile_config,
                     adapter=adapter_name,
                     adapter_options=declaring.ADAPTER_OPTIONS,
-                    command_options=harlequin_options,
+                    command_options=harlequin_options | hsql_profile_keys(),
                 )
             except HarlequinConfigError as e:
                 pretty_print_error(e)
@@ -544,9 +533,8 @@ def build_cli() -> click.Command:
             {"name": f"{adapter_name} Adapter Options", "options": option_name_list}
         )
 
-    # this command's own options, before any adapter's are added to it: the
-    # profile keys that are not an adapter's to declare or to receive
-    harlequin_options = {param.name for param in inner_cli.params} | HSQL_ONLY_KEYS
+    # this command's own options, before any adapter's are added to it
+    harlequin_options = {param.name for param in inner_cli.params}
 
     fn = inner_cli
     for option in options.values():

@@ -13,7 +13,6 @@ from rich.panel import Panel
 from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, VALID_THEMES, YELLOW
 from harlequin.config import (
-    Config,
     ConfigFile,
     Profile,
     get_highest_priority_existing_config_file,
@@ -288,7 +287,8 @@ def _prompt_to_set_default_profile(
 def _confirm_profile_generation(
     default_profile: str | None, profile_name: str, new_profile: Profile
 ) -> None:
-    new_config: Config = (
+    # raw TOML data, like everything on the write path, rather than a `Config`
+    new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
     new_config.update({"profiles": {profile_name: new_profile}})

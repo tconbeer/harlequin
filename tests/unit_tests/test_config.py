@@ -6,6 +6,7 @@ import pytest
 
 from harlequin.config import (
     TUI_ONLY_KEYS,
+    Config,
     ConfigFile,
     Profile,
     _discover_config_files,
@@ -26,33 +27,23 @@ from harlequin.options import FlagOption, ListOption, SelectOption, TextOption
 def test_load_config(data_dir: Path, filename: str) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / filename
     good_config = load_config(config_path=good_config_path)
-    assert isinstance(good_config, dict)
-    assert "default_profile" in good_config
-    assert good_config["default_profile"] == "my-duckdb-profile"
-    assert "profiles" in good_config
+    assert good_config.default_profile == "my-duckdb-profile"
     expected_profiles = ["my-duckdb-profile", "local-postgres"]
-    assert all(name in good_config["profiles"] for name in expected_profiles)
+    assert all(name in good_config.profiles for name in expected_profiles)
     assert all(
-        isinstance(good_config["profiles"][name], dict) for name in expected_profiles
+        isinstance(good_config.profiles[name], dict) for name in expected_profiles
     )
-    assert good_config["profiles"]["my-duckdb-profile"]["limit"] == 200_000
+    assert good_config.profiles["my-duckdb-profile"]["limit"] == 200_000
 
 
 def test_load_keymap(data_dir: Path) -> None:
     good_config_path = data_dir / "unit_tests" / "config" / "keymaps.toml"
     keymap_name = "more_arrows"
     good_config = load_config(config_path=good_config_path)
-    assert isinstance(good_config, dict)
-    assert "keymaps" in good_config
-    assert isinstance(good_config["keymaps"], dict)
-    assert keymap_name in good_config["keymaps"]
-    assert isinstance(good_config["keymaps"][keymap_name], list)
-    assert isinstance(good_config["keymaps"][keymap_name][0], dict)
+    assert keymap_name in good_config.keymaps
     assert all(
-        [
-            k in good_config["keymaps"][keymap_name][0]
-            for k in ["keys", "action", "key_display"]
-        ]
+        k in good_config.keymaps[keymap_name][0]
+        for k in ["keys", "action", "key_display"]
     )
 
     _, keymaps = load_profile_and_keymaps(
@@ -114,7 +105,6 @@ def test_load_default_profile(data_dir: Path, filename: str) -> None:
         ("not_toml.toml", ["Attempted to load"]),
         ("profiles_not_table.toml", ["profiles", "table"]),
         ("profile_not_table.toml", ["profiles", "table"]),
-        ("bad_option_name.toml", ["option", "invalid", "read-only", "read_only"]),
         ("keymaps_not_array.toml", ["keymaps", "array"]),
     ],
 )
@@ -176,7 +166,7 @@ def test_a_default_that_names_no_profile_is_not_an_error_for_a_caller_that_overr
     )
     assert profile == load_profile(config_path=config_path, profile_name=profile_name)
     # and reading the document is not resolving a name, so it does not raise
-    assert load_config(config_path=config_path)["default_profile"] == "foo"
+    assert load_config(config_path=config_path).default_profile == "foo"
 
 
 def test_config_file_discovery(
@@ -342,9 +332,9 @@ class TestConfigFileRoundTrip:
         assert "# and a note further down" in written
         # and the new profile arrived, without disturbing the old one
         reread = load_config(config_path=path)
-        assert reread["profiles"]["two"] == {"theme": "monokai"}
-        assert reread["profiles"]["one"] == {"theme": "fruity"}
-        assert reread["default_profile"] == "one"
+        assert reread.profiles["two"] == {"theme": "monokai"}
+        assert reread.profiles["one"] == {"theme": "fruity"}
+        assert reread.default_profile == "one"
 
     def test_a_write_to_pyproject_touches_only_the_harlequin_table(
         self, tmp_path: Path
@@ -383,10 +373,9 @@ class TestConfigFileRoundTrip:
         config_file.write()
 
         assert path.exists()
-        assert load_config(config_path=path) == {
-            "default_profile": "one",
-            "profiles": {"one": {"theme": "fruity"}},
-        }
+        assert load_config(config_path=path) == Config(
+            default_profile="one", profiles={"one": {"theme": "fruity"}}
+        )
 
     def test_a_write_adds_the_harlequin_table_to_a_pyproject_without_one(
         self, tmp_path: Path
@@ -456,8 +445,8 @@ class TestMergingConfigFiles:
 
         config = load_config(config_path=None)
 
-        assert sorted(config["profiles"]) == ["personal", "project", "shared"]
-        assert config["default_profile"] == "personal"
+        assert sorted(config.profiles) == ["personal", "project", "shared"]
+        assert config.default_profile == "personal"
         assert load_profile(config_path=None, profile_name=None) == {
             "adapter": "duckdb"
         }
@@ -494,7 +483,7 @@ class TestMergingConfigFiles:
             'default_profile = "project"\n[profiles.project]\nlimit = 2\n'
         )
 
-        assert load_config(config_path=None)["default_profile"] == "project"
+        assert load_config(config_path=None).default_profile == "project"
         assert load_profile(config_path=None, profile_name=None) == {"limit": 2}
 
     def test_a_default_named_in_one_file_can_be_defined_in_another(
@@ -625,12 +614,24 @@ class TestParsingAgainstAnAdapter:
             command_options=self.COMMAND_OPTIONS,
         )
 
-    def test_a_misspelled_option_is_refused_and_the_spelling_suggested(self) -> None:
+    @pytest.mark.parametrize(
+        "written,meant",
+        [
+            ("reed_only", "read_only"),
+            # TOML allows a dash in a key and Harlequin's options never have one
+            ("read-only", "read_only"),
+            # a near miss for one of the command's own keys, not the adapter's
+            ("keymap_names", "keymap_name"),
+        ],
+    )
+    def test_a_misspelled_option_is_refused_and_the_spelling_suggested(
+        self, written: str, meant: str
+    ) -> None:
         with pytest.raises(HarlequinConfigError) as exc_info:
-            self.parse({"reed_only": True})
+            self.parse({written: True})
         message = exc_info.value.msg
-        assert "reed_only" in message
-        assert "read_only" in message
+        assert written in message
+        assert meant in message
         assert "duckdb" in message
 
     @pytest.mark.parametrize(

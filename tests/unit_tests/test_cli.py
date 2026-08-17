@@ -3,7 +3,6 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import click
 import pytest
 from click.testing import CliRunner
 
@@ -13,8 +12,9 @@ from harlequin.cli import (
     DEFAULT_THEME,
     DEFAULT_VIEWER_MAX_ROWS,
     HEADLESS_DOCS_URL,
-    HSQL_ONLY_OPTIONS,
     build_cli,
+    hsql_profile_keys,
+    hsql_spellings,
 )
 from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
@@ -63,7 +63,7 @@ def mock_empty_config(no_discovered_config: None) -> None:
 @pytest.fixture()
 def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
     """A merged config, in place of whatever is on the machine running this."""
-    config: Config = {"profiles": {"test-profile": {"theme": "fruity"}}}
+    config = Config(profiles={"test-profile": {"theme": "fruity"}})
     monkeypatch.setattr("harlequin.config.load_config", lambda *_: config)
     return config
 
@@ -554,24 +554,16 @@ def test_an_unknown_option_that_is_not_hsqls_is_unchanged(
     assert "hsql" not in said
 
 
-def test_the_hsql_option_list_is_hsqls(
-    monkeypatch: pytest.MonkeyPatch, mock_empty_config: None
-) -> None:
-    """What the hint is exposed to, since it is a copy rather than a lookup.
+def test_what_this_command_reads_off_the_other_one(mock_empty_config: None) -> None:
+    """Both are read from hsql's real command rather than copied from it.
 
-    With no adapter installed, both commands carry only their own options, so
-    the difference between them is exactly the set worth pointing at.
+    Which means asserting they are hsql's own surface and not an adapter's:
+    building it must not import one, or the sets would grow with whatever
+    happens to be installed.
     """
-    from harlequin.hsql.cli import build_cli as build_hsql
+    assert "--csv" in hsql_spellings()
+    assert "--theme" not in hsql_spellings()
+    assert "--read-only" not in hsql_spellings(), "an adapter's option, not hsql's"
 
-    monkeypatch.setattr("harlequin.plugins.entry_points", lambda **_: [])
-
-    def spellings(command: click.Command) -> set[str]:
-        return {
-            opt
-            for param in command.params
-            for opt in [*param.opts, *param.secondary_opts]
-            if opt.startswith("-")
-        }
-
-    assert HSQL_ONLY_OPTIONS == spellings(build_hsql([])) - spellings(build_cli())
+    assert {"format", "stats", "on_error"} <= hsql_profile_keys()
+    assert "read_only" not in hsql_profile_keys()

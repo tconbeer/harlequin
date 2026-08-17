@@ -1006,10 +1006,13 @@ would land.
   the TypedDict *and* the model, so there is one declaration of what a config file may say
   and `msgspec.convert(raw, Config)` is the whole of pass 1; pass 2 builds a struct from the
   adapter's own `ADAPTER_OPTIONS` and parses the profile into it, so an option arrives as the
-  type its adapter declared. The import is ~30ms and is deferred into the functions that use
-  it. Two errors are still written by hand, because the message is the point: the unknown
-  top-level key (msgspec drops what a TypedDict does not declare rather than refusing it) and
-  the misspelled adapter option, which is where `difflib` says *did you mean `read_only`*.
+  type its adapter declared. `Config` is a `Struct` with `forbid_unknown_fields`, so msgspec
+  refuses a key nobody declared and the import is module-scope: ~13ms on an invocation that
+  finds no config file at all, and within noise of `main` on one that finds any, because the
+  files early stopping skips pay for it. One thing is still written by hand, because the
+  message is the point: the near miss on a key -- `read-only`, `reed_only`, `keymap_names` --
+  which is where `difflib` says *did you mean `read_only`*, computed only once a conversion
+  has already failed.
 
 **Still open.**
 

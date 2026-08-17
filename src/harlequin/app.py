@@ -1000,7 +1000,7 @@ class Harlequin(AppBase):
         config = load_config(config_path)
         profile_name = self.profile_name
         active_profile_config, _ = load_profile_and_keymaps(config_path, profile_name)
-        active_profile_name = profile_name or config.get("default_profile")
+        active_profile_name = profile_name or config.default_profile
         adapter_options = getattr(self.adapter, "ADAPTER_OPTIONS", None)
         adapter_type = type(self.adapter).__name__
 

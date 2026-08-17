@@ -418,6 +418,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     return cmd
 
 
+def bare_command() -> click.Command:
+    """This command with no adapter's options on it, and no config file read.
+
+    `harlequin` builds this to answer two questions about the other command:
+    which spellings are hsql's, so it can point at them, and which profile keys
+    hsql reads, so it does not mistake them for an adapter's options.
+    """
+    return build_cli(["-P", "None", "--help"])
+
+
 @dataclass
 class _Run:
     """What one invocation did, accumulated as it does it.
