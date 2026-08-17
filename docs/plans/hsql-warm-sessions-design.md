@@ -243,6 +243,58 @@ that are *client* operations are named for what the caller is addressing:
 **`--session-status`** and **`--session-reset`**, both of which are things you ask a running
 session, not things you configure a server with.
 
+#### What `--serve` accepts, and what it refuses
+
+**No, `--serve` does not accept `-c`** — and the reason generalizes into the rule that
+defines the two roles. Every flag `hsql` has falls into exactly one of three groups, decided
+by *when the question it answers can possibly be answered*:
+
+| Group | Answered | Flags | `--serve` | client |
+| --- | --- | --- | --- | --- |
+| **connection-time** | once, when the server connects | `CONN_STR`, `-a`, `-P`, `--config-path`, every adapter option, M2's `--read-only` | **accepted** | accepted, but rejected if it differs from the server's (§4.4) |
+| **per-request** | on every invocation | `-c`, `-f`, `-o`, `--format` and the shorthand flags, `-t`, `-A`, `--no-header`, `--no-footer`, `--null-string`, `--limit`, `--display-rows`, `--result`, `--on-error`, `--stats`, `--color`, M2's mode options and `--timeout` | **refused, exit 2** | accepted |
+| **server-lifetime** | once, and only a server has one | `--idle-timeout`, `--max-lifetime`, `--queue-timeout` | **accepted** | refused, exit 2 |
+
+The partition is exact and it is symmetric: **each side refuses the other's group.** That
+turns §4.4's differing-connection-options rejection from a one-off into a special case of a
+single rule, and it gives both refusals an error that names the right invocation rather than
+just the wrong one — principle 7, applied to the feature's most likely first mistake:
+
+```
+hsql: -c is a per-request option, and --serve takes none.
+      Start the session, then send it a query:
+        hsql --serve prod ./warehouse.db
+        hsql --session prod -c "select 1"
+```
+
+**The one real argument for `-c` on `--serve` is an init script** — `SET search_path`,
+`CREATE TEMP TABLE`, `INSTALL`/`LOAD` — run once at connect time, which is a genuinely
+useful thing for a session to do. It is already served, by the better mechanism:
+`--init-path` (`-i`) is an *adapter* option on both in-tree adapters, so it is
+connection-time, group 1, and comes along for free. It is also the more correct of the two,
+because it runs inside `connect()`, where the adapter decides what "init" means for its
+database and where a failure is a *connection* failure rather than a request failure. A
+`-c` on `--serve` would be a second, worse spelling of something that works today.
+
+#### Adapter options are allowed on `--serve`, and should still be discouraged
+
+They have to be accepted: the server is the only process that connects, so refusing them
+would mean the only way to serve anything but a local file is a profile.
+
+But `--serve` changes their risk profile, and the docs should say so. **A server's command
+line is long-lived and visible in `ps`.** A password on a one-shot invocation is exposed for
+250ms; the same password on an eight-hour session is exposed for eight hours, to every
+process on the box. So:
+
+- **`-P` is the spelling the docs should show.** A profile is already "how to connect to my
+  warehouse," and `hsql --serve prod -P prod` should be the normal form with the flag-soup
+  version as the exception.
+- **Warn when a secret-typed option is passed literally to `--serve`**, detected through
+  M2's declarative secret type (#667) rather than a hand-written list of flag names. A
+  warning rather than a refusal in v1, because refusing needs env interpolation (#898) to
+  have shipped first so that there is a documented alternative for the container case.
+  Tightening it to a refusal once #898 lands is a reasonable later call, and a cheap one.
+
 Clients opt in two ways, and the distinction matters:
 
 | | Spelling | Missing server → |
@@ -292,6 +344,17 @@ asked for, and `TERM`/`NO_COLOR`** (which `--color auto` reads). Deliberately *n
 client's whole environment — the server has its own, an adapter option's `envvar` resolves
 against the server's, and shipping the caller's environment across a socket is a credential
 leak with no upside.
+
+The cwd is doing more work there than it looks. **Config discovery is cwd-dependent** — home,
+then the user config dir, then the cwd, later winning — so the server must resolve a
+client's `-P` and `--config-path` against *the client's* directory, not its own. Otherwise
+`hsql --session prod -P local` run in a project would silently read the server's
+`pyproject.toml`, and a caller would get a profile they did not write. This costs nothing —
+the cwd is already in the request for `-o` (§4.3) — but it has to be deliberate, because the
+natural implementation resolves against the process that is running. A profile is then
+subject to the same partition as typed flags: its connection-time keys go through §4.4's
+comparison, its per-request keys apply normally, and `-P` needs no special case on either
+side.
 
 ### 4.3 What crosses the wire is bytes, not rows
 
@@ -553,20 +616,58 @@ database session you can send commands to."** The speed is a consequence. A call
 holds the second model in their head will predict the temp-table behavior correctly; a
 caller who holds the first will file a bug.
 
-## 6. Testing: byte-equivalence is the whole guard
+## 6. Testing: byte-equivalence, but only where it is true
 
 The risk this feature carries is not that it fails, it is that it **drifts** — that in some
 corner (a NULL, a `-t` footer, an error's exit code, a truncation notice) the warm path and
 the cold path produce different bytes, and a caller who set `HSQL_SESSION` in their
 environment months ago gets a different answer than the docs describe.
 
-The guard is mechanical and cheap, because §4.3 made the response bytes:
+**Byte-equivalence is the guard for that, and it is a claim about one invocation, not about
+a test.** Two invocations against a session are *supposed* to diverge from two cold ones —
+that is §5, and it is the feature. A parametrization that ran the whole suite both ways and
+demanded identical bytes would fail on every test that invokes `hsql` twice, and the
+tempting fix — quietly exempting those — would put the divergences nobody has thought about
+in the same bucket as the ones we designed. So the guard has to be stated with its scope on
+it:
 
-- **A `--session` parametrization over the existing hsql test suite.** Every functional
-  test runs twice — once cold, once against a server fixture — asserting *identical stdout
-  bytes, identical stderr bytes, identical exit code*. The golden-format snapshots
-  (`test_golden_formats.py`) come along for free, since they already assert on bytes.
-- **Import-linter contracts**, alongside the existing `hsql does not reach the TUI` one:
+> **Equivalence holds per invocation, from a fresh session.** Given the same starting state,
+> one `hsql` invocation produces the same bytes and the same exit code whether it ran cold
+> or warm. Nothing is claimed about what the *next* invocation sees.
+
+That precondition has to be manufactured, because the cold path gets it for free (a new
+process every time) and the warm path does not. **Each test gets a fresh session** — one
+server per xdist worker, `--session-reset` between tests — which is cheap, since a reset is
+a reconnect and not a re-import. Pleasingly, it makes the test suite the primary consumer of
+the escape hatch §5 proposes for humans, so the thing that rescues a wedged session is
+exercised hundreds of times per run rather than never.
+
+Three kinds of test, then, not one:
+
+1. **Equivalence** — every single-invocation functional test, run twice, asserting identical
+   stdout bytes, identical stderr bytes, identical exit code. The golden-format snapshots
+   (`test_golden_formats.py`) come along for free, since they already assert on bytes. This
+   is the drift guard, and it is the suite that runs on every PR if only one can.
+2. **Divergence, marked and asserted** — a multi-invocation test cannot be in group 1, and a
+   marker (`@pytest.mark.session_divergent`) takes it out. The marker's cost is that it does
+   not merely opt out: **the test must assert what the warm behavior *is***, not just that it
+   differs. A temp table created by invocation 1 is `no such table` cold and a result set
+   warm, and both belong in the assertions. Otherwise the exemption list becomes the place
+   bugs live, which is exactly what the exemption exists to prevent.
+3. **Session semantics** — tests that only exist on the warm path, because they are the
+   feature: state surviving between invocations, an open transaction being reported, a reset
+   clearing it, two clients queueing, a session refusing a client whose connection options
+   differ.
+
+The marker earns its keep twice over, because **the set of tests carrying it is an
+executable version of §5.** §5's list of what statefulness changes is prose today; the
+marker turns it into an enumerated one that cannot silently grow. A contributor who
+introduces a new divergence has to mark a test, and the marker is the review trigger that
+asks whether §5 should have mentioned it.
+
+Alongside those:
+
+- **Import-linter contracts**, next to the existing `hsql does not reach the TUI` one:
   `hsql.client` may not import `harlequin.*` or `click`, and `harlequin.hsql.__init__` may
   not import click at module scope.
 - **A cold-start benchmark for the client**, next to the existing one for `hsql`, so the
@@ -575,9 +676,12 @@ The guard is mechanical and cheap, because §4.3 made the response bytes:
   unless the test runner can drop privileges), version skew, a client killed mid-query, two
   clients queued, a cancel that lands, a cancel against an adapter that cannot cancel.
 
-If the parametrized suite is expensive to run everywhere, it is the one that runs on every
-PR and the rest can be nightly — it is the test that would actually catch the bug this
-feature is likely to have.
+One trap worth naming, since the suite runs under `-n auto`: **a session-scoped server
+fixture is cross-test contamination waiting to happen.** A test that runs `SET` or leaves a
+transaction open changes the result of an unrelated test that lands on the same worker
+later, and it will present as a flake with no obvious cause. The per-test reset above is
+what prevents it, and it is the reason the fixture must not be session-scoped for
+convenience.
 
 ## 7. What's cut, and why
 
@@ -611,7 +715,7 @@ feature is likely to have.
 
 - **A second execution path is a second product.** The mitigation is structural, not
   disciplinary: the server calls `build_cli()` and the same `query`/`output` code, and §6's
-  parametrized suite fails if the bytes diverge. If the server ever grows its own
+  equivalence suite fails if the bytes diverge. If the server ever grows its own
   formatting or its own flag handling, that is the signal the layering went wrong — the
   same signal the product plan already names for MCP.
 - **The credential-held-open surface.** §4.7 is the mitigation and it is not complete:
@@ -642,15 +746,19 @@ them; everything after is additive and independently revertible.
    which is testable on its own. Ships the two import-linter contracts and the client
    benchmark.
 2. **The server: accept loop, one worker, the queue, the uid check, socket lifecycle.**
-   `hsql --serve NAME`, `--session NAME`, `HSQL_SESSION`. Ships §6's parametrized suite
-   with it, not after it — this is the PR where equivalence is cheap to establish and
-   expensive to retrofit.
+   `hsql --serve NAME`, `--session NAME`, `HSQL_SESSION`, and the §4.1 flag partition on
+   both sides. Ships §6's equivalence suite with it, not after it — this is the PR where
+   equivalence is cheap to establish and expensive to retrofit.
+   **`--session-reset` lands here too**, ahead of the rest of the lifecycle work: §6's
+   fixture needs it to give each test a fresh session, so it is a dependency of the suite
+   rather than a nicety, and the suite is the thing that proves it works.
 3. **Identity and rejection.** The server's recorded connection identity, the
-   differing-options rejection, `--session-status`.
+   differing-options rejection, client-side profile resolution against the client's cwd
+   (§4.2), `--session-status`.
 4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
-5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`,
-   `--session-reset`, transaction-mode reporting.
+5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
+   reporting, and the secret-on-a-server-command-line warning (§4.1).
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
    `SessionStart`-hook example and an `hsql --help` mention. Not optional and not last in
    spirit — a feature that must be deliberately adopted is a feature that lives or dies by
