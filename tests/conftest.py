@@ -72,13 +72,12 @@ def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
     so without this a developer's own `.harlequin.toml` decides what a test
     asserts.
 
-    The three search functions are the seam, rather than `load_config` or a
-    command's own `get_config_for_profile`, because they are the only one that
-    both commands share *and* that leaves `--config-path` working -- a test that
-    passes an explicit config file still gets it.
+    The search is the seam, rather than `load_config()` or a command's own
+    `load_profile()`, because it is the one both commands share *and* that
+    leaves `--config-path` working -- a test that passes an explicit config
+    file still gets it.
     """
-    for search in ("_search_home", "_search_config", "_search_cwd"):
-        monkeypatch.setattr(f"harlequin.config.{search}", list)
+    monkeypatch.setattr("harlequin.config._search_directories", list)
 
 
 @pytest.fixture

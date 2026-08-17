@@ -643,6 +643,30 @@ def test_an_unknown_profile_is_a_usage_error(hsql: Hsql, config_file: Path) -> N
     assert "profile" in res.stderr
 
 
+def test_an_option_the_adapter_never_declared_is_a_usage_error(
+    hsql: Hsql, tmp_path: Path
+) -> None:
+    """Before the connection, and before the query it would have run.
+
+    The adapter's own constructor takes supersets of what it declares, so this
+    is the only place a misspelling can be caught -- and a run that believed it
+    was read-only should not reach the database at all.
+    """
+    path = tmp_path / ".harlequin.toml"
+    path.write_text(
+        "[profiles.duck]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "reed_only = true\n"
+    )
+    res = hsql("--config-path", str(path), "-P", "duck", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "reed_only" in res.stderr
+    assert "read_only" in res.stderr
+    assert "duckdb" in res.stderr
+
+
 def test_an_unknown_adapter_is_a_usage_error(hsql: Hsql) -> None:
     res = hsql("-a", "nosuchadapter", "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
@@ -732,13 +756,13 @@ def test_the_config_is_read_once(
     import harlequin.config
 
     reads: list[object] = []
-    real = harlequin.config.load_config
+    real = harlequin.config.load_profile
 
-    def counting(config_path: Any) -> Any:
+    def counting(config_path: Any, profile_name: Any) -> Any:
         reads.append(config_path)
-        return real(config_path)
+        return real(config_path=config_path, profile_name=profile_name)
 
-    monkeypatch.setattr("harlequin.config.load_config", counting)
+    monkeypatch.setattr("harlequin.hsql.cli.load_profile", counting)
     res = hsql(*duck, "-c", "select 1")
     assert res.exit_code == ExitCode.OK
     assert len(reads) == 1

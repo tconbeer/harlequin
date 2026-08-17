@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from functools import lru_cache
 from importlib.metadata import entry_points, version
 from pathlib import Path
 from typing import Any, Sequence
@@ -15,8 +16,9 @@ from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
     Profile,
-    get_config_for_profile,
+    load_profile_and_keymaps,
     merge_profile_with_cli,
+    parse_profile_options,
     parse_row_count,
 )
 from harlequin.config_wizard import wizard
@@ -42,40 +44,38 @@ DEFAULT_KEYMAP_NAMES = ["vscode"]
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
 HEADLESS_DOCS_URL = "https://harlequin.sh/docs/headless"
 
-HSQL_ONLY_OPTIONS = frozenset(
-    {
-        "-c",
-        "--command",
-        "--file",
-        "-o",
-        "--output",
-        "--format",
-        "--csv",
-        "--json",
-        "--jsonl",
-        "--markdown",
-        "--vertical",
-        "--tuples-only",
-        "-A",
-        "--no-align",
-        "--no-header",
-        "--no-footer",
-        "--null-string",
-        "--display-rows",
-        "--result",
-        "--on-error",
-        "--stats",
-        "--color",
-    }
-)
-"""Options that belong to the other command, so that this one can say so.
 
-Every spelling `hsql` has and `harlequin` does not. Deliberately not derived
-from `harlequin.hsql` at run time: this command starts by importing the whole
-IDE, and the headless CLI exists precisely so that it need not go the other
-way. `tests/unit_tests/test_cli.py` asserts the list still matches what `hsql`
-actually takes, which is the drift this would otherwise be exposed to.
-"""
+@lru_cache(maxsize=1)
+def _hsql_command() -> click.Command:
+    """`hsql`, as a command, so this one can ask what it takes.
+
+    Read rather than copied: the two commands' options drift otherwise. It
+    costs ~10ms and imports no adapter, and nothing on the way to `--help` or
+    `--version` asks for it.
+    """
+    from harlequin.hsql.cli import bare_command
+
+    return bare_command()
+
+
+def hsql_spellings() -> frozenset[str]:
+    """Every `--option` spelling `hsql` takes."""
+    return frozenset(
+        opt
+        for param in _hsql_command().params
+        for opt in param.opts
+        if opt.startswith("-")
+    )
+
+
+def hsql_profile_keys() -> frozenset[str]:
+    """Every profile key `hsql` reads for itself.
+
+    One profile serves both commands, so these are keys this command has to
+    leave alone rather than hand to an adapter that never declared them.
+    """
+    return frozenset(param.name for param in _hsql_command().params if param.name)
+
 
 # general
 click.rich_click.TEXT_MARKUP = "rich"
@@ -161,7 +161,9 @@ class HarlequinCommand(click.RichCommand):
         try:
             return super().parse_args(ctx, args)
         except click.NoSuchOption as e:
-            if e.option_name not in HSQL_ONLY_OPTIONS:
+            # click has already established the spelling is not this command's,
+            # so hsql having it is the whole of the question
+            if e.option_name not in hsql_spellings():
                 raise
             # a plain UsageError rather than a NoSuchOption with a longer
             # message: click's would append "Did you mean --config?" from the
@@ -405,21 +407,41 @@ def build_cli() -> click.Command:
         """
         # load config from any config files
         try:
-            config, user_defined_keymaps = get_config_for_profile(
+            profile_config, user_defined_keymaps = load_profile_and_keymaps(
                 config_path=config_path, profile_name=profile
             )
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
 
-        # merge the config and the cli options
         explicitly_set = {
             k
             for k in kwargs
             if ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT  # type: ignore[attr-defined]
         }
+
+        # the profile's remaining keys are its adapter's options, and the
+        # adapter is about to be handed them. Before the merge, because click
+        # has already vetted everything typed on the command line.
+        adapter_name = str(
+            (kwargs.get("adapter", None) if "adapter" in explicitly_set else None)
+            or profile_config.get("adapter", None)
+            or DEFAULT_ADAPTER
+        )
+        if (declaring := adapters.get(adapter_name)) is not None:
+            try:
+                profile_config = parse_profile_options(
+                    profile_config,
+                    adapter=adapter_name,
+                    adapter_options=declaring.ADAPTER_OPTIONS,
+                    command_options=harlequin_options | hsql_profile_keys(),
+                )
+            except HarlequinConfigError as e:
+                pretty_print_error(e)
+                ctx.exit(2)
+
         config = merge_profile_with_cli(
-            profile=config, cli_values=kwargs, explicitly_set=explicitly_set
+            profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
         )
 
         # detect and install (if necessary) a tzdatabase on Windows
@@ -467,7 +489,7 @@ def build_cli() -> click.Command:
         adapter: str = config.pop("adapter", DEFAULT_ADAPTER)
         adapter_cls: type[HarlequinAdapter] = adapters[adapter]
         try:
-            adapter_instance = adapter_cls(conn_str=conn_str, **config)  # type: ignore[misc]
+            adapter_instance = adapter_cls(conn_str=conn_str, **config)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -510,6 +532,9 @@ def build_cli() -> click.Command:
         click.rich_click.OPTION_GROUPS["harlequin"].append(
             {"name": f"{adapter_name} Adapter Options", "options": option_name_list}
         )
+
+    # this command's own options, before any adapter's are added to it
+    harlequin_options = {param.name for param in inner_cli.params}
 
     fn = inner_cli
     for option in options.values():

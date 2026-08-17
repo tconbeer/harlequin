@@ -31,8 +31,9 @@ from harlequin.config import (
     TUI_ONLY_KEYS,
     UNLIMITED,
     Profile,
-    get_config_for_profile,
+    load_profile,
     merge_profile_with_cli,
+    parse_profile_options,
     parse_row_count,
 )
 from harlequin.exception import (
@@ -86,6 +87,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     installed = adapter_names()
     found = _preflight(argv, installed)
 
+    profile_config = found.profile
     adapter_cls: type[HarlequinAdapter] | None = None
     setup_error: HarlequinConfigError | None = found.error
     if found.adapter is not None and setup_error is None:
@@ -248,8 +250,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         if setup_error is not None:
             diagnostics.report_error(setup_error)
             ctx.exit(ExitCode.USAGE)
-        config = found.profile
-
         explicitly_set = {
             k
             for k in kwargs
@@ -257,7 +257,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         }
         values: dict[str, Any] = dict(
             merge_profile_with_cli(
-                profile=config, cli_values=kwargs, explicitly_set=explicitly_set
+                profile=profile_config,
+                cli_values=kwargs,
+                explicitly_set=explicitly_set,
             )
         )
         for key in TUI_ONLY_KEYS:
@@ -399,9 +401,31 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ctx.exit(run.exit_code)
 
     cmd: click.Command = inner_cli
-    if adapter_cls is not None:
+    if adapter_cls is not None and found.adapter is not None:
+        # what is left of the profile once this command's own options are out
+        # of it belongs to the adapter, which is about to be handed it
+        try:
+            profile_config = parse_profile_options(
+                profile_config,
+                adapter=found.adapter,
+                adapter_options=adapter_cls.ADAPTER_OPTIONS,
+                command_options={param.name for param in cmd.params}
+                | set(TUI_ONLY_KEYS),
+            )
+        except HarlequinConfigError as e:
+            setup_error = e
         _attach_adapter_options(cmd, adapter_cls)
     return cmd
+
+
+def bare_command() -> click.Command:
+    """This command with no adapter's options on it, and no config file read.
+
+    `harlequin` builds this to answer two questions about the other command:
+    which spellings are hsql's, so it can point at them, and which profile keys
+    hsql reads, so it does not mistake them for an adapter's options.
+    """
+    return build_cli(["-P", "None", "--help"])
 
 
 @dataclass
@@ -579,7 +603,10 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
     profile: Profile = {}
     error: HarlequinConfigError | None = None
     try:
-        profile, _ = get_config_for_profile(
+        # the profile, and not the keymaps beside it: keymaps are the IDE's, and
+        # wanting them would mean reading every config file rather than stopping
+        # at the one that defines this profile.
+        profile = load_profile(
             config_path=ctx.params.get("config_path"),
             profile_name=ctx.params.get("profile"),
         )

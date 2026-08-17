@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Config files now merge profile by profile, and the **nearest file wins**. A profile is supplied whole by the closest file that defines it, instead of by the file read last; a file that redefines a profile no longer inherits the keys it leaves out ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- A profile's adapter options are now checked against what that adapter declares, instead of being passed along unread. An option the adapter does not declare is an error naming it (with a suggestion), where `reed_only = true` used to be dropped in silence and leave you connected read-write; a value it cannot take is an error too, so `mode = "reed-only"` names the choices it could have been. Values reach the adapter as the type it declared: `port = 5432` arrives as `"5432"`, and an option declared as a list has to be written as one (`extension = ["httpfs"]`, not `extension = "httpfs"`).
+
+### Bug Fixes
+
+- A project-local config file that defines a profile no longer hides the profiles defined in your home config file, and no longer contradicts the `default_profile` set there — which made both commands refuse to start ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does, so `read-only`, `reed_only` and `keymap_names` each name the option they were probably meant to be.
+- A `default_profile` that names no profile now only stops an invocation that was going to use it: `harlequin -P other` and `harlequin -P None` start, as `hsql` does, instead of refusing over a key neither of them read.
+
+### Performance
+
+- `hsql` and `harlequin` read config files in priority order and stop at the file that defines the profile they were asked for, so the files behind it are never opened. `hsql -P None` now reads none at all.
+
+### Dependencies
+
+- Adds `msgspec`.
+
 ## [2.9.0] - 2026-08-15
 
 ### Breaking Changes

@@ -25,8 +25,8 @@ from harlequin.app_base import AppBase
 from harlequin.colors import YELLOW
 from harlequin.config import (
     ConfigFile,
-    get_config_for_profile,
     get_highest_priority_existing_config_file,
+    load_profile_and_keymaps,
 )
 from harlequin.copy_widgets import NoFocusLabel, PathInput
 from harlequin.exception import HarlequinError, pretty_error_message
@@ -471,7 +471,7 @@ class HarlequinKeys(AppBase):
         }
 
         try:
-            profile, user_keymaps = get_config_for_profile(
+            profile, user_keymaps = load_profile_and_keymaps(
                 config_path=self.config_path, profile_name=self.profile_name
             )
         except HarlequinError as e:

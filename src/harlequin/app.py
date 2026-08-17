@@ -69,9 +69,9 @@ from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
 from harlequin.config import (
-    get_config_for_profile,
     get_highest_priority_existing_config_file,
     load_config,
+    load_profile_and_keymaps,
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
@@ -999,8 +999,8 @@ class Harlequin(AppBase):
         config_path = get_highest_priority_existing_config_file()
         config = load_config(config_path)
         profile_name = self.profile_name
-        active_profile_config, _ = get_config_for_profile(config_path, profile_name)
-        active_profile_name = profile_name or config.get("default_profile")
+        active_profile_config, _ = load_profile_and_keymaps(config_path, profile_name)
+        active_profile_name = profile_name or config.default_profile
         adapter_options = getattr(self.adapter, "ADAPTER_OPTIONS", None)
         adapter_type = type(self.adapter).__name__
 

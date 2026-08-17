@@ -16,7 +16,7 @@ USER_CONFIG_PATH = Path("/tmp") / "harlequin"
 @pytest.fixture(autouse=True)
 def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "harlequin.keys_app.get_config_for_profile", lambda **_: (dict(), [])
+        "harlequin.keys_app.load_profile_and_keymaps", lambda **_: (dict(), [])
     )
     monkeypatch.setattr(
         "harlequin.keys_app.get_highest_priority_existing_config_file", lambda **_: None

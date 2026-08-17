@@ -57,6 +57,14 @@ dependencies = [
     # same parser, and is what 3.10 has instead.
     "tomlkit>=0.15.1,<0.16.0",
     "tomli>=2.0.1; python_version < '3.11'",
+
+    # msgspec declares what a config file may say, and validates it against that
+    # declaration -- strictly, so `limit = true` is refused rather than quietly
+    # made one row. It is a C extension with wheels for every version we
+    # support, and it costs ~30ms to import, so `harlequin.config` defers the
+    # import into the function that validates: an invocation that discovers no
+    # config file with anything in it never pays it.
+    "msgspec>=0.19,<1",
     "questionary==2.1.1",
     # imported directly by components/error_modal.py; also a textual-textarea dep
     "pyperclip>=1.9,<2",

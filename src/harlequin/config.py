@@ -1,9 +1,55 @@
+"""Reading the TOML files both commands take their options from.
+
+Config files are discovered nearest first -- an explicit `--config-path`, then
+the working directory, the user config dir, and home -- and the first file to
+define something is the one that defines it.
+
+Who reads what:
+
+| caller                 | function                     | files read           |
+| ---------------------- | ---------------------------- | -------------------- |
+| `hsql`                 | `load_profile()`             | up to the one that   |
+|                        |                              | defines the profile  |
+| `harlequin`, `--keys`  | `load_profile_and_keymaps()` | all: keymaps merge   |
+|                        |                              | across every file    |
+| the IDE's debug screen | `load_config()`              | all                  |
+| `harlequin --config`   | `ConfigFile`, at the path    | one, and unvalidated |
+|                        | `get_highest_priority_...()` | (it is about to be   |
+|                        | returns                      | written back)        |
+
+`load_profile()` is the fast path: it stops at the file that answers the
+question, so `hsql -P prod` never opens the files behind that one, and
+`hsql -P None` opens none. The others need the whole document.
+
+Config files are validated twice, and the halves know different things.
+`_read_config_files()` checks one file's shape before it is merged with any
+other, so the error can name the file. `parse_profile_options()` runs once the
+adapter is known and checks the profile's remaining keys -- each of which is
+some adapter's option -- against the options that adapter declares.
+"""
+
 from __future__ import annotations
 
+import re
 import sys
+from difflib import get_close_matches
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Container, Mapping, Sequence, TypedDict, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Collection,
+    Container,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    cast,
+)
 
+import msgspec
 from platformdirs import user_config_path
 
 from harlequin.exception import HarlequinConfigError
@@ -17,8 +63,12 @@ else:
 if TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
+    from harlequin.options import AbstractOption
+
 DEFAULT_ADAPTER = "duckdb"
 """The adapter both commands connect with when nothing names one."""
+
+CONFIG_ERROR_TITLE = "Harlequin couldn't load your config file."
 
 UNLIMITED = -1
 """What every row-count option takes to mean "no limit".
@@ -46,26 +96,35 @@ the IDE sets it to group digits for a human, and output that varied with
 `LC_ALL` would be output a caller could not predict.
 """
 
+Profile = Dict[str, Any]
+"""One `[profiles.x]` table: a command's own options, plus its adapter's.
 
-class Profile(TypedDict, total=False):
-    conn_str: Sequence[str] | str
-    adapter: str
-    limit: str | int
-    viewer_max_rows: str | int
-    display_rows: str | int
-    theme: str
-    keymap_name: list[str]
-    show_files: Path | str | None
-    show_s3: str | None
-    locale: str
-    no_download_tzdata: bool
-    # many more keys for adapter options
+Deliberately open. Which keys belong to the adapter, and what they may hold, is
+`parse_profile_options()`'s question, and it takes the adapter to answer.
+"""
 
 
-class Config(TypedDict, total=False):
-    default_profile: str | None
-    keymaps: dict[str, list[RawKeyBinding]]
-    profiles: dict[str, Profile]
+class Config(msgspec.Struct, forbid_unknown_fields=True):
+    """A config file's contents, and also several of them merged.
+
+    The only declaration of what a config file may say: `msgspec.convert()`
+    validates against it, and refuses a key it does not name.
+    """
+
+    default_profile: Optional[str] = None
+    profiles: Dict[str, Profile] = msgspec.field(default_factory=dict)
+    keymaps: Dict[str, List[Dict[str, Any]]] = msgspec.field(default_factory=dict)
+    """A binding's own keys are `HarlequinKeyMap.from_config()`'s to check."""
+
+    def to_dict(self) -> dict[str, Any]:
+        """What this config would look like written back to a file."""
+        return {
+            key: value
+            for key, value in msgspec.structs.asdict(self).items()
+            # the one thing TOML cannot write. Everything else is kept, however
+            # falsy: `default_profile = ""` is a mistake worth being able to see.
+            if value is not None
+        }
 
 
 class ConfigFile:
@@ -105,19 +164,17 @@ class ConfigFile:
             ) from e
 
     @property
-    def relevant_config(self) -> Config:
+    def relevant_config(self) -> dict[str, Any]:
+        """This file's Harlequin section, exactly as written.
+
+        Unvalidated, and the write path depends on that: `harlequin --config`
+        reads this, edits it, and writes it back, so anything transformed on the
+        way in would be written into the user's file on the way out.
         """
-        Reads the relevant config section from a dedicated config file
-        or pyproject.toml file at path. Raises HarlequinConfigError
-        if there is a problem with the file.
-        """
-        relevant_config: Config = cast(
-            Config,
-            self._data
-            if not self.is_pyproject
-            else self._data.get("tool", {}).get("harlequin", {}),
-        )
-        return relevant_config
+        if not self.is_pyproject:
+            return self._data
+        section: dict[str, Any] = self._data.get("tool", {}).get("harlequin", {})
+        return section
 
     def _editable(self) -> TOMLDocument:
         """The same file, re-read through tomlkit so a write keeps its style.
@@ -147,7 +204,7 @@ class ConfigFile:
             ) from e
         return self._doc
 
-    def update(self, config: Config) -> None:
+    def update(self, config: Mapping[str, Any]) -> None:
         """
         Replace the relevant section of the in-memory TOML doc with the updated
         Config.
@@ -172,31 +229,79 @@ class ConfigFile:
         TOMLFile(self.path).write(self._editable())
 
 
-def get_config_for_profile(
+def load_config(config_path: Path | None) -> Config:
+    """Every discovered config file, merged nearest first."""
+    config = Config()
+    for from_file in _read_config_files(config_path):
+        _merge(from_file, into=config)
+    return config
+
+
+def load_profile(config_path: Path | None, profile_name: str | None) -> Profile:
+    """The profile an invocation runs under, reading no further than it must."""
+    if profile_name == "None":
+        return {}  # Harlequin's own defaults, which no config file can change
+
+    config = Config()
+    for from_file in _read_config_files(config_path):
+        _merge(from_file, into=config)
+        name = profile_name or config.default_profile
+        if name is not None and name in config.profiles:
+            return config.profiles[name]  # the files behind this one go unread
+    return _select_profile(config, requested=profile_name)
+
+
+def load_profile_and_keymaps(
     config_path: Path | None, profile_name: str | None
 ) -> tuple[Profile, list[HarlequinKeyMap]]:
+    """One profile, and every keymap, for the IDE, which needs both."""
     config = load_config(config_path)
-    if not profile_name:
-        profile_name = config.get("default_profile", None)
-
-    if profile_name is None or profile_name == "None":
-        profile: Profile = {}
-    elif profile_name not in config.get("profiles", {}):
-        raise HarlequinConfigError(
-            f"Could not load the profile named {profile_name} because it does not "
-            "exist in any discovered config files.",
-            title="Harlequin couldn't load your profile.",
+    # a binding is a `RawKeyBinding` once `from_config()` has said so; the shape
+    # of the table around it is all `Config` promises
+    keymaps = [
+        HarlequinKeyMap.from_config(
+            name=keymap_name, bindings=cast("list[RawKeyBinding]", bindings)
         )
-    else:
-        profile = config["profiles"][profile_name]
-
-    raw_keymaps: dict[str, list[RawKeyBinding]] = config.get("keymaps", {})
-    keymaps: list[HarlequinKeyMap] = [
-        HarlequinKeyMap.from_config(name=name, bindings=bindings)
-        for name, bindings in raw_keymaps.items()
+        for keymap_name, bindings in config.keymaps.items()
     ]
+    return _select_profile(config, requested=profile_name), keymaps
 
-    return profile, keymaps
+
+def parse_profile_options(
+    profile: Profile,
+    *,
+    adapter: str,
+    adapter_options: Sequence[AbstractOption] | None,
+    command_options: Collection[str],
+) -> Profile:
+    """The profile, with its adapter's options parsed as that adapter declares them.
+
+    `command_options` names the keys a command reads for itself; every other
+    key has to be an option of `adapter`, and this is the only place that can
+    tell, since an adapter's constructor takes supersets of what it declares
+    and drops the rest in silence.
+
+    Raises: HarlequinConfigError, naming the option and the adapter.
+    """
+    declared = {sluggify_option_name(o.name): o for o in adapter_options or []}
+    given = {
+        key: _as_declared(value, declared.get(key, None))
+        for key, value in profile.items()
+        if key not in command_options
+    }
+    if not given:
+        return profile
+
+    try:
+        parsed = msgspec.convert(
+            given, _adapter_options_model(adapter, declared), strict=False
+        )
+    except msgspec.ValidationError as e:
+        raise _refuse_option(
+            e, adapter=adapter, declared=declared, given=given, allowed=command_options
+        ) from e
+
+    return {**profile, **{key: getattr(parsed, key) for key in given}}
 
 
 def merge_profile_with_cli(
@@ -219,7 +324,7 @@ def merge_profile_with_cli(
         if key == "conn_str" and value == tuple():
             continue
         merged[key] = value
-    return cast(Profile, merged)
+    return merged
 
 
 def parse_row_count(
@@ -238,7 +343,7 @@ def parse_row_count(
     def refuse(detail: str) -> HarlequinConfigError:
         return HarlequinConfigError(
             f"{key}={value!r} is {detail}.",
-            title="Harlequin couldn't load your config file.",
+            title=CONFIG_ERROR_TITLE,
         )
 
     # a bool is an int in Python, and `limit = true` is not one row
@@ -255,31 +360,17 @@ def parse_row_count(
     return rows
 
 
-def load_config(config_path: Path | None) -> Config:
-    paths = _find_config_files(config_path)
-    config = _merge_config_files(paths)
-    _raise_on_bad_schema(config)
-    return config
-
-
 def get_highest_priority_existing_config_file() -> Path | None:
-    """
-    Returns the closest existing config file using the default search path;
-    checks pyproject files for a tool.harlequin section and ignores those
-    that are missing that section. Returns None if no
-    config files are found.
-    """
-    candidates = _find_config_files(config_path=None)
-    while candidates:
-        p = candidates.pop()
-        if p.stem == "pyproject":
+    """The nearest config file, skipping a pyproject.toml with no section of ours."""
+    for path in _discover_config_files(config_path=None):
+        if path.stem == "pyproject":
             try:
-                config_file = ConfigFile(p)
+                config_file = ConfigFile(path)
             except HarlequinConfigError:
                 continue
             if not config_file.relevant_config:
                 continue
-        return p
+        return path
     return None
 
 
@@ -287,135 +378,224 @@ def sluggify_option_name(raw: str) -> str:
     return raw.strip("-").replace("-", "_")
 
 
-def _find_config_files(config_path: Path | None) -> list[Path]:
+def _discover_config_files(config_path: Path | None) -> Iterator[Path]:
+    """Every config file that exists, highest priority first.
+
+    Within a directory too: a `harlequin.toml` outranks the `.harlequin.toml`
+    beside it, which outranks a `pyproject.toml`'s `[tool.harlequin]` table.
+
+    Raises: HarlequinConfigError if `config_path` names a file that is not there.
     """
-    Returns a list of candidate config file paths, to be read and
-    merged. Returns an empty list if none already exist. Order matters:
-    the last item will have highest priority.
+    if config_path is not None:
+        if not config_path.exists():
+            raise HarlequinConfigError(
+                f"Config file could not be found at specified path: {config_path}",
+                title=CONFIG_ERROR_TITLE,
+            )
+        yield config_path
+    for directory, filenames in _search_directories():
+        for filename in filenames:
+            path = directory / filename
+            if path.exists():
+                yield path
+
+
+def _search_directories() -> Iterator[tuple[Path, tuple[str, ...]]]:
+    """Where a config file may be, nearest first, and what it may be called.
+
+    The seam the test suite patches to keep the config files on a developer's
+    own machine out of the tests, which is why it is one function and not three
+    call sites: an explicit `--config-path` goes around it and keeps working.
     """
-    found_files: list[Path] = []
-    for search in [_search_home, _search_config, _search_cwd]:
-        found_files.extend(search())
-    if config_path is not None and config_path.exists():
-        found_files.append(config_path)
-    elif config_path is not None:
-        raise HarlequinConfigError(
-            f"Config file could not be found at specified path: {config_path}",
-            title="Harlequin couldn't load your config file.",
+    yield Path.cwd(), ("harlequin.toml", ".harlequin.toml", "pyproject.toml")
+    yield (
+        user_config_path(appname="harlequin", appauthor=False),
+        ("harlequin.toml", ".harlequin.toml", "config.toml"),
+    )
+    yield Path.home(), ("harlequin.toml", ".harlequin.toml", "pyproject.toml")
+
+
+def _read_config_files(config_path: Path | None) -> Iterator[Config]:
+    """Each discovered config file, nearest first, validated as it is read.
+
+    A generator, so a caller that has what it needs stops here: a file it never
+    reaches is never opened, parsed or validated.
+    """
+    for path in _discover_config_files(config_path):
+        raw = ConfigFile(path).relevant_config
+        if raw:
+            yield _parse_config(raw, path=path)
+
+
+def _parse_config(raw: Mapping[str, Any], *, path: Path) -> Config:
+    """One file's config, or a HarlequinConfigError naming that file."""
+    try:
+        config = msgspec.convert(raw, Config)
+    except msgspec.ValidationError as e:
+        message, key = _in_toml_words(e)
+        raise _refuse(path, f"{message}, at {key}." if key else f"{message}.") from e
+
+    if "None" in config.profiles:
+        # the name a caller passes to mean "none of them", so a profile cannot
+        # have it: `harlequin -P None` would be ambiguous
+        raise _refuse(
+            path, "Config file defines a profile named 'None', which is not allowed."
         )
-    return found_files
-
-
-def _search_cwd() -> list[Path]:
-    directory = Path.cwd()
-    filenames = ["pyproject.toml", ".harlequin.toml", "harlequin.toml"]
-    return [directory / f for f in filenames if (directory / f).exists()]
-
-
-def _search_config() -> list[Path]:
-    directory = user_config_path(appname="harlequin", appauthor=False)
-    filenames = ["config.toml", ".harlequin.toml", "harlequin.toml"]
-    return [directory / f for f in filenames if (directory / f).exists()]
-
-
-def _search_home() -> list[Path]:
-    directory = Path.home()
-    filenames = ["pyproject.toml", ".harlequin.toml", "harlequin.toml"]
-    return [directory / f for f in filenames if (directory / f).exists()]
-
-
-def _merge_config_files(paths: list[Path]) -> Config:
-    config: Config = {}
-    for p in paths:
-        config_file = ConfigFile(p)
-        config.update(config_file.relevant_config)
     return config
 
 
-def _raise_on_bad_schema(config: Config) -> None:
-    TOP_LEVEL_KEYS = ("default_profile", "profiles", "keymaps")
-    if not config:
-        return
+def _merge(from_file: Config, *, into: Config) -> None:
+    """Add what a lower-priority file defines and a higher-priority one did not."""
+    if into.default_profile is None:
+        into.default_profile = from_file.default_profile
+    for profile_name, profile in from_file.profiles.items():
+        into.profiles.setdefault(profile_name, profile)
+    for keymap_name, bindings in from_file.keymaps.items():
+        into.keymaps.setdefault(keymap_name, bindings)
 
-    for k in config.keys():
-        if k not in TOP_LEVEL_KEYS:
-            raise HarlequinConfigError(
-                f"Found unexpected key in config: {k}.\n"
-                f"Allowed values are {TOP_LEVEL_KEYS}.",
-                title="Harlequin couldn't load your config file.",
-            )
-    if config.get("profiles", None) is None:
-        pass
-    elif not isinstance(config["profiles"], dict):
-        raise HarlequinConfigError(
-            "The profiles key must define a table.",
-            title="Harlequin couldn't load your config file.",
-        )
-    elif not all(
-        [isinstance(config["profiles"][k], dict) for k in config["profiles"].keys()]
-    ):
-        raise HarlequinConfigError(
-            "The members of the profiles table must be tables.",
-            title="Harlequin couldn't load your config file.",
-        )
-    elif any(k == "None" for k in config["profiles"].keys()):
-        raise HarlequinConfigError(
-            "Config file defines a profile named 'None', which is not allowed.",
-            title="Harlequin couldn't load your config file.",
-        )
-    else:
-        for profile_name, opt_dict in config["profiles"].items():
-            for option_name in opt_dict.keys():
-                if "-" in option_name:
-                    raise HarlequinConfigError(
-                        f"Profile {profile_name} defines an option {option_name!r}, "
-                        "which is an invalid name for an option. Did you mean "
-                        f"{sluggify_option_name(option_name)!r}?",
-                        title="Harlequin couldn't load your config file.",
-                    )
-                elif "keymap_names" in option_name:
-                    raise HarlequinConfigError(
-                        f"Profile {profile_name} defines an option {option_name!r}, "
-                        "which is an invalid name for an option. Did you mean "
-                        "'keymap_name' (singular)?",
-                        title="Harlequin couldn't load your config file.",
-                    )
 
-    if config.get("keymaps", None) is None:
-        pass
-    elif not isinstance(config["keymaps"], dict):
-        raise HarlequinConfigError(
-            "The keymaps key must define a table.",
-            title="Harlequin couldn't load your config file.",
-        )
-    elif not all(
-        [isinstance(config["keymaps"][k], list) for k in config["keymaps"].keys()]
-    ):
-        raise HarlequinConfigError(
-            "The members of each keymaps table must be arrays of tables.",
-            title="Harlequin couldn't load your config file.",
-        )
+def _select_profile(config: Config, *, requested: str | None) -> Profile:
+    """The profile a name resolves to, once every file has had its say.
 
-    if (default := config.get("default_profile", None)) is not None and not isinstance(
-        default, str
-    ):
+    A `default_profile` that names nothing is only an error for an invocation
+    that was going to use it: `-P other` has overridden the key.
+    """
+    name = requested or config.default_profile
+    if name is None or name == "None":
+        return {}
+    if (profile := config.profiles.get(name, None)) is not None:
+        return profile
+    if requested is not None:
         raise HarlequinConfigError(
-            f"Config file sets default_profile to {default}, but that value "
-            "must be a string.",
-            title="Harlequin couldn't load your config file.",
+            f"Could not load the profile named {name} because it does not exist in "
+            "any discovered config files.",
+            title="Harlequin couldn't load your profile.",
         )
-    elif (
-        default is not None
-        and isinstance(default, str)
-        # `.get`, not `[...]`: a file may set default_profile and define no
-        # profiles at all, and that is a config error to report, not a KeyError
-        # to crash on. The next clause is what reports it.
-        and isinstance(config.get("profiles", {}), dict)
-        and default != "None"
-        and config.get("profiles", {}).get(default, None) is None
-    ):
-        raise HarlequinConfigError(
-            f"Config files set the default_profile to {default}, but do not define a "
-            "profile with that name.",
-            title="Harlequin couldn't load your config file.",
+    raise HarlequinConfigError(
+        f"Config files set the default_profile to {name}, but no config file defines "
+        "a profile with that name.",
+        title=CONFIG_ERROR_TITLE,
+    )
+
+
+def _adapter_options_model(
+    adapter: str, declared: Mapping[str, AbstractOption]
+) -> type[msgspec.Struct]:
+    """One adapter's declared options, as a model a profile can be parsed into."""
+    fields: list[tuple[str, type, Any]] = [
+        (name, Optional[_declared_type(option)], None)  # type: ignore[misc]
+        for name, option in declared.items()
+        if name.isidentifier()
+    ]
+    return msgspec.defstruct(f"{adapter}_options", fields, forbid_unknown_fields=True)
+
+
+def _declared_type(option: AbstractOption) -> Any:
+    """What an option says its values are, as a type msgspec can parse into.
+
+    A profile writes what TOML makes natural, so `_as_declared()` rounds a
+    value toward its option before this model sees it.
+    """
+    from harlequin.options import FlagOption, ListOption
+
+    if isinstance(option, FlagOption):
+        return bool
+    if isinstance(option, ListOption):
+        return List[str]
+    if choices := _declared_choices(option):
+        return Literal[tuple(choices)]
+    return str
+
+
+def _as_declared(value: Any, option: AbstractOption | None) -> Any:
+    """A value written the way TOML invites, as its option declares it.
+
+    Two roundings, both of which click already makes for a value typed on the
+    command line: a number where text was declared is text (`port = 5432`), and
+    a choice matches whatever its case (`mode = "RO"`).
+    """
+    if option is None:
+        return value
+    if isinstance(value, str):
+        for choice in _declared_choices(option) or []:
+            if choice.casefold() == value.casefold():
+                return choice
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    return str(value) if _declared_type(option) is str else value
+
+
+def _declared_choices(option: AbstractOption) -> list[str] | None:
+    """A SelectOption's choices, by duck typing: `choices` may hold pairs."""
+    raw = getattr(option, "choices", None)
+    if not raw:
+        return None
+    return [c if isinstance(c, str) else c[0] for c in raw]
+
+
+def _refuse(path: Path, message: str) -> HarlequinConfigError:
+    """One problem, and the file it is written in."""
+    return HarlequinConfigError(
+        f"{message}\nFound in the config file at {path}.", title=CONFIG_ERROR_TITLE
+    )
+
+
+def _refuse_option(
+    error: msgspec.ValidationError,
+    *,
+    adapter: str,
+    declared: Mapping[str, AbstractOption],
+    given: Mapping[str, Any],
+    allowed: Collection[str],
+) -> HarlequinConfigError:
+    """An option this adapter does not declare, or a value it cannot take."""
+    if unknown := sorted(set(given) - set(declared)):
+        # from either set: `read-only` is a near miss for an adapter's option,
+        # and `keymap_names` for one of the command's own
+        suggestion = get_close_matches(unknown[0], [*declared, *allowed], n=1)
+        return HarlequinConfigError(
+            f"Profile defines an option {unknown[0]!r}, which is not an option of the "
+            f"{adapter} adapter."
+            + (f" Did you mean {suggestion[0]!r}?" if suggestion else ""),
+            title=CONFIG_ERROR_TITLE,
         )
+    message, key = _in_toml_words(error)
+    choices = _declared_choices(declared[key]) if key in declared else None
+    return HarlequinConfigError(
+        f"Profile sets {key} to a value the {adapter} adapter cannot take: {message}."
+        + (f"\nAllowed values are {tuple(choices)}." if choices else ""),
+        title=CONFIG_ERROR_TITLE,
+    )
+
+
+_TOML_WORDS = {
+    "object": "table",
+    "str": "string",
+    "int": "integer",
+    "float": "number",
+    "bool": "boolean",
+    "null": "nothing",
+}
+"""msgspec names JSON's types; a config file is written in TOML's."""
+
+
+def _in_toml_words(error: msgspec.ValidationError) -> tuple[str, str]:
+    """A msgspec error as `(message, key)`, in the vocabulary of a TOML file.
+
+    Only inside the backticks msgspec puts around a type: everything else in
+    the message is the user's own value, and `'internal'` is not two integers.
+    """
+    message, _, location = str(error).partition(" - at `$")
+    message = message.replace(
+        "Object contains unknown field", "Found unexpected key in config:"
+    )
+    spelled = re.sub(
+        r"`([^`]*)`",
+        lambda match: " ".join(
+            _TOML_WORDS.get(word, word) for word in match.group(1).split(" ")
+        ),
+        message,
+    )
+    key = location.rstrip("`").replace("[...]", "").lstrip(".")
+    return spelled, key

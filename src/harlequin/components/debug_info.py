@@ -62,7 +62,7 @@ class HarlequinDebugInfo:
 
     def parse_info(self) -> List[DebugWidget]:
         try:
-            config_toml = tomlkit.dumps(self.config).rstrip()
+            config_toml = tomlkit.dumps(self.config.to_dict()).rstrip()
         except Exception:
             config_toml = str(self.config)
         try:
