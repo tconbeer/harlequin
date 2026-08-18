@@ -422,31 +422,11 @@ CellViewModal {
     padding: 0;
 }
 
-#cell_view_outer {
-    border: round $secondary;
-    background: $background;
-    margin: 4 8;
-    padding: 1 2;
-    max-width: 100;
+/* reuses the shared #modal_outer / #modal_inner / #modal_footer styling so the
+   primary outer border and faded inner border match the help and error modals */
+CellViewModal #modal_inner {
     max-height: 80%;
-}
-
-#cell_view_scroll {
-    height: auto;
-    max-height: 100%;
-    border: round $border-color-nofocus;
     padding: 1 1 1 2;
-}
-
-#cell_view_scroll:focus {
-    border: round $primary;
-}
-
-#cell_view_footer {
-    dock: bottom;
-    color: $text-muted;
-    margin: 1 0 0 0;
-    padding: 0 1;
 }
 
 /* HELP SCREEN */
