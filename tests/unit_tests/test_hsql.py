@@ -1142,10 +1142,10 @@ def test_config_show_reads_a_profile_it_was_not_asked_about(
 def test_config_reports_a_file_it_cannot_read(
     hsql: Hsql, config_dirs: tuple[Path, Path]
 ) -> None:
-    """Every mode here reads every file, so a broken one is fatal to all of it.
+    """`show` reads every file, so a broken one is fatal to it.
 
-    `--config validate` is the mode that will report every problem at once;
-    this one stops at the first, and names the file either way.
+    `--config validate` is the mode that reports every problem at once; this
+    one stops at the first, and names the file either way.
     """
     cwd, _ = config_dirs
     (cwd / ".harlequin.toml").write_text("this is not toml\n")
@@ -1171,10 +1171,11 @@ def test_config_refuses_to_also_run_sql(
 
 
 def test_an_unknown_config_mode_lists_the_ones_that_work(hsql: Hsql) -> None:
-    res = hsql("--config", "validate")
+    res = hsql("--config", "schema")
     assert res.exit_code == ExitCode.USAGE
     assert "show" in res.stderr
     assert "list-profiles" in res.stderr
+    assert "validate" in res.stderr
 
 
 def test_config_modes_are_what_the_help_offers(hsql: Hsql) -> None:
@@ -1215,3 +1216,261 @@ def test_config_show_writes_a_keymap_as_the_array_it_is(
         'keys = "ctrl+k"\n'
         'action = "cursor_up"\n'
     )
+
+
+# --- `--config validate`, the mode that reports every problem ----------------
+
+
+def test_config_validate_finds_nothing_wrong_with_a_good_config(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """Zero problems is zero rows, and the code a script actually reads."""
+    res = hsql("--config", "validate")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        " file | key | problem | line\n------+-----+---------+------\n(0 rows)\n"
+    )
+
+
+def test_config_validate_exits_two_for_a_config_it_found_a_problem_in(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """The whole mode, for a caller that never reads the rows.
+
+    `--format none` is the spelling that says so out loud: no stdout at all,
+    and the answer in the exit code.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "duckdb"\nreed_only = true\n'
+    )
+    res = hsql("--config", "validate", "--format", "none")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+
+
+def test_config_validate_names_the_file_the_key_and_the_option(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Pass 2, which is the surface nothing else in the stack validates.
+
+    `reed_only = true` reaches the adapter's constructor and is dropped there
+    in silence, leaving a caller who believes they are connected read-only.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "duckdb"\nreed_only = true\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, problem, line = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "profiles.prod.reed_only"
+    assert "duckdb" in problem
+    assert "read_only" in problem  # the spelling it was probably meant to be
+    assert line == "NULL"
+
+
+def test_config_validate_reports_every_file_and_keeps_reading(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """The mode's whole reason to exist, in the shape it is worst at.
+
+    A file it cannot parse stops `show` dead. Here it is one row, and the file
+    behind it is read, validated and reported on anyway -- which is what the
+    per-file validation in front of the merge buys.
+    """
+    cwd, home = config_dirs
+    (cwd / ".harlequin.toml").write_text("this is not toml\n")
+    (home / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "sqlite"\nreed_only = true\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    first, second = res.stdout.splitlines()
+    assert first.startswith(str(cwd / ".harlequin.toml"))
+    assert second.startswith(str(home / ".harlequin.toml"))
+
+
+def test_config_validate_names_the_line_when_the_parser_named_one(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Where the parser gives a position, and nowhere else.
+
+    A key we merely dislike has no position anywhere, and a number that was not
+    read out of a parser would send a reader to a line with nothing on it.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text('[profiles.prod]\nadapter = "duckdb"\noops\n')
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, _, line = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "NULL"  # the problem is the file, not something in it
+    assert line == "3"
+
+
+def test_config_validate_reports_a_profile_the_merge_hides(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """One entry per file per problem, which is what validating first buys.
+
+    The nearer file supplies `shared` whole, so no invocation runs the home
+    file's copy of it -- and its author will still open that file to fix it.
+    """
+    cwd, home = config_dirs
+    (home / ".harlequin.toml").write_text("[profiles.shared]\nreed_only = true\n")
+    (cwd / ".harlequin.toml").write_text("[profiles.shared]\nread_only = true\n")
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout.startswith(
+        f"{home / '.harlequin.toml'}|profiles.shared.reed_only"
+    )
+
+
+def test_config_validate_reports_a_default_that_names_nothing(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Where `list-profiles` notes it, this one fails on it.
+
+    Nothing about the key is more wrong here -- it is the same broken default.
+    The difference is what each mode was asked: one for a list of names, and
+    this one for whether the config is any good.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "gone"\n[profiles.here]\nadapter = "sqlite"\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, problem, _ = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "default_profile"
+    assert "gone" in problem
+
+
+def test_config_validate_accepts_a_profile_written_for_the_ide(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Valid is a union of three sets, and getting it wrong breaks working configs.
+
+    One profile serves both commands, so the IDE's keys are as legal here as
+    hsql's own and the adapter's -- and a value may arrive uncast, because the
+    adapter contract says it may: `port = 5432` and `port = "5432"` are the
+    same option written two ways a TOML file invites.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        "[profiles.ide]\n"
+        'adapter = "sqlite"\n'  # the adapter's own
+        "read_only = true\n"
+        "limit = 100\n"  # a key both commands read
+        'theme = "nord"\n'  # a key only the IDE reads
+        'keymap_name = ["vscode"]\n'
+        "[profiles.uncast]\n"
+        'adapter = "postgres"\n'
+        "port = 5432\n"
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+def test_config_validate_reports_an_adapter_nothing_installs(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A profile whose adapter cannot be loaded is one profile's problem.
+
+    It cannot be checked any further -- there are no declared options to check
+    it against -- and the file's other profiles still can be.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.gone]\nadapter = "no-such-adapter"\n'
+        '[profiles.fine]\nadapter = "sqlite"\nread_only = true\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    (row,) = res.stdout.splitlines()
+    assert row.split("|")[1] == "profiles.gone.adapter"
+    assert "no-such-adapter" in row
+
+
+def test_config_validate_reports_a_keymap_the_ide_would_refuse(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A keymap is checked here rather than when the IDE next starts."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[[keymaps.mine]]\nkeys = "ctrl+j"\naction = "cursor_down"\noops = 1\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout.split("|")[1] == "keymaps.mine"
+
+
+def test_config_validate_writes_one_line_per_problem(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A problem is a row, and a row is a line.
+
+    Some of these messages are written over two lines when they are raised at a
+    caller; folded into a cell they would arrive as two rows in every format
+    that does not quote its cells.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "sqlite"\nmode = "reed-only"\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    (row,) = res.stdout.splitlines()
+    assert "Allowed values" in row
+
+
+def test_config_validate_is_json_for_a_caller(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Four facts per problem, under the same --json as everywhere else."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "duckdb"\nreed_only = true\n'
+    )
+    res = hsql("--config", "validate", "--json")
+    assert res.exit_code == ExitCode.USAGE
+    (problem,) = json.loads(res.stdout)
+    assert problem["file"] == str(cwd / ".harlequin.toml")
+    assert problem["key"] == "profiles.prod.reed_only"
+    assert problem["line"] is None
+    assert "duckdb" in problem["problem"]
+
+
+def test_config_validate_says_when_there_was_nothing_to_check(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A clean config and no config at all read the same on stdout.
+
+    They are not the same answer, and the one that found nothing to check is
+    the one a caller would otherwise mistake for a passing check.
+    """
+    res = hsql("--config", "validate")
+    assert res.exit_code == ExitCode.OK
+    assert "No config file defines anything" in res.stderr
+
+
+def test_config_validate_does_not_connect(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """It reads a declaration, not a database.
+
+    A profile pointing at a file that is not there is exactly the config a
+    caller runs this mode on, and needing the database to check the config
+    would make the mode useless where it is most wanted.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "sqlite"\nconn_str = ["/no/such/dir/db.sqlite"]\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
