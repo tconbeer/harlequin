@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence, Type, TypeVar
 
-import pandas as pd
-
 from .compute import CastOptions
 
 class DataType: ...
@@ -148,11 +146,9 @@ def nulls(
     memory_pool: MemoryPool | None = None,
 ) -> Array: ...
 def table(
-    data: (
-        pd.DataFrame
-        | Mapping[str, _PandasConvertible | list]
-        | list[_PandasConvertible]
-    ),
+    # pyarrow also accepts a pandas DataFrame here; Harlequin never builds one,
+    # and typing it would put pandas-stubs in the static group for one name.
+    data: Mapping[str, _PandasConvertible | list] | list[_PandasConvertible],
     names: list[str] | None = None,
     schema: Schema | None = None,
     metadata: Mapping | None = None,
