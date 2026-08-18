@@ -32,6 +32,7 @@ repos:
           - pandas-stubs
           - importlib_metadata
           - boto3-stubs
+          - msgspec
         args:
           - "--disallow-untyped-calls"
           - "--disallow-untyped-defs"
