@@ -10,6 +10,7 @@ from harlequin.config import (
     ConfigFile,
     Profile,
     _discover_config_files,
+    _search_directories,
     get_highest_priority_existing_config_file,
     load_config,
     load_profile,
@@ -195,6 +196,10 @@ def test_config_file_discovery(
         p.parent.mkdir(parents=True, exist_ok=True)
         p.open("w").close()
 
+    # the real search, which `no_discovered_config` stubs out for every other
+    # test, is the thing under test here -- so put it back and redirect the
+    # three directories it walks instead
+    monkeypatch.setattr("harlequin.config._search_directories", _search_directories)
     monkeypatch.setattr(Path, "cwd", lambda: mock_cwd)
     monkeypatch.setattr(Path, "home", lambda: mock_home)
     monkeypatch.setattr("harlequin.config.user_config_path", lambda **_: mock_config)

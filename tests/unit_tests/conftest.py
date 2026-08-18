@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Callable
 
 import pytest
@@ -31,14 +33,28 @@ def result_set(
 
 
 @pytest.fixture
-def run_python() -> Callable[[str], subprocess.CompletedProcess[str]]:
+def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[str]]:
     """Run a snippet in a fresh interpreter and capture its streams.
 
     In-process assertions can't see the state these tests care about: which
     modules an import pulled in, and which stream something was written to.
     Both are properties of a clean interpreter, and pytest has already imported
     half the world by the time a test runs.
+
+    A clean *machine*, too: `no_discovered_config` cannot reach into a
+    subprocess, so the child gets an empty directory as its cwd, its home and
+    its config dir. Otherwise it reads the config files of whoever is running
+    the tests.
     """
+    env = {
+        **os.environ,
+        # where config discovery looks, on every platform platformdirs knows
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
+        "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
+        "APPDATA": str(tmp_path / "appdata"),
+        "LOCALAPPDATA": str(tmp_path / "localappdata"),
+    }
 
     def _run(code: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -46,6 +62,8 @@ def run_python() -> Callable[[str], subprocess.CompletedProcess[str]]:
             capture_output=True,
             text=True,
             check=True,
+            cwd=tmp_path,
+            env=env,
         )
 
     return _run

@@ -64,7 +64,7 @@ def set_locale_to_enUS() -> None:
     set_locale("en_US.UTF-8")
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the machine running the tests out of them.
 
@@ -75,7 +75,9 @@ def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
     The search is the seam, rather than `load_config()` or a command's own
     `load_profile()`, because it is the one both commands share *and* that
     leaves `--config-path` working -- a test that passes an explicit config
-    file still gets it.
+    file still gets it. A test about discovery itself patches the seam back
+    (see `test_discover_config_files`) or replaces it with directories of its
+    own (see the `config_dirs` fixture).
     """
     monkeypatch.setattr("harlequin.config._search_directories", list)
 
