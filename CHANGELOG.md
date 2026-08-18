@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds `hsql --config show` and `hsql --config list-profiles`, which report on your config files instead of running SQL ([#524](https://github.com/tconbeer/harlequin/issues/524)).
+  - `list-profiles` lists every profile you can pass to `-P`, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
+
 ### Breaking Changes
 
 - Config files now merge profile by profile, and the **nearest file wins**. A profile is supplied whole by the closest file that defines it, instead of by the file read last; a file that redefines a profile no longer inherits the keys it leaves out ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).

@@ -809,3 +809,409 @@ def test_an_adapter_option_cannot_shadow_an_hsql_flag() -> None:
     # anything that doesn't collide arrives untouched
     (fine,) = by_name["fine"]
     assert set(fine.opts) == {"--fine", "-Z"}
+
+
+# --- `--config`, the mode that reports on config files -----------------------
+
+
+@pytest.fixture
+def config_dirs(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """A cwd and a home directory to write config files into, and nothing else.
+
+    Returned nearest first, which is the order the files in them are read, and
+    so the order everything below asserts about.
+    """
+    mock_cwd = tmp_path_factory.mktemp("cwd")
+    mock_home = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr(
+        "harlequin.config._search_directories",
+        lambda: [
+            (mock_cwd, (".harlequin.toml",)),
+            (mock_home, (".harlequin.toml",)),
+        ],
+    )
+    return mock_cwd, mock_home
+
+
+@pytest.fixture
+def two_config_files(config_dirs: tuple[Path, Path]) -> tuple[Path, Path]:
+    """A home file and a project file that disagree about one profile.
+
+    The shape every question about the merge is asked in: `shared` is defined
+    twice, `personal` and `project` once each, and the default is the home
+    file's.
+    """
+    cwd, home = config_dirs
+    (home / ".harlequin.toml").write_text(
+        'default_profile = "personal"\n'
+        "[profiles.personal]\n"
+        'adapter = "duckdb"\n'
+        "limit = 200000\n"
+        "[profiles.shared]\n"
+        'adapter = "sqlite"\n'
+    )
+    (cwd / ".harlequin.toml").write_text(
+        "[profiles.shared]\n"
+        'adapter = "duckdb"\n'
+        "[profiles.project]\n"
+        'adapter = "sqlite"\n'
+    )
+    return cwd / ".harlequin.toml", home / ".harlequin.toml"
+
+
+def test_config_show_names_the_file_every_value_came_from(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """The single best troubleshooting artifact in the command.
+
+    Asserted whole rather than by substring: what makes this worth having is
+    that a reader can see the merge, so the arrangement is the contract.
+    """
+    project, home = two_config_files
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        f'default_profile = "personal" # from {home}\n'
+        "\n"
+        f"[profiles.personal] # from {home}\n"
+        'adapter = "duckdb"\n'
+        "limit = 200000\n"
+        "\n"
+        f"[profiles.project] # from {project}\n"
+        'adapter = "sqlite"\n'
+        "\n"
+        f"[profiles.shared] # from {project}, overriding {home}\n"
+        'adapter = "duckdb"\n'
+    )
+
+
+def test_config_show_writes_toml_a_parser_reads_back(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """What it prints is the language it is about.
+
+    A document that says `# from ...` and cannot be parsed would be a report
+    about TOML rather than TOML, and the whole point of the spelling is that a
+    reader can paste a table of it into the file they are fixing.
+    """
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        import tomli as tomllib
+
+    res = hsql("--config", "show")
+    assert tomllib.loads(res.stdout) == {
+        "default_profile": "personal",
+        "profiles": {
+            "personal": {"adapter": "duckdb", "limit": 200000},
+            "project": {"adapter": "sqlite"},
+            "shared": {"adapter": "duckdb"},
+        },
+    }
+
+
+def test_config_show_writes_every_toml_type_back(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A profile holds whatever TOML holds, and this has to write all of it."""
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        import tomli as tomllib
+
+    cwd, _ = config_dirs
+    written = (
+        "[profiles.everything]\n"
+        'text = "a \\"quoted\\" \\u00e9"\n'
+        "number = 5432\n"
+        "fraction = 1.5\n"
+        "flag = true\n"
+        'list = ["httpfs", "spatial"]\n'
+        'table = { host = "localhost", port = 5432 }\n'
+        "moment = 2026-08-18T09:30:00\n"
+        '"dotted.key" = "quoted"\n'
+    )
+    (cwd / ".harlequin.toml").write_text(written, encoding="utf-8")
+
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    # the é survives as itself: a config file is UTF-8, and an escape would be
+    # something the reader has to decode to recognize their own value
+    assert "é" in res.stdout
+    assert tomllib.loads(res.stdout)["profiles"] == tomllib.loads(written)["profiles"]
+
+
+def test_config_show_json_carries_the_same_provenance(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    project, home = two_config_files
+    res = hsql("--config", "show", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout) == {
+        "default_profile": {
+            "value": "personal",
+            "from": str(home),
+            "overrode": [],
+        },
+        "profiles": {
+            "personal": {
+                "value": {"adapter": "duckdb", "limit": 200000},
+                "from": str(home),
+                "overrode": [],
+            },
+            "project": {
+                "value": {"adapter": "sqlite"},
+                "from": str(project),
+                "overrode": [],
+            },
+            "shared": {
+                "value": {"adapter": "duckdb"},
+                "from": str(project),
+                "overrode": [str(home)],
+            },
+        },
+        "keymaps": {},
+    }
+
+
+def test_config_show_json_keeps_its_shape_with_nothing_to_report(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A key nothing defines is null, not a key that is missing.
+
+    A caller that has to branch on whether a key is there is a caller writing
+    the same three lines hsql could have written once.
+    """
+    res = hsql("--config", "show", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout) == {
+        "default_profile": None,
+        "profiles": {},
+        "keymaps": {},
+    }
+
+
+def test_config_show_says_so_when_there_is_nothing_to_show(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "# No config file defines anything hsql reads.\n"
+
+
+@pytest.mark.parametrize("argv", [["--csv"], ["--format", "markdown"]])
+def test_config_show_notes_a_format_it_cannot_reach(
+    hsql: Hsql, two_config_files: tuple[Path, Path], argv: list[str]
+) -> None:
+    """A document is not rows, and silence would read as a format that applied."""
+    res = hsql("--config", "show", *argv)
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.startswith("default_profile")
+    assert "had no effect" in res.stderr
+    assert "--format json" in res.stderr
+
+
+def test_config_show_writes_nothing_under_format_none(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    res = hsql("--config", "show", "--format", "none")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+def test_config_show_goes_to_the_file_dash_o_names(
+    hsql: Hsql, two_config_files: tuple[Path, Path], tmp_path: Path
+) -> None:
+    destination = tmp_path / "effective.toml"
+    res = hsql("--config", "show", "-o", str(destination))
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert destination.read_text(encoding="utf-8").startswith("default_profile")
+
+
+def test_config_list_profiles_is_rows(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """The question a human asks first: what can I pass to -P.
+
+    Sorted by name, and the default is a column rather than a decoration on
+    one -- a marker inside the name is a name a shell loop would pass back
+    wrong.
+    """
+    res = hsql("--config", "list-profiles")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        " profile  | adapter | default\n"
+        "----------+---------+---------\n"
+        " personal | duckdb  | true\n"
+        " project  | sqlite  | false\n"
+        " shared   | duckdb  | false\n"
+        "(3 rows)\n"
+    )
+
+
+def test_config_list_profiles_under_the_psql_switches(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """A listing is a result set, so every flag that shapes one reaches it."""
+    res = hsql("--config", "list-profiles", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        "personal|duckdb|true\nproject|sqlite|false\nshared|duckdb|false\n"
+    )
+
+
+def test_config_list_profiles_as_csv(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    res = hsql("--config", "list-profiles", "--csv", "-t")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        "personal,duckdb,true\nproject,sqlite,false\nshared,duckdb,false\n"
+    )
+
+
+def test_config_list_profiles_leaves_an_unnamed_adapter_null(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """It reports what the files say. A profile that names no adapter is one
+    `-a` still decides, and printing hsql's default here would claim the file
+    had made a choice it did not make."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text("[profiles.bare]\nlimit = 10\n")
+    res = hsql("--config", "list-profiles", "-tA")
+    assert res.stdout == "bare|NULL|false\n"
+
+
+def test_config_list_profiles_marks_no_default_when_there_is_none(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text('[profiles.one]\nadapter = "sqlite"\n')
+    res = hsql("--config", "list-profiles", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "one|sqlite|false\n"
+
+
+def test_config_list_profiles_reports_a_default_that_names_nothing(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Not an error, and not silence.
+
+    A `default_profile` naming nothing only stops an invocation that was going
+    to use it, and this one is not -- but a short list of names is exactly
+    where the mistake is visible, so it is said on stderr and the list still
+    prints.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "gone"\n[profiles.here]\nadapter = "sqlite"\n'
+    )
+    res = hsql("--config", "list-profiles", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "here|sqlite|false\n"
+    assert "default_profile is 'gone'" in res.stderr
+
+
+def test_config_list_profiles_finds_none(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    res = hsql("--config", "list-profiles")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        " profile | adapter | default\n---------+---------+---------\n(0 rows)\n"
+    )
+
+
+def test_config_show_reads_a_profile_it_was_not_asked_about(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """`-P` names a profile to connect with, and this mode connects with none.
+
+    A `-P` that resolves to nothing is a hard error for a run and irrelevant
+    here, which is the point: the mode that tells you what your profiles are
+    must not refuse to run because one of them is missing.
+    """
+    res = hsql("--config", "list-profiles", "-P", "no-such-profile", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.startswith("personal|")
+
+
+def test_config_reports_a_file_it_cannot_read(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """Every mode here reads every file, so a broken one is fatal to all of it.
+
+    `--config validate` is the mode that will report every problem at once;
+    this one stops at the first, and names the file either way.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text("this is not toml\n")
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert str(cwd / ".harlequin.toml") in res.stderr
+
+
+@pytest.mark.parametrize("sql", [["-c", "select 1"], ["-f", "-"]])
+def test_config_refuses_to_also_run_sql(
+    hsql: Hsql, two_config_files: tuple[Path, Path], sql: list[str]
+) -> None:
+    """Two questions spelled as one invocation, and neither is the answer.
+
+    Showing the config and ignoring the SQL would be the worse outcome of the
+    two: a script that thought it ran a query would carry on believing it.
+    """
+    res = hsql("--config", "show", *sql)
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "does not run SQL" in res.stderr
+
+
+def test_an_unknown_config_mode_lists_the_ones_that_work(hsql: Hsql) -> None:
+    res = hsql("--config", "validate")
+    assert res.exit_code == ExitCode.USAGE
+    assert "show" in res.stderr
+    assert "list-profiles" in res.stderr
+
+
+def test_config_modes_are_what_the_help_offers(hsql: Hsql) -> None:
+    from harlequin.hsql.modes import CONFIG_MODES
+
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    for mode in CONFIG_MODES:
+        assert mode in res.output.replace("\n", "").replace(" ", "")
+
+
+def test_config_show_writes_a_keymap_as_the_array_it_is(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A keymap is an array of tables, and its provenance is written once.
+
+    The array comes from one file whole, like a profile, so repeating the
+    comment over every binding in it would say the same thing as many times as
+    the user has key bindings.
+    """
+    cwd, home = config_dirs
+    (home / ".harlequin.toml").write_text(
+        "[[keymaps.arrows]]\n"
+        'keys = "ctrl+j"\n'
+        'action = "cursor_down"\n'
+        "[[keymaps.arrows]]\n"
+        'keys = "ctrl+k"\n'
+        'action = "cursor_up"\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == (
+        f"[[keymaps.arrows]] # from {home / '.harlequin.toml'}\n"
+        'keys = "ctrl+j"\n'
+        'action = "cursor_down"\n'
+        "\n"
+        "[[keymaps.arrows]]\n"
+        'keys = "ctrl+k"\n'
+        'action = "cursor_up"\n'
+    )

@@ -12,6 +12,14 @@ adapter-agnostic surface plus the *names* of what is installed. `hsql --help -a
 postgres` imports postgres alone. That keeps the first thing a caller reads
 small and stable, and keeps it true for every adapter rather than for whichever
 one is the default.
+
+A **mode** is the third shape. `--config show` and `--config list-profiles`
+report on the config files rather than running SQL, so the first pass skips the
+profile and names no adapter, and the command carries no connection options at
+all. Modes are options rather than subcommands because `CONN_STR` is positional:
+`hsql catalog` and a DuckDB file named `catalog` would have needed a rule, and
+`--catalog` needs none. Each lives in `harlequin.hsql.modes`, imported by the
+callback when it is chosen.
 """
 
 from __future__ import annotations
@@ -43,6 +51,7 @@ from harlequin.exception import (
 )
 from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
+from harlequin.hsql.modes import CONFIG_MODES
 from harlequin.plugins import adapter_names, load_adapter
 
 if TYPE_CHECKING:
@@ -190,6 +199,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         help="Read this config file instead of the ones hsql discovers.",
     )
     @click.option(
+        "--config",
+        "config_mode",
+        metavar="MODE",
+        type=click.Choice(CONFIG_MODES, case_sensitive=False),
+        help=(
+            "Report on the config files hsql found, and exit without running "
+            f"SQL. One of: {', '.join(CONFIG_MODES)}."
+        ),
+    )
+    @click.option(
         "--limit",
         default=DEFAULT_LIMIT,
         show_default=True,
@@ -234,16 +253,19 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     def inner_cli(
         ctx: click.Context,
         profile: str | None,  # noqa: ARG001 -- read in _preflight; see below
-        config_path: Path | None,  # noqa: ARG001
+        config_path: Path | None,
+        config_mode: str | None,
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
 
         CONN_STR: one or more connection strings, or paths to local db files.
         """
-        # `profile` and `config_path` are named rather than left in `kwargs` so
-        # that they stay out of the merge, and so out of the options handed to
-        # the adapter. `_preflight` has already read them off the same argv.
+        # `profile`, `config_path` and `config_mode` are named rather than left
+        # in `kwargs` so that they stay out of the merge, and so out of the
+        # options handed to the adapter. `_preflight` has already read all three
+        # off the same argv -- a mode is what decides there is no adapter to
+        # attach options for.
         # the profile was already read, and the adapter already loaded, to
         # decide which connection options this command carries. Whatever went
         # wrong doing that is reported here, where there is an exit code.
@@ -293,6 +315,30 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(ExitCode.USAGE)
 
         sources: list[tuple[str, tuple[str, ...]]] = ctx.meta.get(SOURCES, [])
+
+        if config_mode is not None:
+            _report_config(
+                ctx,
+                config_mode,
+                config_path=config_path,
+                sources=sources,
+                destination=destination,
+                format_name=format_name,
+                # a shorthand flag and a profile's `format` key are choices
+                # too, and the note exists to explain a format that had no
+                # effect however it was asked for
+                format_chosen=format_name != DEFAULT_FORMAT
+                or "format" in explicitly_set,
+                display_rows=raw_display_rows,
+                tuples_only=tuples_only,
+                no_align=no_align,
+                no_header=no_header,
+                no_footer=no_footer,
+                null_string=null_string,
+                color=_use_color(color_when, destination),
+            )
+            ctx.exit(ExitCode.OK)
+
         if not sources:
             diagnostics.error(
                 "no SQL to run. Pass -c/--command or -f/--file, "
@@ -416,6 +462,59 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             setup_error = e
         _attach_adapter_options(cmd, adapter_cls)
     return cmd
+
+
+def _report_config(
+    ctx: click.Context,
+    mode: str,
+    *,
+    config_path: Path | None,
+    sources: Sequence[tuple[str, tuple[str, ...]]],
+    destination: Path | None,
+    format_name: str,
+    format_chosen: bool,
+    display_rows: Any,
+    **output_options: Any,
+) -> None:
+    """Answer a `--config MODE` and return, or exit having said why not.
+
+    A mode does not run SQL, so `-c` or `-f` beside one is two invocations
+    spelled as one, and refusing is the safer half of the choice: answering the
+    config question and dropping the query would leave a script believing it had
+    run one.
+    """
+    if sources:
+        diagnostics.error(
+            f"--config {mode} does not run SQL; drop -c/--command and -f/--file, "
+            "or drop --config."
+        )
+        ctx.exit(ExitCode.USAGE)
+
+    # here rather than at module scope: this is the one invocation in ten
+    # thousand that wants it, and every other one would pay the import
+    from harlequin.hsql.modes import config as config_mode
+
+    try:
+        display_limit = _display_limit(display_rows, format_name)
+        layout_options, file_options = _output_options(
+            format_name=format_name, display_limit=display_limit, **output_options
+        )
+        with _sink(destination) as out:
+            config_mode.report(
+                mode,
+                out,
+                config_path=config_path,
+                format_name=format_name,
+                format_chosen=format_chosen,
+                layout_options=layout_options,
+                file_options=file_options,
+            )
+            out.flush()
+    except (HarlequinConfigError, OSError) as e:
+        # a config file this could not read, or a `-o PATH` it could not write.
+        # Both are the caller's to fix, and both are usage errors.
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
 
 
 def bare_command() -> click.Command:
@@ -580,6 +679,9 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
                 type=click.Path(path_type=Path),
                 envvar="HARLEQUIN_CONFIG_PATH",
             ),
+            # a mode, so that this pass can decline to read a profile for a
+            # command that is not going to connect with one
+            click.Option(["--config"]),
             # click's own --help and --version are eager and would exit; these
             # are the same spellings as plain flags, so the probe can see that
             # one was asked for.
@@ -599,6 +701,14 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
     )
     with contextlib.suppress(click.ClickException, ValueError):
         probe.parse_args(ctx, list(argv))
+
+    if ctx.params.get("config") is not None:
+        # A `--config` mode reports on config files rather than reading one to
+        # connect with, so there is no profile to read here and no adapter whose
+        # options belong on the command. It reads them all itself, and reports
+        # what it finds wrong with them under its own exit code, rather than
+        # having this pass hold an error about the first file it stumbled on.
+        return _Preflight(profile={}, adapter=None)
 
     profile: Profile = {}
     error: HarlequinConfigError | None = None

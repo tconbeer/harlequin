@@ -164,6 +164,20 @@ def report_row_cap_ignored(format_name: str) -> None:
     )
 
 
+def report_document_format_ignored(mode: str, format_name: str) -> None:
+    """Say that `--format` does not reach a mode that writes a document.
+
+    `--config show` is TOML or JSON, not a result set, so the formats that
+    arrange rows have nothing to arrange. Silence would read as a format that
+    was applied, which is the same way `--display-rows` could mislead, and it
+    gets the same kind of line.
+    """
+    note(
+        f"{mode} writes a document, so --format {format_name} had no effect; "
+        "--format json is the machine-readable one"
+    )
+
+
 def report_stats(
     *,
     status: str,
