@@ -116,6 +116,14 @@ async def test_view_cell_modal(
         await pilot.pause()
         assert not isinstance(app.screen, CellViewModal)
 
+        # a click outside the modal also closes it, like the help/error modals
+        await pilot.press("space")
+        await pilot.pause()
+        assert isinstance(app.screen, CellViewModal)
+        await pilot.click()
+        await pilot.pause()
+        assert not isinstance(app.screen, CellViewModal)
+
 
 @pytest.mark.asyncio
 async def test_data_truncated_with_tooltip(

@@ -6,14 +6,17 @@ import pyperclip
 from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
+
+from harlequin.components.help_screen import VerticalSuppressClicks
 
 
 class CellViewModal(ModalScreen[None]):
     """Shows a single result cell's whole value in a scrollable pane, so long
-    strings and JSON that get clipped in the grid can be read in full."""
+    strings and JSON that get clipped in the grid can be read in full. Styled to
+    match the help and error modals: primary outer border, faded inner border."""
 
     BINDINGS = [
         Binding("escape,enter,q", "close", "Close"),
@@ -33,20 +36,24 @@ class CellViewModal(ModalScreen[None]):
         self.column_label = column_label
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="cell_view_outer"):
-            with VerticalScroll(id="cell_view_scroll"):
-                yield Static(escape(self.value_str), id="cell_view_value")
+        with VerticalSuppressClicks(id="modal_outer"):
+            with VerticalScroll(id="modal_inner"):
+                yield Static(escape(self.value_str), id="modal_info")
             yield Static(
                 "Arrows / PgUp / PgDn scroll. c copies. esc closes.",
-                id="cell_view_footer",
+                id="modal_footer",
             )
 
     def on_mount(self) -> None:
-        outer = self.query_one("#cell_view_outer")
+        outer = self.query_one("#modal_outer")
         outer.border_title = self.column_label or "Cell Contents"
-        scroll = self.query_one("#cell_view_scroll", VerticalScroll)
+        scroll = self.query_one("#modal_inner", VerticalScroll)
         scroll.can_focus = True
         scroll.focus()
+
+    def on_click(self) -> None:
+        # a click outside the modal closes it, matching the help and error modals
+        self.dismiss()
 
     def action_close(self) -> None:
         self.dismiss()
