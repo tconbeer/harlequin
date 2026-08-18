@@ -1,3 +1,4 @@
+from harlequin.components.cell_view_modal import CellViewModal
 from harlequin.components.code_editor import CodeEditor, EditorCollection
 from harlequin.components.data_catalog import DataCatalog, HarlequinTree
 from harlequin.components.debug_info import DebugInfoScreen
@@ -9,6 +10,7 @@ from harlequin.components.results_viewer import ResultsTable, ResultsViewer
 from harlequin.components.run_query_bar import RunQueryBar
 
 __all__ = [
+    "CellViewModal",
     "CodeEditor",
     "EditorCollection",
     "ErrorModal",

@@ -10,6 +10,7 @@ from textual_fastdatatable import DataTable
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.components.cell_view_modal import CellViewModal
 from harlequin.components.results_viewer import ResultsViewer
 
 
@@ -82,6 +83,38 @@ async def test_copy_data(
         assert app.editor.text == expected
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "paste values from table")
+
+
+@pytest.mark.asyncio
+async def test_view_cell_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    long_value = "the quick brown fox " * 40
+    query = f"select '{long_value}' as story"
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await wait_for_workers(app)
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert app.results_viewer._has_focus_within
+        await pilot.press("space")
+        await pilot.pause()
+
+        assert isinstance(app.screen, CellViewModal)
+        assert app.screen.value_str == long_value
+        assert app.screen.column_label == "story"
+
+        # esc pops the modal back off
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, CellViewModal)
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,11 @@ class ErrorModal(ModalScreen):
         container = self.query_one("#error_outer")
         container.border_title = self.title
 
-    def on_key(self) -> None:
+    def on_key(self, event: events.Key) -> None:
+        # consume the key so dismissing the modal can't also actuate a binding
+        # on the widget underneath (e.g. a results-table shortcut).
+        event.stop()
+        event.prevent_default()
         self.app.pop_screen()
 
     def on_click(self, message: events.Click) -> None:

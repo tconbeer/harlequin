@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   - `list-profiles` lists every profile you can pass to `-P`, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
   - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
   - `validate` reports every problem in every discovered config file — the file, the key, what is wrong, and the line where the TOML parser knew one — instead of stopping at the first, as a run does. It checks each profile against the options its adapter declares, so a misspelled `reed_only` is reported rather than dropped in silence, and it checks your keymaps too. It exits `2` when it found anything, so `hsql --config validate --format none` is the whole check for a script. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+- The Results Viewer can open the value under the cursor in a scrollable modal, so a long string or a blob of JSON that gets clipped in the grid can be read in full (press `space`, or copy it out with `c`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
 
 ### Breaking Changes
 

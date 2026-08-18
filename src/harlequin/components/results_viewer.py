@@ -13,6 +13,7 @@ from textual.widgets import (
 )
 from textual_fastdatatable import DataTable
 
+from harlequin.components.cell_view_modal import CellViewModal
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
@@ -96,6 +97,20 @@ class ResultsTable(DataTable, inherit_bindings=False):
             null_rep=null_rep,
             render_markup=render_markup,
         )
+
+    def action_view_cell(self) -> None:
+        """Open a modal showing the full value of the cell under the cursor."""
+        if self.backend is None or self.row_count == 0:
+            return
+        coord = self.cursor_coordinate
+        if not self.is_valid_coordinate(coord):
+            return
+        value = self.get_cell_at(coord)
+        try:
+            column_label = self.plain_column_labels[coord.column]
+        except IndexError:
+            column_label = ""
+        self.app.push_screen(CellViewModal(value=value, column_label=column_label))
 
 
 class ResultsViewer(TabbedContent, can_focus=True):
