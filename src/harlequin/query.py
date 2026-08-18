@@ -155,6 +155,13 @@ class ResultSet:
         data = self.arrow_table()
         if data.num_columns == 0:
             return data
+        if all(_is_text(column.type) for column in data.columns):
+            # Already text, and casting it would be a database driver imported
+            # to turn a string into itself. This is the path a listing takes --
+            # `hsql --config list-profiles` and, later, `--catalog` -- where the
+            # rows never came from a database and duckdb has no other reason to
+            # be here. It is a small win for an all-VARCHAR `select`, too.
+            return data
         try:
             return _cast_to_text(data)
         except Exception as e:  # noqa: BLE001
@@ -170,6 +177,17 @@ class ResultSet:
                 stacklevel=2,
             )
             return _cast_to_text_with_str(data)
+
+
+def _is_text(data_type: pa.DataType) -> bool:
+    """Whether a column is already the strings a text layout wants.
+
+    Strings only: an all-null column is `None` before the cast and after it,
+    but duckdb still gives it a type, and `text_columns()` promises every
+    column it returns is one. `rows_to_result()` builds its columns as strings
+    for exactly this reason, so a listing never arrives here untyped.
+    """
+    return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
 
 
 def _cast_to_text(data: pa.Table) -> pa.Table:
@@ -291,4 +309,40 @@ def fetch(
         truncated=truncated,
         fetched_row_count=backend.source_row_count - (1 if truncated else 0),
         elapsed=elapsed,
+    )
+
+
+def rows_to_result(
+    columns: Sequence[str], rows: Sequence[Sequence[str | None]]
+) -> ResultSet:
+    """Rows that never came from a database, as a result set.
+
+    hsql's modes produce rows too -- the profiles `--config list-profiles`
+    found, and later a level of the catalog -- and a row is a row. Building the
+    same `ResultSet` the query path builds means they inherit every `--format`,
+    the psql switches, `-o PATH` and the byte-for-byte determinism the snapshots
+    pin, instead of a second renderer that would sooner or later disagree with
+    the first about how to spell a null.
+
+    Every value is text already, which is what keeps `text_columns()` from
+    casting a listing through duckdb.
+    """
+    # typed rather than inferred: a column of nothing but nulls would be an
+    # Arrow null column, and `text_columns()` would send the whole listing
+    # through duckdb to give it the type it could have been built with.
+    values = list(zip(*rows, strict=True)) if rows else [()] * len(columns)
+    table = pa.table(
+        [pa.array(column, type=pa.string()) for column in values],
+        names=list(columns),
+    )
+    return ResultSet(
+        statement=Statement(sql="", index=0),
+        # `s` is the short type label an adapter gives a string column, and the
+        # only thing this data is. It reaches `--stats`, and nothing else.
+        columns=[(name, "s") for name in columns],
+        backend=create_backend(table),
+        # a listing is whole: there is no database that held more of it.
+        truncated=False,
+        fetched_row_count=len(rows),
+        elapsed=0.0,
     )

@@ -8,7 +8,14 @@ import pytest
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.exception import HarlequinQueryError
-from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
+from harlequin.query import (
+    ExecutedStatement,
+    ResultSet,
+    RowLimit,
+    execute,
+    fetch,
+    rows_to_result,
+)
 from harlequin.statements import Statement, split
 
 
@@ -330,6 +337,21 @@ class TestTextColumns:
         assert text.column_names == ["a"]
         assert text.num_rows == 0
 
+    def test_data_that_is_already_text_is_not_cast(
+        self, connection: HarlequinConnection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The cast is duckdb, and a string is already what it would return.
+
+        Asserted by making the cast fail rather than by timing it: this is what
+        keeps `hsql --config list-profiles` -- rows that never came from a
+        database -- from importing a database driver to render them.
+        """
+        cast: list[pa.Table] = []
+        monkeypatch.setattr("harlequin.query._cast_to_text", cast.append)
+        (executed,) = execute(connection, statements("select 'a' as a, 'b' as b"))
+        assert fetch(executed).text_columns().to_pylist() == [{"a": "a", "b": "b"}]
+        assert not cast
+
     def test_a_type_duckdb_cannot_ingest_falls_back_loudly(self) -> None:
         """Not an expected path -- duckdb ingests every Arrow type these
         adapters have been seen to produce -- but a silent fallback would mean
@@ -431,3 +453,35 @@ def test_every_shape_a_cursor_may_return_is_normalized(returned: Any) -> None:
     assert [
         next(iter(row.values())) for row in result.backend.source_data.to_pylist()
     ] == [1, 2, 3]
+
+
+class TestRowsToResult:
+    """Rows a mode produced, in the shape the writers already take."""
+
+    def test_they_render_as_any_other_result_set(self) -> None:
+        result = rows_to_result(
+            ["name", "adapter"], [("prod", "duckdb"), ("dev", None)]
+        )
+        assert result.columns == [("name", "s"), ("adapter", "s")]
+        assert result.row_count == 2
+        assert result.fetched_row_count == 2
+        # nothing held more of it, so nothing was cut short
+        assert result.truncated is False
+        assert result.text_columns().to_pylist() == [
+            {"name": "prod", "adapter": "duckdb"},
+            {"name": "dev", "adapter": None},
+        ]
+
+    def test_a_column_of_nulls_is_still_a_text_column(self) -> None:
+        """Inferred, it would be an Arrow null column, and rendering it would
+        cast the whole listing through duckdb to learn what it already is."""
+        result = rows_to_result(["name", "adapter"], [("prod", None)])
+        text = result.text_columns()
+        assert all(column.type == pa.string() for column in text.columns)
+        assert text.to_pylist() == [{"name": "prod", "adapter": None}]
+
+    def test_no_rows_is_still_a_header(self) -> None:
+        """The empty listing has to render as a listing with nothing in it."""
+        result = rows_to_result(["name", "adapter"], [])
+        assert [name for name, _ in result.columns] == ["name", "adapter"]
+        assert result.row_count == 0

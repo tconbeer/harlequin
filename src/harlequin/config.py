@@ -13,6 +13,8 @@ Who reads what:
 | `harlequin`, `--keys`  | `load_profile_and_keymaps()` | all: keymaps merge   |
 |                        |                              | across every file    |
 | the IDE's debug screen | `load_config()`              | all                  |
+| `hsql --config show`   | `load_config()`, with a      | all                  |
+|                        | `Provenance` to fill in      |                      |
 | `harlequin --config`   | `ConfigFile`, at the path    | one, and unvalidated |
 |                        | `get_highest_priority_...()` | (it is about to be   |
 |                        | returns                      | written back)        |
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass, field
 from difflib import get_close_matches
 from pathlib import Path
 from typing import (
@@ -102,6 +105,35 @@ Profile = Dict[str, Any]
 Deliberately open. Which keys belong to the adapter, and what they may hold, is
 `parse_profile_options()`'s question, and it takes the adapter to answer.
 """
+
+
+@dataclass
+class Provenance:
+    """Which config file each of a merged config's values came from.
+
+    Keyed the way the merge is keyed (`_merge()`): `default_profile` whole, and
+    one entry per profile and per keymap name. A profile is supplied whole by
+    the nearest file that defines it, so a key *inside* one has no provenance of
+    its own -- which is what makes this a short document rather than one line
+    per key.
+
+    Each list holds every file that defined that name, nearest first: the first
+    is the file whose definition won, and the rest are the ones it overrode.
+    Filled in by the merge for the caller that asks (`--config show`), so that
+    the callers that do not ask -- every start-up -- pay nothing for it.
+    """
+
+    files: list[Path] = field(default_factory=list)
+    """Every config file that defined something, nearest first.
+
+    Not every file that was opened: a `pyproject.toml` with no section of ours
+    is in the working directory of every Python project, and naming it would
+    send a reader to a file with nothing of theirs in it.
+    """
+
+    default_profile: list[Path] = field(default_factory=list)
+    profiles: dict[str, list[Path]] = field(default_factory=dict)
+    keymaps: dict[str, list[Path]] = field(default_factory=dict)
 
 
 class Config(msgspec.Struct, forbid_unknown_fields=True):
@@ -229,11 +261,18 @@ class ConfigFile:
         TOMLFile(self.path).write(self._editable())
 
 
-def load_config(config_path: Path | None) -> Config:
-    """Every discovered config file, merged nearest first."""
+def load_config(
+    config_path: Path | None, provenance: Provenance | None = None
+) -> Config:
+    """Every discovered config file, merged nearest first.
+
+    Pass a `Provenance` to learn which file each merged value came from: the
+    merge fills it in as it goes, so the one caller that wants it (`hsql
+    --config show`) gets it for free and every other caller pays nothing.
+    """
     config = Config()
-    for from_file in _read_config_files(config_path):
-        _merge(from_file, into=config)
+    for path, from_file in _read_config_files(config_path):
+        _merge(from_file, into=config, source=path, provenance=provenance)
     return config
 
 
@@ -243,8 +282,8 @@ def load_profile(config_path: Path | None, profile_name: str | None) -> Profile:
         return {}  # Harlequin's own defaults, which no config file can change
 
     config = Config()
-    for from_file in _read_config_files(config_path):
-        _merge(from_file, into=config)
+    for path, from_file in _read_config_files(config_path):
+        _merge(from_file, into=config, source=path)
         name = profile_name or config.default_profile
         if name is not None and name in config.profiles:
             return config.profiles[name]  # the files behind this one go unread
@@ -415,16 +454,20 @@ def _search_directories() -> Iterator[tuple[Path, tuple[str, ...]]]:
     yield Path.home(), ("harlequin.toml", ".harlequin.toml", "pyproject.toml")
 
 
-def _read_config_files(config_path: Path | None) -> Iterator[Config]:
+def _read_config_files(config_path: Path | None) -> Iterator[tuple[Path, Config]]:
     """Each discovered config file, nearest first, validated as it is read.
 
+    Paired with the path it was read from, because that is what every message
+    about it -- and `--config show`'s provenance -- has to name.
+
     A generator, so a caller that has what it needs stops here: a file it never
-    reaches is never opened, parsed or validated.
+    reaches is never opened, parsed or validated. A file with no section of ours
+    in it is not yielded at all: it was read, but it defines nothing.
     """
     for path in _discover_config_files(config_path):
         raw = ConfigFile(path).relevant_config
         if raw:
-            yield _parse_config(raw, path=path)
+            yield path, _parse_config(raw, path=path)
 
 
 def _parse_config(raw: Mapping[str, Any], *, path: Path) -> Config:
@@ -444,8 +487,28 @@ def _parse_config(raw: Mapping[str, Any], *, path: Path) -> Config:
     return config
 
 
-def _merge(from_file: Config, *, into: Config) -> None:
-    """Add what a lower-priority file defines and a higher-priority one did not."""
+def _merge(
+    from_file: Config,
+    *,
+    into: Config,
+    source: Path,
+    provenance: Provenance | None = None,
+) -> None:
+    """Add what a lower-priority file defines and a higher-priority one did not.
+
+    One rule, in one place, and `provenance` records the same names it merges:
+    a second pass over the same files to work out where a value came from could
+    disagree with the merge that produced it.
+    """
+    if provenance is not None:
+        provenance.files.append(source)
+        if from_file.default_profile is not None:
+            provenance.default_profile.append(source)
+        for name in from_file.profiles:
+            provenance.profiles.setdefault(name, []).append(source)
+        for name in from_file.keymaps:
+            provenance.keymaps.setdefault(name, []).append(source)
+
     if into.default_profile is None:
         into.default_profile = from_file.default_profile
     for profile_name, profile in from_file.profiles.items():

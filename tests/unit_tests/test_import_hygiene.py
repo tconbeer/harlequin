@@ -149,6 +149,47 @@ def test_non_ascii_output_still_measures_correctly(
     assert "------+----" in proc.stdout
 
 
+@pytest.mark.parametrize(
+    "mode,forbidden",
+    [
+        # a document, so it needs neither the row machinery nor a database.
+        # It does write TOML, so tomlkit is not on its list
+        ("show", ("duckdb", "pyarrow")),
+        # rows, so it pays for pyarrow -- and for no database driver, because
+        # `ResultSet.text_columns()` returns strings unchanged, and no tomlkit,
+        # because a listing is not a TOML document
+        ("list-profiles", ("duckdb", "tomlkit")),
+    ],
+)
+def test_the_config_modes_import_no_database(
+    mode: str,
+    forbidden: tuple[str, ...],
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """A mode that reports on config files must work when the database does not.
+
+    So it imports no adapter, and nothing an adapter would have brought with
+    it. `--format csv|json|parquet` is the exception a caller asks for by name:
+    those are written by `harlequin.export`, which serializes through duckdb or
+    pyarrow whatever produced the rows.
+    """
+    proc = run_python(
+        "import sys\n"
+        f"sys.argv = ['hsql', '--config', {mode!r}]\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        f"print(','.join(m for m in {forbidden!r} if m in sys.modules), "
+        "file=sys.stderr)\n"
+        "print(','.join(m for m in sys.modules if m.startswith('harlequin_')), "
+        "file=sys.stderr)\n"
+    )
+    leaked = [m for m in proc.stderr.strip().replace("\n", ",").split(",") if m]
+    assert not leaked, f"`hsql --config {mode}` imported {leaked}"
+
+
 def test_public_names_still_resolve() -> None:
     """Every name `harlequin/__init__.py` exported before it went lazy.
 

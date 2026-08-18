@@ -9,6 +9,7 @@ from harlequin.config import (
     Config,
     ConfigFile,
     Profile,
+    Provenance,
     _discover_config_files,
     _search_directories,
     get_highest_priority_existing_config_file,
@@ -695,3 +696,101 @@ class TestParsingAgainstAnAdapter:
                 adapter_options=None,
                 command_options=self.COMMAND_OPTIONS,
             )
+
+
+class TestProvenance:
+    """Which file each merged value came from, recorded by the merge itself.
+
+    A second pass over the same files to work out where a value came from
+    could disagree with the merge that produced it, and the disagreement would
+    show up as `--config show` naming the wrong file -- which is worse than not
+    reporting one, because a reader would edit it.
+    """
+
+    def test_it_names_the_winning_file_and_the_ones_it_beat(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "personal"\n'
+            "[profiles.personal]\n"
+            'adapter = "duckdb"\n'
+            "[profiles.shared]\n"
+            'adapter = "sqlite"\n'
+            "[[keymaps.arrows]]\n"
+            'keys = "ctrl+j"\n'
+            'action = "cursor_down"\n'
+        )
+        (cwd / ".harlequin.toml").write_text(
+            'default_profile = "project"\n[profiles.shared]\nadapter = "duckdb"\n'
+        )
+
+        provenance = Provenance()
+        config = load_config(config_path=None, provenance=provenance)
+
+        assert provenance.files == [cwd / ".harlequin.toml", home / ".harlequin.toml"]
+        # nearest first, so the first entry is the definition that won
+        assert provenance.default_profile == [
+            cwd / ".harlequin.toml",
+            home / ".harlequin.toml",
+        ]
+        assert config.default_profile == "project"
+        assert provenance.profiles["shared"] == [
+            cwd / ".harlequin.toml",
+            home / ".harlequin.toml",
+        ]
+        assert provenance.profiles["personal"] == [home / ".harlequin.toml"]
+        assert provenance.keymaps["arrows"] == [home / ".harlequin.toml"]
+
+    def test_it_records_only_files_that_define_something(
+        self, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A `pyproject.toml` with no section of ours was read and says nothing.
+
+        Every Python project has one in the working directory, so a report that
+        listed it would list it for almost everybody, and the file a reader
+        went looking in would have nothing in it.
+        """
+        cwd, home = config_dirs
+        monkeypatch.setattr(
+            "harlequin.config._search_directories",
+            lambda: [(cwd, ("pyproject.toml", ".harlequin.toml")), (home, ())],
+        )
+        (cwd / "pyproject.toml").write_text('[project]\nname = "not-ours"\n')
+        (cwd / ".harlequin.toml").write_text('[profiles.one]\nadapter = "sqlite"\n')
+
+        provenance = Provenance()
+        load_config(config_path=None, provenance=provenance)
+
+        assert provenance.files == [cwd / ".harlequin.toml"]
+
+    def test_the_winning_file_is_the_one_the_merge_took_the_value_from(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The property that makes this worth reporting at all."""
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            "[profiles.shared]\nlimit = 1\n[profiles.only-home]\nlimit = 2\n"
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.shared]\nlimit = 3\n")
+
+        provenance = Provenance()
+        config = load_config(config_path=None, provenance=provenance)
+
+        for name, profile in config.profiles.items():
+            winner = provenance.profiles[name][0]
+            assert profile == load_config(config_path=winner).profiles[name]
+
+    def test_nothing_that_does_not_ask_for_it_pays_for_it(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The merge is the same merge with the recorder left out."""
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "a"\n[profiles.a]\nlimit = 1\n[profiles.b]\nlimit = 2\n'
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.b]\nlimit = 3\n")
+
+        assert load_config(config_path=None) == load_config(
+            config_path=None, provenance=Provenance()
+        )
