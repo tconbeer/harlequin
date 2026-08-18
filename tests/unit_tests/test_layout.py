@@ -112,6 +112,20 @@ class TestMarkdownLayout:
         assert "one<br>two" in rendered
         assert len(rendered.splitlines()) == 3
 
+    def test_a_null_string_cannot_escape_its_column(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """The null string is printed like any other value, so a `|` or a
+        newline in it breaks the table the same way."""
+        result = result_set("select null as x, 1 as y")
+        rendered = render(
+            result,
+            "markdown",
+            LayoutOptions(footer=False, null_string="a|b\nc"),
+        )
+        assert "a\\|b<br>c" in rendered
+        assert len(rendered.splitlines()) == 3
+
     def test_columns_are_at_least_three_wide(
         self, result_set: ResultSetFactory
     ) -> None:
