@@ -317,27 +317,28 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         sources: list[tuple[str, tuple[str, ...]]] = ctx.meta.get(SOURCES, [])
 
         if config_mode is not None:
-            _report_config(
-                ctx,
-                config_mode,
-                config_path=config_path,
-                sources=sources,
-                destination=destination,
-                format_name=format_name,
-                # a shorthand flag and a profile's `format` key are choices
-                # too, and the note exists to explain a format that had no
-                # effect however it was asked for
-                format_chosen=format_name != DEFAULT_FORMAT
-                or "format" in explicitly_set,
-                display_rows=raw_display_rows,
-                tuples_only=tuples_only,
-                no_align=no_align,
-                no_header=no_header,
-                no_footer=no_footer,
-                null_string=null_string,
-                color=_use_color(color_when, destination),
+            ctx.exit(
+                _report_config(
+                    ctx,
+                    config_mode,
+                    config_path=config_path,
+                    sources=sources,
+                    destination=destination,
+                    format_name=format_name,
+                    # a shorthand flag and a profile's `format` key are choices
+                    # too, and the note exists to explain a format that had no
+                    # effect however it was asked for
+                    format_chosen=format_name != DEFAULT_FORMAT
+                    or "format" in explicitly_set,
+                    display_rows=raw_display_rows,
+                    tuples_only=tuples_only,
+                    no_align=no_align,
+                    no_header=no_header,
+                    no_footer=no_footer,
+                    null_string=null_string,
+                    color=_use_color(color_when, destination),
+                )
             )
-            ctx.exit(ExitCode.OK)
 
         if not sources:
             diagnostics.error(
@@ -475,13 +476,16 @@ def _report_config(
     format_chosen: bool,
     display_rows: Any,
     **output_options: Any,
-) -> None:
-    """Answer a `--config MODE` and return, or exit having said why not.
+) -> ExitCode:
+    """Answer a `--config MODE` and return its code, or exit having said why not.
 
     A mode does not run SQL, so `-c` or `-f` beside one is two invocations
     spelled as one, and refusing is the safer half of the choice: answering the
     config question and dropping the query would leave a script believing it had
     run one.
+
+    The code is the mode's own: `--config validate` exits 2 for a config it
+    found something wrong with, and the modes that only report exit 0.
     """
     if sources:
         diagnostics.error(
@@ -500,7 +504,7 @@ def _report_config(
             format_name=format_name, display_limit=display_limit, **output_options
         )
         with _sink(destination) as out:
-            config_mode.report(
+            code = config_mode.report(
                 mode,
                 out,
                 config_path=config_path,
@@ -515,6 +519,7 @@ def _report_config(
         # Both are the caller's to fix, and both are usage errors.
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
+    return code
 
 
 def bare_command() -> click.Command:

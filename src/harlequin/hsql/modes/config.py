@@ -1,16 +1,20 @@
-"""`--config MODE`: what the config files say, and which file said it.
+"""`--config MODE`: what the config files say, which file said it, and what is wrong.
 
-Two questions, and they are the two a caller actually has. `list-profiles`
+Three questions, and they are the three a caller actually has. `list-profiles`
 answers *what can I pass to `-P`* -- a short list of names, so a profile that a
 nearer file quietly displaced is visible as a name that is missing. `show`
 answers *which file is winning* -- the merged document, with the file each
 value came from written beside it, and the files it overrode written after
-that.
+that. `validate` answers *what is wrong with any of it* -- every problem in
+every file, one to a row, where a run would have stopped at the first.
 
-Neither connects, and neither imports an adapter: a mode that reports on config
-files must work when the database does not. `show` does not import the
-execution core either -- it writes a document, not rows -- which is why the two
-imports `list-profiles` needs are deferred into it.
+None of them connects. `show` and `list-profiles` import no adapter either: a
+mode that reports on config files must work when the database does not.
+`validate` is the exception, and it is the trade its job asks for -- checking a
+profile's options against the ones its adapter declares takes importing that
+adapter, one per adapter a profile names, and still no connection. `show` does
+not import the execution core either -- it writes a document, not rows -- which
+is why the two imports the row-shaped modes need are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
 the language they will edit the answer in, and JSON for a caller, under the same
@@ -20,10 +24,11 @@ the language they will edit the answer in, and JSON for a caller, under the same
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, BinaryIO, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
 
 from harlequin.config import Provenance, load_config
 from harlequin.hsql import diagnostics
+from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES
 
 if TYPE_CHECKING:
@@ -33,8 +38,9 @@ if TYPE_CHECKING:
 
     from harlequin.config import Config
     from harlequin.layout import LayoutOptions
+    from harlequin.options import AbstractOption
 
-SHOW, LIST_PROFILES = CONFIG_MODES
+SHOW, LIST_PROFILES, VALIDATE = CONFIG_MODES
 
 JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
@@ -51,13 +57,28 @@ def report(
     format_chosen: bool,
     layout_options: LayoutOptions,
     file_options: Mapping[str, Any],
-) -> None:
-    """Write one `--config` mode's answer to an open binary stream.
+) -> ExitCode:
+    """Write one `--config` mode's answer, and return the code it exits with.
+
+    A code rather than nothing, because one of these modes is a check: a script
+    that runs `hsql --config validate` wants the answer without reading it, and
+    an exit code is how it gets one. The other two exit 0 whatever they found --
+    reporting a config is not judging it.
 
     Raises: HarlequinConfigError if a discovered config file cannot be read.
-    Every mode here reads every file, so a broken one is reported rather than
-    skipped -- `--config validate` is the mode that reports all of them at once.
+    `show` and `list-profiles` read every file, so a broken one is fatal to
+    them; `validate` is the mode that reports it as one problem among however
+    many the rest of the files hold.
     """
+    if mode == VALIDATE:
+        return _write_problems(
+            config_path,
+            out,
+            format_name=format_name,
+            layout_options=layout_options,
+            file_options=file_options,
+        )
+
     provenance = Provenance()
     config = load_config(config_path, provenance=provenance)
 
@@ -78,6 +99,7 @@ def report(
             layout_options=layout_options,
             file_options=file_options,
         )
+    return ExitCode.OK
 
 
 def _write_document(
@@ -145,6 +167,101 @@ def _write_profiles(
         out,
         layout_options=layout_options,
         file_options=file_options,
+    )
+
+
+def _write_problems(
+    config_path: Path | None,
+    out: BinaryIO,
+    *,
+    format_name: str,
+    layout_options: LayoutOptions,
+    file_options: Mapping[str, Any],
+) -> ExitCode:
+    """Every problem in every config file, as rows, and a code that says so.
+
+    Rows because a problem is four facts -- the file, the key it is written
+    under, what is wrong, and the line where the parser knew one -- and four
+    facts in a shape is what `-tA` and `--json` are already for. Ordered by
+    file, nearest first, because a report about files is one a reader walks
+    through alongside them.
+
+    Exit 2 when there is anything to report, which is the code a config problem
+    already has. That is what makes this mode usable without reading it:
+    `hsql --config validate --format none` is the whole check.
+    """
+    # deferred, each for its own reason: the row machinery is pyarrow, which
+    # `--config show` must not pay for, and `validate_config_files` reaches for
+    # an adapter per profile, which nothing else in this module does.
+    from harlequin.config import validate_config_files
+    from harlequin.hsql import output
+    from harlequin.query import rows_to_result
+
+    provenance = Provenance()
+    problems = validate_config_files(
+        config_path,
+        adapter_options=_adapter_options(),
+        command_options=_command_options(),
+        provenance=provenance,
+    )
+    if not problems and not provenance.files:
+        # a clean report and no config files read the same on stdout, and they
+        # are not the same answer. The one that found nothing to check says so.
+        diagnostics.note("No config file defines anything hsql reads.")
+
+    rows = [
+        (
+            str(problem.path),
+            problem.key,
+            problem.message,
+            None if problem.line is None else str(problem.line),
+        )
+        for problem in problems
+    ]
+    output.write(
+        rows_to_result(["file", "key", "problem", "line"], rows),
+        format_name,
+        out,
+        layout_options=layout_options,
+        file_options=file_options,
+    )
+    return ExitCode.USAGE if problems else ExitCode.OK
+
+
+def _adapter_options() -> Callable[[str], Sequence[AbstractOption] | None]:
+    """A way to ask what one adapter declares, importing each of them once.
+
+    The cache is per invocation rather than per process: four profiles naming
+    duckdb is one import, and a second call in the same interpreter -- which is
+    every test, and no `hsql` -- gets to see whatever is installed then.
+    """
+    from harlequin.plugins import load_adapter
+
+    declared: dict[str, Sequence[AbstractOption] | None] = {}
+
+    def options(name: str) -> Sequence[AbstractOption] | None:
+        if name not in declared:
+            # raises for a name nothing installed provides, which the validator
+            # records against the profile that named it
+            declared[name] = load_adapter(name).ADAPTER_OPTIONS
+        return declared[name]
+
+    return options
+
+
+def _command_options() -> set[str]:
+    """Every profile key a command reads for itself, so neither is an adapter's.
+
+    hsql's own, from the command it builds when it is asked for nothing, plus
+    the IDE's -- one profile serves both, and a profile written for the IDE has
+    to validate here or `--config validate` would report the other command's
+    config as broken.
+    """
+    from harlequin.config import TUI_ONLY_KEYS
+    from harlequin.hsql.cli import bare_command
+
+    return {param.name for param in bare_command().params if param.name} | set(
+        TUI_ONLY_KEYS
     )
 
 

@@ -9,6 +9,7 @@ which is the only way to prove a deferral actually defers.
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import Callable
 
 import pytest
@@ -188,6 +189,42 @@ def test_the_config_modes_import_no_database(
     )
     leaked = [m for m in proc.stderr.strip().replace("\n", ",").split(",") if m]
     assert not leaked, f"`hsql --config {mode}` imported {leaked}"
+
+
+def test_config_validate_imports_only_the_adapters_its_profiles_name(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """The one mode here that pays for adapters, paying for as few as it can.
+
+    Checking a profile's options against the ones its adapter declares takes
+    importing that adapter -- and only that one. A mode that imported every
+    installed adapter to check a config naming one would cost a caller with
+    four of them four times what the answer is worth. It is rows rather than a
+    document, so it pays for pyarrow and not for tomlkit, like `list-profiles`.
+
+    `tmp_path` is the subprocess's cwd and its home, so this file is the whole
+    of the config it discovers.
+    """
+    (tmp_path / ".harlequin.toml").write_text(
+        '[profiles.lite]\nadapter = "sqlite"\nread_only = true\n'
+    )
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'validate']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('duckdb', 'tomlkit') if m in sys.modules), "
+        "file=sys.stderr)\n"
+    )
+    # two lines, and the second is empty when nothing forbidden was imported
+    adapters, forbidden = proc.stderr.split("\n")[:2]
+    assert adapters == "harlequin_sqlite"
+    assert not forbidden
 
 
 def test_public_names_still_resolve() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, Sequence
 
 import pytest
 
@@ -8,6 +9,7 @@ from harlequin.config import (
     TUI_ONLY_KEYS,
     Config,
     ConfigFile,
+    ConfigProblem,
     Profile,
     Provenance,
     _discover_config_files,
@@ -19,10 +21,17 @@ from harlequin.config import (
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    validate_config_files,
 )
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
-from harlequin.options import FlagOption, ListOption, SelectOption, TextOption
+from harlequin.options import (
+    AbstractOption,
+    FlagOption,
+    ListOption,
+    SelectOption,
+    TextOption,
+)
 
 
 @pytest.mark.parametrize("filename", ["good_config.toml", "pyproject.toml"])
@@ -794,3 +803,154 @@ class TestProvenance:
         assert load_config(config_path=None) == load_config(
             config_path=None, provenance=Provenance()
         )
+
+
+class TestValidatingEveryConfigFile:
+    """`validate_config_files()`: the reader a problem does not stop.
+
+    Every other reader here raises at the first thing it cannot use, because it
+    is on its way to a database. This one is not going anywhere, so it opens
+    every file and reports what each of them says.
+    """
+
+    OPTIONS: list[AbstractOption] = [
+        FlagOption(name="read_only", description="x"),
+        TextOption(name="port", description="x"),
+    ]
+    COMMAND_OPTIONS = {"adapter", "conn_str", "limit", *TUI_ONLY_KEYS}
+
+    def validate(
+        self,
+        adapter_options: Callable[[str], Sequence[AbstractOption] | None] | None = None,
+    ) -> list[ConfigProblem]:
+        return validate_config_files(
+            None,
+            adapter_options=adapter_options or (lambda _: self.OPTIONS),
+            command_options=self.COMMAND_OPTIONS,
+        )
+
+    def test_a_config_with_nothing_wrong_has_nothing_to_report(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "prod"\n[profiles.prod]\nread_only = true\nlimit = 10\n'
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.dev]\nport = 5432\n")
+
+        assert self.validate() == []
+
+    def test_a_file_it_cannot_parse_does_not_end_the_run(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The difference from every other reader, in one assertion.
+
+        `load_config()` raises at the first file here and never opens the second
+        one; this reports the file it could not parse *and* what is wrong with
+        the one behind it.
+        """
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text("this is not toml\n")
+        (home / ".harlequin.toml").write_text("[profiles.prod]\nreed_only = true\n")
+
+        with pytest.raises(HarlequinConfigError):
+            load_config(config_path=None)
+
+        assert [problem.path for problem in self.validate()] == [
+            cwd / ".harlequin.toml",
+            home / ".harlequin.toml",
+        ]
+
+    def test_the_parser_is_the_only_thing_that_knows_a_line(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """A line where tomllib gave one, and none where nothing did.
+
+        A number that was not read out of a parser is a number a reader goes to
+        and finds nothing at.
+        """
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text('[profiles.prod]\nport = "5432"\noops\n')
+        (home / ".harlequin.toml").write_text("[profiles.dev]\nreed_only = true\n")
+
+        unparseable, unknown_option = self.validate()
+        assert unparseable.line == 3
+        assert unparseable.key is None
+        assert unknown_option.line is None
+
+    def test_a_profile_is_checked_in_every_file_that_defines_it(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """What validating before merging buys, and why it is per file.
+
+        The nearer file supplies `shared` whole, so the home file's copy of it
+        is not what any invocation runs -- and it is still a table its author
+        will edit, so it is still worth being told about.
+        """
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text("[profiles.shared]\nreed_only = true\n")
+        (cwd / ".harlequin.toml").write_text("[profiles.shared]\nread_only = true\n")
+
+        (problem,) = self.validate()
+        assert problem.path == home / ".harlequin.toml"
+        assert problem.key == "profiles.shared.reed_only"
+
+    def test_every_unknown_option_in_a_profile_is_reported(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """A profile with three typos has three problems, not one, twice."""
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            "[profiles.prod]\nreed_only = true\nprt = 5432\nhost = 'localhost'\n"
+        )
+
+        assert [problem.key for problem in self.validate()] == [
+            "profiles.prod.host",
+            "profiles.prod.prt",
+            "profiles.prod.reed_only",
+        ]
+
+    def test_an_adapter_that_will_not_load_belongs_to_the_profile(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """A name nothing installed provides ends the profile, not the report."""
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            '[profiles.gone]\nadapter = "no-such-adapter"\n'
+            "[profiles.fine]\nread_only = true\n"
+        )
+
+        def options(name: str) -> Sequence[AbstractOption] | None:
+            if name == "no-such-adapter":
+                raise HarlequinConfigError("No installed plug-in provides one.")
+            return self.OPTIONS
+
+        (problem,) = self.validate(adapter_options=options)
+        assert problem.key == "profiles.gone.adapter"
+
+    def test_a_default_that_names_no_profile_belongs_to_the_merge(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """Reported against the file that set the key, which the merge knows.
+
+        No single file is wrong here -- naming a profile another file defines is
+        exactly what `default_profile` is for -- so it is the one check that
+        waits until every file has been read.
+        """
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text('default_profile = "gone"\n')
+        (cwd / ".harlequin.toml").write_text("[profiles.here]\nread_only = true\n")
+
+        (problem,) = self.validate()
+        assert problem.path == home / ".harlequin.toml"
+        assert problem.key == "default_profile"
+        assert "gone" in problem.message
+
+    def test_a_default_a_farther_file_defines_is_not_a_problem(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text('default_profile = "prod"\n')
+        (home / ".harlequin.toml").write_text("[profiles.prod]\nread_only = true\n")
+
+        assert self.validate() == []

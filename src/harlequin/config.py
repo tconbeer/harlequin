@@ -15,6 +15,8 @@ Who reads what:
 | the IDE's debug screen | `load_config()`              | all                  |
 | `hsql --config show`   | `load_config()`, with a      | all                  |
 |                        | `Provenance` to fill in      |                      |
+| `hsql --config`        | `validate_config_files()`    | all, and none of     |
+| `validate`             |                              | them fatally         |
 | `harlequin --config`   | `ConfigFile`, at the path    | one, and unvalidated |
 |                        | `get_highest_priority_...()` | (it is about to be   |
 |                        | returns                      | written back)        |
@@ -28,6 +30,10 @@ Config files are validated twice, and the halves know different things.
 other, so the error can name the file. `parse_profile_options()` runs once the
 adapter is known and checks the profile's remaining keys -- each of which is
 some adapter's option -- against the options that adapter declares.
+
+Both passes raise at the first problem, because every caller but one is on its
+way to a database. Hand them a `Problems` and they record it and carry on
+instead, which is the whole of `--config validate`.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Collection,
     Container,
     Dict,
@@ -136,6 +143,57 @@ class Provenance:
     keymaps: dict[str, list[Path]] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ConfigProblem:
+    """One thing wrong with one config file, as a row of a report.
+
+    `key` is the dotted path the problem is written under
+    (`profiles.prod.reed_only`), and None for a problem with the file rather
+    than with something in it. `line` is only ever a line the TOML parser
+    named: nothing reports a position for a key we merely dislike, and a
+    made-up number is worse than no number.
+    """
+
+    path: Path
+    key: str | None
+    message: str
+    line: int | None = None
+
+
+@dataclass
+class Problems:
+    """Where a reader puts a problem instead of raising it.
+
+    Passed the way `Provenance` is, and for the same reason: a reader given one
+    records what it finds and reads on, a reader given none raises at the first
+    thing it cannot use, and neither has a second copy of what it checks.
+    `--config validate` is the only caller that wants the first behavior.
+
+    `at()` binds the file and the key an entry belongs under, so that the
+    functions that find a problem do not have to know where they are.
+    """
+
+    items: list[ConfigProblem] = field(default_factory=list)
+    path: Path | None = None
+    key: str = ""
+
+    def at(self, path: Path, key: str = "") -> Problems:
+        """The same collector, for the problems in one file, under one key."""
+        return Problems(items=self.items, path=path, key=key)
+
+    def add(self, message: str, *, key: str = "", line: int | None = None) -> None:
+        """Record one problem, folded onto one line, because it will be a row."""
+        assert self.path is not None, "bind a collector to a file with at()"
+        self.items.append(
+            ConfigProblem(
+                path=self.path,
+                key=".".join(part for part in (self.key, key) if part) or None,
+                message=" ".join(message.split()),
+                line=line,
+            )
+        )
+
+
 class Config(msgspec.Struct, forbid_unknown_fields=True):
     """A config file's contents, and also several of them merged.
 
@@ -173,27 +231,37 @@ class ConfigFile:
     the file through it, and nothing imports tomlkit until something writes.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, problems: Problems | None = None) -> None:
         """
         Opens and reads the TOML file at path. Can be used to create
         a new file if one does not already exist.
 
-        Raises: HarlequinConfigError if we can't read the TOML file.
+        Raises: HarlequinConfigError if we can't read the TOML file, unless a
+        `Problems` is there to record it instead, in which case the file reads
+        as the empty config it is to every caller downstream.
         """
         self.path = path
         self.is_pyproject = path.stem == "pyproject"
         self._doc: TOMLDocument | None = None
+        self._data: dict[str, Any] = {}
         try:
             with open(path, "rb") as f:
-                self._data: dict[str, Any] = tomllib.load(f)
+                self._data = tomllib.load(f)
         except OSError:
-            self._data = {}
+            pass
         except tomllib.TOMLDecodeError as e:
-            raise HarlequinConfigError(
-                f"Attempted to load the config file at {path}, but encountered an "
-                f"error:\n\n{e}",
-                title="Harlequin could not load the config file.",
-            ) from e
+            if problems is None:
+                raise HarlequinConfigError(
+                    f"Attempted to load the config file at {path}, but encountered an "
+                    f"error:\n\n{e}",
+                    title="Harlequin could not load the config file.",
+                ) from e
+            # the parser is the only thing in the stack that knows a line
+            # number, and depending on its version it is either an attribute or
+            # only ever in the message
+            problems.at(path).add(
+                str(e), line=getattr(e, "lineno", None) or _line_in(str(e))
+            )
 
     @property
     def relevant_config(self) -> dict[str, Any]:
@@ -306,12 +374,69 @@ def load_profile_and_keymaps(
     return _select_profile(config, requested=profile_name), keymaps
 
 
+def validate_config_files(
+    config_path: Path | None,
+    *,
+    adapter_options: Callable[[str], Sequence[AbstractOption] | None],
+    command_options: Collection[str],
+    provenance: Provenance | None = None,
+) -> list[ConfigProblem]:
+    """Every discovered config file, and everything wrong with any of them.
+
+    The same two passes every start-up runs, with a `Problems` where a command
+    would have had an exception: `_read_config_files()` checks each file's
+    shape before the merge, and `parse_profile_options()` checks each of its
+    profiles against the options that profile's adapter declares. Neither stops
+    at the first problem, and both are the same code that raises for everyone
+    else -- a second copy of either would sooner or later disagree with it.
+
+    Per file rather than over the merge, which is what validating before
+    merging buys: a profile a nearer file displaced is not what any invocation
+    runs, and is still a table its author will edit.
+
+    `adapter_options` is the second pass's price: one adapter import per
+    adapter a profile names. It may raise `HarlequinConfigError` for a name
+    nothing installed provides, which is recorded against the profile that
+    named it.
+
+    Raises: HarlequinConfigError if `config_path` names a file that is not
+    there -- the one problem that is not in a config file.
+    """
+    problems = Problems()
+    provenance = provenance if provenance is not None else Provenance()
+    merged = Config()
+    for path, from_file in _read_config_files(config_path, problems=problems):
+        for name, profile in from_file.profiles.items():
+            _validate_profile(
+                profile,
+                adapter_options=adapter_options,
+                command_options=command_options,
+                problems=problems.at(path, f"profiles.{name}"),
+            )
+        for name, bindings in from_file.keymaps.items():
+            _validate_keymap(
+                name, bindings, problems=problems.at(path, f"keymaps.{name}")
+            )
+        _merge(from_file, into=merged, source=path, provenance=provenance)
+
+    if merged.default_profile is not None:
+        # the one problem no single file has, so the only one asked after the
+        # merge -- and the file that is wrong about it is the one that set it
+        _select_profile(
+            merged,
+            requested=None,
+            problems=problems.at(provenance.default_profile[0]),
+        )
+    return problems.items
+
+
 def parse_profile_options(
     profile: Profile,
     *,
     adapter: str,
     adapter_options: Sequence[AbstractOption] | None,
     command_options: Collection[str],
+    problems: Problems | None = None,
 ) -> Profile:
     """The profile, with its adapter's options parsed as that adapter declares them.
 
@@ -320,7 +445,9 @@ def parse_profile_options(
     tell, since an adapter's constructor takes supersets of what it declares
     and drops the rest in silence.
 
-    Raises: HarlequinConfigError, naming the option and the adapter.
+    Raises: HarlequinConfigError, naming the option and the adapter -- unless a
+    `Problems` is there to record every one of them instead, in which case the
+    profile comes back the way it went in.
     """
     declared = {sluggify_option_name(o.name): o for o in adapter_options or []}
     given = {
@@ -336,9 +463,16 @@ def parse_profile_options(
             given, _adapter_options_model(adapter, declared), strict=False
         )
     except msgspec.ValidationError as e:
-        raise _refuse_option(
+        found = _option_problems(
             e, adapter=adapter, declared=declared, given=given, allowed=command_options
-        ) from e
+        )
+        if problems is None:
+            # the first of them: this caller is on its way to a connection, and
+            # will not get to the second
+            raise HarlequinConfigError(found[0][1], title=CONFIG_ERROR_TITLE) from e
+        for key, message in found:
+            problems.add(message, key=key)
+        return profile
 
     return {**profile, **{key: getattr(parsed, key) for key in given}}
 
@@ -454,7 +588,62 @@ def _search_directories() -> Iterator[tuple[Path, tuple[str, ...]]]:
     yield Path.home(), ("harlequin.toml", ".harlequin.toml", "pyproject.toml")
 
 
-def _read_config_files(config_path: Path | None) -> Iterator[tuple[Path, Config]]:
+def _validate_profile(
+    profile: Profile,
+    *,
+    adapter_options: Callable[[str], Sequence[AbstractOption] | None],
+    command_options: Collection[str],
+    problems: Problems,
+) -> None:
+    """One profile through the second pass, under the adapter it would run.
+
+    Which is the one it names, or the default -- the pairing `hsql -P name`
+    runs, so a key reported here is a key that invocation would refuse.
+    """
+    adapter = profile.get("adapter") or DEFAULT_ADAPTER
+    if not isinstance(adapter, str):
+        problems.add(
+            f"Profile names an adapter that is not a name: {adapter!r}.", key="adapter"
+        )
+        return
+    try:
+        declared = adapter_options(adapter)
+    except HarlequinConfigError as e:
+        problems.add(e.msg, key="adapter")
+        return
+    parse_profile_options(
+        profile,
+        adapter=adapter,
+        adapter_options=declared,
+        command_options=command_options,
+        problems=problems,
+    )
+
+
+def _validate_keymap(
+    name: str, bindings: list[dict[str, Any]], *, problems: Problems
+) -> None:
+    """One keymap through the check the IDE runs when it next starts."""
+    try:
+        HarlequinKeyMap.from_config(
+            name=name, bindings=cast("list[RawKeyBinding]", bindings)
+        )
+    except HarlequinConfigError as e:
+        problems.add(e.msg)
+
+
+_TOML_LINE = re.compile(r"\(at line (\d+)")
+
+
+def _line_in(message: str) -> int | None:
+    """The line a TOML parse error points at, where its message points at one."""
+    match = _TOML_LINE.search(message)
+    return int(match.group(1)) if match else None
+
+
+def _read_config_files(
+    config_path: Path | None, *, problems: Problems | None = None
+) -> Iterator[tuple[Path, Config]]:
     """Each discovered config file, nearest first, validated as it is read.
 
     Paired with the path it was read from, because that is what every message
@@ -462,28 +651,44 @@ def _read_config_files(config_path: Path | None) -> Iterator[tuple[Path, Config]
 
     A generator, so a caller that has what it needs stops here: a file it never
     reaches is never opened, parsed or validated. A file with no section of ours
-    in it is not yielded at all: it was read, but it defines nothing.
+    in it is not yielded at all: it was read, but it defines nothing. With a
+    `Problems`, neither is a file that could not be read -- it is an entry in
+    there, and the walk goes on to the next file.
     """
     for path in _discover_config_files(config_path):
-        raw = ConfigFile(path).relevant_config
-        if raw:
-            yield path, _parse_config(raw, path=path)
+        raw = ConfigFile(path, problems=problems).relevant_config
+        if not raw:
+            continue
+        config = _parse_config(raw, path=path, problems=problems)
+        if config is not None:
+            yield path, config
 
 
-def _parse_config(raw: Mapping[str, Any], *, path: Path) -> Config:
-    """One file's config, or a HarlequinConfigError naming that file."""
+def _parse_config(
+    raw: Mapping[str, Any], *, path: Path, problems: Problems | None = None
+) -> Config | None:
+    """One file's config, or a HarlequinConfigError naming that file.
+
+    None, and an entry in `problems`, where there is one to record it in.
+    """
+
+    def refuse(message: str, *, key: str = "") -> None:
+        if problems is None:
+            raise _refuse(path, f"{message}, at {key}." if key else f"{message}.")
+        problems.at(path).add(message, key=key)
+
     try:
         config = msgspec.convert(raw, Config)
     except msgspec.ValidationError as e:
         message, key = _in_toml_words(e)
-        raise _refuse(path, f"{message}, at {key}." if key else f"{message}.") from e
+        refuse(message, key=key)
+        return None
 
     if "None" in config.profiles:
         # the name a caller passes to mean "none of them", so a profile cannot
         # have it: `harlequin -P None` would be ambiguous
-        raise _refuse(
-            path, "Config file defines a profile named 'None', which is not allowed."
-        )
+        refuse("Config file defines a profile named 'None', which is not allowed")
+        return None
     return config
 
 
@@ -517,11 +722,15 @@ def _merge(
         into.keymaps.setdefault(keymap_name, bindings)
 
 
-def _select_profile(config: Config, *, requested: str | None) -> Profile:
+def _select_profile(
+    config: Config, *, requested: str | None, problems: Problems | None = None
+) -> Profile:
     """The profile a name resolves to, once every file has had its say.
 
     A `default_profile` that names nothing is only an error for an invocation
-    that was going to use it: `-P other` has overridden the key.
+    that was going to use it: `-P other` has overridden the key. It is the one
+    problem no single file has, so it is also the one a `Problems` collects
+    here rather than in the pass over a file.
     """
     name = requested or config.default_profile
     if name is None or name == "None":
@@ -529,16 +738,21 @@ def _select_profile(config: Config, *, requested: str | None) -> Profile:
     if (profile := config.profiles.get(name, None)) is not None:
         return profile
     if requested is not None:
+        # a name typed at the command line rather than written in a file, so
+        # there is nowhere to record it and nobody to read it there
         raise HarlequinConfigError(
             f"Could not load the profile named {name} because it does not exist in "
             "any discovered config files.",
             title="Harlequin couldn't load your profile.",
         )
-    raise HarlequinConfigError(
+    message = (
         f"Config files set the default_profile to {name}, but no config file defines "
-        "a profile with that name.",
-        title=CONFIG_ERROR_TITLE,
+        "a profile with that name."
     )
+    if problems is None:
+        raise HarlequinConfigError(message, title=CONFIG_ERROR_TITLE)
+    problems.add(message, key="default_profile")
+    return {}
 
 
 def _adapter_options_model(
@@ -604,32 +818,48 @@ def _refuse(path: Path, message: str) -> HarlequinConfigError:
     )
 
 
-def _refuse_option(
+def _option_problems(
     error: msgspec.ValidationError,
     *,
     adapter: str,
     declared: Mapping[str, AbstractOption],
     given: Mapping[str, Any],
     allowed: Collection[str],
-) -> HarlequinConfigError:
-    """An option this adapter does not declare, or a value it cannot take."""
+) -> list[tuple[str, str]]:
+    """`(key, message)` per option this adapter does not take.
+
+    Every unknown key rather than the one msgspec stopped at: they are all in
+    hand here, and a profile with three typos in it is a profile whose author
+    would rather learn about three typos than about one, twice.
+    """
     if unknown := sorted(set(given) - set(declared)):
-        # from either set: `read-only` is a near miss for an adapter's option,
-        # and `keymap_names` for one of the command's own
-        suggestion = get_close_matches(unknown[0], [*declared, *allowed], n=1)
-        return HarlequinConfigError(
-            f"Profile defines an option {unknown[0]!r}, which is not an option of the "
-            f"{adapter} adapter."
-            + (f" Did you mean {suggestion[0]!r}?" if suggestion else ""),
-            title=CONFIG_ERROR_TITLE,
-        )
+        # suggestions come from either set: `read-only` is a near miss for an
+        # adapter's option, and `keymap_names` for one of the command's own
+        near = [*declared, *allowed]
+        return [
+            (
+                key,
+                f"Profile defines an option {key!r}, which is not an option of the "
+                f"{adapter} adapter." + _suggestion(key, near),
+            )
+            for key in unknown
+        ]
     message, key = _in_toml_words(error)
     choices = _declared_choices(declared[key]) if key in declared else None
-    return HarlequinConfigError(
-        f"Profile sets {key} to a value the {adapter} adapter cannot take: {message}."
-        + (f"\nAllowed values are {tuple(choices)}." if choices else ""),
-        title=CONFIG_ERROR_TITLE,
-    )
+    return [
+        (
+            key,
+            f"Profile sets {key} to a value the {adapter} adapter cannot take: "
+            f"{message}."
+            + (f"\nAllowed values are {tuple(choices)}." if choices else ""),
+        )
+    ]
+
+
+def _suggestion(key: str, among: Sequence[str]) -> str:
+    """The nearest spelling to `key`, as a sentence, or nothing like it."""
+    match = get_close_matches(key, among, n=1)
+    return f" Did you mean {match[0]!r}?" if match else ""
 
 
 _TOML_WORDS = {
