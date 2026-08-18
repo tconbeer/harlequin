@@ -47,6 +47,11 @@ uv run harlequin [OPTIONS] [CONN_STR]              # run the CLI from source
 - Tests run under xdist (`-n auto` is in `addopts`). Pass `-n0` when using a debugger or `-s`.
 - Markers: `online` (needs network + secrets; always deselect locally), `py12` (only runs on 3.12+), `use_cache` (opts a test back into the buffer/catalog caches that an autouse fixture otherwise disables).
 - `TEST_MARKERS` in the Makefile is a marker *expression*, not a flag — a second `-m` silently overrides the first.
+- **On a fresh Linux container, generate the `en_US.UTF-8` locale before the first test run.** A session-scoped autouse fixture (`tests/conftest.py::set_locale_to_enUS`) calls `set_locale("en_US.UTF-8")`, and an image that ships only `C`/`POSIX` (check with `locale -a`) errors every test in setup with `locale.Error: unsupported locale setting`. One command fixes it, and it is not a test failure to debug:
+
+```bash
+localedef -i en_US -f UTF-8 en_US.UTF-8   # prefix with sudo if you are not root
+```
 
 ## Testing notes
 
