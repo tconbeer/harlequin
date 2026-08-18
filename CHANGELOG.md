@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 
 - Adds `msgspec`.
+- Drops `pandas`. It was declared on Python 3.14 only, but is no longer required, since the DataTable component dropped it.
 
 ## [2.9.0] - 2026-08-15
 
