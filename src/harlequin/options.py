@@ -3,7 +3,15 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Generator,
+    Iterable,
+    Sequence,
+)
 
 import click
 
@@ -23,6 +31,17 @@ def concatenate(first: str, second: str) -> str:
     return f"{first}\n----or----\n{second}"
 
 
+def _derived_type_name(cls: type) -> str:
+    """A type name for an option class that never declared one.
+
+    `MyCoolOption` becomes `mycool`. Only reached by a subclass that predates
+    `option_type`, which is the case `to_dict()` exists to keep working.
+    """
+    name = cls.__name__
+    stem = name[: -len("Option")] if name.endswith("Option") else name
+    return (stem or name).lower()
+
+
 class AbstractOption(ABC):
     """
     The ABC for Harlequin options that are used as both command-line options and
@@ -30,6 +49,15 @@ class AbstractOption(ABC):
     labels and aliased, short declarations (for CLI options).
 
     Subclasses define options for specific data types, like text or boolean options.
+    """
+
+    option_type: ClassVar[str] = ""
+    """The name `to_dict()` reports for this kind of option. e.g., "text".
+
+    A class attribute, so that a subclass of one of the types below inherits
+    the right answer and a new type only has to set it. A subclass that never
+    sets it is reported under its own class name, which is true rather than
+    useful -- and better than claiming a type it is not.
     """
 
     def __init__(
@@ -67,6 +95,27 @@ class AbstractOption(ABC):
             decl if decl.startswith("-") else f"-{decl}" for decl in short_decls
         ]
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        This option as plain data, for the consumers that read an option rather
+        than render one: `hsql --spec`, the config schema, the debug screen.
+
+        Concrete rather than abstract, because third-party adapters subclass
+        this: a subclass that predates the method still has to answer, which is
+        what the `getattr` is for. The keys are the same whatever the type --
+        one that does not apply is null rather than missing.
+        """
+        return {
+            "name": self.name,
+            "type": self.option_type or _derived_type_name(type(self)),
+            "label": self.label,
+            "description": self.description,
+            "short_decls": list(self.short_decls),
+            "default": getattr(self, "default", None),
+            "choices": None,
+            "multiple": False,
+        }
+
     @abstractmethod
     def merge(self, other: AbstractOption) -> AbstractOption:
         """
@@ -92,6 +141,8 @@ class TextOption(AbstractOption):
     """
     An option for free text input, including optional validation.
     """
+
+    option_type = "text"
 
     def __init__(
         self,
@@ -231,6 +282,8 @@ class TextOption(AbstractOption):
 
 
 class ListOption(AbstractOption):
+    option_type = "list"
+
     def __init__(
         self,
         name: str,
@@ -249,6 +302,12 @@ class ListOption(AbstractOption):
                 (including the `-` prefix) for this option (e.g., ["-p"]).
         """
         super().__init__(name, description, label=label, short_decls=short_decls)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Repeatable, which is the one thing that separates it from a text
+        option -- `--extension httpfs --extension spatial`, and a list in a
+        profile."""
+        return {**super().to_dict(), "multiple": True}
 
     def merge(self, other: AbstractOption) -> ListOption:
         name = self.name
@@ -297,6 +356,8 @@ class PathOption(AbstractOption):
     """
     A text input with path validation and autocomplete features.
     """
+
+    option_type = "path"
 
     def __init__(
         self,
@@ -445,6 +506,8 @@ class PathOption(AbstractOption):
 
 
 class SelectOption(AbstractOption):
+    option_type = "select"
+
     def __init__(
         self,
         name: str,
@@ -470,6 +533,16 @@ class SelectOption(AbstractOption):
                 (including the `-` prefix) for this option (e.g., ["-p"]).
             default (str | None): The default value for this option.
         """
+
+    def to_dict(self) -> dict[str, Any]:
+        """The values, flattened.
+
+        A choice may be declared as a `(value, label)` pair for a GUI to render,
+        and a pair is not something a caller can type. `_flat_choices()` is what
+        `to_click()` passes to `click.Choice`, so this reports what the command
+        line will actually accept.
+        """
+        return {**super().to_dict(), "choices": self._flat_choices()}
 
     def merge(self, other: AbstractOption) -> AbstractOption:
         if isinstance(other, (TextOption, PathOption, ListOption)):
@@ -553,6 +626,8 @@ class FlagOption(AbstractOption):
     A boolean option, defaults to False. (Can set another default, but that only applies
     for GUI options, not CLI options, which always default to False)
     """
+
+    option_type = "flag"
 
     def __init__(
         self,

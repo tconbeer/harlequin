@@ -16,6 +16,24 @@ def adapter_names() -> list[str]:
     return sorted({ep.name for ep in entry_points(group="harlequin.adapter")})
 
 
+def adapter_versions() -> dict[str, str | None]:
+    """
+    The version of the distribution behind each installed adapter, importing
+    none of them.
+
+    Reading the distribution costs ~5ms over reading the names alone, where
+    importing the adapters to ask them costs hundreds -- so what is installed,
+    and which release of it, is answerable without loading any of it. None
+    where the entry point has no distribution behind it, which is what an
+    adapter installed from a source checkout can look like.
+    """
+    versions: dict[str, str | None] = {}
+    for ep in entry_points(group="harlequin.adapter"):
+        # last one wins, to agree with load_adapter() and load_adapter_plugins()
+        versions[ep.name] = None if ep.dist is None else ep.dist.version
+    return versions
+
+
 def load_adapter(name: str) -> type[HarlequinAdapter]:
     """
     Import exactly one installed adapter, by its entry point name.
