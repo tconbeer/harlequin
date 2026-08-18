@@ -201,6 +201,10 @@ def _from_option(
     if not decls or name in taken:
         return None
     is_flag = declared["type"] == "flag"
+    # `metavar`, `required` and `envvar` are constants because `to_click()`
+    # passes none of the three, so no adapter option can have one. Adding one
+    # there means adding a key to `to_dict()` and reading it here, rather than
+    # leaving these to say null and be wrong.
     return {
         "name": name,
         "decls": decls,

@@ -1561,6 +1561,38 @@ def test_spec_reports_an_environment_variable(hsql: Hsql) -> None:
     assert config_path["envvar"] == "HARLEQUIN_CONFIG_PATH"
 
 
+def test_spec_reports_an_envvar_for_every_option_that_reads_one(hsql: Hsql) -> None:
+    """Null for the rest, because there is nothing behind them to report.
+
+    hsql declares one `envvar=` and sets no `auto_envvar_prefix`, so click
+    derives nothing: `HSQL_LIMIT` is not read, and a spec that implied it was
+    would be worse than one that says null. This is the assertion that fails if
+    a prefix is ever set, or an option grows an `envvar=` this does not carry.
+    """
+    spec = spec_of(hsql("--spec"))
+    named = {o["name"]: o["envvar"] for o in spec["options"] if o["envvar"]}
+    assert named == {"config_path": "HARLEQUIN_CONFIG_PATH"}
+    # `to_click()` passes no `envvar=`, so an adapter option cannot have one
+    for adapter in spec["adapters"].values():
+        assert all(o["envvar"] is None for o in adapter["options"])
+
+
+def test_hsql_reads_no_environment_variable_it_did_not_declare(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half: click reads a variable only where one was declared.
+
+    Setting `auto_envvar_prefix` would make every flag configurable through the
+    environment, which is a surface `--spec` would then have to report -- so
+    assert the surface is the one the document describes.
+    """
+    monkeypatch.setenv("HSQL_LIMIT", "3")
+    monkeypatch.setenv("HARLEQUIN_LIMIT", "3")
+    res = hsql("-a", "duckdb", "--no-init", ":memory:", "-tA", "-c", TEN_ROWS)
+    assert res.exit_code == ExitCode.OK
+    assert len(res.stdout.splitlines()) == 10
+
+
 def test_spec_names_the_positional(hsql: Hsql) -> None:
     """`CONN_STR` is where the database goes, and it has no flag to find it by.
 
