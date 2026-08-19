@@ -28,12 +28,12 @@ All notable changes to this project will be documented in this file.
 - `hsql --format markdown` no longer breaks the table when `--null-string` contains a `|` or a newline.
 - `harlequin --config` and `harlequin --keys` no longer strip the comments you wrote inside a profile or keymap table; a value they did not change now keeps the comments and formatting you gave it ([#1033](https://github.com/tconbeer/harlequin/issues/1033)).
 - `harlequin --config` now removes `default_profile` from your config file when you choose `[No default]`, instead of leaving the old default in place.
-- A profile whose `adapter` names a plug-in you do not have installed now says so, and names the adapters you do have, instead of failing with a `KeyError` traceback.
+- `harlequin` prints an error naming the missing adapter, and the adapters you do have installed, when a profile's `adapter` names a plug-in that is not installed. It used to fail with a `KeyError` traceback.
 
 ### Performance
 
 - `hsql` and `harlequin` read config files in priority order and stop at the file that defines the profile they were asked for, so the files behind it are never opened. `hsql -P None` now reads none at all.
-- `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed. With four installed that is ~200ms off every start-up, and it no longer grows when you install a fifth. `harlequin --help` still documents every installed adapter's options, so nothing is harder to discover ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
+- `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
 
 ### Dependencies
 

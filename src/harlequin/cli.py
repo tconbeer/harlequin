@@ -276,14 +276,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     ability to discover what an adapter takes. That path gets no faster, which
     is the right trade -- the one that got faster is the one that opens the IDE.
     """
-    installed = adapter_names()
-    found = first_pass(argv, installed, program="harlequin")
+    installed_adapter_names = adapter_names()
+    first_pass_config = first_pass(argv, installed_adapter_names, program="harlequin")
     adapters: dict[str, type[HarlequinAdapter]] = {}
-    if found.wants_help:
+    if first_pass_config.wants_help:
         adapters = load_adapter_plugins()
-    elif found.adapter is not None:
+    elif first_pass_config.adapter is not None:
         try:
-            adapters = {found.adapter: load_adapter(found.adapter)}
+            adapters = {
+                first_pass_config.adapter: load_adapter(first_pass_config.adapter)
+            }
         except HarlequinConfigError:
             # a plug-in that will not import is the callback's to report, where
             # there is an exit code: here there is only a command to build, and
@@ -373,7 +375,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "-a",
         default=DEFAULT_ADAPTER,
         show_default=True,
-        type=click.Choice(installed, case_sensitive=False),
+        type=click.Choice(installed_adapter_names, case_sensitive=False),
         help=(
             "The name of an installed database adapter plug-in "
             "to use to connect to the database at CONN_STR."
@@ -565,7 +567,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
 
     cmd: click.Command = inner_cli
     adapter_groups: list[OptionGroupDict] = []
-    if found.wants_help:
+    if first_pass_config.wants_help:
         # every installed adapter, and so the one path that has two to
         # reconcile: `merge()` settles an option name both declare (--database
         # against --dbname) into the single option the command carries.
