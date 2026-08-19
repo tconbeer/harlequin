@@ -31,7 +31,7 @@ import sys
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from harlequin.config import DEFAULT_ADAPTER, discover_config_files, load_config
+from harlequin.config import DEFAULT_ADAPTER, discover_config_files, resolve_profile
 from harlequin.exception import HarlequinConfigError
 from harlequin.hsql import diagnostics
 from harlequin.hsql.diagnostics import ExitCode
@@ -114,32 +114,24 @@ def _config_files(config_path: Path | None) -> dict[str, Any]:
 def _profile(profile_name: str | None, config_path: Path | None) -> dict[str, Any]:
     """The profile an invocation would run under, whole.
 
-    `name` is null when nothing names one, and `options` is null for a name no
-    config file defines -- which is the failure a `-P` typo produces, and one of
-    the things a caller is most likely running this to find.
-    """
-    if profile_name == "None":
-        # Harlequin's own defaults, which no config file can change -- so there
-        # is nothing to read and nothing a file could say about it
-        return {"name": "None", "options": {}, "error": None}
+    Resolved the way a run resolves it, stopping at the file that defines it, so
+    that this reports the profile `hsql -c ...` would use rather than one merged
+    from files that run would never open. `--config validate` is the mode that
+    reads all of them.
 
+    `name` is null when nothing names one, and `options` is null when the name
+    resolved to no profile -- a `-P` typo, or a `default_profile` naming
+    nothing, both of which a run refuses over and this reports.
+    """
     try:
-        config = load_config(config_path)
+        name, options = resolve_profile(config_path, profile_name)
     except (HarlequinConfigError, OSError) as e:
-        # a config file this mode could not read is the answer rather than a
-        # refusal: a caller whose config is broken is one of the callers most
-        # likely to be reading this
+        # a config file this mode could not read, or a name nothing defines, is
+        # the answer rather than a refusal: a caller whose config is broken is
+        # one of the callers most likely to be reading this
         message = e.msg if isinstance(e, HarlequinConfigError) else str(e)
         return {"name": profile_name, "options": None, "error": message}
-
-    name = profile_name or config.default_profile
-    options = config.profiles.get(name) if name is not None else {}
-    error = (
-        None
-        if name is None or options is not None
-        else f"No config file defines a profile named {name}."
-    )
-    return {"name": name, "options": options, "error": error}
+    return {"name": name, "options": options, "error": None}
 
 
 def _adapter_in_use(typed: str | None, options: Any) -> dict[str, Any]:

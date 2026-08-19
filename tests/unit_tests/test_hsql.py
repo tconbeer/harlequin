@@ -1974,11 +1974,57 @@ def test_info_reports_a_profile_no_file_defines(
     hsql: Hsql, two_config_files: tuple[Path, Path]
 ) -> None:
     """A `-P` typo is what this mode is most often run to find, so it is an
-    answer rather than a refusal."""
+    answer rather than a refusal -- and the answer a run would have refused
+    with."""
     info = info_of(hsql("--info", "-P", "prod"))
     assert info["profile"]["name"] == "prod"
     assert info["profile"]["options"] is None
     assert "prod" in info["profile"]["error"]
+    # the same message a run gives, because it comes from the same resolution
+    res = hsql("-P", "prod", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert info["profile"]["error"] in res.stderr
+
+
+def test_info_reports_a_default_profile_that_names_nothing(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "gone"\n[profiles.here]\nadapter = "sqlite"\n'
+    )
+    info = info_of(hsql("--info"))
+    assert info["profile"]["options"] is None
+    assert "default_profile" in info["profile"]["error"]
+    assert "gone" in info["profile"]["error"]
+
+
+def test_info_reads_no_further_than_a_run_would(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """It reports the profile a run would use, so it stops where a run stops.
+
+    A file behind the one that defines the profile is never opened, so its
+    contents cannot turn this into a report about a problem no run would meet.
+    `--config validate` is the mode that reads every file.
+    """
+    cwd, home = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "near"\n[profiles.near]\nadapter = "sqlite"\n'
+    )
+    (home / ".harlequin.toml").write_text("this is not toml\n")
+
+    info = info_of(hsql("--info"))
+    assert info["profile"] == {
+        "name": "near",
+        "options": {"adapter": "sqlite"},
+        "error": None,
+    }
+    # discovery still names it: it is a file on disk that a run may yet read
+    assert info["config"]["files"] == [
+        str(cwd / ".harlequin.toml"),
+        str(home / ".harlequin.toml"),
+    ]
 
 
 def test_info_reports_the_profile_named_none_as_the_defaults(
