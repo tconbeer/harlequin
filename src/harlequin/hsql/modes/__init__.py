@@ -14,9 +14,9 @@ import.
 
 from __future__ import annotations
 
-CONFIG_MODES = ("show", "list-profiles", "validate")
+CONFIG_MODES = ("show", "list-profiles", "validate", "schema")
 """Every `--config MODE`, in the order `--help` lists them.
 
-`schema` and `init` join this list as they land; a mode that is not here is one
-click refuses by name, with the ones that do work in the message.
+`init` joins this list as it lands; a mode that is not here is one click
+refuses by name, with the ones that do work in the message.
 """

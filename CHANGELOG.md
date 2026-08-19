@@ -6,10 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Adds `hsql --config show`, `--config list-profiles` and `--config validate`, which report on your config files instead of running SQL. 
+- Adds `hsql --config show`, `--config list-profiles`, `--config validate` and `--config schema`, which report on your config files instead of running SQL. 
   - `list-profiles` lists every profile you can pass to `-P`, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
   - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
   - `validate` reports every problem in every discovered config file: the file, the key, what is wrong, and the line. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `schema` writes a JSON Schema for a Harlequin config file, covering the connection options of every adapter you have installed. Point your editor at it to get completion and typo-catching in your `.harlequin.toml`.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, the config files hsql found, the profile a run would use, and what each installed adapter declares it supports. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.

@@ -1,20 +1,23 @@
-"""`--config MODE`: what the config files say, which file said it, and what is wrong.
+"""`--config MODE`: what the config files say, which said it, and what may be in one.
 
-Three questions, and they are the three a caller actually has. `list-profiles`
+Four questions, and they are the four a caller actually has. `list-profiles`
 answers *what can I pass to `-P`* -- a short list of names, so a profile that a
 nearer file quietly displaced is visible as a name that is missing. `show`
 answers *which file is winning* -- the merged document, with the file each
 value came from written beside it, and the files it overrode written after
 that. `validate` answers *what is wrong with any of it* -- every problem in
-every file, one to a row, where a run would have stopped at the first.
+every file, one to a row, where a run would have stopped at the first. `schema`
+answers *what may I write* -- a JSON Schema for a config file, built from this
+installation, so an editor or an agent can answer the rest of them itself.
 
-None of them connects. `show` and `list-profiles` import no adapter either: a
-mode that reports on config files must work when the database does not.
-`validate` is the exception, and it is the trade its job asks for -- checking a
-profile's options against the ones its adapter declares takes importing that
-adapter, one per adapter a profile names, and still no connection. `show` does
-not import the execution core either -- it writes a document, not rows -- which
-is why the two imports the row-shaped modes need are deferred into them.
+None of them connects, and `schema` does not even read a file: it describes the
+shape a config file may take, whether or not this machine has one. `show` and
+`list-profiles` import no adapter either -- a mode that reports on config files
+must work when the database does not. The other two do: `validate` imports one
+per adapter its profiles name, and `schema` every installed one, because both
+are describing options only the adapter declares. `show` does not import the
+execution core either -- it writes a document, not rows -- which is why the two
+imports the row-shaped modes need are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
 the language they will edit the answer in, and JSON for a caller, under the same
@@ -27,6 +30,7 @@ import json
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
 
 from harlequin.config import Provenance, load_config
+from harlequin.exception import HarlequinConfigError
 from harlequin.hsql import diagnostics
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES
@@ -40,7 +44,7 @@ if TYPE_CHECKING:
     from harlequin.layout import LayoutOptions
     from harlequin.options import AbstractOption
 
-SHOW, LIST_PROFILES, VALIDATE = CONFIG_MODES
+SHOW, LIST_PROFILES, VALIDATE, SCHEMA = CONFIG_MODES
 
 JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
@@ -62,7 +66,7 @@ def report(
 
     A code rather than nothing, because one of these modes is a check: a script
     that runs `hsql --config validate` wants the answer without reading it, and
-    an exit code is how it gets one. The other two exit 0 whatever they found --
+    an exit code is how it gets one. The others exit 0 whatever they found --
     reporting a config is not judging it.
 
     Raises: HarlequinConfigError if a discovered config file cannot be read.
@@ -70,6 +74,10 @@ def report(
     them; `validate` is the mode that reports it as one problem among however
     many the rest of the files hold.
     """
+    if mode == SCHEMA:
+        _write_schema(out, format_name=format_name, format_chosen=format_chosen)
+        return ExitCode.OK
+
     if mode == VALIDATE:
         return _write_problems(
             config_path,
@@ -126,6 +134,48 @@ def _write_document(
     if format_chosen:
         diagnostics.report_document_format_ignored(f"--config {mode}", format_name)
     out.write(_as_toml(config, provenance).encode("utf-8"))
+
+
+def _write_schema(out: BinaryIO, *, format_name: str, format_chosen: bool) -> None:
+    """A JSON Schema for a config file, describing the adapters installed here.
+
+    JSON whatever `--format` says, because a JSON Schema is JSON: a format that
+    arranges rows has nothing to arrange, and one that is not JSON is declined
+    with a line on stderr rather than silently.
+    """
+    if format_name == NONE:
+        return
+    if format_name != JSON and format_chosen:
+        diagnostics.report_document_format_ignored(f"--config {SCHEMA}", format_name)
+
+    # deferred, and this is the mode that pays for it: every installed adapter,
+    # for the options only the adapter declares. Nothing else in this module
+    # imports more than one.
+    from harlequin.config_schema import build_schema
+    from harlequin.hsql.cli import bare_command
+
+    document = build_schema(bare_command().params, _installed_adapters())
+    out.write((json.dumps(document, indent=2) + "\n").encode("utf-8"))
+
+
+def _installed_adapters() -> dict[str, Sequence[AbstractOption] | None]:
+    """What each installed adapter declares, or None where it would not import.
+
+    None rather than nothing, so the schema can leave a profile that names that
+    adapter open instead of calling every key in it an error.
+    """
+    from harlequin.plugins import adapter_names, load_adapter
+
+    declared: dict[str, Sequence[AbstractOption] | None] = {}
+    for name in adapter_names():
+        try:
+            options = load_adapter(name).ADAPTER_OPTIONS
+        except HarlequinConfigError:
+            diagnostics.note(f"{name} is installed, but could not be imported.")
+            declared[name] = None
+        else:
+            declared[name] = list(options or [])
+    return declared
 
 
 def _write_profiles(

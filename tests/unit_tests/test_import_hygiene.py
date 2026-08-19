@@ -227,6 +227,40 @@ def test_config_validate_imports_only_the_adapters_its_profiles_name(
     assert not forbidden
 
 
+def test_config_schema_writes_a_document_and_reads_no_file(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """The second mode that pays for adapters on purpose, and pays for nothing else.
+
+    Describing the options an adapter declares means importing every installed
+    adapter, as `--spec` does. It is a document rather than rows, so it never
+    reaches the execution core, and it reads no config file, so no tomlkit -- a
+    schema says what a config file may hold whether or not this machine has
+    one.
+
+    `tmp_path` is the subprocess's cwd and its home, so this file is the whole
+    of the config it would discover.
+    """
+    (tmp_path / ".harlequin.toml").write_text('[profiles.lite]\nadapter = "sqlite"\n')
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'schema']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('harlequin.query', 'tomlkit') "
+        "if m in sys.modules), file=sys.stderr)\n"
+    )
+    adapters, forbidden = proc.stderr.split("\n")[:2]
+    # both of the bundled ones, where every other mode here costs at most one
+    assert {"harlequin_duckdb", "harlequin_sqlite"} <= set(adapters.split(","))
+    assert not forbidden
+
+
 def test_spec_imports_only_the_adapter_it_was_narrowed_to(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:
