@@ -435,6 +435,40 @@ class TestConfigFileRoundTrip:
         assert reread.profiles["one"] == {"theme": "fruity"}
         assert reread.keymaps["mine"] == [{"keys": "ctrl+j", "action": "quit"}]
 
+    def test_a_write_of_the_whole_section_removes_a_top_level_key_it_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        """How `harlequin --config` turns a `default_profile` back off.
+
+        The wizard hands back the whole Harlequin section, so a key missing
+        from it is one the user turned off, and leaving it behind would write
+        back a default nobody asked for.
+        """
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "# a file someone wrote by hand\n"
+            'default_profile = "one"\n'
+            "\n"
+            "[profiles.one]\n"
+            "# keep me\n"
+            'theme = "fruity"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        del config["default_profile"]
+        config_file.update(config, whole_section=True)
+        config_file.write()
+
+        written = path.read_text()
+        assert "default_profile" not in written
+        # the key went; the comments around what stayed did not
+        assert "# a file someone wrote by hand" in written
+        assert "# keep me" in written
+        reread = load_config(config_path=path)
+        assert reread.default_profile is None
+        assert reread.profiles["one"] == {"theme": "fruity"}
+
     def test_a_write_to_pyproject_touches_only_the_harlequin_table(
         self, tmp_path: Path
     ) -> None:

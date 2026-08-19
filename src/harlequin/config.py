@@ -308,11 +308,16 @@ class ConfigFile:
             ) from e
         return self._doc
 
-    def update(self, config: Mapping[str, Any]) -> None:
+    def update(self, config: Mapping[str, Any], *, whole_section: bool = False) -> None:
         """
         Merge the updated config into the relevant section of the in-memory
         TOML doc, key by key, so a table nobody edited keeps its own nodes --
         and with them the comments written inside it.
+
+        `whole_section` says `config` is everything the section should say, so
+        a top-level key missing from it is one the caller means to delete --
+        which `harlequin --config` needs to turn a `default_profile` off. It is
+        off by default, for the keymap editor, which passes `keymaps` alone.
         """
         doc = self._editable()
         if self.is_pyproject:
@@ -320,9 +325,9 @@ class ConfigFile:
                 doc["tool"] = {"harlequin": {}}
             elif "harlequin" not in doc["tool"]:
                 doc["tool"]["harlequin"] = {}
-            _merge_into_doc(doc["tool"]["harlequin"], config)
+            _merge_into_doc(doc["tool"]["harlequin"], config, prune=whole_section)
         else:
-            _merge_into_doc(doc, config)
+            _merge_into_doc(doc, config, prune=whole_section)
 
     def write(self) -> None:
         """
@@ -773,8 +778,8 @@ def _merge_into_doc(
     A node carries the comments and formatting around it, so an unchanged value
     is not written at all, and a table on both sides is merged into rather than
     assigned. `prune` makes `source` the whole table: a key it does not have is
-    a key the caller deleted. Off at the top level, where the keymap editor
-    writes `{"keymaps": ...}` alone and must not take the profiles with it.
+    a key the caller deleted, which is always true of a table the caller named
+    and only true at the top level when it passed the whole section.
     """
     for key, value in source.items():
         existing = target.get(key, _MISSING)
