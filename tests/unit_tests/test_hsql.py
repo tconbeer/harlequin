@@ -1869,3 +1869,268 @@ def test_spec_drops_a_spelling_an_hsql_flag_already_owns(
     assert [o["name"] for o in options] == ["cautious"]
     # and `-c` is gone from the one that kept its other spellings
     assert options[0]["decls"] == ["--cautious", "-w"]
+
+
+# --- `--info`, the mode that reports on the installation ---------------------
+
+
+def info_of(res: Result) -> dict[str, Any]:
+    assert res.exit_code == ExitCode.OK
+    return cast("dict[str, Any]", json.loads(res.stdout))
+
+
+def test_info_is_json(hsql: Hsql) -> None:
+    info = info_of(hsql("--info"))
+    assert info["program"] == "hsql"
+    assert info["version"]
+    assert info["python"]["version"]
+    assert info["python"]["implementation"]
+    assert info["python"]["executable"]
+    assert info["platform"]["system"]
+    assert info["adapters"]
+
+
+def test_info_reports_the_interpreter_it_is_running_under(hsql: Hsql) -> None:
+    """The half of a bug report nobody remembers to include."""
+    import platform
+
+    info = info_of(hsql("--info"))
+    assert info["python"]["version"] == platform.python_version()
+    assert info["python"]["executable"] == sys.executable
+    assert info["platform"]["machine"] == platform.machine()
+
+
+def test_info_lists_config_files_in_precedence_order(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """Nearest first, which is the order that decides which file wins."""
+    project, home = two_config_files
+    info = info_of(hsql("--info"))
+    assert info["config"] == {
+        "path": None,
+        "files": [str(project), str(home)],
+    }
+
+
+def test_info_lists_no_config_files_when_there_are_none(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    assert info_of(hsql("--info"))["config"]["files"] == []
+
+
+def test_info_names_the_file_config_path_pointed_at(hsql: Hsql, tmp_path: Path) -> None:
+    """An explicit file is the only one read, and it is the one to report."""
+    path = tmp_path / "explicit.toml"
+    path.write_text('[profiles.here]\nadapter = "sqlite"\n')
+    config = info_of(hsql("--info", "--config-path", str(path)))["config"]
+    assert config["path"] == str(path)
+    assert config["files"] == [str(path)]
+
+
+def test_info_names_the_active_profile_and_what_chose_the_adapter(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """Which profile a run would use, and why it would connect where it does."""
+    info = info_of(hsql("--info"))
+    assert info["profile"] == {
+        "name": "personal",
+        "options": {"adapter": "duckdb", "limit": 200000},
+        "error": None,
+    }
+    assert info["adapter"] == {"name": "duckdb", "from": "profile"}
+
+
+def test_info_reports_the_profile_dash_p_asked_for(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    info = info_of(hsql("--info", "-P", "project"))
+    assert info["profile"]["name"] == "project"
+    assert info["adapter"] == {"name": "sqlite", "from": "profile"}
+
+
+def test_info_says_dash_a_beat_the_profile(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """`-a` wins over the profile, and a report that did not say so would send
+    a reader to the wrong file to change it."""
+    assert info_of(hsql("--info", "-a", "sqlite"))["adapter"] == {
+        "name": "sqlite",
+        "from": "-a",
+    }
+
+
+def test_info_falls_back_to_the_default_adapter(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    from harlequin.config import DEFAULT_ADAPTER
+
+    assert info_of(hsql("--info"))["adapter"] == {
+        "name": DEFAULT_ADAPTER,
+        "from": "default",
+    }
+
+
+def test_info_reports_a_profile_no_file_defines(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """A `-P` typo is what this mode is most often run to find, so it is an
+    answer rather than a refusal."""
+    info = info_of(hsql("--info", "-P", "prod"))
+    assert info["profile"]["name"] == "prod"
+    assert info["profile"]["options"] is None
+    assert "prod" in info["profile"]["error"]
+
+
+def test_info_reports_the_profile_named_none_as_the_defaults(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    info = info_of(hsql("--info", "-P", "None"))
+    assert info["profile"] == {"name": "None", "options": {}, "error": None}
+
+
+def test_info_answers_over_a_config_it_could_not_read(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """A caller whose config file is broken is the caller most likely to be
+    running this, so the parse error is part of the answer."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text("this is not toml\n")
+    info = info_of(hsql("--info"))
+    assert info["config"]["files"] == [str(cwd / ".harlequin.toml")]
+    assert info["profile"]["options"] is None
+    assert "line 1" in info["profile"]["error"]
+    assert info["adapters"]
+
+
+def test_info_reports_declared_capabilities_for_every_installed_adapter(
+    hsql: Hsql,
+) -> None:
+    from importlib.metadata import version
+
+    from harlequin.plugins import adapter_names
+
+    info = info_of(hsql("--info"))
+    assert sorted(info["adapters"]) == sorted(adapter_names())
+    for entry in info["adapters"].values():
+        assert entry["error"] is None
+        assert entry["capabilities"]["implements_cancel"] in (True, False)
+    duckdb = info["adapters"]["duckdb"]
+    assert duckdb["distribution"] == "harlequin"
+    assert duckdb["version"] == version("harlequin")
+
+
+def test_info_reads_the_capability_names_off_the_contract(hsql: Hsql) -> None:
+    """A capability added to `HarlequinAdapter` is reported without this mode
+    keeping a second list of them."""
+    from harlequin.adapter import HarlequinAdapter
+
+    declared = sorted(
+        name.lower()
+        for name in vars(HarlequinAdapter)
+        if name.startswith("IMPLEMENTS_")
+    )
+    assert declared  # the contract declares at least one
+    capabilities = info_of(hsql("--info"))["adapters"]["duckdb"]["capabilities"]
+    assert sorted(capabilities) == declared
+
+
+def test_info_narrows_to_one_adapter(hsql: Hsql) -> None:
+    assert list(info_of(hsql("--info", "-a", "sqlite"))["adapters"]) == ["sqlite"]
+
+
+def test_info_reports_an_adapter_it_could_not_import_as_unknown(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never `false`: guessing false about what an adapter implements is the
+    direction that gets someone hurt."""
+    from harlequin.plugins import load_adapter as real_load_adapter
+
+    def fake_load_adapter(name: str) -> Any:
+        if name == "duckdb":
+            raise HarlequinConfigError("No module named 'duckdb'", title="nope")
+        return real_load_adapter(name)
+
+    monkeypatch.setattr("harlequin.plugins.load_adapter", fake_load_adapter)
+    res = hsql("--info")
+    info = info_of(res)
+    assert info["adapters"]["duckdb"]["capabilities"] == "unknown"
+    assert "duckdb" in info["adapters"]["duckdb"]["error"]
+    # and the rest of the installation is still reported
+    assert info["adapters"]["sqlite"]["capabilities"]["implements_cancel"] is True
+    assert "could not be imported" in res.stderr
+
+
+def test_info_opens_no_connection(hsql: Hsql, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The design decision this mode exists on: the diagnostic a caller runs
+    when the database is unreachable must not itself require the database."""
+    from harlequin.plugins import load_adapter as real_load_adapter
+
+    def refuse(self: Any) -> Any:
+        raise AssertionError("--info opened a connection")
+
+    def fake_load_adapter(name: str) -> Any:
+        return type("Faked", (real_load_adapter(name),), {"connect": refuse})
+
+    monkeypatch.setattr("harlequin.plugins.load_adapter", fake_load_adapter)
+    assert info_of(hsql("--info"))["adapters"]["duckdb"]["capabilities"]
+
+
+def test_info_does_not_run_sql(hsql: Hsql) -> None:
+    res = hsql("--info", ":memory:", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "does not run SQL" in res.stderr
+
+
+def test_info_carries_no_adapters_options(hsql: Hsql) -> None:
+    """It reports what an adapter declares rather than taking its options."""
+    res = hsql("--info", "-a", "duckdb", "--no-init")
+    assert res.exit_code == ExitCode.USAGE
+    assert "--no-init" in res.stderr
+
+
+@pytest.mark.parametrize("other", [["--spec"], ["--config", "show"]])
+def test_info_beside_another_mode_is_a_usage_error(
+    hsql: Hsql, other: list[str]
+) -> None:
+    res = hsql("--info", *other)
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "--info" in res.stderr
+
+
+def test_info_writes_nothing_under_format_none(hsql: Hsql) -> None:
+    res = hsql("--info", "--format", "none")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+@pytest.mark.parametrize("argv", [["--csv"], ["--format", "markdown"]])
+def test_info_notes_a_format_it_cannot_reach(hsql: Hsql, argv: list[str]) -> None:
+    res = hsql("--info", *argv)
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)["program"] == "hsql"
+    assert "had no effect" in res.stderr
+    assert "--format json" in res.stderr
+
+
+def test_info_json_is_not_a_format_it_declines(hsql: Hsql) -> None:
+    res = hsql("--info", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)["program"] == "hsql"
+    assert res.stderr == ""
+
+
+def test_info_goes_to_the_file_dash_o_names(hsql: Hsql, tmp_path: Path) -> None:
+    destination = tmp_path / "info.json"
+    res = hsql("--info", "-o", str(destination))
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert json.loads(destination.read_text(encoding="utf-8"))["program"] == "hsql"
+
+
+def test_info_is_in_the_help(hsql: Hsql) -> None:
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--info" in res.output
+    assert f"{PROGRAM} --info" in res.output

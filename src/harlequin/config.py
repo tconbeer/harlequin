@@ -533,6 +533,17 @@ def parse_row_count(
     return rows
 
 
+def discover_config_files(config_path: Path | None) -> list[Path]:
+    """Every config file that exists, highest priority first.
+
+    Discovery alone: none of them is opened, so this says which files a command
+    would read and in what order, and nothing about what any of them holds.
+
+    Raises: HarlequinConfigError if `config_path` names a file that is not there.
+    """
+    return list(_discover_config_files(config_path))
+
+
 def get_highest_priority_existing_config_file() -> Path | None:
     """The nearest config file, skipping a pyproject.toml with no section of ours."""
     for path in _discover_config_files(config_path=None):

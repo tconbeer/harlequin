@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
   - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
   - `validate` reports every problem in every discovered config file — the file, the key, what is wrong, and the line where the TOML parser knew one — instead of stopping at the first, as a run does. It checks each profile against the options its adapter declares, so a misspelled `reed_only` is reported rather than dropped in silence, and it checks your keymaps too. It exits `2` when it found anything, so `hsql --config validate --format none` is the whole check for a script. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter ([#524](https://github.com/tconbeer/harlequin/issues/524)).
+- Adds `hsql --info`, a JSON report on your installation: versions, platform, the config files hsql found in the order it reads them, the profile a run would use, and what each installed adapter declares it supports. It opens no connection, so it answers when the database does not; `-a NAME` narrows it to one adapter ([#524](https://github.com/tconbeer/harlequin/issues/524)).
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
 
 ### Breaking Changes

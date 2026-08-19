@@ -255,6 +255,33 @@ def test_spec_imports_only_the_adapter_it_was_narrowed_to(
     assert not forbidden
 
 
+def test_info_imports_only_the_adapter_it_was_narrowed_to(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """`--info` reads capabilities off the adapter class, so it imports one per
+    adapter it reports -- and under `-a`, exactly one.
+
+    It opens no connection, and it writes a document rather than rows, so no
+    pyarrow and no tomlkit either.
+    """
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--info', '-a', 'sqlite']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('duckdb', 'pyarrow', 'tomlkit') "
+        "if m in sys.modules), file=sys.stderr)\n"
+    )
+    adapters, forbidden = proc.stderr.split("\n")[:2]
+    assert adapters == "harlequin_sqlite"
+    assert not forbidden
+
+
 def test_public_names_still_resolve() -> None:
     """Every name `harlequin/__init__.py` exported before it went lazy.
 
