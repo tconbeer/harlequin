@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does, so `read-only`, `reed_only` and `keymap_names` each name the option they were probably meant to be.
 - A `default_profile` that names no profile now only stops an invocation that was going to use it: `harlequin -P other` and `harlequin -P None` start, as `hsql` does, instead of refusing over a key neither of them read.
 - `hsql --format markdown` no longer breaks the table when `--null-string` contains a `|` or a newline.
+- `harlequin --config` and `harlequin --keys` no longer strip the comments you wrote inside a profile or keymap table; a value they did not change now keeps the comments and formatting you gave it ([#1033](https://github.com/tconbeer/harlequin/issues/1033)).
 
 ### Performance
 
