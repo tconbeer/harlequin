@@ -1634,12 +1634,45 @@ def test_spec_reports_an_adapter_option_the_way_it_is_passed(hsql: Hsql) -> None
 
 
 def test_spec_reports_an_adapters_repeatable_and_chosen_options(hsql: Hsql) -> None:
-    sqlite = spec_of(hsql("--spec"))["adapters"]["sqlite"]
-    by_name = {o["name"]: o for o in sqlite["options"]}
-    assert by_name["extension"]["multiple"] is True
-    assert by_name["mode"]["type"] == "choice"
-    assert by_name["mode"]["choices"]
-    assert by_name["init_path"]["type"] == "path"
+    """One option of each shape, named off the lists both adapters always declare.
+
+    sqlite's `--extension` and `--isolation-level` are appended only where the
+    interpreter's sqlite3 supports them, so neither is a name a test may assume
+    -- duckdb's `--extension` is in its list unconditionally, and is the
+    repeatable one here for that reason.
+    """
+    spec = spec_of(hsql("--spec"))
+    duckdb = {o["name"]: o for o in spec["adapters"]["duckdb"]["options"]}
+    sqlite = {o["name"]: o for o in spec["adapters"]["sqlite"]["options"]}
+    assert duckdb["extension"]["multiple"] is True
+    assert sqlite["mode"]["type"] == "choice"
+    assert sqlite["mode"]["choices"]
+    assert sqlite["init_path"]["type"] == "path"
+
+
+@pytest.mark.parametrize("name", ["duckdb", "sqlite"])
+def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> None:
+    """The document is built from the declarations, not from a list of names.
+
+    An adapter may declare a different set on a different interpreter -- sqlite
+    appends `--extension` only where `enable_load_extension` exists, which is
+    not on macOS -- so what `--spec` reports has to follow that, and a test that
+    pins names cannot tell the difference between the two.
+    """
+    from harlequin.config import sluggify_option_name
+    from harlequin.plugins import load_adapter
+
+    declared = {
+        sluggify_option_name(option.name)
+        for option in load_adapter(name).ADAPTER_OPTIONS or []
+    }
+    reported = {
+        o["name"]
+        for o in spec_of(hsql("--spec", "-a", name))["adapters"][name]["options"]
+    }
+    # equal today, because neither in-tree adapter declares a spelling hsql's
+    # own flags take; a name that goes missing here is one hsql has claimed
+    assert reported == declared
 
 
 def test_spec_narrows_to_one_adapter(hsql: Hsql) -> None:
