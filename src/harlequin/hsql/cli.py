@@ -213,7 +213,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "--spec",
         is_flag=True,
         help=(
-            "Dump hsql's options and every installed adapter's, and exit. JSON. "
+            "Every option here, plus every installed adapter's, as JSON. "
             "-a narrows it to one adapter."
         ),
     )
@@ -1069,7 +1069,10 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
 
     Adapter *names* rather than their options: the list stays one line longer
     per installed adapter instead of one option table longer, and it is true
-    for all of them rather than for whichever is the default.
+    for all of them rather than for whichever is the default. `--spec` is what
+    that trade costs a caller, so this is where it is offered: the same surface
+    with every adapter's options filled in, for a reader that would rather
+    parse it than read it.
     """
     formats = ", ".join(output.format_names())
     names = ", ".join(installed) if installed else "(none installed)"
@@ -1096,6 +1099,11 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             "  3 connection error  4 timeout           130 interrupted"
         ),
         adapters,
+        (
+            "Machine-readable:\n"
+            f"  {PROGRAM} --spec   this help as JSON, with every installed "
+            "adapter's options"
+        ),
     ]
     # a lone \b tells click not to rewrap the paragraph that follows it
     return "\n\n".join(f"\b\n{block}" for block in blocks)

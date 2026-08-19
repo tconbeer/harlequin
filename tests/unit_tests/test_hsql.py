@@ -24,7 +24,7 @@ from harlequin.exception import (
     HarlequinCopyError,
     HarlequinQueryError,
 )
-from harlequin.hsql.cli import build_cli
+from harlequin.hsql.cli import PROGRAM, build_cli
 from harlequin.hsql.diagnostics import IDE_THEMES, ExitCode, exit_code_for
 
 Hsql = Callable[..., Result]
@@ -1774,6 +1774,24 @@ def test_spec_reports_an_adapter_it_could_not_import(
     assert "duckdb" in spec["adapters"]["duckdb"]["error"]
     assert spec["adapters"]["sqlite"]["options"]
     assert "could not be imported" in res.stderr
+
+
+@pytest.mark.parametrize("argv", [["--help"], ["--help", "-a", "duckdb"]])
+def test_the_help_points_at_the_machine_readable_one(
+    hsql: Hsql, argv: list[str]
+) -> None:
+    """`--help` names adapters and `--spec` fills their options in.
+
+    That is the trade the epilog makes -- a list of names rather than four
+    option tables -- so the end of the help is where a reader who wanted the
+    tables should be told where they are. Both spellings of the help say it:
+    `-a duckdb` answers for one adapter, and the JSON is still how you get all
+    of them.
+    """
+    res = hsql(*argv)
+    assert res.exit_code == ExitCode.OK
+    assert f"{PROGRAM} --spec" in res.output
+    assert "Machine-readable:" in res.output
 
 
 def test_spec_is_in_the_help(hsql: Hsql) -> None:
