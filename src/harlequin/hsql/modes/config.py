@@ -1,4 +1,5 @@
-"""`--config MODE`: what the config files say, which said it, and what may be in one.
+"""`--config MODE`: what the config files say, which said it, what may be in one
+-- and, for `init`, one more profile in one of them.
 
 Four questions, and they are the four a caller actually has. `list-profiles`
 answers *what can I pass to `-P`* -- a short list of names, so a profile that a
@@ -10,14 +11,22 @@ every file, one to a row, where a run would have stopped at the first. `schema`
 answers *what may I write* -- a JSON Schema for a config file, built from this
 installation, so an editor or an agent can answer the rest of them itself.
 
+`init` is the fifth, and the only one that changes anything: it writes a
+profile into a config file, through the same tomlkit path `harlequin --config`
+edits one with, so the comments and key order around it survive. It prompts for
+nothing, which is the whole point of having it beside a wizard -- each command
+gets the affordance right for its audience, and `hsql` may not import
+questionary.
+
 None of them connects, and `schema` does not even read a file: it describes the
 shape a config file may take, whether or not this machine has one. `show` and
 `list-profiles` import no adapter either -- a mode that reports on config files
-must work when the database does not. The other two do: `validate` imports one
-per adapter its profiles name, and `schema` every installed one, because both
-are describing options only the adapter declares. `show` does not import the
-execution core either -- it writes a document, not rows -- which is why the two
-imports the row-shaped modes need are deferred into them.
+must work when the database does not. The other three do: `validate` imports one
+per adapter its profiles name, `schema` every installed one, and `init` the one
+whose options it is writing, because all three are describing options only the
+adapter declares. `show` does not import the execution core either -- it writes
+a document, not rows -- which is why the two imports the row-shaped modes need
+are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
 the language they will edit the answer in, and JSON for a caller, under the same
@@ -27,24 +36,28 @@ the language they will edit the answer in, and JSON for a caller, under the same
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
 
-from harlequin.config import Provenance, load_config
+from harlequin.config import (
+    ConfigFile,
+    Provenance,
+    get_highest_priority_existing_config_file,
+    load_config,
+)
 from harlequin.exception import HarlequinConfigError
 from harlequin.hsql import diagnostics
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from tomlkit.items import Item, Table
 
     from harlequin.config import Config
     from harlequin.layout import LayoutOptions
     from harlequin.options import AbstractOption
 
-SHOW, LIST_PROFILES, VALIDATE, SCHEMA = CONFIG_MODES
+SHOW, LIST_PROFILES, VALIDATE, SCHEMA, INIT = CONFIG_MODES
 
 JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
@@ -108,6 +121,105 @@ def report(
             file_options=file_options,
         )
     return ExitCode.OK
+
+
+def initialize(
+    *,
+    profile_name: str | None,
+    adapter: str,
+    values: Mapping[str, Any],
+    config_path: Path | None,
+) -> Path:
+    """Write one profile into a config file, and return the file it went into.
+
+    `values` is what the caller typed and nothing else, so the profile says what
+    they asked for rather than restating every default the command already has.
+    The profile is written whole: a key it does not name is one the file no
+    longer has, which is what `harlequin --config` does with the profile it
+    edits and the only reading of `init` that does not leave a caller guessing
+    at what survived.
+
+    Raises: HarlequinConfigError for a name no profile may have, a destination
+    that is not TOML, or a file this cannot parse -- and OSError for one it
+    cannot write.
+    """
+    if not profile_name:
+        raise HarlequinConfigError(
+            "--config init writes a profile, so it needs a name for one: pass -P NAME.",
+            title="Harlequin could not write your configuration.",
+        )
+    if profile_name == "None":
+        raise HarlequinConfigError(
+            "-P None is how a caller asks for no profile at all, so it cannot "
+            "name the one --config init writes. Pass another name.",
+            title="Harlequin could not write your configuration.",
+        )
+    destination = config_path if config_path is not None else _destination()
+    if destination.suffix != ".toml":
+        raise HarlequinConfigError(
+            f"A config file must be TOML, and {destination} is not a .toml file.",
+            title="Harlequin could not write your configuration.",
+        )
+
+    # the whole file's Harlequin section, edited and handed back: `update()`
+    # prunes each table it is given against what it is given, so the profiles
+    # this is not writing have to be among them to survive.
+    config_file = ConfigFile(destination)
+    config = config_file.relevant_config
+    profiles = config.setdefault("profiles", {})
+    if not isinstance(profiles, dict):
+        # nothing has validated this file -- the write path reads it raw, so
+        # that what it writes back is what the user wrote -- and a `profiles`
+        # that is not a table is a file to refuse rather than to rewrite
+        raise HarlequinConfigError(
+            f"{destination} has a profiles key that is not a table of profiles, "
+            "so there is nothing to write a profile into.",
+            title="Harlequin could not write your configuration.",
+        )
+    replaced = profile_name in profiles
+    profiles[profile_name] = {
+        "adapter": adapter,
+        # TOML has no null, so a key with no value is a key the file cannot
+        # have. Nothing here is at its default, so this only ever drops an
+        # option a caller set to nothing.
+        **{key: _writable(value) for key, value in values.items() if value is not None},
+    }
+    config_file.update(config)
+    config_file.write()
+    # on stderr, where everything this command says about itself goes: stdout
+    # is data, and a mode that writes a file produces none
+    diagnostics.note(
+        f"replaced the profile named {profile_name} in {destination}."
+        if replaced
+        else f"wrote the profile named {profile_name} to {destination}."
+    )
+    return destination
+
+
+def _destination() -> Path:
+    """The file `init` writes when nothing named one.
+
+    The nearest config file that exists, which is where the wizard starts too,
+    and a new `.harlequin.toml` in the working directory when there is none: a
+    caller with no config yet gets one beside the project they are configuring,
+    rather than in a home directory they did not mention.
+    """
+    existing = get_highest_priority_existing_config_file()
+    return existing if existing is not None else Path.cwd() / ".harlequin.toml"
+
+
+def _writable(value: Any) -> Any:
+    """One click value as the TOML it is written as.
+
+    A repeatable option arrives as a tuple and a path as a `Path`, and TOML has
+    an array and a string. Everything else is already what it will be written
+    as, because the option's declared type is what click cast it to.
+    """
+    if isinstance(value, (tuple, list)):
+        return [_writable(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    return value
 
 
 def _write_document(

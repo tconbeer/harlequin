@@ -177,7 +177,7 @@
         },
         "config_path": {
           "type": "string",
-          "description": "Read this config file instead of the ones hsql discovers."
+          "description": "Read this config file instead of the ones hsql discovers. --config init writes it."
         },
         "config_mode": {
           "type": "string",
@@ -185,9 +185,10 @@
             "show",
             "list-profiles",
             "validate",
-            "schema"
+            "schema",
+            "init"
           ],
-          "description": "Report on the config files hsql found, and exit without running SQL. One of: show, list-profiles, validate, schema."
+          "description": "Report on the config files hsql found, or write a profile into one, and exit without running SQL. One of: show, list-profiles, validate, schema, init."
         },
         "spec": {
           "type": "boolean",

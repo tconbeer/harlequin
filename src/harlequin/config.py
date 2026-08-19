@@ -19,9 +19,9 @@ Who reads what:
 |                        | `Provenance` to fill in      |                      |
 | `hsql --config`        | `validate_config_files()`    | all, and none of     |
 | `validate`             |                              | them fatally         |
-| `harlequin --config`   | `ConfigFile`, at the path    | one, and unvalidated |
-|                        | `get_highest_priority_...()` | (it is about to be   |
-|                        | returns                      | written back)        |
+| `harlequin --config`,  | `ConfigFile`, at the path    | one, and unvalidated |
+| `hsql --config init`   | `get_highest_priority_...()` | (it is about to be   |
+|                        | returns, or `--config-path`  | written back)        |
 
 `load_profile()` is the fast path: it stops at the file that answers the
 question, so `hsql -P prod` never opens the files behind that one, and

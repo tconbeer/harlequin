@@ -26,6 +26,7 @@ from harlequin.exception import (
 )
 from harlequin.hsql.cli import PROGRAM, build_cli
 from harlequin.hsql.diagnostics import IDE_THEMES, ExitCode, exit_code_for
+from harlequin.hsql.modes import CONFIG_MODES
 
 Hsql = Callable[..., Result]
 
@@ -1177,17 +1178,13 @@ def test_config_refuses_to_also_run_sql(
 
 
 def test_an_unknown_config_mode_lists_the_ones_that_work(hsql: Hsql) -> None:
-    res = hsql("--config", "init")
+    res = hsql("--config", "profiles")
     assert res.exit_code == ExitCode.USAGE
-    assert "show" in res.stderr
-    assert "list-profiles" in res.stderr
-    assert "validate" in res.stderr
-    assert "schema" in res.stderr
+    for mode in CONFIG_MODES:
+        assert mode in res.stderr
 
 
 def test_config_modes_are_what_the_help_offers(hsql: Hsql) -> None:
-    from harlequin.hsql.modes import CONFIG_MODES
-
     res = hsql("--help")
     assert res.exit_code == ExitCode.OK
     for mode in CONFIG_MODES:
@@ -1573,6 +1570,276 @@ def test_config_schema_goes_to_the_file_dash_o_names(
     assert res.exit_code == ExitCode.OK
     assert res.stdout == ""
     assert json.loads(destination.read_text())["title"] == "Harlequin config"
+
+
+# --- `--config init`, the mode that writes one -------------------------------
+
+
+@pytest.fixture
+def init_dirs(
+    config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """`config_dirs`, with the mock cwd as the process's working directory too.
+
+    With no config file anywhere, `--config init` writes one beside the project
+    it is configuring, and that fallback is `Path.cwd()` -- which patching the
+    search path does not reach.
+    """
+    monkeypatch.chdir(config_dirs[0])
+    return config_dirs
+
+
+def written(path: Path) -> dict[str, Any]:
+    """A config file as the loader reads it, to assert on what init wrote."""
+    from harlequin.config import ConfigFile
+
+    return ConfigFile(path).relevant_config
+
+
+def test_config_init_writes_a_profile_where_there_was_no_config_file(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The first config file a caller has, in the directory they are in.
+
+    Not the home directory: a caller who has said nothing about where their
+    config lives gets it beside the project they were configuring, which is
+    also the file the next command discovers first.
+    """
+    cwd, home = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite", "./my.db")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert not (home / ".harlequin.toml").exists()
+    assert written(cwd / ".harlequin.toml") == {
+        "profiles": {"prod": {"adapter": "sqlite", "conn_str": ["./my.db"]}}
+    }
+
+
+def test_config_init_says_what_it_wrote_and_where(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """A mode that writes a file produces no data, so this is the whole answer."""
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod")
+    assert res.exit_code == ExitCode.OK
+    assert "prod" in res.stderr
+    assert str(cwd / ".harlequin.toml") in res.stderr
+
+
+def test_config_init_writes_what_was_typed_and_nothing_else(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """An option left at its default carries no intent, so it is not a key.
+
+    The same rule `merge_profile_with_cli()` reads the other way round: a
+    profile full of the command's own defaults would pin every one of them
+    against the day one changes.
+    """
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "--limit", "10")
+    assert res.exit_code == ExitCode.OK
+    profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
+    assert profile == {"adapter": "duckdb", "limit": 10}
+
+
+def test_config_init_writes_an_adapters_own_options(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The half of a profile only the adapter declares.
+
+    Which is why this is the one mode that imports an adapter to write a file:
+    `--read-only` is not a flag hsql has until sqlite's options are on it.
+    """
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite", "--read-only")
+    assert res.exit_code == ExitCode.OK
+    profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
+    assert profile == {"adapter": "sqlite", "read_only": True}
+
+
+def test_config_init_writes_a_shorthand_as_the_format_it_stands_for(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """`--csv` is a way of spelling `--format csv`, and a profile has the key."""
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "--csv")
+    assert res.exit_code == ExitCode.OK
+    profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
+    assert profile == {"adapter": "duckdb", "format": "csv"}
+
+
+def test_config_init_names_the_adapter_even_when_nothing_did(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """A profile that names no adapter is one the default could move under."""
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod")
+    assert res.exit_code == ExitCode.OK
+    assert written(cwd / ".harlequin.toml")["profiles"]["prod"]["adapter"] == "duckdb"
+
+
+def test_config_init_keeps_everything_it_was_not_asked_to_write(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The reason it writes through tomlkit rather than dumping a document.
+
+    A caller's comments, key order and the profiles beside the one being
+    written all survive, because a config file is a file a person wrote.
+    """
+    cwd, _ = init_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text(
+        'default_profile = "dev"\n'
+        "\n"
+        "# the one I use every day\n"
+        "[profiles.dev]\n"
+        'adapter = "duckdb"\n'
+        "# a big limit, because the laptop can take it\n"
+        "limit = 500000\n"
+    )
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite")
+    assert res.exit_code == ExitCode.OK
+
+    after = path.read_text()
+    assert "# the one I use every day" in after
+    assert "# a big limit, because the laptop can take it" in after
+    assert written(path) == {
+        "default_profile": "dev",
+        "profiles": {
+            "dev": {"adapter": "duckdb", "limit": 500000},
+            "prod": {"adapter": "sqlite"},
+        },
+    }
+
+
+def test_config_init_replaces_the_profile_it_names(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """A profile is written whole, and says so.
+
+    The alternative -- merging into what is there -- leaves a caller unable to
+    remove a key without editing the file by hand, and unable to tell from the
+    command what the profile now says.
+    """
+    cwd, _ = init_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text('[profiles.prod]\nadapter = "sqlite"\nread_only = true\n')
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite")
+    assert res.exit_code == ExitCode.OK
+    assert "replaced" in res.stderr
+    assert written(path)["profiles"]["prod"] == {"adapter": "sqlite"}
+
+
+def test_config_init_writes_the_file_config_path_names(
+    hsql: Hsql, init_dirs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """A path that is not there yet, which is the file this mode exists to make."""
+    cwd, _ = init_dirs
+    destination = tmp_path / "nested" / "harlequin.toml"
+    res = hsql("--config", "init", "-P", "prod", "--config-path", str(destination))
+    assert res.exit_code == ExitCode.OK
+    assert written(destination)["profiles"]["prod"] == {"adapter": "duckdb"}
+    assert not (cwd / ".harlequin.toml").exists()
+
+
+def test_config_init_writes_the_nearest_config_file_that_exists(
+    hsql: Hsql, two_config_files: tuple[Path, Path]
+) -> None:
+    """Where the wizard starts, for the same reason: it is the file that wins."""
+    project, home = two_config_files
+    before = home.read_text()
+    res = hsql("--config", "init", "-P", "new", "-a", "sqlite")
+    assert res.exit_code == ExitCode.OK
+    assert "new" in written(project)["profiles"]
+    assert home.read_text() == before
+
+
+def test_config_init_reads_no_profile_at_all(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The profile `-P` names is the one being written, not one to run under.
+
+    So a name no file defines is the point rather than an error -- and a config
+    that would refuse a run for a `default_profile` naming nothing still gets
+    written to.
+    """
+    cwd, _ = init_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text('default_profile = "gone"\n')
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite")
+    assert res.exit_code == ExitCode.OK
+    assert written(path)["profiles"]["prod"] == {"adapter": "sqlite"}
+
+
+def test_config_init_writes_a_profile_the_next_invocation_runs_under(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The whole of what this mode is for, in two invocations.
+
+    Nothing else asserts that what init writes is what the run path reads: the
+    keys are hsql's own spellings on the way in and a profile's on the way out,
+    and this is where those two agree.
+    """
+    res = hsql("--config", "init", "-P", "lite", "-a", "sqlite", ":memory:", "-tA")
+    assert res.exit_code == ExitCode.OK
+
+    res = hsql("-P", "lite", "-c", "select 42")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "42\n"
+
+
+def test_config_init_needs_a_name_for_the_profile_it_writes(hsql: Hsql) -> None:
+    res = hsql("--config", "init")
+    assert res.exit_code == ExitCode.USAGE
+    assert "-P" in res.stderr
+
+
+def test_config_init_refuses_the_name_that_means_no_profile(hsql: Hsql) -> None:
+    """`-P None` asks for Harlequin's defaults, so it names nothing to write."""
+    res = hsql("--config", "init", "-P", "None")
+    assert res.exit_code == ExitCode.USAGE
+    assert "None" in res.stderr
+
+
+def test_config_init_refuses_a_destination_that_is_not_toml(
+    hsql: Hsql, tmp_path: Path
+) -> None:
+    destination = tmp_path / "harlequin.ini"
+    res = hsql("--config", "init", "-P", "prod", "--config-path", str(destination))
+    assert res.exit_code == ExitCode.USAGE
+    assert not destination.exists()
+
+
+def test_config_init_refuses_a_file_it_cannot_parse(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """Half-understanding a file is the one way this could destroy one."""
+    cwd, _ = init_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text("[profiles.prod\nadapter = 'duckdb'\n")
+    res = hsql("--config", "init", "-P", "other")
+    assert res.exit_code == ExitCode.USAGE
+    assert path.read_text() == "[profiles.prod\nadapter = 'duckdb'\n"
+
+
+def test_config_init_refuses_a_file_whose_profiles_are_not_profiles(
+    hsql: Hsql, init_dirs: tuple[Path, Path]
+) -> None:
+    """The write path reads a file raw, so this is the shape it cannot assume."""
+    cwd, _ = init_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text("profiles = 3\n")
+    res = hsql("--config", "init", "-P", "prod")
+    assert res.exit_code == ExitCode.USAGE
+    assert path.read_text() == "profiles = 3\n"
+
+
+def test_config_init_does_not_run_sql(hsql: Hsql, init_dirs: tuple[Path, Path]) -> None:
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert "does not run SQL" in res.stderr
+    assert not (cwd / ".harlequin.toml").exists()
 
 
 # --- `--spec`, the mode that reports on the command itself -------------------
