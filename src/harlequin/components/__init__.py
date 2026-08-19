@@ -1,14 +1,15 @@
 from harlequin.components.code_editor import CodeEditor, EditorCollection
 from harlequin.components.data_catalog import DataCatalog, HarlequinTree
 from harlequin.components.debug_info import DebugInfoScreen
-from harlequin.components.error_modal import ErrorModal
 from harlequin.components.export_screen import ExportScreen, export_callback
 from harlequin.components.help_screen import HelpScreen
 from harlequin.components.history_screen import HistoryScreen
 from harlequin.components.results_viewer import ResultsTable, ResultsViewer
 from harlequin.components.run_query_bar import RunQueryBar
+from harlequin.components.text_modal import CellViewModal, ErrorModal, TextModal
 
 __all__ = [
+    "CellViewModal",
     "CodeEditor",
     "EditorCollection",
     "ErrorModal",
@@ -22,4 +23,5 @@ __all__ = [
     "DataCatalog",
     "HarlequinTree",
     "HistoryScreen",
+    "TextModal",
 ]

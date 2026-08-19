@@ -86,6 +86,7 @@ VSCODE_RESULTS_VIEWER_BINDINGS = [
     HarlequinKeyBinding("k", "results_viewer.next_tab"),
     HarlequinKeyBinding("ctrl+c", "results_viewer.copy_selection"),
     HarlequinKeyBinding("enter", "results_viewer.select_cursor"),
+    HarlequinKeyBinding("space", "results_viewer.view_cell"),
     HarlequinKeyBinding("up", "results_viewer.cursor_up"),
     HarlequinKeyBinding("down", "results_viewer.cursor_down"),
     HarlequinKeyBinding("left", "results_viewer.cursor_left"),

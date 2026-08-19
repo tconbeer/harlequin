@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
 - Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does.
+- Harlequin's Results Viewer can now show a cell's value in a scrollable modal (press `space`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
+
 
 ### Bug Fixes
 

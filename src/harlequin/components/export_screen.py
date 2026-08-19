@@ -13,8 +13,8 @@ from textual.widgets import Button, Input, Label, Select, Static
 from textual_fastdatatable.backend import ArrowBackend
 from textual_textarea import PathInput
 
-from harlequin.components.error_modal import ErrorModal
 from harlequin.components.results_viewer import ResultsTable
+from harlequin.components.text_modal import ErrorModal
 from harlequin.exception import HarlequinCopyError
 from harlequin.export import write_file
 from harlequin.options import AbstractOption, HarlequinCopyFormat

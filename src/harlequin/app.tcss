@@ -375,29 +375,27 @@ ResultsTable > .datatable--hover {
     background: $boost;
 }
 
-/* ERROR MODAL */
-ErrorModal {
+/* TEXT MODALS (CELL VIEW, ERROR) */
+TextModal {
     align: center middle;
     padding: 0;
 }
 
-#error_outer {
-    border: round $error;
-    background: $background;
+TextModal #modal_outer {
     margin: 5 10;
-    padding: 1 2;
-    max-width: 88;
 }
 
-#error_header {
-    dock: top;
+ErrorModal #modal_outer {
+    border: round $error;
+}
+
+TextModal #modal_header {
     color: $text-muted;
-    margin: 0 0 1 0;
-    padding: 0 1;
 }
 
-#error_inner {
-    border: round $border-color-nofocus ;
+TextModal #modal_inner {
+    max-height: 100%;
+    height: auto;
     padding: 1 1 1 2;
 }
 
@@ -407,13 +405,6 @@ ClickableStatic {
 
 ClickableStatic:hover {
     color: $primary;
-}
-
-#error_footer {
-    dock: bottom;
-    color: $text-muted;
-    margin: 1 0 0 0;
-    padding: 0 1;
 }
 
 /* HELP SCREEN */

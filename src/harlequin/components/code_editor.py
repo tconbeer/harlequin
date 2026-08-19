@@ -13,7 +13,7 @@ from textual.widgets.text_area import Location, Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
-from harlequin.components.error_modal import ErrorModal
+from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators

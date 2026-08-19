@@ -11,6 +11,7 @@ from textual_fastdatatable import DataTable
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.components.results_viewer import ResultsViewer
+from harlequin.components.text_modal import CellViewModal
 
 
 @pytest.mark.asyncio
@@ -82,6 +83,67 @@ async def test_copy_data(
         assert app.editor.text == expected
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "paste values from table")
+
+
+@pytest.mark.asyncio
+async def test_view_cell_modal(
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    long_value = "the quick brown fox " * 40
+    query = f"select '{long_value}' as story"
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = query
+        await pilot.press("ctrl+j")
+        await wait_for_workers(app)
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert app.results_viewer._has_focus_within
+        await pilot.press("space")
+        await pilot.pause()
+
+        assert isinstance(app.screen, CellViewModal)
+        assert app.screen.text == long_value
+        assert app.screen.title == "story"
+        assert await app_snapshot(app, "view cell modal")
+
+        # clicking the text copies it and leaves the modal up, as does c
+        await pilot.click("#modal_info")
+        await pilot.pause()
+        assert isinstance(app.screen, CellViewModal)
+        assert app.clipboard == long_value
+
+        await pilot.press("c")
+        await pilot.pause()
+        assert isinstance(app.screen, CellViewModal)
+        assert app.clipboard == long_value
+
+        # scroll keys scroll instead of dismissing
+        body = app.screen.body
+        await pilot.press("pagedown")
+        await pilot.wait_for_scheduled_animations()
+        await pilot.pause()
+        assert isinstance(app.screen, CellViewModal)
+        assert body.scroll_offset.y > 0
+
+        # any other key dismisses it
+        await pilot.press("x")
+        await pilot.pause()
+        assert not isinstance(app.screen, CellViewModal)
+
+        # a click outside the modal also closes it, like the help/error modals
+        await pilot.press("space")
+        await pilot.pause()
+        assert isinstance(app.screen, CellViewModal)
+        await pilot.click()
+        await pilot.pause()
+        assert not isinstance(app.screen, CellViewModal)
 
 
 @pytest.mark.asyncio
