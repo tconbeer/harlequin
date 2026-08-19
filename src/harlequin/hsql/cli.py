@@ -1,9 +1,10 @@
 """The `hsql` command: run SQL against any Harlequin adapter, and exit.
 
-Two-phase parsing is what keeps start-up cheap. The first pass reads `-a`, `-P`
-and `--config-path` well enough to name the one adapter an invocation will use,
-without importing any of them; the second builds the real command with that
-adapter's connection options on it. An invocation only ever uses one adapter,
+Two-phase parsing is what keeps start-up cheap. The first pass -- shared with
+the IDE, in `harlequin.first_pass` -- reads `-a`, `-P` and `--config-path` well
+enough to name the one adapter an invocation will use, without importing any of
+them; the second builds the real command with that adapter's connection options
+on it. An invocation only ever uses one adapter,
 so for execution this is not a compromise.
 
 `--help` and `--version` are the exception, and work the other way round: with
@@ -39,8 +40,6 @@ from harlequin.config import (
     DEFAULT_ADAPTER,
     TUI_ONLY_KEYS,
     UNLIMITED,
-    Profile,
-    load_profile,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
@@ -49,6 +48,11 @@ from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
+)
+from harlequin.first_pass import (
+    attach_adapter_options,
+    command_spellings,
+    first_pass,
 )
 from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
@@ -95,7 +99,35 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     can answer.
     """
     installed = adapter_names()
-    found = _preflight(argv, installed)
+    found = first_pass(
+        argv,
+        installed,
+        program=PROGRAM,
+        # the modes, so that the pass can decline to read a profile for a
+        # command that is not going to connect with one
+        extra_options=[
+            click.Option(["--config"]),
+            click.Option(["--spec"], is_flag=True),
+            click.Option(["--info"], is_flag=True),
+        ],
+        # A mode reports on what is installed or configured rather than
+        # connecting with it, so there is no profile to read for one and no
+        # adapter whose options belong on the command. `--config` reads the
+        # files itself and reports what it finds wrong with them under its own
+        # exit code, rather than having the first pass hold an error about the
+        # first file it stumbled on, and `--info` reports one as part of its
+        # answer; `--spec` describes the command, which a config file it could
+        # not read has no bearing on.
+        connects=lambda params: (
+            not (
+                params.get("config") is not None
+                or params.get("spec")
+                or params.get("info")
+            )
+        ),
+        # bare `hsql` renders help, so it names no adapter either
+        no_args_is_help=True,
+    )
 
     profile_config = found.profile
     adapter_cls: type[HarlequinAdapter] | None = None
@@ -283,7 +315,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         """
         # `profile`, `config_path` and the mode flags are named rather than left
         # in `kwargs` so that they stay out of the merge, and so out of the
-        # options handed to the adapter. `_preflight` has already read them off
+        # options handed to the adapter. The first pass has already read them off
         # the same argv -- a mode is what decides there is no adapter to
         # attach options for.
         # the profile was already read, and the adapter already loaded, to
@@ -522,7 +554,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
         except HarlequinConfigError as e:
             setup_error = e
-        _attach_adapter_options(cmd, adapter_cls)
+        reserved, taken = command_spellings(cmd)
+        # hsql's own flags are the part of it that is an API, so a colliding
+        # adapter option loses the colliding spelling rather than shadowing a
+        # documented one. The IDE, whose adapter options predate the rule,
+        # attaches without reserving anything.
+        attach_adapter_options(cmd, adapter_cls, reserved=reserved, taken=taken)
     return cmd
 
 
@@ -792,159 +829,6 @@ def _report_hidden_rows(result: ResultSet, layout_options: LayoutOptions) -> Non
     if layout_options.footer or cap is None or result.row_count <= cap:
         return
     diagnostics.report_row_cap(shown=cap, of=result.fetched_row_count)
-
-
-@dataclass(frozen=True)
-class _Preflight:
-    """What a first look at the arguments settled, before click parses them."""
-
-    profile: Profile
-    """The profile this invocation runs under, read once and reused."""
-
-    adapter: str | None
-    """Whose connection options belong on the command; None to attach none."""
-
-    error: HarlequinConfigError | None = None
-    """Held rather than raised, so the callback can report it with an exit code."""
-
-
-def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
-    """Read the profile and name the adapter, importing none of them.
-
-    This is the first of the two passes: it learns just enough from the raw
-    arguments -- `-a`, `-P`, `--config-path` -- to decide whose connection
-    options the real command carries, without `ep.load()`ing every installed
-    adapter to find out.
-
-    A config file it cannot read is held, not raised: at this point there is no
-    command and so no exit code, and the profile is wanted whether or not it
-    names an adapter, so the callback reports it.
-    """
-    probe = click.Command(
-        PROGRAM,
-        params=[
-            click.Option(["-a", "--adapter"]),
-            click.Option(["-P", "--profile"]),
-            click.Option(
-                ["--config-path"],
-                type=click.Path(path_type=Path),
-                envvar="HARLEQUIN_CONFIG_PATH",
-            ),
-            # the modes, so that this pass can decline to read a profile for a
-            # command that is not going to connect with one
-            click.Option(["--config"]),
-            click.Option(["--spec"], is_flag=True),
-            click.Option(["--info"], is_flag=True),
-            # click's own --help and --version are eager and would exit; these
-            # are the same spellings as plain flags, so the probe can see that
-            # one was asked for.
-            click.Option(["--help"], is_flag=True),
-            click.Option(["--version"], is_flag=True),
-        ],
-        add_help_option=False,
-    )
-    # on the Context, not in the command's context_settings: those are applied
-    # by make_context(), which this deliberately does not go through.
-    ctx = click.Context(
-        probe,
-        resilient_parsing=True,
-        ignore_unknown_options=True,
-        allow_extra_args=True,
-        allow_interspersed_args=True,
-    )
-    with contextlib.suppress(click.ClickException, ValueError):
-        probe.parse_args(ctx, list(argv))
-
-    if (
-        ctx.params.get("config") is not None
-        or ctx.params.get("spec")
-        or ctx.params.get("info")
-    ):
-        # A mode reports on what is installed or configured rather than
-        # connecting with it, so there is no profile to read here and no adapter
-        # whose options belong on the command. `--config` reads the files itself
-        # and reports what it finds wrong with them under its own exit code,
-        # rather than having this pass hold an error about the first file it
-        # stumbled on, and `--info` reports one as part of its answer; `--spec`
-        # describes the command, which a config file it could not read has no
-        # bearing on.
-        return _Preflight(profile={}, adapter=None)
-
-    profile: Profile = {}
-    error: HarlequinConfigError | None = None
-    try:
-        # the profile, and not the keymaps beside it: keymaps are the IDE's, and
-        # wanting them would mean reading every config file rather than stopping
-        # at the one that defines this profile.
-        profile = load_profile(
-            config_path=ctx.params.get("config_path"),
-            profile_name=ctx.params.get("profile"),
-        )
-    except HarlequinConfigError as e:
-        error = e
-    except OSError as e:
-        error = HarlequinConfigError(str(e), title="Harlequin could not read a config.")
-
-    name = ctx.params.get("adapter") or profile.get("adapter")
-    # bare `hsql` and `hsql --help` render the adapter-agnostic surface, which
-    # is the one help that is true for every adapter -- and imports none.
-    # `--version` prints the same string whatever is installed, so it takes the
-    # same exit: an answer that does not depend on an adapter should not wait
-    # for one to import. Both still load a *named* adapter, so that
-    # `hsql --help -a postgres` documents it and its options parse either way.
-    wants_help = not argv or bool(ctx.params.get("help"))
-    wants_version = bool(ctx.params.get("version"))
-    if name is None and (wants_help or wants_version):
-        return _Preflight(profile=profile, adapter=None, error=error)
-
-    by_name = {n.lower(): n for n in installed}
-    if name is None:
-        name = DEFAULT_ADAPTER
-    # an unknown name is left for click's Choice to reject, with the list
-    return _Preflight(
-        profile=profile, adapter=by_name.get(str(name).lower()), error=error
-    )
-
-
-def reserved_spellings(cmd: click.Command) -> tuple[set[str], set[str]]:
-    """The spellings and parameter names an adapter's option cannot have.
-
-    hsql's own flags are the part of it that is an API, so a colliding adapter
-    option loses the colliding spelling. `_attach_adapter_options` applies that
-    to the command; `--spec` applies it to the document it writes.
-    """
-    return (
-        {opt for param in cmd.params for opt in param.opts},
-        {param.name for param in cmd.params if param.name},
-    )
-
-
-def _attach_adapter_options(
-    cmd: click.Command, adapter_cls: type[HarlequinAdapter]
-) -> None:
-    """Add one adapter's connection options to an already-built command.
-
-    `AbstractOption.to_click()` appends straight to a `Command`'s params, so the
-    adapter declares its options exactly as it does for the IDE and this only
-    has to settle what happens when one of them collides. hsql's own flags are
-    the part of it that is an API, so a colliding declaration loses the
-    colliding spelling -- visibly, in `hsql --help -a <adapter>` -- rather than
-    shadowing a documented flag.
-    """
-    reserved, taken = reserved_spellings(cmd)
-    first = len(cmd.params)
-
-    for option in adapter_cls.ADAPTER_OPTIONS or []:
-        option.to_click()(cmd)
-
-    for param in cmd.params[first:]:
-        param.opts = [opt for opt in param.opts if opt not in reserved]
-        param.secondary_opts = [
-            opt for opt in param.secondary_opts if opt not in reserved
-        ]
-    cmd.params[first:] = [
-        param for param in cmd.params[first:] if param.opts and param.name not in taken
-    ]
 
 
 def _record_source(
