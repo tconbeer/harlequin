@@ -1171,11 +1171,12 @@ def test_config_refuses_to_also_run_sql(
 
 
 def test_an_unknown_config_mode_lists_the_ones_that_work(hsql: Hsql) -> None:
-    res = hsql("--config", "schema")
+    res = hsql("--config", "init")
     assert res.exit_code == ExitCode.USAGE
     assert "show" in res.stderr
     assert "list-profiles" in res.stderr
     assert "validate" in res.stderr
+    assert "schema" in res.stderr
 
 
 def test_config_modes_are_what_the_help_offers(hsql: Hsql) -> None:
@@ -1474,6 +1475,98 @@ def test_config_validate_does_not_connect(
     res = hsql("--config", "validate", "-tA")
     assert res.exit_code == ExitCode.OK
     assert res.stdout == ""
+
+
+# --- `--config schema`, the mode that reports what may be in a config file ---
+
+
+def schema_of(res: Result) -> dict[str, Any]:
+    assert res.exit_code == ExitCode.OK
+    return cast("dict[str, Any]", json.loads(res.stdout))
+
+
+def test_config_schema_is_a_json_schema(hsql: Hsql) -> None:
+    schema = schema_of(hsql("--config", "schema"))
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert set(schema["properties"]) == {"default_profile", "profiles", "keymaps"}
+    assert schema["$defs"]["profile"]["properties"]["limit"]["type"] == "integer"
+
+
+def test_config_schema_describes_the_adapters_installed_here(hsql: Hsql) -> None:
+    """The reason to generate it rather than ship one: it knows what is here."""
+    schema = schema_of(hsql("--config", "schema"))
+    installed = schema["$defs"]["profile"]["properties"]["adapter"]["enum"]
+    assert {"duckdb", "sqlite"} <= set(installed)
+    for name in installed:
+        assert f"{name}_options" in schema["$defs"]
+
+
+def test_config_schema_describes_an_adapters_own_options(hsql: Hsql) -> None:
+    options = schema_of(hsql("--config", "schema"))["$defs"]["duckdb_options"]
+    assert options["properties"]["read_only"]["type"] == "boolean"
+    assert options["properties"]["extension"]["type"] == "array"
+
+
+def test_config_schema_does_not_claim_the_published_id(hsql: Hsql) -> None:
+    """The document published at that URL is the one that names no adapter."""
+    assert "$id" not in schema_of(hsql("--config", "schema"))
+
+
+def test_config_schema_reads_no_config_file(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """It describes what a config file may say, not what one says.
+
+    So it answers over a file that cannot be parsed -- which is a config a
+    caller might well be reaching for a schema to fix.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text("[profiles.prod\nadapter = 'duckdb'\n")
+    assert schema_of(hsql("--config", "schema"))["title"] == "Harlequin config"
+
+
+def test_config_schema_does_not_connect(hsql: Hsql) -> None:
+    res = hsql("--config", "schema", ":memory:")
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)
+
+
+def test_config_schema_does_not_run_sql(hsql: Hsql) -> None:
+    res = hsql("--config", "schema", ":memory:", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert "does not run SQL" in res.stderr
+
+
+def test_config_schema_writes_nothing_under_format_none(hsql: Hsql) -> None:
+    res = hsql("--config", "schema", "--format", "none")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+@pytest.mark.parametrize("argv", [["--csv"], ["--format", "markdown"]])
+def test_config_schema_notes_a_format_it_cannot_reach(
+    hsql: Hsql, argv: list[str]
+) -> None:
+    res = hsql("--config", "schema", *argv)
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)
+    assert "--config schema" in res.stderr
+
+
+def test_config_schema_json_is_not_a_format_it_declines(hsql: Hsql) -> None:
+    res = hsql("--config", "schema", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert res.stderr == ""
+
+
+def test_config_schema_goes_to_the_file_dash_o_names(
+    hsql: Hsql, tmp_path: Path
+) -> None:
+    destination = tmp_path / "config-schema.json"
+    res = hsql("--config", "schema", "-o", str(destination))
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert json.loads(destination.read_text())["title"] == "Harlequin config"
 
 
 # --- `--spec`, the mode that reports on the command itself -------------------

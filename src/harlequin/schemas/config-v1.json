@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harlequin.sh/schemas/config/v1.json",
+  "title": "Harlequin config",
+  "description": "A .harlequin.toml or harlequin.toml file, or the [tool.harlequin] table of a pyproject.toml. Read by both the harlequin IDE and the hsql command.",
+  "type": "object",
+  "properties": {
+    "default_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The profile both commands load when -P/--profile does not name one."
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/profile"
+      },
+      "default": {},
+      "description": "Named sets of options, one table each. -P NAME loads one; the profile named None is Harlequin's own defaults."
+    },
+    "keymaps": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/keybinding"
+        }
+      },
+      "default": {},
+      "description": "Named key bindings for the harlequin IDE, one array of bindings each."
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "title": "Profile",
+      "description": "A profile's options: the ones each command reads for itself, plus the connection options declared by the adapter it names.",
+      "properties": {
+        "version": {
+          "type": "boolean",
+          "description": "Show the version and exit.",
+          "default": false
+        },
+        "conn_str": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "What to connect to, which both commands take positionally. One string, or an array of them for an adapter that takes several."
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Execute SQL. Repeatable."
+        },
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Execute SQL from a file, or from stdin for `-`. Repeatable."
+        },
+        "output": {
+          "type": "string",
+          "description": "Write results to PATH instead of stdout."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "table",
+            "markdown",
+            "md",
+            "vertical",
+            "csv",
+            "tsv",
+            "json",
+            "jsonl",
+            "ndjson",
+            "parquet",
+            "orc",
+            "feather",
+            "arrow",
+            "none"
+          ],
+          "description": "Output format. See below for the list.",
+          "default": "table"
+        },
+        "csv": {
+          "type": "boolean",
+          "description": "Shorthand for --format csv.",
+          "default": false
+        },
+        "json": {
+          "type": "boolean",
+          "description": "Shorthand for --format json.",
+          "default": false
+        },
+        "jsonl": {
+          "type": "boolean",
+          "description": "Shorthand for --format jsonl.",
+          "default": false
+        },
+        "markdown": {
+          "type": "boolean",
+          "description": "Shorthand for --format markdown.",
+          "default": false
+        },
+        "vertical": {
+          "type": "boolean",
+          "description": "Shorthand for --format vertical.",
+          "default": false
+        },
+        "tuples_only": {
+          "type": "boolean",
+          "description": "Rows only: no header, no footer. As in psql.",
+          "default": false
+        },
+        "no_align": {
+          "type": "boolean",
+          "description": "Unaligned output. As in psql.",
+          "default": false
+        },
+        "no_header": {
+          "type": "boolean",
+          "description": "Omit the header row, keeping other chrome.",
+          "default": false
+        },
+        "no_footer": {
+          "type": "boolean",
+          "description": "Omit the row-count footer, keeping other chrome.",
+          "default": false
+        },
+        "null_string": {
+          "type": "string",
+          "description": "Render NULL as TEXT. Defaults to NULL for text formats, empty for csv."
+        },
+        "profile": {
+          "type": "string",
+          "description": "Load a profile from an available config file. Options passed here take precedence over the profile's. Use the profile named None for Harlequin's defaults instead of the config file's default profile."
+        },
+        "adapter": {
+          "type": "string",
+          "description": "The installed adapter plug-in to connect with.",
+          "default": "duckdb"
+        },
+        "config_path": {
+          "type": "string",
+          "description": "Read this config file instead of the ones hsql discovers."
+        },
+        "config_mode": {
+          "type": "string",
+          "enum": [
+            "show",
+            "list-profiles",
+            "validate",
+            "schema"
+          ],
+          "description": "Report on the config files hsql found, and exit without running SQL. One of: show, list-profiles, validate, schema."
+        },
+        "spec": {
+          "type": "boolean",
+          "description": "Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter.",
+          "default": false
+        },
+        "info": {
+          "type": "boolean",
+          "description": "Versions, config files, the active profile, and what each installed adapter declares it supports, as JSON. Connects to nothing. -a narrows it to one adapter.",
+          "default": false
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum rows fetched per result set. -1 for no limit.",
+          "default": 500
+        },
+        "display_rows": {
+          "type": "integer",
+          "description": "Rows printed per result set by the text layouts. -1 for all rows. [default: 40 for table, markdown, md; 10 for vertical]"
+        },
+        "result": {
+          "type": "string",
+          "description": "Which result set(s) to emit.",
+          "default": "all"
+        },
+        "on_error": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "continue"
+          ],
+          "description": "What to do when a statement fails.",
+          "default": "stop"
+        },
+        "stats": {
+          "type": "boolean",
+          "description": "Write a one-line JSON summary to stderr.",
+          "default": false
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "description": "Color text output. `auto` follows the terminal and NO_COLOR.",
+          "default": "never"
+        },
+        "theme": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "keymap_name": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "show_files": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "show_s3": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "locale": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "no_download_tzdata": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "viewer_max_rows": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        }
+      }
+    },
+    "keybinding": {
+      "title": "Key binding",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "key_display": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "keys"
+      ],
+      "description": "One key binding: the keys, the action they run, and how to show them.",
+      "additionalProperties": false
+    }
+  }
+}

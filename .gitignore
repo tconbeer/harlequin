@@ -8,6 +8,8 @@
 !tests/data/**/*.db
 !tests/data/**/*.csv
 !tests/data/**/*.json
+# the packaged base JSON Schema, written by scripts/write_config_schema.py
+!src/harlequin/schemas/*.json
 !tests/data/**/*.parquet
 !tests/data/**/*.sql
 # Snapshots are named after the format they hold, so several of them collide

@@ -488,7 +488,7 @@ def parse_profile_options(
 
     try:
         parsed = msgspec.convert(
-            given, _adapter_options_model(adapter, declared), strict=False
+            given, adapter_options_model(adapter, declared), strict=False
         )
     except msgspec.ValidationError as e:
         found = _option_problems(
@@ -503,6 +503,22 @@ def parse_profile_options(
         return profile
 
     return {**profile, **{key: getattr(parsed, key) for key in given}}
+
+
+def adapter_options_model(
+    adapter: str, declared: Mapping[str, AbstractOption]
+) -> type[msgspec.Struct]:
+    """One adapter's declared options, as a model a profile can be parsed into.
+
+    Every field is optional: a profile sets the options it needs and leaves the
+    rest to the adapter's own defaults.
+    """
+    fields: list[tuple[str, type, Any]] = [
+        (name, Optional[_declared_type(option)], None)  # type: ignore[misc]
+        for name, option in declared.items()
+        if name.isidentifier()
+    ]
+    return msgspec.defstruct(f"{adapter}_options", fields, forbid_unknown_fields=True)
 
 
 def merge_profile_with_cli(
@@ -831,18 +847,6 @@ def _select_profile(
         raise HarlequinConfigError(message, title=CONFIG_ERROR_TITLE)
     problems.add(message, key="default_profile")
     return {}
-
-
-def _adapter_options_model(
-    adapter: str, declared: Mapping[str, AbstractOption]
-) -> type[msgspec.Struct]:
-    """One adapter's declared options, as a model a profile can be parsed into."""
-    fields: list[tuple[str, type, Any]] = [
-        (name, Optional[_declared_type(option)], None)  # type: ignore[misc]
-        for name, option in declared.items()
-        if name.isidentifier()
-    ]
-    return msgspec.defstruct(f"{adapter}_options", fields, forbid_unknown_fields=True)
 
 
 def _declared_type(option: AbstractOption) -> Any:
