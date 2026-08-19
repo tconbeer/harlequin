@@ -4,31 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Config files now merge profile by profile; higher-priority files the define profiles no longer clobber profiles with different names defined in lower-priority profiles ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- A profile's adapter options are now validated against what that adapter declares; incorrect configurations may raise errors instead of being silently ignored.
+
 ### Features
 
 - Adds `hsql --config show`, `--config list-profiles`, `--config validate` and `--config schema`, which report on your config files instead of running SQL. 
   - `list-profiles` lists every profile you can pass to `-P`, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
   - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
   - `validate` reports every problem in every discovered config file: the file, the key, what is wrong, and the line. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
-  - `schema` writes a JSON Schema for a Harlequin config file, covering the connection options of every adapter you have installed. Point your editor at it for completion and validation as you type in your `.harlequin.toml`.
+  - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
-- Adds `hsql --info`, a JSON report on your installation: versions, platform, the config files hsql found, the profile a run would use, and what each installed adapter declares it supports. `-a NAME` narrows it to one adapter. 
+- Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
-
-### Breaking Changes
-
-- Config files now merge profile by profile, and the **nearest file wins**. A profile is supplied whole by the closest file that defines it, instead of by the file read last; a file that redefines a profile no longer inherits the keys it leaves out ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
-- A profile's adapter options are now checked against what that adapter declares, instead of being passed along unread. An option the adapter does not declare is an error naming it (with a suggestion), where `reed_only = true` used to be dropped in silence and leave you connected read-write; a value it cannot take is an error too, so `mode = "reed-only"` names the choices it could have been. Values reach the adapter as the type it declared: `port = 5432` arrives as `"5432"`, and an option declared as a list has to be written as one (`extension = ["httpfs"]`, not `extension = "httpfs"`).
+- Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does.
 
 ### Bug Fixes
 
-- A project-local config file that defines a profile no longer hides the profiles defined in your home config file, and no longer contradicts the `default_profile` set there — which made both commands refuse to start ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
-- Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does, so `read-only`, `reed_only` and `keymap_names` each name the option they were probably meant to be.
-- A `default_profile` that names no profile now only stops an invocation that was going to use it: `harlequin -P other` and `harlequin -P None` start, as `hsql` does, instead of refusing over a key neither of them read.
+- When Harlequin is invoked with `-P NAME`, it now ignores an invalid `default_profile` configuration.
 - `hsql --format markdown` no longer breaks the table when `--null-string` contains a `|` or a newline.
 - `harlequin --config` and `harlequin --keys` no longer strip the comments you wrote inside a profile or keymap table; a value they did not change now keeps the comments and formatting you gave it ([#1033](https://github.com/tconbeer/harlequin/issues/1033)).
 - `harlequin --config` now removes `default_profile` from your config file when you choose `[No default]`, instead of leaving the old default in place.
 - `harlequin` prints an error naming the missing adapter, and the adapters you do have installed, when a profile's `adapter` names a plug-in that is not installed. It used to fail with a `KeyError` traceback.
+- Hovering over a cell in Harlequin with content that overflows the screen no longer causes a crash ([#894](https://github.com/tconbeer/harlequin/issues/894)).
 
 ### Performance
 

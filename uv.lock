@@ -1411,7 +1411,7 @@ requires-dist = [
     { name = "rich-click", specifier = "==1.9.8" },
     { name = "shandy-sqlfmt", specifier = ">=0.28.2" },
     { name = "textual", specifier = "==8.2.8" },
-    { name = "textual-fastdatatable", specifier = "==0.17.1" },
+    { name = "textual-fastdatatable", specifier = "==0.18.0" },
     { name = "textual-textarea", specifier = "==0.18.1" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
     { name = "tomlkit", specifier = ">=0.15.1,<0.16.0" },
@@ -3839,7 +3839,7 @@ wheels = [
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.17.1"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -3848,9 +3848,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/3e/6447bf2d06247229c617457f2d005fe9c3eda24d73071c324d0da1f13adc/textual_fastdatatable-0.17.1.tar.gz", hash = "sha256:401865e706b882f9d750424674a6ce782bffd42c6087221d9d87c4857680e252", size = 38572, upload-time = "2026-08-10T02:19:59.448Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/1d/8bf3b68592fc915f52fcb1027098b4e32f687725360a165fe5d0e2c4c265/textual_fastdatatable-0.18.0.tar.gz", hash = "sha256:17ad7b5d4b7c7a85347f86e7401f80dcd0fa431257c03cfc7b0075367836db1f", size = 43782, upload-time = "2026-08-19T18:35:58.219Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/bd/02b76adbc5cdd75ec025baab203a1919c4658849bc9f9ab42d6c3e93b3d9/textual_fastdatatable-0.17.1-py3-none-any.whl", hash = "sha256:b1c99e31f5de02edb2dbbd488af64c6e4a3cdbb5caa65a8ef93041ec4f8dc7f2", size = 35730, upload-time = "2026-08-10T02:19:57.994Z" },
+    { url = "https://files.pythonhosted.org/packages/da/a8/3594181d7821449d84a1211eee1cdd9fccb62e87ce12642dd40d4a71e95e/textual_fastdatatable-0.18.0-py3-none-any.whl", hash = "sha256:756033e2e134764797ffdc01f32b9e1e401b8135e7d64626f6b3001fd3526fa0", size = 40744, upload-time = "2026-08-19T18:35:56.979Z" },
 ]
 
 [[package]]
