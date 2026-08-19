@@ -21,6 +21,7 @@ from harlequin.config import (
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    resolve_profile,
     validate_config_files,
 )
 from harlequin.exception import HarlequinConfigError
@@ -579,6 +580,52 @@ class TestReadingNoMoreThanItMust:
         (cwd / ".harlequin.toml").write_text("this is not toml at all [[[")
 
         assert load_profile(config_path=None, profile_name="None") == {}
+        assert resolve_profile(config_path=None, profile_name="None") == ("None", {})
+
+    def test_resolving_a_profile_names_the_one_it_resolved_to(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The name `load_profile()` works out and discards, which is what
+        `hsql --info` reports as the profile a run would use."""
+        cwd, home = config_dirs
+        (home / ".harlequin.toml").write_text(
+            'default_profile = "personal"\n[profiles.personal]\nlimit = 1\n'
+        )
+        (cwd / ".harlequin.toml").write_text("[profiles.project]\nlimit = 2\n")
+
+        assert resolve_profile(config_path=None, profile_name=None) == (
+            "personal",
+            {"limit": 1},
+        )
+        assert resolve_profile(config_path=None, profile_name="project") == (
+            "project",
+            {"limit": 2},
+        )
+
+    def test_resolving_a_profile_is_the_same_walk_load_profile_takes(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """One walk and one early stop, so the two cannot disagree about which
+        file answered."""
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            'default_profile = "near"\n[profiles.near]\nlimit = 1\n'
+        )
+        (home / ".harlequin.toml").write_text("this is not toml at all [[[")
+
+        name, profile = resolve_profile(config_path=None, profile_name=None)
+        assert name == "near"
+        assert profile == load_profile(config_path=None, profile_name=None)
+
+    def test_resolving_a_name_nothing_defines_raises(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.here]\nlimit = 1\n")
+
+        with pytest.raises(HarlequinConfigError) as exc_info:
+            resolve_profile(config_path=None, profile_name="gone")
+        assert "gone" in exc_info.value.msg
 
     def test_a_file_it_did_reach_is_still_validated(
         self, config_dirs: tuple[Path, Path]

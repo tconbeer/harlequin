@@ -13,12 +13,12 @@ postgres` imports postgres alone. That keeps the first thing a caller reads
 small and stable, and keeps it true for every adapter rather than for whichever
 one is the default.
 
-A **mode** is the third shape. `--config MODE` reports on the config files and
-`--spec` reports on the command itself, rather than either of them running SQL,
-so the first pass skips the profile and names no adapter, and the command
-carries no connection options at all. Modes are options rather than subcommands
-because `CONN_STR` is positional: `hsql catalog` and a DuckDB file named
-`catalog` would have needed a rule, and `--catalog` needs none. They are
+A **mode** is the third shape. `--config MODE` reports on the config files,
+`--spec` on the command itself and `--info` on the installation, rather than any
+of them running SQL, so the first pass skips the profile and names no adapter,
+and the command carries no connection options at all. Modes are options rather
+than subcommands because `CONN_STR` is positional: `hsql catalog` and a DuckDB
+file named `catalog` would have needed a rule, and `--catalog` needs none. They are
 mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
 callback when it is chosen.
 """
@@ -218,6 +218,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--info",
+        is_flag=True,
+        help=(
+            "Versions, config files, the active profile, and what each "
+            "installed adapter declares it supports, as JSON. Connects to "
+            "nothing. -a narrows it to one adapter."
+        ),
+    )
+    @click.option(
         "--limit",
         default=DEFAULT_LIMIT,
         show_default=True,
@@ -261,10 +270,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.pass_context
     def inner_cli(
         ctx: click.Context,
-        profile: str | None,  # noqa: ARG001 -- read in _preflight; see below
+        profile: str | None,
         config_path: Path | None,
         config_mode: str | None,
         spec: bool,
+        info: bool,
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
@@ -326,7 +336,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
 
         sources: list[tuple[str, tuple[str, ...]]] = ctx.meta.get(SOURCES, [])
 
-        mode = _one_mode(ctx, config_mode=config_mode, spec=spec)
+        mode = _one_mode(ctx, config_mode=config_mode, spec=spec, info=info)
         if mode is not None and sources:
             # a mode does not run SQL, so `-c` or `-f` beside one is two
             # invocations spelled as one, and refusing is the safer half of the
@@ -337,6 +347,22 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 f"or drop {mode.split()[0]}."
             )
             ctx.exit(ExitCode.USAGE)
+
+        if info:
+            ctx.exit(
+                _report_info(
+                    ctx,
+                    # `-a` narrows the document to one adapter; its default
+                    # names duckdb, and defaulting is not asking
+                    adapter=adapter if "adapter" in explicitly_set else None,
+                    profile_name=profile,
+                    config_path=config_path,
+                    destination=destination,
+                    format_name=format_name,
+                    format_chosen=format_name != DEFAULT_FORMAT
+                    or "format" in explicitly_set,
+                )
+            )
 
         if spec:
             ctx.exit(
@@ -500,7 +526,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     return cmd
 
 
-def _one_mode(ctx: click.Context, *, config_mode: str | None, spec: bool) -> str | None:
+def _one_mode(
+    ctx: click.Context, *, config_mode: str | None, spec: bool, info: bool
+) -> str | None:
     """The one mode this invocation chose, or exit having named the two it did.
 
     Modes are options rather than subcommands, so nothing about the parse stops
@@ -510,6 +538,7 @@ def _one_mode(ctx: click.Context, *, config_mode: str | None, spec: bool) -> str
     asked = (
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
+        ("--info", info),
     )
     chosen = [name for name, was_asked in asked if was_asked]
     if len(chosen) > 1:
@@ -518,6 +547,46 @@ def _one_mode(ctx: click.Context, *, config_mode: str | None, spec: bool) -> str
         )
         ctx.exit(ExitCode.USAGE)
     return chosen[0] if chosen else None
+
+
+def _report_info(
+    ctx: click.Context,
+    *,
+    adapter: str | None,
+    profile_name: str | None,
+    config_path: Path | None,
+    destination: Path | None,
+    format_name: str,
+    format_chosen: bool,
+) -> ExitCode:
+    """Answer `--info` and return its code, or exit having said why not.
+
+    Exit 0 for a document it wrote: a config file it could not parse and an
+    adapter that will not import are both facts this mode reports, rather than
+    this invocation's failure.
+    """
+    # here rather than at module scope, for the reason the mode exists in its
+    # own module: it imports every installed adapter, which no other invocation
+    # should pay for
+    from harlequin.hsql.modes import info as info_mode
+
+    try:
+        with _sink(destination) as out:
+            code = info_mode.report(
+                out,
+                adapter=adapter,
+                profile_name=profile_name,
+                config_path=config_path,
+                format_name=format_name,
+                format_chosen=format_chosen,
+            )
+            out.flush()
+    except (HarlequinConfigError, OSError) as e:
+        # a `--config-path` naming no file, or a `-o PATH` it could not write.
+        # Both are the caller's to fix, and both are usage errors.
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    return code
 
 
 def _report_spec(
@@ -765,6 +834,7 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
             # command that is not going to connect with one
             click.Option(["--config"]),
             click.Option(["--spec"], is_flag=True),
+            click.Option(["--info"], is_flag=True),
             # click's own --help and --version are eager and would exit; these
             # are the same spellings as plain flags, so the probe can see that
             # one was asked for.
@@ -785,14 +855,19 @@ def _preflight(argv: Sequence[str], installed: Sequence[str]) -> _Preflight:
     with contextlib.suppress(click.ClickException, ValueError):
         probe.parse_args(ctx, list(argv))
 
-    if ctx.params.get("config") is not None or ctx.params.get("spec"):
+    if (
+        ctx.params.get("config") is not None
+        or ctx.params.get("spec")
+        or ctx.params.get("info")
+    ):
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read here and no adapter
         # whose options belong on the command. `--config` reads the files itself
         # and reports what it finds wrong with them under its own exit code,
         # rather than having this pass hold an error about the first file it
-        # stumbled on; `--spec` describes the command, which a config file it
-        # could not read has no bearing on.
+        # stumbled on, and `--info` reports one as part of its answer; `--spec`
+        # describes the command, which a config file it could not read has no
+        # bearing on.
         return _Preflight(profile={}, adapter=None)
 
     profile: Profile = {}
@@ -1101,7 +1176,9 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
         (
             "Machine-readable:\n"
             f"  {PROGRAM} --spec   this help as JSON, with every installed "
-            "adapter's options"
+            "adapter's options\n"
+            f"  {PROGRAM} --info   versions, config files, and what each "
+            "adapter supports"
         ),
     ]
     # a lone \b tells click not to rewrap the paragraph that follows it

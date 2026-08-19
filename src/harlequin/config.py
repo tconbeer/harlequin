@@ -10,6 +10,8 @@ Who reads what:
 | ---------------------- | ---------------------------- | -------------------- |
 | `hsql`                 | `load_profile()`             | up to the one that   |
 |                        |                              | defines the profile  |
+| `hsql --info`          | `resolve_profile()`          | the same, plus the   |
+|                        |                              | name it resolved     |
 | `harlequin`, `--keys`  | `load_profile_and_keymaps()` | all: keymaps merge   |
 |                        |                              | across every file    |
 | the IDE's debug screen | `load_config()`              | all                  |
@@ -23,7 +25,8 @@ Who reads what:
 
 `load_profile()` is the fast path: it stops at the file that answers the
 question, so `hsql -P prod` never opens the files behind that one, and
-`hsql -P None` opens none. The others need the whole document.
+`hsql -P None` opens none. `resolve_profile()` is the same walk, returning the
+name it resolved beside the profile. The others need the whole document.
 
 Config files are validated twice, and the halves know different things.
 `_read_config_files()` checks one file's shape before it is merged with any
@@ -346,16 +349,34 @@ def load_config(
 
 def load_profile(config_path: Path | None, profile_name: str | None) -> Profile:
     """The profile an invocation runs under, reading no further than it must."""
+    return resolve_profile(config_path, profile_name)[1]
+
+
+def resolve_profile(
+    config_path: Path | None, profile_name: str | None
+) -> tuple[str | None, Profile]:
+    """The name an invocation's profile resolves to, and the profile itself.
+
+    The name is what `-P` asked for, or the `default_profile` the files settled
+    on, and None where nothing named one -- which `load_profile()` resolves and
+    then discards, and `hsql --info` reports.
+
+    Raises: HarlequinConfigError for a name no discovered file defines.
+    """
     if profile_name == "None":
-        return {}  # Harlequin's own defaults, which no config file can change
+        return "None", {}  # Harlequin's own defaults, which no config file can change
 
     config = Config()
     for path, from_file in _read_config_files(config_path):
         _merge(from_file, into=config, source=path)
         name = profile_name or config.default_profile
         if name is not None and name in config.profiles:
-            return config.profiles[name]  # the files behind this one go unread
-    return _select_profile(config, requested=profile_name)
+            # the files behind this one go unread
+            return name, config.profiles[name]
+    return (
+        profile_name or config.default_profile,
+        _select_profile(config, requested=profile_name),
+    )
 
 
 def load_profile_and_keymaps(
@@ -531,6 +552,19 @@ def parse_row_count(
     if rows == UNLIMITED or (rows == 0 and zero_is_unlimited):
         return None
     return rows
+
+
+def discover_config_files(config_path: Path | None) -> list[Path]:
+    """Every config file that exists, highest priority first.
+
+    Existence is the whole of what is checked: each path is one a command would
+    open, in the order it would open them, and none of them is read -- so a
+    `pyproject.toml` with no `[tool.harlequin]` section is here, and a file that
+    is not on disk is not.
+
+    Raises: HarlequinConfigError if `config_path` names a file that is not there.
+    """
+    return list(_discover_config_files(config_path))
 
 
 def get_highest_priority_existing_config_file() -> Path | None:

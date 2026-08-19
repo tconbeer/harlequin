@@ -34,6 +34,21 @@ def adapter_versions() -> dict[str, str | None]:
     return versions
 
 
+def adapter_distributions() -> dict[str, str | None]:
+    """
+    The name of the distribution behind each installed adapter, importing
+    none of them.
+
+    None where the entry point has no distribution behind it, which is what an
+    adapter installed from a source checkout can look like.
+    """
+    distributions: dict[str, str | None] = {}
+    for ep in entry_points(group="harlequin.adapter"):
+        # last one wins, to agree with load_adapter() and load_adapter_plugins()
+        distributions[ep.name] = None if ep.dist is None else ep.dist.name
+    return distributions
+
+
 def load_adapter(name: str) -> type[HarlequinAdapter]:
     """
     Import exactly one installed adapter, by its entry point name.
