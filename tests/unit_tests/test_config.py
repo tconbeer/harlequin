@@ -322,10 +322,10 @@ class TestConfigFileRoundTrip:
     ) -> None:
         """Which is why writing still goes through tomlkit.
 
-        Note the limit, which is not new: `relevant_config` hands back plain
-        data, so `update()` replaces a whole table rather than editing inside
-        it, and comments *within* a rewritten table do not survive. Comments
-        elsewhere in the file do.
+        `relevant_config` hands back plain data -- every reader wants that, and
+        it is on the hot path -- so it falls to `update()` to merge that data
+        back into the tomlkit document key by key. A table nobody edited keeps
+        its own nodes, and with them the comments written inside it.
         """
         path = tmp_path / ".harlequin.toml"
         path.write_text(
@@ -334,6 +334,7 @@ class TestConfigFileRoundTrip:
             "\n"
             "# and a note further down\n"
             "[profiles.one]\n"
+            "# I like this theme best\n"
             'theme = "fruity"\n'
         )
 
@@ -346,11 +347,127 @@ class TestConfigFileRoundTrip:
         written = path.read_text()
         assert "# a file someone wrote by hand" in written
         assert "# and a note further down" in written
+        # nothing was asked to change about profile one, inside it or around it
+        assert "# I like this theme best" in written
         # and the new profile arrived, without disturbing the old one
         reread = load_config(config_path=path)
         assert reread.profiles["two"] == {"theme": "monokai"}
         assert reread.profiles["one"] == {"theme": "fruity"}
         assert reread.default_profile == "one"
+
+    def test_a_write_preserves_the_comments_around_the_value_it_changed(
+        self, tmp_path: Path
+    ) -> None:
+        """Editing one key in a table is not a reason to reflow the table."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "[profiles.one]\n"
+            "# I like this theme best\n"
+            'theme = "fruity"\n'
+            "# the database I use every day\n"
+            'conn_str = ["analytics.db"]\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        config["profiles"]["one"]["theme"] = "monokai"
+        config_file.update(config)
+        config_file.write()
+
+        written = path.read_text()
+        assert "# I like this theme best" in written
+        assert "# the database I use every day" in written
+        assert load_config(config_path=path).profiles["one"] == {
+            "theme": "monokai",
+            "conn_str": ["analytics.db"],
+        }
+
+    def test_a_write_removes_the_keys_the_caller_dropped(self, tmp_path: Path) -> None:
+        """A merge, but the caller's table is still the whole table.
+
+        `harlequin --config` hands back the profile it just built, so a key
+        that is not in it is a key the user turned off -- and leaving it behind
+        would be writing back an option nobody asked for.
+        """
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "[profiles.one]\n"
+            'theme = "fruity"\n'
+            "show_files = '/home/me'\n"
+            "\n"
+            "[profiles.two]\n"
+            'theme = "monokai"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        config["profiles"]["one"] = {"theme": "fruity"}
+        del config["profiles"]["two"]
+        config_file.update(config)
+        config_file.write()
+
+        reread = load_config(config_path=path)
+        assert reread.profiles == {"one": {"theme": "fruity"}}
+
+    def test_a_write_leaves_alone_the_top_level_keys_it_was_not_given(
+        self, tmp_path: Path
+    ) -> None:
+        """What the keymap editor depends on: it writes `keymaps` and nothing
+        else, and must not take the profiles with it."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            'default_profile = "one"\n'
+            "\n"
+            "[profiles.one]\n"
+            "# still mine\n"
+            'theme = "fruity"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config_file.update(
+            {"keymaps": {"mine": [{"keys": "ctrl+j", "action": "quit"}]}}
+        )
+        config_file.write()
+
+        assert "# still mine" in path.read_text()
+        reread = load_config(config_path=path)
+        assert reread.default_profile == "one"
+        assert reread.profiles["one"] == {"theme": "fruity"}
+        assert reread.keymaps["mine"] == [{"keys": "ctrl+j", "action": "quit"}]
+
+    def test_a_write_of_the_whole_section_removes_a_top_level_key_it_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        """How `harlequin --config` turns a `default_profile` back off.
+
+        The wizard hands back the whole Harlequin section, so a key missing
+        from it is one the user turned off, and leaving it behind would write
+        back a default nobody asked for.
+        """
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "# a file someone wrote by hand\n"
+            'default_profile = "one"\n'
+            "\n"
+            "[profiles.one]\n"
+            "# keep me\n"
+            'theme = "fruity"\n'
+        )
+
+        config_file = ConfigFile(path)
+        config = config_file.relevant_config
+        del config["default_profile"]
+        config_file.update(config, whole_section=True)
+        config_file.write()
+
+        written = path.read_text()
+        assert "default_profile" not in written
+        # the key went; the comments around what stayed did not
+        assert "# a file someone wrote by hand" in written
+        assert "# keep me" in written
+        reread = load_config(config_path=path)
+        assert reread.default_profile is None
+        assert reread.profiles["one"] == {"theme": "fruity"}
 
     def test_a_write_to_pyproject_touches_only_the_harlequin_table(
         self, tmp_path: Path
@@ -361,6 +478,7 @@ class TestConfigFileRoundTrip:
             'name = "someone-elses-project"\n'
             "\n"
             "[tool.harlequin.profiles.one]\n"
+            "# I like this theme best\n"
             'theme = "fruity"\n'
         )
 
@@ -373,8 +491,11 @@ class TestConfigFileRoundTrip:
         reread = ConfigFile(path)
         assert reread.relevant_config["default_profile"] == "one"
         assert reread.relevant_config["profiles"]["one"] == {"theme": "fruity"}
+        written = path.read_text()
         # the rest of the file is not ours to rewrite
-        assert 'name = "someone-elses-project"' in path.read_text()
+        assert 'name = "someone-elses-project"' in written
+        # and neither is the inside of a table we did not change
+        assert "# I like this theme best" in written
 
     def test_a_write_creates_a_file_that_does_not_exist_yet(
         self, tmp_path: Path

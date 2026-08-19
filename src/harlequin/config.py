@@ -57,6 +57,7 @@ from typing import (
     List,
     Literal,
     Mapping,
+    MutableMapping,
     Optional,
     Sequence,
     cast,
@@ -307,10 +308,16 @@ class ConfigFile:
             ) from e
         return self._doc
 
-    def update(self, config: Mapping[str, Any]) -> None:
+    def update(self, config: Mapping[str, Any], *, whole_section: bool = False) -> None:
         """
-        Replace the relevant section of the in-memory TOML doc with the updated
-        Config.
+        Merge the updated config into the relevant section of the in-memory
+        TOML doc, key by key, so a table nobody edited keeps its own nodes --
+        and with them the comments written inside it.
+
+        `whole_section` says `config` is everything the section should say, so
+        a top-level key missing from it is one the caller means to delete --
+        which `harlequin --config` needs to turn a `default_profile` off. It is
+        off by default, for the keymap editor, which passes `keymaps` alone.
         """
         doc = self._editable()
         if self.is_pyproject:
@@ -318,9 +325,9 @@ class ConfigFile:
                 doc["tool"] = {"harlequin": {}}
             elif "harlequin" not in doc["tool"]:
                 doc["tool"]["harlequin"] = {}
-            doc["tool"]["harlequin"].update(config)
+            _merge_into_doc(doc["tool"]["harlequin"], config, prune=whole_section)
         else:
-            doc.update(config)
+            _merge_into_doc(doc, config, prune=whole_section)
 
     def write(self) -> None:
         """
@@ -754,6 +761,43 @@ def _merge(
         into.profiles.setdefault(profile_name, profile)
     for keymap_name, bindings in from_file.keymaps.items():
         into.keymaps.setdefault(keymap_name, bindings)
+
+
+_MISSING = object()
+"""What a key not in a TOML table reads as; TOML has no null to collide with."""
+
+
+def _merge_into_doc(
+    target: MutableMapping[str, Any],
+    source: Mapping[str, Any],
+    *,
+    prune: bool = False,
+) -> None:
+    """Write `source` into a tomlkit table, leaving every node it can in place.
+
+    A node carries the comments and formatting around it, so an unchanged value
+    is not written at all, and a table on both sides is merged into rather than
+    assigned. `prune` makes `source` the whole table: a key it does not have is
+    a key the caller deleted, which is always true of a table the caller named
+    and only true at the top level when it passed the whole section.
+    """
+    for key, value in source.items():
+        existing = target.get(key, _MISSING)
+        if isinstance(value, Mapping) and isinstance(existing, MutableMapping):
+            _merge_into_doc(existing, value, prune=True)
+        elif existing is _MISSING or _plain(existing) != value:
+            target[key] = value
+
+    if prune:
+        for key in [key for key in target if key not in source]:
+            del target[key]
+
+
+def _plain(value: Any) -> Any:
+    """A tomlkit node's value, without the styling wrapped around it, so that an
+    unchanged value compares equal to the plain data `relevant_config` hands out."""
+    unwrap = getattr(value, "unwrap", None)
+    return unwrap() if unwrap is not None else value
 
 
 def _select_profile(

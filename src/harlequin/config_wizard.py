@@ -192,7 +192,9 @@ def _wizard(config_path: Path | None) -> None:
 
     config["profiles"][profile_name] = new_profile
 
-    config_file.update(config=config)
+    # the wizard holds the file's whole Harlequin section, so a key it no
+    # longer has -- a `default_profile` turned off -- is one to delete
+    config_file.update(config=config, whole_section=True)
     config_file.write()
 
 
