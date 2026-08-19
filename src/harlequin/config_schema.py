@@ -8,10 +8,12 @@ from `msgspec.json.schema()` and cannot drift from what a file is parsed into.
 
 **The keys below the top level come from the same two sources validation uses.**
 A profile holds a command's own options -- click parameters -- and the
-connection options of the adapter it names, which each adapter declares and
-`AbstractOption.to_dict()` reports. Neither is knowable from a model, and both
-are exactly what `parse_profile_options()` checks a profile against, so a schema
-built from them accepts what a run accepts.
+connection options of the adapter it names, which are
+`adapter_options_model()`: the struct `parse_profile_options()` parses a profile
+into, built from what that adapter declares. So the types here are the types a
+run enforces, rather than a second reading of the same declarations, and
+`AbstractOption.to_dict()` is left to supply what a struct has no room for --
+each option's description and its default.
 
 **Which makes it an installation's schema, not the format's.** It knows which
 adapters are installed here and what each of them takes, so `adapter` is an enum
@@ -32,6 +34,7 @@ from harlequin.config import (
     DEFAULT_ADAPTER,
     TUI_ONLY_KEYS,
     Config,
+    adapter_options_model,
     sluggify_option_name,
 )
 from harlequin.keymap import RawKeyBinding
@@ -100,10 +103,10 @@ CLICK_TYPES: dict[str, dict[str, Any]] = {
 """A click parameter's type, as a JSON Schema one. A type in neither this nor
 `click.Choice` is left unconstrained rather than guessed at."""
 
-TEXT = {"type": ["string", "number"]}
-"""What an adapter option that declares text or a path accepts, which is both:
-TOML invites `port = 5432`, and the read path turns it into the string the
-adapter declared."""
+TEXT = ["string", "number"]
+"""What an option the model declares as a string accepts, which is both: TOML
+invites `port = 5432`, and the read path turns it into the string the adapter
+declared."""
 
 
 def build_schema(
@@ -245,17 +248,24 @@ def _adapter_options(
             "description": UNKNOWN_ADAPTER_OPTIONS,
             "unevaluatedProperties": True,
         }
+    # a name a command reads is that command's own, whoever else declares it:
+    # `parse_profile_options()` takes those keys off before the model sees them
+    options = {
+        key: option
+        for option in declared
+        if (key := sluggify_option_name(option.name)) not in owned
+    }
+    model = adapter_options_model(name, options)
+    # its `properties` and nothing else: the model is closed because it sees an
+    # adapter's keys and no others, where the profile this describes part of
+    # holds the command's too. Closing that one is `unevaluatedProperties`.
+    properties = msgspec.json.schema(model)["$defs"][model.__name__]["properties"]
     return {
         "title": f"{name} options",
         "description": f"The connection options the {name} adapter declares.",
         "properties": {
-            key: _from_option(option)
-            for option in declared
-            # the two an adapter can declare and a profile can never set: a name
-            # that is not an identifier is not a field of the model a profile is
-            # parsed into, and a name a command reads is that command's own
-            if (key := sluggify_option_name(option.name)).isidentifier()
-            and key not in owned
+            key: _from_option(schema, options[key])
+            for key, schema in properties.items()
         },
     }
 
@@ -280,23 +290,27 @@ def _from_parameter(param: click.Parameter) -> dict[str, Any]:
     return schema
 
 
-def _from_option(option: AbstractOption) -> dict[str, Any]:
-    """One adapter option, in the same terms the read path parses it into."""
+def _from_option(schema: Mapping[str, Any], option: AbstractOption) -> dict[str, Any]:
+    """One field of the model, plus what the option says about itself.
+
+    The model spells "a profile need not set this" as a type that also takes
+    null, which TOML cannot write: the schema says the same thing by leaving the
+    key out of `required`, so the null goes.
+    """
+    (described,) = [
+        variant for variant in schema["anyOf"] if variant != {"type": "null"}
+    ]
+    described = dict(described)
+    if described.get("type") == "string":
+        # `_as_declared()` rounds a number toward the string its option declared
+        # before the model sees it, so `port = 5432` is a value a run takes
+        described["type"] = list(TEXT)
     declared = option.to_dict()
-    schema: dict[str, Any]
-    if declared["type"] == "flag":
-        schema = {"type": "boolean"}
-    elif declared["multiple"]:
-        schema = {"type": "array", "items": {"type": "string"}}
-    elif choices := declared["choices"]:
-        schema = {"type": "string", "enum": [str(choice) for choice in choices]}
-    else:
-        schema = dict(TEXT)
     if declared["description"]:
-        schema["description"] = declared["description"]
+        described["description"] = declared["description"]
     if isinstance(declared["default"], (str, int, float, bool)):
-        schema["default"] = declared["default"]
-    return schema
+        described["default"] = declared["default"]
+    return described
 
 
 def _options_key(adapter: str) -> str:

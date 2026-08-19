@@ -16,7 +16,7 @@ from typing import Any, Sequence
 import pytest
 from jsonschema import Draft202012Validator
 
-from harlequin.config import Config
+from harlequin.config import Config, adapter_options_model, sluggify_option_name
 from harlequin.config_schema import SCHEMA_ID, build_schema
 from harlequin.hsql.cli import bare_command
 from harlequin.options import (
@@ -138,6 +138,20 @@ def test_a_profile_takes_the_options_of_the_adapter_it_names(
         extension=["postgis"],
         sslmode="verify-full",
         read_only=True,
+    )
+
+
+def test_the_keys_described_are_the_fields_a_profile_is_parsed_into() -> None:
+    """The schema and the validator read one declaration rather than two.
+
+    Both go through `adapter_options_model()`, so an option the model drops --
+    a name that is not an identifier -- is one the schema does not describe
+    either, and a type the model learns arrives here without being taught.
+    """
+    options = {sluggify_option_name(o.name): o for o in FAKE_OPTIONS}
+    described = schema_for({"faux": FAKE_OPTIONS})["$defs"]["faux_options"]
+    assert set(described["properties"]) == set(
+        adapter_options_model("faux", options).__struct_fields__
     )
 
 
