@@ -24,7 +24,7 @@ from harlequin.exception import (
     HarlequinCopyError,
     HarlequinQueryError,
 )
-from harlequin.hsql.cli import build_cli
+from harlequin.hsql.cli import PROGRAM, build_cli
 from harlequin.hsql.diagnostics import IDE_THEMES, ExitCode, exit_code_for
 
 Hsql = Callable[..., Result]
@@ -1474,3 +1474,398 @@ def test_config_validate_does_not_connect(
     res = hsql("--config", "validate", "-tA")
     assert res.exit_code == ExitCode.OK
     assert res.stdout == ""
+
+
+# --- `--spec`, the mode that reports on the command itself -------------------
+
+
+def spec_of(res: Result) -> dict[str, Any]:
+    assert res.exit_code == ExitCode.OK
+    return cast("dict[str, Any]", json.loads(res.stdout))
+
+
+def option_named(spec: dict[str, Any], name: str) -> dict[str, Any]:
+    (option,) = [o for o in spec["options"] if o["name"] == name]
+    return cast("dict[str, Any]", option)
+
+
+def test_spec_is_json(hsql: Hsql) -> None:
+    spec = spec_of(hsql("--spec"))
+    assert spec["program"] == "hsql"
+    assert spec["version"]
+    assert spec["options"]
+    assert spec["adapters"]
+
+
+def test_spec_describes_an_option_a_caller_would_otherwise_guess_at(
+    hsql: Hsql,
+) -> None:
+    """What `--help` says in prose, as the four facts a caller needs.
+
+    Whether it takes a value, what kind, what happens without it, and how to
+    spell it -- an agent that reads this does not have to try `--limit` twice
+    to find out it is not a flag.
+    """
+    limit = option_named(spec_of(hsql("--spec")), "limit")
+    assert limit["decls"] == ["--limit"]
+    assert limit["type"] == "integer"
+    assert limit["default"] == 500
+    assert limit["is_flag"] is False
+    assert limit["multiple"] is False
+    assert limit["choices"] is None
+    assert "rows fetched" in limit["help"]
+
+
+def test_spec_names_the_values_a_choice_takes(hsql: Hsql) -> None:
+    """The list `--format` will accept, so nobody has to parse it out of the
+    epilog."""
+    from harlequin.hsql import output
+
+    fmt = option_named(spec_of(hsql("--spec")), "format")
+    assert fmt["type"] == "choice"
+    assert fmt["choices"] == list(output.format_names())
+    assert fmt["default"] == "table"
+
+
+def test_spec_reports_no_default_as_null(hsql: Hsql) -> None:
+    """An option with no default has none, spelled the way JSON spells nothing.
+
+    click holds "no default" as a sentinel object, and a document that let one
+    through would say `--profile` defaults to the string `Sentinel.UNSET`.
+    """
+    spec = spec_of(hsql("--spec"))
+    assert option_named(spec, "profile")["default"] is None
+    assert option_named(spec, "display_rows")["default"] is None
+    for option in spec["options"]:
+        assert option["default"] is None or isinstance(
+            option["default"], (str, int, float, bool, list)
+        )
+
+
+def test_spec_reports_every_spelling_of_an_option(hsql: Hsql) -> None:
+    tuples_only = option_named(spec_of(hsql("--spec")), "tuples_only")
+    assert sorted(tuples_only["decls"]) == ["--tuples-only", "-t"]
+    assert tuples_only["is_flag"] is True
+    assert tuples_only["default"] is False
+
+
+def test_spec_reports_a_repeatable_option_as_one(hsql: Hsql) -> None:
+    assert option_named(spec_of(hsql("--spec")), "command")["multiple"] is True
+
+
+def test_spec_reports_an_environment_variable(hsql: Hsql) -> None:
+    """A flag that reads the environment reads it whether or not it was typed,
+    which makes it exactly the kind of thing a caller wants told rather than
+    discovered."""
+    config_path = option_named(spec_of(hsql("--spec")), "config_path")
+    assert config_path["envvar"] == "HARLEQUIN_CONFIG_PATH"
+
+
+def test_spec_reports_an_envvar_for_every_option_that_reads_one(hsql: Hsql) -> None:
+    """Null for the rest, because there is nothing behind them to report.
+
+    hsql declares one `envvar=` and sets no `auto_envvar_prefix`, so click
+    derives nothing: `HSQL_LIMIT` is not read, and a spec that implied it was
+    would be worse than one that says null. This is the assertion that fails if
+    a prefix is ever set, or an option grows an `envvar=` this does not carry.
+    """
+    spec = spec_of(hsql("--spec"))
+    named = {o["name"]: o["envvar"] for o in spec["options"] if o["envvar"]}
+    assert named == {"config_path": "HARLEQUIN_CONFIG_PATH"}
+    # `to_click()` passes no `envvar=`, so an adapter option cannot have one
+    for adapter in spec["adapters"].values():
+        assert all(o["envvar"] is None for o in adapter["options"])
+
+
+def test_hsql_reads_no_environment_variable_it_did_not_declare(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half: click reads a variable only where one was declared.
+
+    Setting `auto_envvar_prefix` would make every flag configurable through the
+    environment, which is a surface `--spec` would then have to report -- so
+    assert the surface is the one the document describes.
+    """
+    monkeypatch.setenv("HSQL_LIMIT", "3")
+    monkeypatch.setenv("HARLEQUIN_LIMIT", "3")
+    res = hsql("-a", "duckdb", "--no-init", ":memory:", "-tA", "-c", TEN_ROWS)
+    assert res.exit_code == ExitCode.OK
+    assert len(res.stdout.splitlines()) == 10
+
+
+def test_spec_names_the_positional(hsql: Hsql) -> None:
+    """`CONN_STR` is where the database goes, and it has no flag to find it by.
+
+    `nargs` of -1 is the half a caller cannot see any other way: one connection
+    string or five are both this argument.
+    """
+    (conn_str,) = spec_of(hsql("--spec"))["arguments"]
+    assert conn_str["name"] == "conn_str"
+    assert conn_str["metavar"] == "CONN_STR"
+    assert conn_str["nargs"] == -1
+    assert conn_str["required"] is False
+
+
+def test_spec_covers_every_installed_adapter(hsql: Hsql) -> None:
+    from harlequin.plugins import adapter_names
+
+    spec = spec_of(hsql("--spec"))
+    assert sorted(spec["adapters"]) == sorted(adapter_names())
+    for adapter in spec["adapters"].values():
+        assert adapter["error"] is None
+        assert adapter["options"]
+        assert adapter["version"]
+
+
+def test_spec_reports_an_adapter_option_the_way_it_is_passed(hsql: Hsql) -> None:
+    """The two spellings an adapter option has, and both are needed.
+
+    `--read-only` is what a command line takes; `read_only` is what a profile
+    writes, and what the adapter's constructor is handed. A caller that had
+    only one of them would write the other wrong.
+    """
+    duckdb = spec_of(hsql("--spec"))["adapters"]["duckdb"]
+    (read_only,) = [o for o in duckdb["options"] if o["name"] == "read_only"]
+    assert read_only["decls"] == ["--read-only", "-readonly", "-r"]
+    assert read_only["type"] == "boolean"
+    assert read_only["is_flag"] is True
+    assert read_only["default"] is False
+    assert read_only["help"]
+
+
+def test_spec_reports_an_adapters_repeatable_and_chosen_options(hsql: Hsql) -> None:
+    """One option of each shape, named off the lists both adapters always declare.
+
+    sqlite's `--extension` and `--isolation-level` are appended only where the
+    interpreter's sqlite3 supports them, so neither is a name a test may assume
+    -- duckdb's `--extension` is in its list unconditionally, and is the
+    repeatable one here for that reason.
+    """
+    spec = spec_of(hsql("--spec"))
+    duckdb = {o["name"]: o for o in spec["adapters"]["duckdb"]["options"]}
+    sqlite = {o["name"]: o for o in spec["adapters"]["sqlite"]["options"]}
+    assert duckdb["extension"]["multiple"] is True
+    assert sqlite["mode"]["type"] == "choice"
+    assert sqlite["mode"]["choices"]
+    assert sqlite["init_path"]["type"] == "path"
+
+
+@pytest.mark.parametrize("name", ["duckdb", "sqlite"])
+def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> None:
+    """The document is built from the declarations, not from a list of names.
+
+    An adapter may declare a different set on a different interpreter -- sqlite
+    appends `--extension` only where `enable_load_extension` exists, which is
+    not on macOS -- so what `--spec` reports has to follow that, and a test that
+    pins names cannot tell the difference between the two.
+    """
+    from harlequin.config import sluggify_option_name
+    from harlequin.plugins import load_adapter
+
+    declared = {
+        sluggify_option_name(option.name)
+        for option in load_adapter(name).ADAPTER_OPTIONS or []
+    }
+    reported = {
+        o["name"]
+        for o in spec_of(hsql("--spec", "-a", name))["adapters"][name]["options"]
+    }
+    # equal today, because neither in-tree adapter declares a spelling hsql's
+    # own flags take; a name that goes missing here is one hsql has claimed
+    assert reported == declared
+
+
+def test_spec_narrows_to_one_adapter(hsql: Hsql) -> None:
+    """`-a` is the only thing that changes the document, and it changes one
+    half of it: hsql's own options are hsql's own whatever adapter is named."""
+    everything = spec_of(hsql("--spec"))
+    one = spec_of(hsql("--spec", "-a", "sqlite"))
+    assert list(one["adapters"]) == ["sqlite"]
+    assert one["adapters"]["sqlite"] == everything["adapters"]["sqlite"]
+    assert one["options"] == everything["options"]
+
+
+def test_spec_says_what_it_does_not_cover(hsql: Hsql) -> None:
+    """It cannot describe the IDE's flags -- reading them means importing the
+    command that builds them, which hsql may not do -- so it says where it
+    stops rather than reading as an exhaustive list that is not one."""
+    scope = spec_of(hsql("--spec"))["scope"]
+    assert "harlequin" in scope
+    assert "not here" in scope
+
+
+def test_spec_options_are_sorted_by_name(hsql: Hsql) -> None:
+    """A document a caller diffs between two machines, or two releases."""
+    spec = spec_of(hsql("--spec"))
+    assert [o["name"] for o in spec["options"]] == sorted(
+        o["name"] for o in spec["options"]
+    )
+    for adapter in spec["adapters"].values():
+        assert [o["name"] for o in adapter["options"]] == sorted(
+            o["name"] for o in adapter["options"]
+        )
+
+
+def test_spec_does_not_run_sql(hsql: Hsql) -> None:
+    res = hsql("--spec", ":memory:", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "does not run SQL" in res.stderr
+
+
+def test_spec_carries_no_adapters_options(hsql: Hsql) -> None:
+    """It describes the connection options rather than accepting them.
+
+    A mode that connects to nothing has nothing to do with `--no-init`, and
+    taking it would be a flag that silently did nothing.
+    """
+    res = hsql("--spec", "-a", "duckdb", "--no-init")
+    assert res.exit_code == ExitCode.USAGE
+    assert "--no-init" in res.stderr
+
+
+def test_two_modes_is_a_usage_error_naming_both(hsql: Hsql) -> None:
+    """Modes are options, so nothing about the parse stops a caller passing two
+    -- and two questions in one invocation have no answer that is not a guess
+    about which was meant."""
+    res = hsql("--spec", "--config", "show")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "--config show" in res.stderr
+    assert "--spec" in res.stderr
+
+
+def test_spec_writes_nothing_under_format_none(hsql: Hsql) -> None:
+    res = hsql("--spec", "--format", "none")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+@pytest.mark.parametrize("argv", [["--csv"], ["--format", "markdown"]])
+def test_spec_notes_a_format_it_cannot_reach(hsql: Hsql, argv: list[str]) -> None:
+    """A document is not rows, and silence would read as a format that applied."""
+    res = hsql("--spec", *argv)
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)["program"] == "hsql"
+    assert "had no effect" in res.stderr
+    assert "--format json" in res.stderr
+
+
+def test_spec_json_is_not_a_format_it_declines(hsql: Hsql) -> None:
+    res = hsql("--spec", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert json.loads(res.stdout)["program"] == "hsql"
+    assert res.stderr == ""
+
+
+def test_spec_goes_to_the_file_dash_o_names(hsql: Hsql, tmp_path: Path) -> None:
+    destination = tmp_path / "spec.json"
+    res = hsql("--spec", "-o", str(destination))
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert json.loads(destination.read_text(encoding="utf-8"))["program"] == "hsql"
+
+
+def test_spec_answers_over_a_config_it_could_not_read(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """The mode that describes the command does not depend on the config.
+
+    A caller whose config file is broken is one of the callers most likely to
+    be reading this, and a spec that refused over a file it never needed would
+    be useless exactly there.
+    """
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text("this is not toml\n")
+    assert spec_of(hsql("--spec"))["program"] == "hsql"
+
+
+def test_spec_ignores_a_profile_that_is_not_there(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """`-P` names a profile to connect with, and this mode connects with none."""
+    assert spec_of(hsql("--spec", "-P", "no-such-profile"))["program"] == "hsql"
+
+
+def test_spec_reports_an_adapter_it_could_not_import(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter that is installed and will not import is a fact about the
+    installation, not a reason to answer nothing about the rest of it."""
+    from harlequin.exception import HarlequinConfigError
+    from harlequin.plugins import load_adapter as real_load_adapter
+
+    def fake_load_adapter(name: str) -> Any:
+        if name == "duckdb":
+            raise HarlequinConfigError("No module named 'duckdb'", title="nope")
+        return real_load_adapter(name)
+
+    monkeypatch.setattr("harlequin.plugins.load_adapter", fake_load_adapter)
+    res = hsql("--spec")
+    spec = spec_of(res)
+    assert spec["adapters"]["duckdb"]["options"] is None
+    assert "duckdb" in spec["adapters"]["duckdb"]["error"]
+    assert spec["adapters"]["sqlite"]["options"]
+    assert "could not be imported" in res.stderr
+
+
+@pytest.mark.parametrize("argv", [["--help"], ["--help", "-a", "duckdb"]])
+def test_the_help_points_at_the_machine_readable_one(
+    hsql: Hsql, argv: list[str]
+) -> None:
+    """`--help` names adapters and `--spec` fills their options in.
+
+    That is the trade the epilog makes -- a list of names rather than four
+    option tables -- so the end of the help is where a reader who wanted the
+    tables should be told where they are. Both spellings of the help say it:
+    `-a duckdb` answers for one adapter, and the JSON is still how you get all
+    of them.
+    """
+    res = hsql(*argv)
+    assert res.exit_code == ExitCode.OK
+    assert f"{PROGRAM} --spec" in res.output
+    assert "Machine-readable:" in res.output
+
+
+def test_spec_is_in_the_help(hsql: Hsql) -> None:
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--spec" in res.output
+
+
+def test_spec_lists_the_flag_that_would_have_shown_the_help(hsql: Hsql) -> None:
+    """click keeps `--help` out of a command's params and adds it at parse
+    time, so a document built from the params alone would omit the one flag
+    every caller already knows."""
+    assert option_named(spec_of(hsql("--spec")), "help")["decls"] == ["--help"]
+
+
+def test_spec_drops_a_spelling_an_hsql_flag_already_owns(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It reports the surface a caller can type, not the one an adapter wanted.
+
+    hsql's own flags win a collision (`_attach_adapter_options`), so an adapter
+    option declaring `-c` does not get it — and a spec that listed it anyway
+    would send a caller to write `hsql -c` and mean something else.
+    """
+    from harlequin.options import FlagOption, TextOption
+    from harlequin.plugins import load_adapter as real_load_adapter
+
+    shadowed = TextOption(name="command", description="Shadowed by hsql's -c.")
+    partly = FlagOption(
+        name="cautious", description="Keeps its long name.", short_decls=["-c", "-w"]
+    )
+
+    def fake_load_adapter(name: str) -> Any:
+        adapter = real_load_adapter(name)
+        if name != "sqlite":
+            return adapter
+        return type("Faked", (adapter,), {"ADAPTER_OPTIONS": [shadowed, partly]})
+
+    monkeypatch.setattr("harlequin.plugins.load_adapter", fake_load_adapter)
+    options = spec_of(hsql("--spec", "-a", "sqlite"))["adapters"]["sqlite"]["options"]
+    # `command` is gone whole: hsql already has a parameter by that name
+    assert [o["name"] for o in options] == ["cautious"]
+    # and `-c` is gone from the one that kept its other spellings
+    assert options[0]["decls"] == ["--cautious", "-w"]

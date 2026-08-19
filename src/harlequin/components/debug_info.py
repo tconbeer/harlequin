@@ -154,11 +154,9 @@ class AdapterDebugInfo:
         if self.adapter_options:
             table = ["| Flag(s) | Value |", "|---|---|"]
             for opt in self.adapter_options:
-                flags = f"--{opt.name}"
-                if getattr(opt, "short_decls", []):
-                    flags += " " + " ".join(opt.short_decls)
-                value = getattr(opt, "default", None)
-                table.append(f"| `{flags}` | `{value}` |")
+                declared = opt.to_dict()
+                flags = " ".join([f"--{declared['name']}", *declared["short_decls"]])
+                table.append(f"| `{flags}` | `{declared['default']}` |")
             options_markdown = "\n".join(table)
         else:
             options_markdown = "No adapter options defined."
