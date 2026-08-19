@@ -7,10 +7,11 @@ from typing import Any, List, Optional, Sequence, Union
 import tomlkit
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Collapsible, Markdown, Static
 
+from harlequin.components.text_modal import VerticalSuppressClicks
 from harlequin.config import Config, Profile
 
 
@@ -34,11 +35,6 @@ class DebugWidget:
         self.content = content
         self.collapsed = collapsed
         self.id = id
-
-
-class VerticalSuppressClicks(Vertical):
-    def on_click(self, message: events.Click) -> None:
-        message.stop()
 
 
 class HarlequinDebugInfo:

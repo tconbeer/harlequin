@@ -13,7 +13,7 @@ from textual.widgets import (
 )
 from textual_fastdatatable import DataTable
 
-from harlequin.components.cell_view_modal import CellViewModal
+from harlequin.components.text_modal import CellViewModal
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
