@@ -177,7 +177,7 @@
         },
         "config_path": {
           "type": "string",
-          "description": "Read this config file instead of the ones hsql discovers. --config init writes it."
+          "description": "Use this config file instead of the ones hsql discovers."
         },
         "config_mode": {
           "type": "string",

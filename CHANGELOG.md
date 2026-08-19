@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
   - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
   - `validate` reports every problem in every discovered config file: the file, the key, what is wrong, and the line. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
   - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
-  - `init` writes a profile into a config file, without prompting for anything: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed. Your comments and formatting survive, and `--config-path` names the file to write, which may be one that does not exist yet.
+  - `init` writes a profile into a config file, without prompting for anything: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.

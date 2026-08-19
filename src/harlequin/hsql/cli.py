@@ -245,10 +245,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         envvar="HARLEQUIN_CONFIG_PATH",
         show_envvar=True,
         metavar="PATH",
-        help=(
-            "Read this config file instead of the ones hsql discovers. "
-            "--config init writes it."
-        ),
+        help="Use this config file instead of the ones hsql discovers.",
     )
     @click.option(
         "--config",
