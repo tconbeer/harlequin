@@ -835,9 +835,8 @@ def reserved_spellings(cmd: click.Command) -> tuple[set[str], set[str]]:
     """The spellings and parameter names an adapter's option cannot have.
 
     hsql's own flags are the part of it that is an API, so a colliding adapter
-    option loses the colliding spelling. `--spec` reports the surface a caller
-    can actually type, so it reads this rather than keeping a second copy of
-    the rule `_attach_adapter_options` applies.
+    option loses the colliding spelling. `_attach_adapter_options` applies that
+    to the command; `--spec` applies it to the document it writes.
     """
     return (
         {opt for param in cmd.params for opt in param.opts},
