@@ -424,8 +424,12 @@ CellViewModal {
 
 /* reuses the shared #modal_outer / #modal_inner / #modal_footer styling so the
    primary outer border and faded inner border match the help and error modals */
-CellViewModal #modal_inner {
+CellViewModal #modal_outer {
     max-height: 80%;
+}
+CellViewModal #modal_inner {
+    max-height: 100%;
+    height: auto;
     padding: 1 1 1 2;
 }
 
