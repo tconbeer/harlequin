@@ -762,7 +762,7 @@ def test_the_config_is_read_once(
         reads.append(config_path)
         return real(config_path=config_path, profile_name=profile_name)
 
-    monkeypatch.setattr("harlequin.hsql.cli.load_profile", counting)
+    monkeypatch.setattr("harlequin.first_pass.load_profile", counting)
     res = hsql(*duck, "-c", "select 1")
     assert res.exit_code == ExitCode.OK
     assert len(reads) == 1
@@ -783,7 +783,7 @@ def test_hsql_does_not_claim_dash_h() -> None:
 
 def test_an_adapter_option_cannot_shadow_an_hsql_flag() -> None:
     from harlequin.adapter import HarlequinAdapter
-    from harlequin.hsql.cli import _attach_adapter_options
+    from harlequin.first_pass import attach_adapter_options, command_spellings
     from harlequin.options import TextOption
 
     class _Adapter:
@@ -794,7 +794,13 @@ def test_an_adapter_option_cannot_shadow_an_hsql_flag() -> None:
         ]
 
     cmd = build_cli(["--help"])
-    _attach_adapter_options(cmd, cast("type[HarlequinAdapter]", _Adapter))
+    reserved, taken = command_spellings(cmd)
+    attach_adapter_options(
+        cmd,
+        cast("type[HarlequinAdapter]", _Adapter),
+        reserved=reserved,
+        taken=taken,
+    )
     by_name: dict[str | None, list[click.Parameter]] = {}
     for param in cmd.params:
         by_name.setdefault(param.name, []).append(param)

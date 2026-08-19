@@ -142,10 +142,10 @@ def _adapters(only: str | None, command: click.Command) -> dict[str, Any]:
     Keyed rather than a list, because the question a caller has is about a name
     they already hold: what does `duckdb` take.
     """
-    from harlequin.hsql.cli import reserved_spellings
+    from harlequin.first_pass import command_spellings
     from harlequin.plugins import adapter_names, adapter_versions, load_adapter
 
-    reserved, taken = reserved_spellings(command)
+    reserved, taken = command_spellings(command)
     versions = adapter_versions()
     names = [only] if only is not None else adapter_names()
     adapters: dict[str, Any] = {}

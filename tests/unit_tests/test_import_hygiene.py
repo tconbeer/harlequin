@@ -81,6 +81,48 @@ def test_building_the_hsql_command_imports_no_adapter(
     assert not loaded, f"building `hsql {' '.join(argv)}` imported {loaded}"
 
 
+def test_building_the_ide_command_imports_only_the_named_adapter(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The IDE's half of the same two-phase parse.
+
+    An invocation opens the IDE with exactly one adapter, so building its
+    command imports exactly one. Every other installed adapter used to be
+    `ep.load()`ed on the way to a connection that would never use it, which is
+    ~200ms with four of them and grows with the fifth.
+    """
+    proc = run_python(
+        "import sys\n"
+        "from harlequin.cli import build_cli\n"
+        "build_cli(['-a', 'sqlite', ':memory:'])\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})))\n"
+    )
+    assert proc.stdout.strip() == "harlequin_sqlite"
+
+
+def test_the_ides_help_still_documents_every_adapter(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The deliberate exception, and the one path that still pays for all of them.
+
+    `harlequin --help` lists what every installed adapter takes, because an
+    option a reader cannot discover is one they cannot use. The trade is the
+    right way round: help is not the invocation anyone waits on.
+    """
+    proc = run_python(
+        "import sys\n"
+        "from harlequin.cli import build_cli\n"
+        "build_cli(['--help'])\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})))\n"
+    )
+    # a superset: whatever else the machine running this has installed
+    assert {"harlequin_duckdb", "harlequin_sqlite"} <= set(
+        proc.stdout.strip().split(",")
+    )
+
+
 # Not TUI modules, but slow ones on the path every start-up walks, each kept off
 # it by a deferral the static graph cannot see. The cost is the reason: tomlkit
 # parses a 10KB pyproject.toml ~30x slower than tomllib, and wcwidth costs

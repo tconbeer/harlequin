@@ -615,7 +615,7 @@ of `profiles` and `keymaps`, and the profile keys with meaning to `harlequin` or
 cannot reject what it does not recognize, because every adapter's options live in the same
 table.
 
-Pass 2 is what makes that safe. Once the adapter is known — which `_preflight` already
+Pass 2 is what makes that safe. Once the adapter is known — which the first pass already
 settles, and `load_adapter()` has already imported for the run about to happen — its
 `ADAPTER_OPTIONS` say exactly which further keys are legal, so the selected profile can be
 validated in full:

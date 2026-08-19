@@ -1,10 +1,12 @@
 import re
+import shlex
 import sqlite3
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
 from harlequin import Harlequin
 from harlequin.cli import (
@@ -19,6 +21,18 @@ from harlequin.cli import (
 from harlequin.config import Config
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
+
+
+def invoke(runner: CliRunner, args: str | list[str] = "", **kwargs: Any) -> Result:
+    """Build the command for these arguments, then run it against them.
+
+    The two are one step for a caller -- `harlequin()` does exactly this with
+    `sys.argv` -- because the command is built from the arguments: which
+    adapter's connection options it carries is what the first pass over them
+    settles.
+    """
+    argv = shlex.split(args) if isinstance(args, str) else args
+    return runner.invoke(build_cli(argv), args=argv, **kwargs)
 
 
 @pytest.fixture()
@@ -77,7 +91,7 @@ def test_help(mock_adapter: MagicMock, mock_empty_config: None) -> None:
     runner = CliRunner()
     # the option groups are keyed on the program name, so this has to match the
     # name the console script is installed under
-    res = runner.invoke(build_cli(), args="--help", prog_name="harlequin")
+    res = invoke(runner, "--help", prog_name="harlequin")
     assert res.exception is None, f"--help raised {res.exception!r}"
     assert res.exit_code == 0
     # the option groups configured at the top of cli.py, including the ones
@@ -97,7 +111,7 @@ def test_default(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     expected_conn_str = (harlequin_args,) if harlequin_args else tuple()
     mock_adapter.assert_called_once_with(conn_str=expected_conn_str)
@@ -125,7 +139,7 @@ def test_custom_init_script(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_adapter.assert_called_once()
     assert mock_adapter.call_args
@@ -140,7 +154,7 @@ def test_no_init_script(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_adapter.assert_called_once()
     assert mock_adapter.call_args
@@ -157,7 +171,7 @@ def test_theme(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -183,7 +197,7 @@ def test_viewer_max_rows(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -213,7 +227,7 @@ def test_limit_is_the_hard_fetch_limit(
 ) -> None:
     """The same limit hsql applies, and the Run Query Bar shows it."""
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["query_limit"] == expected
@@ -228,7 +242,7 @@ def test_unset_limit_fetches_everything(
 ) -> None:
     """Naming nothing is the full fetch the IDE has always done."""
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args="")
+    res = invoke(runner, "")
     assert res.exit_code == 0
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["query_limit"] is None
@@ -240,7 +254,7 @@ def test_the_two_limits_are_independent(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args="--limit 10 --viewer-max-rows 20")
+    res = invoke(runner, "--limit 10 --viewer-max-rows 20")
     assert res.exit_code == 0
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["query_limit"] == 10
@@ -260,7 +274,7 @@ def test_a_profile_limit_is_a_fetch_limit(
     """
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / "good_config.toml"
-    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    res = invoke(runner, f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 0
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["query_limit"] == 200_000
@@ -275,7 +289,7 @@ def test_show_files(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -297,7 +311,7 @@ def test_adapter_opt(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -318,7 +332,7 @@ def test_bad_adapter_opt(
     mock_empty_config: None,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 2
     key_words = ["Error", "Invalid", "-a", "-adapter", "duckdb"]
     assert all([w in res.stderr for w in key_words])
@@ -338,7 +352,7 @@ def test_profile_opt(
     mock_load_config: Config,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -359,7 +373,7 @@ def test_profile_override(
     mock_load_config: Config,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -380,7 +394,7 @@ def test_bad_profile_opt(
     mock_load_config: Config,
 ) -> None:
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=harlequin_args)
+    res = invoke(runner, harlequin_args)
     assert res.exit_code == 2
     key_words = ["profile", "config"]
     assert all([w in res.stderr for w in key_words])
@@ -395,7 +409,7 @@ def test_config_path(
 ) -> None:
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / filename
-    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    res = invoke(runner, f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -416,9 +430,7 @@ def test_config_path_fron_env(
 ) -> None:
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / filename
-    res = runner.invoke(
-        build_cli(), env={"HARLEQUIN_CONFIG_PATH": config_path.as_posix()}
-    )
+    res = invoke(runner, env={"HARLEQUIN_CONFIG_PATH": config_path.as_posix()})
     assert res.exit_code == 0
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
@@ -443,9 +455,7 @@ def test_conn_str_overrides_the_profile(
     """
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / filename
-    res = runner.invoke(
-        build_cli(), args=f"--config-path {config_path.as_posix()} other.db"
-    )
+    res = invoke(runner, f"--config-path {config_path.as_posix()} other.db")
     assert res.exit_code == 0
     mock_adapter.assert_called_once()
     assert mock_adapter.call_args.kwargs["conn_str"] == ("other.db",)
@@ -461,10 +471,32 @@ def test_bad_config_exits(
 ) -> None:
     runner = CliRunner()
     config_path = data_dir / "unit_tests" / "config" / "default_no_exist.toml"
-    res = runner.invoke(build_cli(), args=f"--config-path {config_path.as_posix()}")
+    res = invoke(runner, f"--config-path {config_path.as_posix()}")
     assert res.exit_code == 2
     key_words = ["default_profile", "foo"]
     assert all([w in res.stderr for w in key_words])
+
+
+def test_a_profile_naming_an_uninstalled_adapter_says_so(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """The one name the command's `--adapter` Choice never sees.
+
+    click vets what is typed, so a name nothing installed provides can only
+    arrive from a config file -- and that is the profile the pass over the
+    arguments could not turn into an adapter.
+    """
+    config_path = tmp_path / ".harlequin.toml"
+    config_path.write_text('[profiles.gone]\nadapter = "notreal"\n')
+    runner = CliRunner()
+    res = invoke(runner, f"--config-path {config_path.as_posix()} -P gone")
+    assert res.exit_code == 2
+    said = _said(res.stderr)
+    assert "notreal" in said
+    # and what it could have been
+    assert "duckdb" in said
 
 
 @pytest.mark.skipif(
@@ -479,9 +511,7 @@ def test_sqlite_extensions(
 ) -> None:
     extension_path = data_dir / "unit_tests" / "sqlite_extension" / "hello0"
     runner = CliRunner()
-    res = runner.invoke(
-        build_cli(), args=f"-a sqlite --extension {extension_path.as_posix()}"
-    )
+    res = invoke(runner, f"-a sqlite --extension {extension_path.as_posix()}")
     assert res.exit_code == 0
 
 
@@ -497,9 +527,7 @@ def test_sqlite_extension_not_supported(
 ) -> None:
     extension_path = data_dir / "unit_tests" / "sqlite_extension" / "hello0"
     runner = CliRunner()
-    res = runner.invoke(
-        build_cli(), args=f"-a sqlite --extension {extension_path.as_posix()}"
-    )
+    res = invoke(runner, f"-a sqlite --extension {extension_path.as_posix()}")
     assert res.exit_code == 2
     assert "No such option" in res.stderr
 
@@ -526,7 +554,7 @@ def test_an_hsql_option_names_hsql(
 ) -> None:
     """The likeliest first mistake now that there are two commands."""
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=[option, "select 1"])
+    res = invoke(runner, [option, "select 1"])
     assert res.exit_code == 2
     # rich-click wraps the panel it renders errors in, so the message arrives
     # broken across lines at whatever width the terminal happens to be
@@ -541,7 +569,7 @@ def test_an_unknown_option_that_is_not_hsqls_is_unchanged(
 ) -> None:
     """click's own message, and its own suggestion, for everything else."""
     runner = CliRunner()
-    res = runner.invoke(build_cli(), args=["--thmee", "nord"])
+    res = invoke(runner, ["--thmee", "nord"])
     assert res.exit_code == 2
     said = _said(res.stderr)
     # click has reworded this message across releases (8.4 quotes the option

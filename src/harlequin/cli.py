@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import rich_click as click
+from rich_click.utils import OptionGroupDict
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
@@ -28,10 +29,11 @@ from harlequin.exception import (
     HarlequinTzDataError,
     pretty_print_error,
 )
+from harlequin.first_pass import attach_adapter_options, first_pass
 from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
-from harlequin.plugins import load_adapter_plugins
+from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
 
 # configure defaults
@@ -117,36 +119,37 @@ click.rich_click.ERRORS_EPILOGUE = (
     f"To learn more, visit [link={DOCS_URL}]{DOCS_URL}[/link]"
 )
 
-# define main option group (adapter options added to own groups below)
-click.rich_click.OPTION_GROUPS = {
-    "harlequin": [
-        {
-            "name": "Harlequin Options",
-            "options": [
-                "--profile",
-                "--adapter",
-                "--show-files",
-                "--show-s3",
-                "--theme",
-                "--keymap-name",
-                "--viewer-max-rows",
-                "--limit",
-                "--config-path",
-                "--locale",
-                "--no-download-tzdata",
-            ],
-        },
-        {
-            "name": "Mini Apps",
-            "options": [
-                "--config",
-                "--keys",
-                "--version",
-                "--help",
-            ],
-        },
-    ]
-}
+# the option groups every invocation renders, whichever adapters are attached.
+# One group per attached adapter is appended to a copy of this in build_cli(),
+# which is where what is attached is settled.
+HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
+    {
+        "name": "Harlequin Options",
+        "options": [
+            "--profile",
+            "--adapter",
+            "--show-files",
+            "--show-s3",
+            "--theme",
+            "--keymap-name",
+            "--viewer-max-rows",
+            "--limit",
+            "--config-path",
+            "--locale",
+            "--no-download-tzdata",
+        ],
+    },
+    {
+        "name": "Mini Apps",
+        "options": [
+            "--config",
+            "--keys",
+            "--version",
+            "--help",
+        ],
+    },
+]
+click.rich_click.OPTION_GROUPS = {"harlequin": [*HARLEQUIN_OPTION_GROUPS]}
 
 
 class HarlequinCommand(click.RichCommand):
@@ -249,14 +252,57 @@ def _keys_app_callback(ctx: click.Context, param: Any, value: bool) -> None:
     ctx.exit(0)
 
 
-def build_cli() -> click.Command:
-    """
-    Loads installed adapters and constructs a click Command that includes options
-    defined by all adapters.
+def _adapter_option_group(
+    name: str, adapter_cls: type[HarlequinAdapter]
+) -> OptionGroupDict:
+    """The rich-click group `--help` renders one adapter's options in."""
+    return {
+        "name": f"{name} Adapter Options",
+        "options": [f"--{option.name}" for option in adapter_cls.ADAPTER_OPTIONS or []],
+    }
 
-    Returns: click.Command
+
+def build_cli(argv: Sequence[str]) -> click.Command:
+    """Build the IDE's command, importing at most one adapter to do it.
+
+    Takes the same arguments click is about to parse, because which adapter's
+    connection options belong on the command is a question only the arguments
+    can answer. An invocation connects with exactly one adapter, and importing
+    the other three to build a command that will never use them is time a user
+    waits for nothing -- ~200ms with four installed, and more with the fifth.
+
+    `--help` is the deliberate exception, and takes the other path: it imports
+    every installed adapter and documents all of them, so nobody loses the
+    ability to discover what an adapter takes. That path gets no faster, which
+    is the right trade -- the one that got faster is the one that opens the IDE.
     """
-    adapters = load_adapter_plugins()
+    installed = adapter_names()
+    found = first_pass(argv, installed, program="harlequin")
+    adapters: dict[str, type[HarlequinAdapter]] = {}
+    if found.wants_help:
+        adapters = load_adapter_plugins()
+    elif found.adapter is not None:
+        try:
+            adapters = {found.adapter: load_adapter(found.adapter)}
+        except HarlequinConfigError:
+            # a plug-in that will not import is the callback's to report, where
+            # there is an exit code: here there is only a command to build, and
+            # `_adapter_class()` raises the same error again when it runs.
+            pass
+
+    def _adapter_class(name: str) -> type[HarlequinAdapter]:
+        """The class for `name`, importing it if the pass above did not.
+
+        Almost always it did -- it read the same `-a` off the same argv, and the
+        same `adapter` key off the same profile. What is left is the profile it
+        could not see: `load_profile()` stops at the nearest config file that
+        defines the profile, where the IDE merges every file that does.
+
+        Raises: HarlequinConfigError for a name nothing installed provides, or
+        for a plug-in that will not import.
+        """
+        loaded = adapters.get(name)
+        return loaded if loaded is not None else load_adapter(name)
 
     @click.command(cls=HarlequinCommand)
     @click.version_option(package_name="harlequin", message=_version_option())
@@ -327,7 +373,7 @@ def build_cli() -> click.Command:
         "-a",
         default=DEFAULT_ADAPTER,
         show_default=True,
-        type=click.Choice(list(adapters.keys()), case_sensitive=False),
+        type=click.Choice(installed, case_sensitive=False),
         help=(
             "The name of an installed database adapter plug-in "
             "to use to connect to the database at CONN_STR."
@@ -428,17 +474,17 @@ def build_cli() -> click.Command:
             or profile_config.get("adapter", None)
             or DEFAULT_ADAPTER
         )
-        if (declaring := adapters.get(adapter_name)) is not None:
-            try:
-                profile_config = parse_profile_options(
-                    profile_config,
-                    adapter=adapter_name,
-                    adapter_options=declaring.ADAPTER_OPTIONS,
-                    command_options=harlequin_options | hsql_profile_keys(),
-                )
-            except HarlequinConfigError as e:
-                pretty_print_error(e)
-                ctx.exit(2)
+        try:
+            adapter_cls = _adapter_class(adapter_name)
+            profile_config = parse_profile_options(
+                profile_config,
+                adapter=adapter_name,
+                adapter_options=adapter_cls.ADAPTER_OPTIONS,
+                command_options=harlequin_options | hsql_profile_keys(),
+            )
+        except HarlequinConfigError as e:
+            pretty_print_error(e)
+            ctx.exit(2)
 
         config = merge_profile_with_cli(
             profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
@@ -485,9 +531,9 @@ def build_cli() -> click.Command:
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
 
-        # load and instantiate the adapter
-        adapter: str = config.pop("adapter", DEFAULT_ADAPTER)
-        adapter_cls: type[HarlequinAdapter] = adapters[adapter]
+        # instantiate the adapter, which was named and imported above -- the
+        # key comes off either way, because what is left is its options
+        config.pop("adapter", None)
         try:
             adapter_instance = adapter_cls(conn_str=conn_str, **config)
         except HarlequinConfigError as e:
@@ -514,46 +560,54 @@ def build_cli() -> click.Command:
         )
         tui.run()
 
-    # iterate through installed adapters and decorate the inner_cli command
-    # with the additional options declared by the adapter.
-    # we load the options into a dict keyed by their name to de-dupe options
-    # that may be passed by multiple adapters.
-    options: dict[str, AbstractOption] = {}
-    for adapter_name, adapter_cls in sorted(adapters.items()):
-        option_name_list: list[str] = []
-        if adapter_cls.ADAPTER_OPTIONS is not None:
-            for option in adapter_cls.ADAPTER_OPTIONS:
-                existing = options.get(option.name, None)
-                if existing is not None:
-                    options[option.name] = existing.merge(option)
-                else:
-                    options[option.name] = option
-                option_name_list.append(f"--{option.name}")
-        click.rich_click.OPTION_GROUPS["harlequin"].append(
-            {"name": f"{adapter_name} Adapter Options", "options": option_name_list}
-        )
-
     # this command's own options, before any adapter's are added to it
     harlequin_options = {param.name for param in inner_cli.params}
 
-    fn = inner_cli
-    for option in options.values():
-        fn = option.to_click()(fn)  # type: ignore[assignment]
+    cmd: click.Command = inner_cli
+    adapter_groups: list[OptionGroupDict] = []
+    if found.wants_help:
+        # every installed adapter, and so the one path that has two to
+        # reconcile: `merge()` settles an option name both declare (--database
+        # against --dbname) into the single option the command carries.
+        options: dict[str, AbstractOption] = {}
+        for adapter_name, adapter_cls in sorted(adapters.items()):
+            for option in adapter_cls.ADAPTER_OPTIONS or []:
+                existing = options.get(option.name, None)
+                options[option.name] = (
+                    existing.merge(option) if existing is not None else option
+                )
+            adapter_groups.append(_adapter_option_group(adapter_name, adapter_cls))
+        for option in options.values():
+            option.to_click()(cmd)
+    elif adapters:
+        # one adapter, and so nothing to reconcile
+        ((adapter_name, adapter_cls),) = adapters.items()
+        attach_adapter_options(cmd, adapter_cls)
+        adapter_groups.append(_adapter_option_group(adapter_name, adapter_cls))
 
-    return fn
+    # rebuilt rather than appended to: which adapters have options on the
+    # command is a property of the invocation now, and this dict is read by
+    # rich-click when it renders help.
+    click.rich_click.OPTION_GROUPS["harlequin"] = [
+        *HARLEQUIN_OPTION_GROUPS,
+        *adapter_groups,
+    ]
+
+    return cmd
 
 
 def harlequin() -> None:
     """
     The main entrypoint for the Harlequin IDE. Builds and executes the click Command.
     """
-    cli = build_cli()
+    cli = build_cli(sys.argv[1:])
     with warnings.catch_warnings():
         # Two installed adapters can claim the same flag for different options --
         # -u is duckdb's --allow-unsigned-extensions and postgres' --user, and -d
         # is --database for one adapter and --dbname for another. Click warns about
-        # each collision on every invocation, but the flags belong to separate
-        # plugins, so there is nothing the user can do about it.
+        # each collision, but the flags belong to separate plugins, so there is
+        # nothing the user can do about it. Only `--help` carries two adapters'
+        # options at once now, so only `--help` can collide.
         warnings.filterwarnings(
             "ignore",
             message="The parameter .* is used more than once",
