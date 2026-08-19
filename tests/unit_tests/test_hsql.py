@@ -1656,9 +1656,9 @@ def test_spec_says_what_it_does_not_cover(hsql: Hsql) -> None:
     """It cannot describe the IDE's flags -- reading them means importing the
     command that builds them, which hsql may not do -- so it says where it
     stops rather than reading as an exhaustive list that is not one."""
-    covers = spec_of(hsql("--spec"))["covers"]
-    assert "harlequin" in covers
-    assert "not here" in covers
+    scope = spec_of(hsql("--spec"))["scope"]
+    assert "harlequin" in scope
+    assert "not here" in scope
 
 
 def test_spec_options_are_sorted_by_name(hsql: Hsql) -> None:

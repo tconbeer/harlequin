@@ -24,7 +24,7 @@ why this module is imported by the callback only when `--spec` is passed.
 
 **What it cannot cover** is the `harlequin` command's own flags: building the
 IDE's command means importing `harlequin.cli`, which `hsql` may never do. The
-document says so under `covers` rather than presenting a list that looks
+document says so under `scope` rather than presenting a list that looks
 exhaustive and is not.
 """
 
@@ -49,7 +49,7 @@ JSON = "json"
 
 NONE = "none"
 
-COVERS = (
+SCOPE = (
     "hsql's own options and the connection options every installed adapter "
     "declares. The harlequin command's own options are not here -- run "
     "`harlequin --help` for those."
@@ -102,7 +102,7 @@ def report(
     document = {
         "program": "hsql",
         "version": version("harlequin"),
-        "covers": COVERS,
+        "scope": SCOPE,
         "arguments": [
             _from_argument(param)
             for param in params

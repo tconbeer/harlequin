@@ -154,9 +154,6 @@ class AdapterDebugInfo:
         if self.adapter_options:
             table = ["| Flag(s) | Value |", "|---|---|"]
             for opt in self.adapter_options:
-                # to_dict() rather than reaching for attributes an option type
-                # may not have: `default` belongs to some of them and not
-                # others, and the option is the only thing that knows which.
                 declared = opt.to_dict()
                 flags = " ".join([f"--{declared['name']}", *declared["short_decls"]])
                 table.append(f"| `{flags}` | `{declared['default']}` |")
