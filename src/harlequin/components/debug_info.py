@@ -13,6 +13,8 @@ from textual.widgets import Collapsible, Markdown, Static
 
 from harlequin.components.text_modal import VerticalSuppressClicks
 from harlequin.config import Config, Profile
+from harlequin.options import AbstractOption
+from harlequin.redact import REDACTED, redact_profile
 
 
 class WidgetType(Enum):
@@ -47,6 +49,7 @@ class HarlequinDebugInfo:
         theme: str | None = None,
         active_profile_name: str | None = None,
         active_profile_config: Profile | None = None,
+        adapter_options: Sequence[AbstractOption] | None = None,
     ) -> None:
         self.all_keymaps = all_keymaps
         self.config = config
@@ -55,16 +58,32 @@ class HarlequinDebugInfo:
         self.theme = theme
         self.active_profile_name = active_profile_name
         self.active_profile_config = active_profile_config or {}
+        self.adapter_options = adapter_options
+        """What the connected adapter declares, so that this screen knows
+        which of the profile's values it must not print."""
 
     def parse_info(self) -> List[DebugWidget]:
+        # this screen is what a user screenshots into an issue, so the two
+        # panels below -- the active profile, and every profile in the file --
+        # are the values a password is most likely to be sitting in
+        redacted_config = {
+            **self.config.to_dict(),
+            "profiles": {
+                name: redact_profile(profile, self.adapter_options)
+                for name, profile in self.config.profiles.items()
+            },
+        }
+        redacted_profile = redact_profile(
+            self.active_profile_config, self.adapter_options
+        )
         try:
-            config_toml = tomlkit.dumps(self.config.to_dict()).rstrip()
+            config_toml = tomlkit.dumps(redacted_config).rstrip()
         except Exception:
-            config_toml = str(self.config)
+            config_toml = str(redacted_config)
         try:
-            profile_toml = tomlkit.dumps(self.active_profile_config).rstrip()
+            profile_toml = tomlkit.dumps(redacted_profile).rstrip()
         except Exception:
-            profile_toml = str(self.active_profile_config)
+            profile_toml = str(redacted_profile)
         details = [
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,
@@ -152,7 +171,17 @@ class AdapterDebugInfo:
             for opt in self.adapter_options:
                 declared = opt.to_dict()
                 flags = " ".join([f"--{declared['name']}", *declared["short_decls"]])
-                table.append(f"| `{flags}` | `{declared['default']}` |")
+                # an adapter that ships a default for a secret has shipped the
+                # secret, and this table is on the screen a user screenshots.
+                # Only where there is one: an option with no default reads
+                # `None` here, and a mask over nothing would say a value was
+                # set that is not.
+                value = (
+                    REDACTED
+                    if declared["secret"] and declared["default"] is not None
+                    else declared["default"]
+                )
+                table.append(f"| `{flags}` | `{value}` |")
             options_markdown = "\n".join(table)
         else:
             options_markdown = "No adapter options defined."

@@ -255,6 +255,7 @@ source_modules = [
     "harlequin.keymap",
     "harlequin.options",
     "harlequin.plugins",
+    "harlequin.redact",
     "harlequin.transaction_mode",
     "harlequin_duckdb",
     "harlequin_sqlite",

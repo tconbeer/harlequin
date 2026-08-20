@@ -30,6 +30,7 @@ KEYS = {
     "default",
     "choices",
     "multiple",
+    "secret",
 }
 
 
@@ -93,6 +94,7 @@ def test_a_text_option_reports_what_it_was_declared_with() -> None:
         "default": "localhost",
         "choices": None,
         "multiple": False,
+        "secret": False,
     }
 
 
@@ -155,6 +157,7 @@ def test_an_option_that_predates_the_method_still_answers() -> None:
     assert declared["default"] is None
     assert declared["choices"] is None
     assert declared["multiple"] is False
+    assert declared["secret"] is False
 
 
 def test_a_subclass_of_a_declared_type_inherits_its_type() -> None:
@@ -178,3 +181,98 @@ def test_the_in_tree_adapters_serialize() -> None:
         assert set(declared) == KEYS
         assert declared["name"]
         assert declared["type"] in ("text", "list", "path", "select", "flag")
+        assert declared["secret"] in (True, False)
+
+
+# --- `secret`, and what reads it ---------------------------------------------
+
+
+def test_an_option_reports_what_it_declared_about_being_secret() -> None:
+    """The declaration `harlequin.redact` and `--spec` both read.
+
+    Core cannot enumerate every adapter's secret, so the adapter says so once
+    and every consumer gets it from here.
+    """
+    assert TextOption(name="token", description="x", secret=True).to_dict()["secret"]
+    assert not TextOption(name="host", description="x").to_dict()["secret"]
+
+
+@pytest.mark.parametrize("option", EVERY_OPTION, ids=lambda o: type(o).__name__)
+def test_nothing_is_secret_unless_it_says_so(option: AbstractOption) -> None:
+    """False is the answer a subclass that predates the attribute has to give.
+
+    A class attribute as well as a keyword, so that an option written before
+    any of this answers rather than raising -- and answers the safe way round
+    for the *caller*: an option core wrongly believed secret would be masked in
+    every report, which is a bug a user would have to guess at.
+    """
+    assert option.secret is False
+    assert option.to_dict()["secret"] is False
+
+
+def test_the_duckdb_adapter_declares_its_token_secret() -> None:
+    """The one secret in tree, and the reason the declaration is not theory."""
+    from harlequin_duckdb import DUCKDB_OPTIONS
+
+    declared = {option.name: option.to_dict() for option in DUCKDB_OPTIONS}
+    assert declared["md_token"]["secret"] is True
+    assert declared["read-only"]["secret"] is False
+
+
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        (
+            TextOption(name="token", description="A token.", secret=True),
+            TextOption(name="token", description="Not a token."),
+        ),
+        (
+            TextOption(name="token", description="Not a token."),
+            TextOption(name="token", description="A token.", secret=True),
+        ),
+    ],
+    ids=["secret first", "secret second"],
+)
+def test_merging_two_options_keeps_the_secret_one_secret(
+    left: AbstractOption, right: AbstractOption
+) -> None:
+    """Either half saying so is enough.
+
+    Two adapters spelling the same option two ways is what `merge()` is for,
+    and one of them calling it a password is the answer that cannot be wrong in
+    the direction that hurts.
+    """
+    assert left.merge(right).to_dict()["secret"] is True
+
+
+@pytest.mark.parametrize(
+    "option_type", [TextOption, PathOption, ListOption], ids=lambda t: t.__name__
+)
+def test_a_secret_option_prompts_without_echoing(option_type: type) -> None:
+    """The wizard asks the same question and does not write the answer down.
+
+    A prompt that echoes a token puts it in a terminal, a screen share and a
+    scrollback buffer at once, and the wizard is where a token is typed.
+    """
+    plain = option_type(name="token", description="x").to_questionary()
+    secret = option_type(name="token", description="x", secret=True).to_questionary()
+    assert not _masks_input(plain)
+    assert _masks_input(secret)
+
+
+def _masks_input(question: Any) -> bool:
+    """Whether this prompt would show what is typed into it.
+
+    Read off the real prompt rather than by watching which questionary function
+    was called: what matters is that the input is not echoed, and that is a
+    property of the object the wizard is about to run.
+    """
+    from prompt_toolkit.layout.processors import ConditionalProcessor, PasswordProcessor
+
+    control = question.application.layout.current_window.content
+    return any(
+        isinstance(processor, ConditionalProcessor)
+        and isinstance(processor.processor, PasswordProcessor)
+        and processor.filter()
+        for processor in control.input_processors
+    )

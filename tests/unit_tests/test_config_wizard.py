@@ -60,6 +60,8 @@ def run_wizard(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
             ("select", first_choice),
             ("text", the_default),
             ("path", the_default),
+            # the prompt a secret option gets: same question, no echo
+            ("password", the_default),
             ("checkbox", nothing_checked),
             ("confirm", yes),
         )
@@ -108,6 +110,44 @@ class TestDefaultProfile:
 
         assert load_config(config_path=path).default_profile == "one"
         assert "# keep me" in path.read_text()
+
+
+class TestSecrets:
+    """What the wizard writes down, and what it puts on the screen.
+
+    Two different things for a secret, and the difference is the point: the
+    file needs the token to connect with, and the terminal -- shared, scrolled
+    back, screenshotted -- needs never to have seen it.
+    """
+
+    SECRET = "hunter2-and-then-some"
+
+    def test_a_secret_is_written_to_the_file_and_not_to_the_screen(
+        self,
+        tmp_path: Path,
+        run_wizard: Callable[..., None],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\ntheme = "fruity"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Which adapter": "duckdb",
+                "adapter options": ["md_token"],
+                "md_token": self.SECRET,
+            },
+        )
+
+        # the file gets the value: a profile that connected with asterisks
+        # would be a worse bug than the one this is about
+        assert load_config(config_path=path).profiles["one"]["md_token"] == self.SECRET
+        # the confirmation panel does not
+        printed = capsys.readouterr().out
+        assert self.SECRET not in printed
+        assert "********" in printed
 
 
 class TestProfileWrite:
