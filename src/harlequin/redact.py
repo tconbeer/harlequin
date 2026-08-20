@@ -26,10 +26,15 @@ module has three functions instead of one:
 `_SECRET_NAME` is also applied to a profile's own keys, which is the one place
 this second-guesses an adapter. It has to: as of this writing every adapter's
 options predate `secret=`, so a `password` key declared by an adapter that has
-not adopted the flag yet would print in full -- and redacting a key named like
-a secret that is not one costs a reader nothing they cannot get from the file
-they wrote. Over-redaction is the safe direction, and it is the only direction
-that makes "the secret appears in no byte of the report" true today.
+not adopted the flag yet would print in full -- and so would every key of an
+adapter that is not installed on the machine reading the config, or will not
+import on it. Redacting a key named like a secret that is not one costs a
+reader nothing they cannot get from the file they wrote. Over-redaction is the
+safe direction, and it is the only direction that makes "the secret appears in
+no byte of the report" true today.
+
+It is a backstop and not the mechanism, though: a caller that can ask the
+adapter passes `options`, and every one of them does.
 """
 
 from __future__ import annotations
@@ -100,9 +105,8 @@ def redact_profile(
     with.
 
     `options` is what the adapter declares, where the caller has it. None means
-    the caller could not ask -- `--config show` reports on adapters it must not
-    import, and an adapter that will not import declares nothing readable -- in
-    which case a key is hidden on its name alone.
+    the caller could not ask -- an adapter that is not installed, or will not
+    import -- in which case a key is hidden on its name alone.
     """
     declared = _declarations(options)
     return {
