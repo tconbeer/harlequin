@@ -311,11 +311,9 @@ def _from_option(schema: Mapping[str, Any], option: AbstractOption) -> dict[str,
     if isinstance(declared["default"], (str, int, float, bool)):
         described["default"] = declared["default"]
     if declared["secret"]:
-        # JSON Schema's own word for it, so an editor that knows the vocabulary
-        # does the right thing with the field without being told twice
+        # JSON Schema uses "write only" to flag secrets
         described["writeOnly"] = True
-        # and an adapter that shipped a default for a secret shipped the
-        # secret; a schema is the last place to write one down
+        # a default that is a secret is still a secret
         described.pop("default", None)
     return described
 

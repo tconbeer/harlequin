@@ -1007,8 +1007,6 @@ class Harlequin(AppBase):
         harlequin_info = HarlequinDebugInfo(
             active_profile_config=active_profile_config,
             active_profile_name=active_profile_name,
-            # so the screen can mask what the adapter declared secret, rather
-            # than printing a token into a screenshot
             adapter_options=adapter_options,
             all_keymaps=list(self.all_keymaps.keys()),
             config=config,

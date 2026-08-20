@@ -299,10 +299,7 @@ def _confirm_profile_generation(
     new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
-    # what goes in the file is the value that was typed; what goes on the
-    # screen is not. A prompt that masks a token and then prints it back in the
-    # panel below has masked nothing -- and this panel is the one part of the
-    # wizard a user is likely to screenshot.
+    # redact secrets from the displayed config preview
     new_config.update(
         {"profiles": {profile_name: redact_profile(new_profile, adapter_options)}}
     )
