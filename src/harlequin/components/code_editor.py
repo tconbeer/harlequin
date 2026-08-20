@@ -117,9 +117,10 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if self.text_input is None:
             return
         old_selection = self.text_input.selection
+        old_text = self.text
 
         try:
-            self.text = format_string(self.text, Mode())
+            formatted_text = format_string(old_text, Mode())
         except SqlfmtError as e:
             self.app.push_screen(
                 ErrorModal(
@@ -129,7 +130,12 @@ class CodeEditor(TextEditor, inherit_bindings=False):
                 )
             )
         else:
-            self.text_input.selection = old_selection
+            if formatted_text != old_text:
+                self.text = formatted_text
+                self.text_input.selection = old_selection
+                self.app.notify("Formatted query.")
+            else:
+                self.app.notify("Query was already formatted; no changes made.")
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):

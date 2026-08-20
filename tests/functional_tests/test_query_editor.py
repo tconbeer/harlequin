@@ -23,6 +23,12 @@ async def test_query_formatting(
 
         await pilot.press("f4")
         assert app.editor.text == "select 1 from foo\n"
+        assert list(app._notifications)[-1].message == "Formatted query."
+
+        # formatting an already-formatted query notifies that nothing changed
+        await pilot.press("f4")
+        assert app.editor.text == "select 1 from foo\n"
+        assert "no changes" in list(app._notifications)[-1].message
 
 
 @pytest.mark.flaky
