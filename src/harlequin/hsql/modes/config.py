@@ -21,19 +21,22 @@ questionary.
 `show` prints a user's own values, so it redacts them. It is the one reporting
 mode that does, because it is the only one that prints a value at all --
 `list-profiles` prints names, and `validate` prints what is wrong with a key
-rather than what is under it. It still imports no adapter to do it, which is
-what `redact_profile`'s fallback to the key's name is for: a mode that reports
-on config files must work when the database does not, and that rules out asking
-the adapter which of its options are secret.
+rather than what is under it. Which values are secret is the adapter's
+declaration, so this is the mode that pays an import per adapter its profiles
+name to ask. That is the trade taken deliberately: ~200ms on a mode a caller
+runs by hand, against a token printed in full because nobody asked the one
+thing that knows. `redact_profile`'s fallback to the key's name stays under it
+for the adapter that is not installed, will not import, or has not adopted
+`secret=` yet -- which is nearly all of them.
 
 None of them connects, and `schema` does not even read a file: it describes the
-shape a config file may take, whether or not this machine has one. `show` and
-`list-profiles` import no adapter either. The other three do: `validate`
-imports one per adapter its profiles name, `schema` every installed one, and
-`init` the one whose options it is writing, because all three are describing
-options only the adapter declares. `show` does not import the execution core
-either -- it writes a document, not rows -- which is why the two imports the
-row-shaped modes need are deferred into them.
+shape a config file may take, whether or not this machine has one.
+`list-profiles` imports no adapter, because it prints no value that could need
+one. The other four do: `show` and `validate` one per adapter their profiles
+name, `schema` every installed one, and `init` the one whose options it is
+writing. `show` does not import the execution core, though -- it writes a
+document, not rows -- which is why the two imports the row-shaped modes need
+are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
 the language they will edit the answer in, and JSON for a caller, under the same
@@ -47,6 +50,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
 
 from harlequin.config import (
+    DEFAULT_ADAPTER,
     ConfigFile,
     Provenance,
     get_highest_priority_existing_config_file,
@@ -236,21 +240,45 @@ def _redacted(config: Config) -> Config:
     `Config` is what both renderings read: masking once here means the TOML and
     the JSON cannot disagree about what they hide.
 
-    No adapter is imported to decide what is secret, so this is the fallback
-    path -- a key named like a password is treated as one. That is the right
-    trade for this mode: over-redacting a key costs a reader nothing they
-    cannot read out of their own file, and importing one adapter per profile to
-    do better would cost every invocation the thing this mode promises not to
-    need.
+    Each profile is redacted against the options *its own* adapter declares,
+    which takes importing that adapter -- one per distinct name, as `validate`
+    does, and none at all for a config with no profiles in it. A profile that
+    names no adapter is redacted against the default's, because that is the one
+    a run under it would connect with.
+
+    An adapter this cannot import declares nothing readable, and the profile
+    falls back to `redact_profile`'s reading of the key's name. That is said
+    out loud rather than silently: it is the one path where a value this mode
+    would have masked might print.
     """
     import msgspec
 
+    from harlequin.plugins import load_adapter
     from harlequin.redact import redact_profile
+
+    declared: dict[str, Sequence[AbstractOption] | None] = {}
+
+    def options(adapter: str) -> Sequence[AbstractOption] | None:
+        if adapter not in declared:
+            try:
+                declared[adapter] = load_adapter(adapter).ADAPTER_OPTIONS
+            except HarlequinConfigError:
+                # once per adapter, because the answer is cached under its name
+                # whether it was an answer or a failure
+                diagnostics.note(
+                    f"could not import {adapter}, so its profiles were masked by "
+                    "option name alone; run --config validate for the reason."
+                )
+                declared[adapter] = None
+        return declared[adapter]
 
     return msgspec.structs.replace(
         config,
         profiles={
-            name: redact_profile(profile) for name, profile in config.profiles.items()
+            name: redact_profile(
+                profile, options(str(profile.get("adapter") or DEFAULT_ADAPTER))
+            )
+            for name, profile in config.profiles.items()
         },
     )
 

@@ -2604,6 +2604,65 @@ def test_config_show_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
     assert f"# from {secret_config}" in res.stdout
 
 
+def test_config_show_masks_a_secret_the_key_name_does_not_give_away(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reason this mode imports the adapters its profiles name.
+
+    A key called `hush` is not one core could have guessed at, and guessing is
+    what the fallback does. Only the adapter knows, so the mode asks it.
+    """
+    from harlequin.options import TextOption
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.ADAPTER_OPTIONS",
+        [TextOption(name="hush", description="x", secret=True)],
+    )
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f'[profiles.one]\nadapter = "duckdb"\nhush = "{SECRET}"\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'hush = "********"' in res.stdout
+
+
+def test_config_show_asks_the_default_adapter_for_a_profile_that_names_none(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A profile with no `adapter` connects with the default, so that is the
+    one whose declarations decide what it is hiding."""
+    from harlequin.options import TextOption
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.ADAPTER_OPTIONS",
+        [TextOption(name="hush", description="x", secret=True)],
+    )
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(f'[profiles.one]\nhush = "{SECRET}"\n')
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'hush = "********"' in res.stdout
+
+
+def test_config_show_says_when_it_masked_by_name_alone(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """The one path where a value this would have masked might print, so it is
+    said out loud rather than left for a reader to notice."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f'[profiles.one]\nadapter = "nonesuch"\npassword = "{SECRET}"\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'password = "********"' in res.stdout
+    assert "could not import nonesuch" in res.stderr
+
+
 def test_config_show_json_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
     res = hsql("--config", "show", "--json")
     assert res.exit_code == ExitCode.OK
