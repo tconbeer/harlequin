@@ -1,6 +1,6 @@
 # hsql
 
-`hsql` is your agent's favorite SQL client. It the headless CLI for
+`hsql` is your agent's favorite SQL client. It's the headless CLI for
 [Harlequin](https://harlequin.sh), and shares the same config and query engine,
 with an interface optimized for agents, scripts, and automations.
 
@@ -135,6 +135,93 @@ $ hsql -P dev -c "select * from users" --vertical --limit 5
 $ hsql -P warehouse -c "..." --parquet -o invoices.pq
 ```
 
+hsql reads the same config files as Harlequin, in the same order, nearest first:
+
+1. `harlequin.toml`, `.harlequin.toml`, or the `[tool.harlequin]` table of `pyproject.toml`, in the current working directory
+2. `harlequin.toml`, `.harlequin.toml`, or `config.toml`, in your user config directory (like `~/.config/harlequin`)
+3. `harlequin.toml`, `.harlequin.toml`, or `pyproject.toml`, in your home directory
+
+Files merge one profile at a time. If two files define a profile with the same name, the nearer file's version of that profile wins whole; profiles that only a farther file defines are still available to `-P`. Pass `--config-path PATH` to read one file instead of the discovered ones, or `-P None` to skip config files entirely and use hsql's own defaults.
+
+### Inspecting Your Config
+
+Four `--config` modes report on your config files instead of running SQL. None of them connects to a database.
+
+`--config list-profiles` answers "what can I pass to `-P`?":
+
+```bash
+$ hsql --config list-profiles
+ profile | adapter | default
+---------+---------+---------
+ dev     | sqlite  | true
+ prod    | duckdb  | false
+(2 rows)
+```
+
+`--config show` answers "which file is winning?" It prints the merged config as TOML, with the file each value came from written beside it, and the files it overrode after that:
+
+```bash
+$ hsql --config show
+default_profile = "dev" # from /home/user/.config/harlequin/harlequin.toml
+
+[profiles.dev] # from /home/user/proj/harlequin.toml, overriding /home/user/.config/harlequin/harlequin.toml
+adapter = "sqlite"
+conn_str = ["./dev.db"]
+limit = 100
+
+[profiles.prod] # from /home/user/proj/harlequin.toml
+adapter = "duckdb"
+conn_str = ["./prod.duckdb"]
+format = "csv"
+limit = -1
+```
+
+Pass `--json` for the same answer as JSON, where every key carries its `value`, the file it came `from`, and the list of files it `overrode`.
+
+`--config validate` answers "what is wrong with any of it?" It reports every problem in every discovered file, rather than stopping at the first one a run would have hit, and exits `2` if it finds any:
+
+```bash
+$ hsql --config validate
+ file                           | key                 | problem                                                                                                 | line
+--------------------------------+---------------------+---------------------------------------------------------------------------------------------------------+------
+ /home/user/proj/harlequin.toml | profiles.dev.limitt | Profile defines an option 'limitt', which is not an option of the sqlite adapter. Did you mean 'limit'? | NULL
+ /home/user/proj/harlequin.toml | default_profile     | Config files set the default_profile to dve, but no config file defines a profile with that name.       | NULL
+(2 rows)
+```
+
+`list-profiles` and `validate` are result sets, so every layout and file option works on them: `--csv`, `--json`, `-t`, `-A` and `-o` all do what they do for a query.
+
+### Writing a Profile
+
+`--config init` writes a profile into a config file from the options you pass, and prompts for nothing:
+
+```bash
+$ hsql --config init -P prod -a sqlite ./my.db --limit -1 --csv
+note: wrote the profile named prod to /home/user/proj/.harlequin.toml.
+```
+
+which writes:
+
+```toml
+[profiles.prod]
+adapter = "sqlite"
+conn_str = ["./my.db"]
+limit = -1
+format = "csv"
+```
+
+It writes only the options you typed, and it writes the profile whole: a key you do not pass is a key that profile no longer has. Without `--config-path`, it edits the nearest config file that already exists, or creates a `.harlequin.toml` in the working directory when there is none; either way, the comments and formatting elsewhere in the file survive. If you would rather answer questions than pass flags, `harlequin --config` is the interactive version of the same thing.
+
+### Editor Completion and Validation
+
+`--config schema` writes a [JSON Schema](https://json-schema.org/) for a Harlequin config file, built from this installation, so it covers the options of every adapter you have installed:
+
+```bash
+$ hsql --config schema -o harlequin-schema.json
+```
+
+Point your editor's TOML language server at that file to get completion and validation as you type in your `harlequin.toml`.
+
 ## Data Layouts and File Formats
 
 hsql supports all of the following formats for displaying and writing data:
@@ -206,6 +293,90 @@ You can also use `--stats` and `jq` together to error on a truncated query:
 ```bash
 hsql --limit -1 -c "select 1" --csv -o data.csv --stats 2>&1 | jq -e '.truncated | not' > /dev/null
 ```
+
+## Describing hsql to an Agent
+
+`hsql --help` is written for a person. Two flags answer the same questions as JSON, so an agent can find its way around an installation it has never seen. Neither one connects to a database, and both write JSON to stdout whatever `--format` says, so `-o` and a pipe into `jq` both work.
+
+`--spec` is a machine-readable `--help`: every option on the command, plus the connection options every installed adapter declares. Each one carries its declarations, type, choices, default, and help text:
+
+```bash
+$ hsql --spec -a sqlite | jq '.adapters.sqlite.options[] | select(.name == "read_only")'
+{
+  "name": "read_only",
+  "decls": [
+    "--read-only",
+    "-readonly",
+    "-r"
+  ],
+  "type": "boolean",
+  "metavar": null,
+  "choices": null,
+  "default": false,
+  "multiple": false,
+  "is_flag": true,
+  "required": false,
+  "envvar": null,
+  "help": "Open the database file in read-only mode."
+}
+```
+
+Alongside `adapters`, the document holds `program`, `version`, `scope`, the `arguments` the command takes, and hsql's own `options` in the same shape. Without `-a`, `adapters` holds every installed adapter, which means importing all of them; `-a NAME` narrows it to one and is much faster. `--spec` covers hsql's own surface only — the `harlequin` IDE's flags are not in it, and the `scope` field in the output says so.
+
+`--info` describes the installation rather than the command: versions, platform, the config files hsql discovered in precedence order, the profile that would be active, and what each installed adapter declares it supports.
+
+```bash
+$ hsql --info -a sqlite -P prod
+{
+  "program": "hsql",
+  "version": "2.9.0",
+  "python": {
+    "version": "3.10.15",
+    "implementation": "CPython",
+    "executable": "/home/user/.local/share/uv/tools/hsql/bin/python"
+  },
+  "platform": {
+    "system": "Linux",
+    "release": "6.8.0-generic",
+    "machine": "x86_64"
+  },
+  "config": {
+    "path": null,
+    "files": [
+      "/home/user/proj/harlequin.toml",
+      "/home/user/.config/harlequin/harlequin.toml"
+    ]
+  },
+  "profile": {
+    "name": "prod",
+    "options": {
+      "adapter": "sqlite",
+      "conn_str": [
+        "./my.db"
+      ],
+      "limit": -1,
+      "format": "csv"
+    },
+    "error": null
+  },
+  "adapter": {
+    "name": "sqlite",
+    "from": "-a"
+  },
+  "adapters": {
+    "sqlite": {
+      "distribution": "harlequin",
+      "version": "2.9.0",
+      "capabilities": {
+        "implements_cancel": true
+      },
+      "error": null
+    }
+  }
+}
+```
+
+Use it to check whether an adapter is installed, and what it can do, before writing a script that depends on the answer. As with `--spec`, `-a NAME` narrows `adapters` to one. An adapter that is installed but cannot be imported is reported with its `error` rather than left out.
 
 ## Keep Reading at [harlequin.sh](https://harlequin.sh/docs/getting-started/hsql)
 

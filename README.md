@@ -119,6 +119,8 @@ Other adapters can be installed as plug-ins; for more information, see the [inst
 
 Harlequin contains a large number of options that allow you to [set the theme](https://harlequin.sh/docs/themes), [customize key bindings](https://harlequin.sh/docs/keymaps/index), [show remote and local files](https://harlequin.sh/docs/files/index), set the locale for number formatting, and much more. These can always be entered at the command line, but it can be convenient to define a configuration as a profile instead. For more information on configuring Harlequin, see [Using Config Files](https://harlequin.sh/docs/config-file/index).
 
+hsql, Harlequin's companion CLI (below), reads the same files, and can report on them: `hsql --config show` prints the merged config with the file each value came from, `hsql --config validate` lists every problem in every file, and `hsql --config schema` writes a JSON Schema you can point your editor at for completion and validation as you type.
+
 ## Using Harlequin with Agents or in Scripts
 
 Harlequin has a companion CLI, hsql, that uses the same adapters and config files, but is optimized for headless use by agents and in automations. hsql is packaged with Harlequin (no additional installation required):
