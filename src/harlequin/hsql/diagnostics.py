@@ -10,6 +10,11 @@ footer, where psql puts it and where `-t` can decline it; timings are a field of
 
 Exit codes are hsql's contract rather than Harlequin's, which is why the
 mapping lives here and not in `harlequin.exception`.
+
+Nothing written here carries a secret, either. `hide()` is told what this
+invocation must not print, and every line out of this module is checked against
+it on the way -- which covers the one channel `harlequin.redact` cannot shape
+in advance: a driver exception that quotes back the DSN it was handed.
 """
 
 from __future__ import annotations
@@ -17,13 +22,14 @@ from __future__ import annotations
 import json
 import sys
 from enum import IntEnum
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
 )
+from harlequin.redact import redact_text
 
 PROGRAM = "hsql"
 
@@ -83,6 +89,23 @@ def exit_code_for(error: BaseException) -> ExitCode:
     if isinstance(error, HarlequinConnectionError):
         return ExitCode.CONNECTION
     return ExitCode.QUERY
+
+
+_HIDDEN: set[str] = set()
+"""What this invocation must not print. Set by `hide()`, read by `_write()`."""
+
+
+def hide(secrets: Iterable[str]) -> None:
+    """Take everything this invocation must not print, replacing what it held.
+
+    Called once, from the callback, as soon as the profile and the command line
+    have been merged -- which is the first moment anything knows both what the
+    adapter declared secret and what the caller passed. Replacing rather than
+    accumulating, because one process runs one invocation, and a test harness
+    that runs several in one interpreter must not inherit the last one's.
+    """
+    global _HIDDEN
+    _HIDDEN = {secret for secret in secrets if secret}
 
 
 def error(message: str) -> None:
@@ -217,4 +240,8 @@ def _write(line: str) -> None:
     sys.stdout.flush()
     # sys.stderr is resolved on each call, not bound at import: a test harness
     # that swaps the stream out has to be able to see what was written.
-    print(line, file=sys.stderr)
+    #
+    # Redacting here rather than at each call site is what makes this a
+    # promise: an error raised by a driver, a note, a `--stats` payload with a
+    # message in it, and whatever is added next all leave through this line.
+    print(redact_text(line, _HIDDEN) if _HIDDEN else line, file=sys.stderr)

@@ -280,3 +280,21 @@ def test_the_packaged_base_schema_is_what_the_generator_writes() -> None:
     assert packaged == build_schema(bare_command().params, None), (
         f"the packaged base schema is out of date: {FIX}"
     )
+
+
+def test_a_secret_option_is_write_only_and_carries_no_default() -> None:
+    """JSON Schema's own word for a value that must not be shown back.
+
+    An editor that knows the vocabulary does the right thing with the field
+    without being told twice -- and a default an adapter shipped for a secret
+    is a secret, so the schema does not write it down.
+    """
+    options: list[AbstractOption] = [
+        TextOption(name="token", description="A token.", default="sh", secret=True),
+        TextOption(name="host", description="Where.", default="localhost"),
+    ]
+    declared = schema_for({"faux": options})["$defs"]["faux_options"]["properties"]
+    assert declared["token"]["writeOnly"] is True
+    assert "default" not in declared["token"]
+    assert "writeOnly" not in declared["host"]
+    assert declared["host"]["default"] == "localhost"

@@ -30,6 +30,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.layout",
     "import harlequin.options",
     "import harlequin.plugins",
+    "import harlequin.redact",
     "import harlequin.query",
     "import harlequin.statements",
     "import harlequin.transaction_mode",
@@ -439,3 +440,39 @@ def test_unknown_attribute_still_raises_attribute_error() -> None:
 
     with pytest.raises(AttributeError):
         _ = harlequin.NotAThing
+
+
+def test_config_show_redacts_without_importing_an_adapter(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """The reason `redact_profile` falls back to the key's name.
+
+    A mode that reports on config files must work when the database does not,
+    so it cannot ask the adapter which of its options are secret -- and it must
+    still not print one. Both halves are asserted here, because either one
+    alone is the wrong trade.
+
+    `tmp_path` is the subprocess's cwd and its home, so this file is the whole
+    of the config it discovers.
+    """
+    (tmp_path / ".harlequin.toml").write_text(
+        "[profiles.md]\n"
+        'adapter = "duckdb"\n'
+        'conn_str = [ "md:my_db?motherduck_token=hunter2-and-then-some" ]\n'
+        'md_token = "hunter2-and-then-some"\n'
+    )
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'show']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(m for m in sys.modules if m.startswith('harlequin_')), "
+        "file=sys.stderr)\n"
+    )
+    assert "hunter2-and-then-some" not in proc.stdout
+    assert "********" in proc.stdout
+    leaked = [m for m in proc.stderr.strip().split(",") if m]
+    assert not leaked, f"`hsql --config show` imported {leaked}"

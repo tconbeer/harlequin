@@ -20,6 +20,11 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
+- Adds `secret=` to the adapter API's options, so an adapter can declare that an option holds a password, a token, or a key. Harlequin masks a declared secret everywhere it reports a profile back to you — `hsql --info`, `hsql --config show`, `hsql --spec`, the generated config schema, and the IDE's debug screen — and `harlequin --config` no longer echoes one as you type it, or prints it in the profile it shows you before saving ([#667](https://github.com/tconbeer/harlequin/issues/667)).
+  - Passwords inside a connection string are masked too: `postgresql://me:hunter2@warehouse/analytics` reports as `postgresql://me:********@warehouse/analytics`, whether it was written as a URL, as `password=` pairs, or in a query string ([#354](https://github.com/tconbeer/harlequin/issues/354)).
+  - `hsql` also masks those values in anything it writes to stderr, including an error raised by a database driver that quotes the connection string back at you, and the `--stats` payload.
+  - Until an adapter adopts `secret=`, a profile key *named* like a password (`password`, `token`, `api_key`, and similar) is masked anyway.
+  - The DuckDB adapter declares `md_token` secret. Redaction is for output only: your adapter still connects with the value you configured.
 - Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does.
 - Harlequin's Results Viewer can now show a cell's value in a scrollable modal (press `space`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
 - Formatting a query now shows a notification, so it is clear the formatter ran even when it changed little or nothing ([#874](https://github.com/tconbeer/harlequin/issues/874)).

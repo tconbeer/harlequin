@@ -18,15 +18,22 @@ nothing, which is the whole point of having it beside a wizard -- each command
 gets the affordance right for its audience, and `hsql` may not import
 questionary.
 
+`show` prints a user's own values, so it redacts them. It is the one reporting
+mode that does, because it is the only one that prints a value at all --
+`list-profiles` prints names, and `validate` prints what is wrong with a key
+rather than what is under it. It still imports no adapter to do it, which is
+what `redact_profile`'s fallback to the key's name is for: a mode that reports
+on config files must work when the database does not, and that rules out asking
+the adapter which of its options are secret.
+
 None of them connects, and `schema` does not even read a file: it describes the
 shape a config file may take, whether or not this machine has one. `show` and
-`list-profiles` import no adapter either -- a mode that reports on config files
-must work when the database does not. The other three do: `validate` imports one
-per adapter its profiles name, `schema` every installed one, and `init` the one
-whose options it is writing, because all three are describing options only the
-adapter declares. `show` does not import the execution core either -- it writes
-a document, not rows -- which is why the two imports the row-shaped modes need
-are deferred into them.
+`list-profiles` import no adapter either. The other three do: `validate`
+imports one per adapter its profiles name, `schema` every installed one, and
+`init` the one whose options it is writing, because all three are describing
+options only the adapter declares. `show` does not import the execution core
+either -- it writes a document, not rows -- which is why the two imports the
+row-shaped modes need are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
 the language they will edit the answer in, and JSON for a caller, under the same
@@ -105,7 +112,7 @@ def report(
 
     if mode == SHOW:
         _write_document(
-            config,
+            _redacted(config),
             provenance,
             out,
             mode=mode,
@@ -220,6 +227,32 @@ def _writable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     return value
+
+
+def _redacted(config: Config) -> Config:
+    """The same config with every profile's secrets masked.
+
+    A copy, because the caller holds the config a run would use, and because a
+    `Config` is what both renderings read: masking once here means the TOML and
+    the JSON cannot disagree about what they hide.
+
+    No adapter is imported to decide what is secret, so this is the fallback
+    path -- a key named like a password is treated as one. That is the right
+    trade for this mode: over-redacting a key costs a reader nothing they
+    cannot read out of their own file, and importing one adapter per profile to
+    do better would cost every invocation the thing this mode promises not to
+    need.
+    """
+    import msgspec
+
+    from harlequin.redact import redact_profile
+
+    return msgspec.structs.replace(
+        config,
+        profiles={
+            name: redact_profile(profile) for name, profile in config.profiles.items()
+        },
+    )
 
 
 def _write_document(
