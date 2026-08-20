@@ -380,12 +380,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         raw_limit = values.pop("limit", DEFAULT_LIMIT)
         raw_display_rows = values.pop("display_rows", None)
 
-        # here rather than anywhere earlier: this is the first line at which
-        # both halves of what must not be printed are in hand -- the adapter's
-        # options, which say which of them are secret, and the merge of the
-        # profile with the command line, which holds the values. Every mode
-        # below this point writes through `diagnostics`, so every one of them
-        # is covered by the one call.
+        # redact secrets in config values and CLI args
         diagnostics.hide(
             secrets_in(
                 {"conn_str": conn_str, **values},

@@ -63,9 +63,6 @@ class HarlequinDebugInfo:
         which of the profile's values it must not print."""
 
     def parse_info(self) -> List[DebugWidget]:
-        # this screen is what a user screenshots into an issue, so the two
-        # panels below -- the active profile, and every profile in the file --
-        # are the values a password is most likely to be sitting in
         redacted_config = {
             **self.config.to_dict(),
             "profiles": {
@@ -171,11 +168,7 @@ class AdapterDebugInfo:
             for opt in self.adapter_options:
                 declared = opt.to_dict()
                 flags = " ".join([f"--{declared['name']}", *declared["short_decls"]])
-                # an adapter that ships a default for a secret has shipped the
-                # secret, and this table is on the screen a user screenshots.
-                # Only where there is one: an option with no default reads
-                # `None` here, and a mask over nothing would say a value was
-                # set that is not.
+                # defaults can hold secrets too
                 value = (
                     REDACTED
                     if declared["secret"] and declared["default"] is not None
