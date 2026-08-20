@@ -303,6 +303,41 @@ def test_config_schema_writes_a_document_and_reads_no_file(
     assert not forbidden
 
 
+def test_config_init_imports_tomlkit_and_one_adapter(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """The one mode that writes a file, and so the one that pays for tomlkit.
+
+    It pays for one adapter too, because the options it writes into a profile
+    are the ones that adapter declares -- and for nothing else: it writes a
+    file rather than rows, and connects to nothing.
+
+    `tmp_path` is the subprocess's cwd and its home, so the file it writes is
+    the only config there is.
+    """
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'init', '-P', 'lite', '-a', 'sqlite']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('duckdb', 'pyarrow') "
+        "if m in sys.modules), file=sys.stderr)\n"
+        "print('tomlkit' in sys.modules, file=sys.stderr)\n"
+    )
+    # the last three lines, because this mode says what it wrote on stderr too
+    adapters, forbidden, tomlkit = proc.stderr.strip().split("\n")[-3:]
+    assert adapters == "harlequin_sqlite"
+    assert not forbidden
+    # the other half of the deferral: the mode that needs it still gets it
+    assert tomlkit == "True"
+    assert (tmp_path / ".harlequin.toml").exists()
+
+
 def test_spec_imports_only_the_adapter_it_was_narrowed_to(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:

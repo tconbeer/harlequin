@@ -14,10 +14,12 @@ postgres` imports postgres alone. That keeps the first thing a caller reads
 small and stable, and keeps it true for every adapter rather than for whichever
 one is the default.
 
-A **mode** is the third shape. `--config MODE` reports on the config files,
-`--spec` on the command itself and `--info` on the installation, rather than any
-of them running SQL, so the first pass skips the profile and names no adapter,
-and the command carries no connection options at all. Modes are options rather
+A **mode** is the third shape. `--config MODE` reports on the config files --
+or, under `init`, writes a profile into one -- `--spec` reports on the command
+itself and `--info` on the installation, rather than any of them running SQL, so
+the first pass skips the profile. It names no adapter either, and the command
+carries no connection options at all, except for `--config init`: the options it
+writes into a profile are the ones an adapter declares. Modes are options rather
 than subcommands because `CONN_STR` is positional: `hsql catalog` and a DuckDB
 file named `catalog` would have needed a rule, and `--catalog` needs none. They are
 mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
@@ -56,7 +58,7 @@ from harlequin.first_pass import (
 )
 from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
-from harlequin.hsql.modes import CONFIG_MODES
+from harlequin.hsql.modes import CONFIG_MODES, INIT
 from harlequin.plugins import adapter_names, load_adapter
 
 if TYPE_CHECKING:
@@ -111,16 +113,26 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--info"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
-        # connecting with it, so there is no profile to read for one and no
-        # adapter whose options belong on the command. `--config` reads the
-        # files itself and reports what it finds wrong with them under its own
-        # exit code, rather than having the first pass hold an error about the
-        # first file it stumbled on, and `--info` reports one as part of its
-        # answer; `--spec` describes the command, which a config file it could
-        # not read has no bearing on.
-        connects=lambda params: (
+        # connecting with it, so there is no profile to read for one. `--config`
+        # reads the files itself and reports what it finds wrong with them under
+        # its own exit code, rather than having the first pass hold an error
+        # about the first file it stumbled on, and `--info` reports one as part
+        # of its answer; `--spec` describes the command, which a config file it
+        # could not read has no bearing on.
+        needs_profile=lambda params: (
             not (
                 params.get("config") is not None
+                or params.get("spec")
+                or params.get("info")
+            )
+        ),
+        # `--config init` is the mode that needs an adapter without a profile:
+        # the profile it names is the one it is about to write, so reading one
+        # would refuse the invocation over a name that does not exist yet, and
+        # the adapter's options are half of what it writes.
+        needs_adapter=lambda params: (
+            not (
+                _reports_config(params.get("config"))
                 or params.get("spec")
                 or params.get("info")
             )
@@ -223,13 +235,17 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         type=click.Choice(installed, case_sensitive=False),
         help="The installed adapter plug-in to connect with.",
     )
+    # existence is not click's to check: every mode that reads this path
+    # already refuses a file that is not there, naming it, and `--config init`
+    # is the one invocation whose whole job is to write a file that is not there
+    # yet.
     @click.option(
         "--config-path",
-        type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=Path),
+        type=click.Path(dir_okay=False, resolve_path=True, path_type=Path),
         envvar="HARLEQUIN_CONFIG_PATH",
         show_envvar=True,
         metavar="PATH",
-        help="Read this config file instead of the ones hsql discovers.",
+        help="Use this config file instead of the ones hsql discovers.",
     )
     @click.option(
         "--config",
@@ -237,8 +253,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         metavar="MODE",
         type=click.Choice(CONFIG_MODES, case_sensitive=False),
         help=(
-            "Report on the config files hsql found, and exit without running "
-            f"SQL. One of: {', '.join(CONFIG_MODES)}."
+            "Report on the config files hsql found, or write a profile into "
+            "one, and exit without running SQL. One of: "
+            f"{', '.join(CONFIG_MODES)}."
         ),
     )
     @click.option(
@@ -411,25 +428,40 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
 
         if config_mode is not None:
+            # a shorthand flag and a profile's `format` key are choices too, and
+            # both modes read this: the reporting ones to explain a format that
+            # had no effect, and `init` to write the format that was asked for
+            format_chosen = format_name != DEFAULT_FORMAT or "format" in explicitly_set
+            if _reports_config(config_mode):
+                ctx.exit(
+                    _report_config(
+                        ctx,
+                        config_mode,
+                        config_path=config_path,
+                        destination=destination,
+                        format_name=format_name,
+                        format_chosen=format_chosen,
+                        display_rows=raw_display_rows,
+                        tuples_only=tuples_only,
+                        no_align=no_align,
+                        no_header=no_header,
+                        no_footer=no_footer,
+                        null_string=null_string,
+                        color=_use_color(color_when, destination),
+                    )
+                )
             ctx.exit(
-                _report_config(
+                _write_config(
                     ctx,
-                    config_mode,
+                    profile_name=profile,
+                    adapter=adapter,
+                    values=_typed_profile_keys(
+                        kwargs,
+                        explicitly_set,
+                        format_name=format_name,
+                        format_chosen=format_chosen,
+                    ),
                     config_path=config_path,
-                    destination=destination,
-                    format_name=format_name,
-                    # a shorthand flag and a profile's `format` key are choices
-                    # too, and the note exists to explain a format that had no
-                    # effect however it was asked for
-                    format_chosen=format_name != DEFAULT_FORMAT
-                    or "format" in explicitly_set,
-                    display_rows=raw_display_rows,
-                    tuples_only=tuples_only,
-                    no_align=no_align,
-                    no_header=no_header,
-                    no_footer=no_footer,
-                    null_string=null_string,
-                    color=_use_color(color_when, destination),
                 )
             )
 
@@ -703,6 +735,84 @@ def _report_config(
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
     return code
+
+
+def _reports_config(mode: Any) -> bool:
+    """Whether a `--config MODE` reads config files rather than writing one.
+
+    Four of the five report, and need neither an adapter nor a profile; `init`
+    writes, and needs the adapter whose options it is writing.
+    """
+    return mode is not None and str(mode).lower() != INIT
+
+
+def _typed_profile_keys(
+    cli_values: Mapping[str, Any],
+    explicitly_set: set[str],
+    *,
+    format_name: str,
+    format_chosen: bool,
+) -> dict[str, Any]:
+    """Every option the caller typed, under the key a profile spells it with.
+
+    An option left at its default carries no intent -- the rule
+    `merge_profile_with_cli()` reads the other way round when a profile meets a
+    command line -- so `--config init` writes what was asked for rather than a
+    copy of the command's defaults. The shorthand format flags are written as
+    the `--format` they stand for, because `format` is the key a profile has.
+    """
+    typed = dict(
+        merge_profile_with_cli(
+            profile={}, cli_values=cli_values, explicitly_set=explicitly_set
+        )
+    )
+    for flag in SHORTHANDS:
+        typed.pop(flag, None)
+    typed.pop("format", None)
+    # written from the mode's own argument instead, so that it is there whether
+    # or not the caller named one
+    typed.pop("adapter", None)
+    if format_chosen:
+        typed["format"] = format_name
+    # first among what a profile sets, as it is on the command line, because it
+    # is the key a reader looks for to know what the profile connects to
+    conn_str = typed.pop("conn_str", None)
+    return typed if conn_str is None else {"conn_str": conn_str, **typed}
+
+
+def _write_config(
+    ctx: click.Context,
+    *,
+    profile_name: str | None,
+    adapter: str,
+    values: Mapping[str, Any],
+    config_path: Path | None,
+) -> ExitCode:
+    """Answer `--config init` and return its code, or exit having said why not.
+
+    Nothing reaches stdout: this mode writes a file, and what it wrote is on
+    stderr with the file's name beside it. Which is also why every other option
+    on the command line is a key in the profile rather than a way of reporting
+    -- `-o` and `--format` included.
+    """
+    # here rather than at module scope, for the reason the mode exists in its
+    # own module: this is the one invocation that writes a config file, and so
+    # the only one that pays for tomlkit
+    from harlequin.hsql.modes import config as config_mode
+
+    try:
+        config_mode.initialize(
+            profile_name=profile_name,
+            adapter=adapter,
+            values=values,
+            config_path=config_path,
+        )
+    except (HarlequinConfigError, OSError) as e:
+        # a file this could not parse, a path it could not write, or a name no
+        # profile may have. All three are the caller's to fix.
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    return ExitCode.OK
 
 
 def bare_command() -> click.Command:

@@ -60,7 +60,8 @@ def first_pass(
     *,
     program: str,
     extra_options: Sequence[click.Option] = (),
-    connects: Callable[[Mapping[str, Any]], bool] | None = None,
+    needs_adapter: Callable[[Mapping[str, Any]], bool] | None = None,
+    needs_profile: Callable[[Mapping[str, Any]], bool] | None = None,
     no_args_is_help: bool = False,
 ) -> FirstPass:
     """Read the profile and name the adapter, importing none of them.
@@ -71,9 +72,13 @@ def first_pass(
 
     `extra_options` are spellings this command has that bear on the answer --
     the caller's own flags, so that a value of one is not mistaken for another
-    option's. `connects` reads what the probe found and says whether this
-    invocation is going to open a database at all: one that is not needs
-    neither a profile nor an adapter, and pays for neither.
+    option's. `needs_adapter` and `needs_profile` read what the probe found and
+    say whether this invocation wants each of them; an invocation that wants
+    neither pays for neither. They are two questions because one invocation
+    answers them differently: `hsql --config init` writes a profile rather than
+    running under one, so it needs the adapter whose options it is about to
+    write and must not read a profile that does not exist yet. `needs_profile`
+    defaults to `needs_adapter`, which is the same answer everywhere else.
 
     A config file it cannot read is held, not raised: at this point there is no
     command and so no exit code, and the profile is wanted whether or not it
@@ -112,23 +117,34 @@ def first_pass(
 
     wants_help = bool(ctx.params.get("help")) or (no_args_is_help and not argv)
 
-    if connects is not None and not connects(ctx.params):
+    wants_adapter = needs_adapter is None or needs_adapter(ctx.params)
+    wants_profile = (
+        wants_adapter if needs_profile is None else needs_profile(ctx.params)
+    )
+    if not wants_adapter and not wants_profile:
         return FirstPass(profile={}, adapter=None, wants_help=wants_help)
 
     profile: Profile = {}
     error: HarlequinConfigError | None = None
-    try:
-        # the profile, and not the keymaps beside it: keymaps are the IDE's, and
-        # wanting them would mean reading every config file rather than stopping
-        # at the one that defines this profile.
-        profile = load_profile(
-            config_path=ctx.params.get("config_path"),
-            profile_name=ctx.params.get("profile"),
+    if wants_profile:
+        try:
+            # the profile, and not the keymaps beside it: keymaps are the IDE's,
+            # and wanting them would mean reading every config file rather than
+            # stopping at the one that defines this profile.
+            profile = load_profile(
+                config_path=ctx.params.get("config_path"),
+                profile_name=ctx.params.get("profile"),
+            )
+        except HarlequinConfigError as e:
+            error = e
+        except OSError as e:
+            error = HarlequinConfigError(
+                str(e), title="Harlequin could not read a config."
+            )
+    if not wants_adapter:
+        return FirstPass(
+            profile=profile, adapter=None, error=error, wants_help=wants_help
         )
-    except HarlequinConfigError as e:
-        error = e
-    except OSError as e:
-        error = HarlequinConfigError(str(e), title="Harlequin could not read a config.")
 
     name = ctx.params.get("adapter") or profile.get("adapter")
     # an invocation that names no adapter and is only going to print something
