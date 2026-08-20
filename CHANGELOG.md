@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 
 ### Dependencies
 
+- Upgrades `textual-fastdatatable` to 0.19.0, which marks multi-line cells with a dim `…⏎`, gives them a tooltip, and measures their full value when sizing columns.
 - Adds `msgspec`.
 - Drops `pandas`. It was declared on Python 3.14 only, but is no longer required, since the DataTable component dropped it.
 
