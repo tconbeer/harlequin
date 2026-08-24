@@ -680,7 +680,7 @@ would have made #1040 obvious: a profile that a project-local file quietly displ
 name missing from a short list.
 
 **`${VAR}` and `${VAR:-default}`** (Ted's call), resolved on read, over every string value
-in a config file, recursively through arrays and tables:
+in a profile, recursively through arrays and tables:
 
 - A bare `{` never triggers anything, which is Ted's constraint on #898: nothing anyone has
   in a password today needs escaping. `$${` is the escape for a literal `${`.
@@ -692,6 +692,20 @@ in a config file, recursively through arrays and tables:
   a resolved secret into the user's file on their next `harlequin --config`. This is the one
   place where getting the layering wrong writes a plaintext password to disk, so it gets its
   own test.
+- **Amended in PR 16: the read path is where a profile is *selected*, not where a file is
+  read.** Resolving each file as it was read would have refused an invocation over a variable
+  named in a profile it was not running — and the IDE reads every discovered file for its
+  keymaps, so one `${MYPASSWORD}` in a home config would have stopped `harlequin` from
+  starting under any profile. Resolving in `_select_profile()` instead is the rule
+  `default_profile` already follows (a name is raised where it is *used*), and it costs the
+  merge's `Provenance` — once every file is merged, that is the only thing that still knows
+  which file a profile was written in, which an unset variable's message has to name. Two
+  consequences worth writing down: `--config show` and the IDE's debug
+  screen report what the files say, so they print `${MYPASSWORD}` rather than resolving it —
+  which is also the reading that keeps an unset variable from breaking a report *about* the
+  file naming it — and `default_profile` and the `keymaps` tables are not interpolated at all,
+  which nothing needs and which is what buys the laziness. `--config validate` resolves every
+  profile in every file, and reports an unset variable like any other problem.
 - Shell-command interpolation (asked for on #898) is out: it is arbitrary code execution
   driven by a file discovered from the working directory.
 
@@ -829,6 +843,16 @@ addition is still being rolled out. The catalog follows, with search implemented
 in-tree adapters rather than left as a stretch. Safety is last, because it is the only group
 whose flags are false on most adapters until the ecosystem catches up.
 
+**PRs 15 and 16 were pulled forward into Release A** (Ted's call, taken after PR 7). They are
+the two that never needed the rest of Release C: neither declares a capability, so neither
+waits on the ecosystem. They belong with the self-description modes instead — the whole of
+what `--config show`, `--info` and `--spec` do is print a user's own config back, and the
+release that adds three ways to print a profile should not be the release before the one that
+learns which of its values must not be printed. `${VAR}` follows redaction because it is the
+other half of the same answer: redaction keeps a secret out of Harlequin's output, and
+interpolation keeps it out of the config file to begin with. They keep their numbers, which
+the rest of this document refers to; only the release they ship in changed.
+
 Numbering assumes M1's remaining work releases as 2.9.
 
 ### Release A — config and self-description (2.10)
@@ -858,8 +882,16 @@ profile, and declared capabilities per adapter. No connection.
 
 **PR 7 — `--config init`.** tomlkit deferred; no questionary.
 
-**PR 8 — Docs.** The config spec page, the self-description pages, and the site's JSON Schema
-route.
+**PR 15 — Secret options and redaction.** `secret=` on options, `harlequin.redact`, DSN
+redaction, masked wizard input. Closes #667's structural half. Pulled forward from Release C:
+every mode Release A adds prints a profile, and this is what decides what they print.
+
+**PR 16 — `${VAR}` interpolation.** Closes #898. Pulled forward with PR 15 — a caller told to
+keep a token out of their config file needs the spelling that replaces it in the same release.
+
+**PR 8 — Docs.** The config spec page, the self-description pages, the site's JSON Schema
+route, and — arriving with PRs 15 and 16 rather than in PR 17 — the secrets guidance and the
+`${VAR}` spelling.
 
 *If the model question in §3.5 resolves toward `msgspec`, it lands in PR 1 — the declaration
 is what PR 1's validation and PR 6's schema both read, and retrofitting it later means
@@ -894,12 +926,10 @@ adapters we maintain.
 **PR 14 — `--timeout`.** The deadline, the cancel, the grace period, the `os._exit`, and the
 attribution that keeps a cancelled query from printing as an empty one.
 
-**PR 15 — Secret options and redaction.** `secret=` on options, `harlequin.redact`, DSN
-redaction, masked wizard input. Closes #667's structural half.
+*PRs 15 and 16 shipped in Release A — see there.*
 
-**PR 16 — `${VAR}` interpolation.** Closes #898.
-
-**PR 17 — Docs.** Safety page, the psql differences table, and the secrets guidance.
+**PR 17 — Docs.** Safety page and the psql differences table. The secrets guidance went with
+PR 8, alongside the release that shipped it.
 
 **Ordering rationale.** Within each release the contract change lands with the first consumer
 that needs it, as in M1 — a field nothing reads is a field nobody notices is wrong. Across
@@ -928,8 +958,9 @@ identically on every machine.
   option *and* in a connection string, the secret's literal value appears in no byte of
   `--info`, `--spec`, `--config show`, any error message, or `--stats`.
 - **Interpolation**: `${VAR}`, `${VAR:-default}`, `$${` as a literal, an unset variable
-  exiting 2 and naming both the variable and the file — and the one that matters most, that
-  `harlequin --config` on a file containing `${PGPASSWORD}` writes `${PGPASSWORD}` back.
+  exiting 2 and naming both the variable and the file, and — after PR 16's amendment above —
+  a profile the invocation is *not* running being left alone. The one that matters most is
+  that `harlequin --config` on a file containing `${MYPASSWORD}` writes `${MYPASSWORD}` back.
 - **The merge fix gets the failing case as its test**: a home file with `default_profile` and
   two profiles, a cwd file with a third, asserting all three survive and the default still
   resolves. That combination raises `HarlequinConfigError` on `main` today.
@@ -973,6 +1004,9 @@ would land.
 - *Three releases, config and self-description first* (Ted's call, §4) — they fix existing
   bugs and need no adapter change; then the catalog, with search implemented for both
   in-tree adapters; then safety.
+- *Secrets and `${VAR}` ship in Release A, not Release C* (Ted's call, §4, taken after PR 7).
+  They declare no capability, so nothing in them waits on the ecosystem, and the release that
+  adds three modes for printing a profile is the one that has to know what not to print.
 - *No `--describe`* (Ted's call, §7). `--catalog --path db.schema.relation` is a describe.
 - *No new layouts* (Ted's call, §3.3). `tree` has no tree to draw over one level, and
   `compact` only reads as `parent(child TYPE, …)` for a relation and its columns, which §1.2

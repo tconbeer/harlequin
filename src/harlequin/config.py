@@ -6,41 +6,42 @@ define something is the one that defines it.
 
 Who reads what:
 
-| caller                 | function                     | files read           |
-| ---------------------- | ---------------------------- | -------------------- |
-| `hsql`                 | `load_profile()`             | up to the one that   |
-|                        |                              | defines the profile  |
-| `hsql --info`          | `resolve_profile()`          | the same, plus the   |
-|                        |                              | name it resolved     |
-| `harlequin`, `--keys`  | `load_profile_and_keymaps()` | all: keymaps merge   |
-|                        |                              | across every file    |
-| the IDE's debug screen | `load_config()`              | all                  |
-| `hsql --config show`   | `load_config()`, with a      | all                  |
-|                        | `Provenance` to fill in      |                      |
-| `hsql --config`        | `validate_config_files()`    | all, and none of     |
-| `validate`             |                              | them fatally         |
-| `harlequin --config`,  | `ConfigFile`, at the path    | one, and unvalidated |
-| `hsql --config init`   | `get_highest_priority_...()` | (it is about to be   |
-|                        | returns, or `--config-path`  | written back)        |
+| function                     | who calls it                 | files read           |
+|------------------------------|------------------------------|----------------------|
+| `load_profile()`             | both commands' first pass    | up to the one that   |
+| `resolve_profile()`          | `hsql --info`                | defines the profile  |
+| `load_profile_and_keymaps()` | `harlequin`, `--keys`,       | all: keymaps merge   |
+|                              | `--config`, the debug screen | across every file    |
+| `load_config()`              | the debug screen,            | all                  |
+|                              | `hsql --config show`         |                      |
+| `validate_config_files()`    | `hsql --config validate`     | all, and none of     |
+|                              |                              | them fatally         |
+| `ConfigFile`                 | `harlequin --config`,        | one, and unvalidated |
+|                              | `--keys`, `--config init`    | (it is about to be   |
+|                              |                              | written back)        |
 
-`load_profile()` is the fast path: it stops at the file that answers the
-question, so `hsql -P prod` never opens the files behind that one, and
-`hsql -P None` opens none. `resolve_profile()` is the same walk, returning the
-name it resolved beside the profile. The others need the whole document.
+So `hsql -P prod` never opens the files behind the one that defines it, and
+`-P None` opens none at all.
+
+A `Provenance` records which file supplied each merged name: what `--config
+show` reports, and what any message that has to name the file behind a profile
+or a `default_profile` is written from. A profile's `${VAR}`s are resolved
+where the profile is selected -- so an invocation is never refused over a
+variable in a profile it is not running -- and never in
+`ConfigFile.relevant_config`, which the write path edits and hands back.
 
 Config files are validated twice, and the halves know different things.
 `_read_config_files()` checks one file's shape before it is merged with any
-other, so the error can name the file. `parse_profile_options()` runs once the
-adapter is known and checks the profile's remaining keys -- each of which is
-some adapter's option -- against the options that adapter declares.
-
-Both passes raise at the first problem, because every caller but one is on its
-way to a database. Hand them a `Problems` and they record it and carry on
-instead, which is the whole of `--config validate`.
+other, so the error can name the file; `parse_profile_options()` runs once the
+adapter is known and checks the profile's remaining keys against the options
+that adapter declares. Both raise at the first problem, because every caller
+but one is on its way to a database; hand them a `Problems` and they record it
+and read on, which is the whole of `--config validate`.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -271,9 +272,10 @@ class ConfigFile:
     def relevant_config(self) -> dict[str, Any]:
         """This file's Harlequin section, exactly as written.
 
-        Unvalidated, and the write path depends on that: `harlequin --config`
-        reads this, edits it, and writes it back, so anything transformed on the
-        way in would be written into the user's file on the way out.
+        Unvalidated and uninterpolated, and the write path depends on both:
+        `harlequin --config` reads this, edits it, and writes it back, so
+        anything transformed on the way in would be written into the user's
+        file on the way out -- a resolved `${MYPASSWORD}` most of all.
         """
         if not self.is_pyproject:
             return self._data
@@ -368,29 +370,41 @@ def resolve_profile(
     on, and None where nothing named one -- which `load_profile()` resolves and
     then discards, and `hsql --info` reports.
 
-    Raises: HarlequinConfigError for a name no discovered file defines.
+    Raises: HarlequinConfigError for a name no discovered file defines, or for
+    a `${VAR}` in the profile it resolved to that the environment does not set.
     """
     if profile_name == "None":
         return "None", {}  # Harlequin's own defaults, which no config file can change
 
     config = Config()
+    # an unset `${VAR}` names the file it is written in, and the file a profile
+    # came from is not the file being read when its name resolves: a nearer
+    # file can define `[profiles.prod]` and a farther one set the
+    # `default_profile` that selects it
+    provenance = Provenance()
     for path, from_file in _read_config_files(config_path):
-        _merge(from_file, into=config, source=path)
+        _merge(from_file, into=config, source=path, provenance=provenance)
         name = profile_name or config.default_profile
         if name is not None and name in config.profiles:
             # the files behind this one go unread
-            return name, config.profiles[name]
+            return name, _select_profile(config, requested=name, provenance=provenance)
     return (
         profile_name or config.default_profile,
-        _select_profile(config, requested=profile_name),
+        _select_profile(config, requested=profile_name, provenance=provenance),
     )
 
 
 def load_profile_and_keymaps(
     config_path: Path | None, profile_name: str | None
 ) -> tuple[Profile, list[HarlequinKeyMap]]:
-    """One profile, and every keymap, for the IDE, which needs both."""
-    config = load_config(config_path)
+    """One profile, and every keymap, for the IDE, which needs both.
+
+    The provenance is what an unset `${VAR}` in the profile names the file it
+    is written in from: once every file has been merged, it is the only thing
+    that still knows which one that was.
+    """
+    provenance = Provenance()
+    config = load_config(config_path, provenance=provenance)
     # a binding is a `RawKeyBinding` once `from_config()` has said so; the shape
     # of the table around it is all `Config` promises
     keymaps = [
@@ -399,7 +413,10 @@ def load_profile_and_keymaps(
         )
         for keymap_name, bindings in config.keymaps.items()
     ]
-    return _select_profile(config, requested=profile_name), keymaps
+    return (
+        _select_profile(config, requested=profile_name, provenance=provenance),
+        keymaps,
+    )
 
 
 def validate_config_files(
@@ -420,7 +437,10 @@ def validate_config_files(
 
     Per file rather than over the merge, which is what validating before
     merging buys: a profile a nearer file displaced is not what any invocation
-    runs, and is still a table its author will edit.
+    runs, and is still a table its author will edit. Every profile, for the
+    same reason -- so this is the mode that reports a `${VAR}` the environment
+    does not set, wherever it is written, rather than only in the one profile a
+    run would have selected.
 
     `adapter_options` is the second pass's price: one adapter import per
     adapter a profile names. It may raise `HarlequinConfigError` for a name
@@ -436,7 +456,12 @@ def validate_config_files(
     for path, from_file in _read_config_files(config_path, problems=problems):
         for name, profile in from_file.profiles.items():
             _validate_profile(
-                profile,
+                _interpolated(
+                    profile,
+                    path=path,
+                    key=f"profiles.{name}",
+                    problems=problems,
+                ),
                 adapter_options=adapter_options,
                 command_options=command_options,
                 problems=problems.at(path, f"profiles.{name}"),
@@ -450,7 +475,7 @@ def validate_config_files(
     if merged.default_profile is not None:
         # the one problem no single file has, so the only one asked after the
         # merge -- and the file that is wrong about it is the one that set it
-        _select_profile(
+        _resolve_profile_name(
             merged,
             requested=None,
             problems=problems.at(provenance.default_profile[0]),
@@ -721,6 +746,87 @@ def _read_config_files(
             yield path, config
 
 
+_INTERPOLATED_ENV_VAR_PROG = re.compile(
+    r"""
+      \$\$\{                                  # $${ -- a literal ${, escaped
+    | \$\{
+        (?P<name>[A-Za-z_][A-Za-z0-9_]*)
+        (?: :- (?P<default>[^}]*) )?          # ${VAR:-what to use instead}
+      \}
+    """,
+    re.VERBOSE,
+)
+"""The only substitutions read out of a profile's strings; a bare `{` is not one."""
+
+
+def _interpolated(
+    value: Any, *, path: Path, key: str = "", problems: Problems | None = None
+) -> Any:
+    """One profile's values, with `${VAR}` resolved from the environment.
+
+    Recursively through the tables and arrays `tomllib` parsed, and over values
+    alone: a key is a name this program knows, not something a user
+    parameterizes.
+
+    Raises: HarlequinConfigError naming the variable, the key and the file, for
+    a variable that is not set and has no default -- unless a `Problems` is
+    there to record it instead, in which case the value stays as it was
+    written, so that the rest of the profile is still checked.
+    """
+    if isinstance(value, str):
+        return _interpolated_text(value, path=path, key=key, problems=problems)
+    if isinstance(value, Mapping):
+        return {
+            name: _interpolated(
+                item, path=path, key=f"{key}.{name}" if key else name, problems=problems
+            )
+            for name, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _interpolated(item, path=path, key=f"{key}[{i}]", problems=problems)
+            for i, item in enumerate(value)
+        ]
+    return value
+
+
+def _interpolated_text(
+    text: str, *, path: Path, key: str, problems: Problems | None = None
+) -> str:
+    """One string with its environment variables substituted in.
+
+    A variable set to nothing counts as unset, which is what `:-` means to a
+    shell -- and it is the reading that keeps an empty `MYPASSWORD` from
+    becoming an authentication error three layers from its cause.
+    """
+    unset: list[str] = []
+
+    def resolve(match: re.Match[str]) -> str:
+        name = match.group("name")
+        if name is None:
+            return "${"
+        if value := os.environ.get(name, ""):
+            return value
+        if (default := match.group("default")) is not None:
+            return default
+        unset.append(name)
+        return match.group(0)
+
+    resolved = _INTERPOLATED_ENV_VAR_PROG.sub(resolve, text)
+    if not unset:
+        return resolved
+
+    message = (
+        f"Config file reads the environment variable {unset[0]}, which is not set. "
+        f"Set it, or write ${{{unset[0]}:-a default}} to say what to use when it "
+        "is not"
+    )
+    if problems is None:
+        raise _refuse(path, f"{message}, at {key}." if key else f"{message}.")
+    problems.at(path).add(message, key=key)
+    return text
+
+
 def _parse_config(
     raw: Mapping[str, Any], *, path: Path, problems: Problems | None = None
 ) -> Config | None:
@@ -816,10 +922,13 @@ def _plain(value: Any) -> Any:
     return unwrap() if unwrap is not None else value
 
 
-def _select_profile(
+def _resolve_profile_name(
     config: Config, *, requested: str | None, problems: Problems | None = None
-) -> Profile:
-    """The profile a name resolves to, once every file has had its say.
+) -> str | None:
+    """Which profile an invocation runs under, once every file has had its say.
+
+    None where nothing named one, and for `-P None`, which is how a caller asks
+    for none of them.
 
     A `default_profile` that names nothing is only an error for an invocation
     that was going to use it: `-P other` has overridden the key. It is the one
@@ -828,9 +937,9 @@ def _select_profile(
     """
     name = requested or config.default_profile
     if name is None or name == "None":
-        return {}
-    if (profile := config.profiles.get(name, None)) is not None:
-        return profile
+        return None
+    if name in config.profiles:
+        return name
     if requested is not None:
         # a name typed at the command line rather than written in a file, so
         # there is nowhere to record it and nobody to read it there
@@ -846,7 +955,33 @@ def _select_profile(
     if problems is None:
         raise HarlequinConfigError(message, title=CONFIG_ERROR_TITLE)
     problems.add(message, key="default_profile")
-    return {}
+    return None
+
+
+def _select_profile(
+    config: Config, *, requested: str | None, provenance: Provenance
+) -> Profile:
+    """The profile an invocation runs under, ready to be run under.
+
+    Which means its `${VAR}`s resolved from the environment, here, where the
+    profile is chosen: doing it as each file was read would refuse an
+    invocation over a variable named in a profile it is not running, which is
+    the rule `_resolve_profile_name()` follows for a name. That is what the
+    `Provenance` is for: once the files are merged, it is the only thing that
+    still knows which one a profile was written in, which is the file an unset
+    variable's error has to name.
+    """
+    name = _resolve_profile_name(config, requested=requested)
+    if name is None:
+        return {}
+    return cast(
+        Profile,
+        _interpolated(
+            config.profiles[name],
+            path=provenance.profiles[name][0],
+            key=f"profiles.{name}",
+        ),
+    )
 
 
 def _declared_type(option: AbstractOption) -> Any:
