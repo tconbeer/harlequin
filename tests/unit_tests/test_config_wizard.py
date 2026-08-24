@@ -155,16 +155,16 @@ class TestSecrets:
         run_wizard: Callable[..., None],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`${PGPASSWORD}` is what the author typed, and what they keep.
+        """`${MYPASSWORD}` is what the author typed, and what they keep.
 
         The wizard reads a config file and writes it back, so a value resolved
         on the way in would be a plaintext password on the way out -- which is
         why interpolation happens on the read path and not in `ConfigFile`.
         """
-        monkeypatch.setenv("PGPASSWORD", self.SECRET)
+        monkeypatch.setenv("MYPASSWORD", self.SECRET)
         path = tmp_path / ".harlequin.toml"
         path.write_text(
-            '[profiles.one]\nmd_token = "${PGPASSWORD}"\ntheme = "fruity"\n'
+            '[profiles.one]\nmd_token = "${MYPASSWORD}"\ntheme = "fruity"\n'
         )
 
         run_wizard(
@@ -178,7 +178,7 @@ class TestSecrets:
         )
 
         written = path.read_text()
-        assert "${PGPASSWORD}" in written
+        assert "${MYPASSWORD}" in written
         assert self.SECRET not in written
         # and the run path still resolves it
         assert (

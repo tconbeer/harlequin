@@ -32,7 +32,7 @@ A profile's strings have their `${VAR}`s resolved from the environment as the
 profile is selected -- not as its file is read, so that an invocation is never
 refused over a variable named in a profile it is not running, and not in
 `ConfigFile.relevant_config`, which is what the write path edits and hands
-back: a `${PGPASSWORD}` a user wrote is still a `${PGPASSWORD}` after
+back: a `${MYPASSWORD}` a user wrote is still a `${MYPASSWORD}` after
 `harlequin --config` has rewritten the file around it.
 
 Config files are validated twice, and the halves know different things.
@@ -282,7 +282,7 @@ class ConfigFile:
         Unvalidated and uninterpolated, and the write path depends on both:
         `harlequin --config` reads this, edits it, and writes it back, so
         anything transformed on the way in would be written into the user's
-        file on the way out -- a resolved `${PGPASSWORD}` most of all.
+        file on the way out -- a resolved `${MYPASSWORD}` most of all.
         """
         if not self.is_pyproject:
             return self._data
@@ -384,6 +384,10 @@ def resolve_profile(
         return "None", {}  # Harlequin's own defaults, which no config file can change
 
     config = Config()
+    # an unset `${VAR}` names the file it is written in, and the file a profile
+    # came from is not the file being read when its name resolves: a nearer
+    # file can define `[profiles.prod]` and a farther one set the
+    # `default_profile` that selects it
     provenance = Provenance()
     for path, from_file in _read_config_files(config_path):
         _merge(from_file, into=config, source=path, provenance=provenance)
@@ -402,8 +406,9 @@ def load_profile_and_keymaps(
 ) -> tuple[Profile, list[HarlequinKeyMap]]:
     """One profile, and every keymap, for the IDE, which needs both.
 
-    The provenance is for the profile's `${VAR}`s: resolving one takes knowing
-    which file it is written in, and every file has been read by then.
+    The provenance is what an unset `${VAR}` in the profile names the file it
+    is written in from: once every file has been merged, it is the only thing
+    that still knows which one that was.
     """
     provenance = Provenance()
     config = load_config(config_path, provenance=provenance)
@@ -803,7 +808,7 @@ def _interpolated_text(
     """One string with its environment variables substituted in.
 
     A variable set to nothing counts as unset, which is what `:-` means to a
-    shell -- and it is the reading that keeps an empty `PGPASSWORD` from
+    shell -- and it is the reading that keeps an empty `MYPASSWORD` from
     becoming an authentication error three layers from its cause.
     """
     unset: list[str] = []
@@ -970,7 +975,9 @@ def _profile_for_use(
     Resolved here, where a profile is chosen, rather than where its file is
     read: a variable named in a profile this invocation is not running is not
     something to refuse it over, which is the rule `default_profile` follows
-    too. `provenance` is what says which file to name if one is unset.
+    too. The cost of resolving it here is `provenance`, which is the only thing
+    a merged config keeps that can still name the file a profile was written
+    in -- and naming it is most of what an unset variable's message is worth.
     """
     profile = _select_profile(config, requested=requested)
     name = requested or config.default_profile

@@ -1146,8 +1146,8 @@ class TestInterpolatingEnvironmentVariables:
     def test_a_variable_is_read_from_the_environment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("PGPASSWORD", "hunter2")
-        assert self.profile(tmp_path, 'password = "${PGPASSWORD}"') == {
+        monkeypatch.setenv("MYPASSWORD", "hunter2")
+        assert self.profile(tmp_path, 'password = "${MYPASSWORD}"') == {
             "password": "hunter2"
         }
 
@@ -1155,24 +1155,24 @@ class TestInterpolatingEnvironmentVariables:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A DSN is the case this feature is for, and it is not the whole value."""
-        monkeypatch.setenv("PGPASSWORD", "hunter2")
+        monkeypatch.setenv("MYPASSWORD", "hunter2")
         assert self.profile(
-            tmp_path, 'conn_str = ["postgresql://me:${PGPASSWORD}@db:5432/prod"]'
+            tmp_path, 'conn_str = ["postgresql://me:${MYPASSWORD}@db:5432/prod"]'
         ) == {"conn_str": ["postgresql://me:hunter2@db:5432/prod"]}
 
     def test_a_default_is_what_an_unset_variable_reads_as(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("PGHOST", raising=False)
-        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+        monkeypatch.delenv("MYHOST", raising=False)
+        assert self.profile(tmp_path, 'host = "${MYHOST:-localhost}"') == {
             "host": "localhost"
         }
 
     def test_a_variable_that_is_set_beats_its_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("PGHOST", "warehouse")
-        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+        monkeypatch.setenv("MYHOST", "warehouse")
+        assert self.profile(tmp_path, 'host = "${MYHOST:-localhost}"') == {
             "host": "warehouse"
         }
 
@@ -1180,16 +1180,16 @@ class TestInterpolatingEnvironmentVariables:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """What `:-` means to a shell, and the reading a caller can predict."""
-        monkeypatch.setenv("PGHOST", "")
-        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+        monkeypatch.setenv("MYHOST", "")
+        assert self.profile(tmp_path, 'host = "${MYHOST:-localhost}"') == {
             "host": "localhost"
         }
 
     def test_a_default_may_be_nothing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("PGOPTIONS", raising=False)
-        assert self.profile(tmp_path, 'options = "${PGOPTIONS:-}"') == {"options": ""}
+        monkeypatch.delenv("MYOPTIONS", raising=False)
+        assert self.profile(tmp_path, 'options = "${MYOPTIONS:-}"') == {"options": ""}
 
     @pytest.mark.parametrize(
         "written,expected",
@@ -1345,7 +1345,7 @@ class TestInterpolatingEnvironmentVariables:
         `harlequin --config` reads this, edits it, and writes it back, so a
         value resolved here is a resolved password in the user's file.
         """
-        monkeypatch.setenv("PGPASSWORD", "hunter2")
-        path = self.config(tmp_path, '[profiles.prod]\npassword = "${PGPASSWORD}"\n')
+        monkeypatch.setenv("MYPASSWORD", "hunter2")
+        path = self.config(tmp_path, '[profiles.prod]\npassword = "${MYPASSWORD}"\n')
         raw = ConfigFile(path).relevant_config
-        assert raw["profiles"]["prod"]["password"] == "${PGPASSWORD}"
+        assert raw["profiles"]["prod"]["password"] == "${MYPASSWORD}"
