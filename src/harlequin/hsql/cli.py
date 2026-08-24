@@ -60,7 +60,7 @@ from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES, INIT
 from harlequin.plugins import adapter_names, load_adapter
-from harlequin.redact import hide, secrets_in
+from harlequin.redact import hide_secrets_in
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
@@ -358,10 +358,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             values.pop(key, None)
 
         # redact secrets in config values and CLI args
-        hide(
-            secrets_in(
-                values, adapter_cls.ADAPTER_OPTIONS if adapter_cls is not None else None
-            )
+        hide_secrets_in(
+            values, adapter_cls.ADAPTER_OPTIONS if adapter_cls is not None else None
         )
 
         # every key hsql owns comes off here; whatever is left is the adapter's

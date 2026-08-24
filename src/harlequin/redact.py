@@ -53,9 +53,29 @@ _HIDDEN: set[str] = set()
 """Every secret this process has been handed, by however many callers."""
 
 
-def hide(secrets: Iterable[str]) -> None:
-    """Add values that must never be printed. Call it as soon as you have one."""
-    _HIDDEN.update(secret for secret in secrets if secret)
+def hide_secrets_in(
+    profile: Mapping[str, Any], options: Sequence[AbstractOption] | None = None
+) -> None:
+    """Register every secret this profile holds, so that nothing prints one.
+
+    Call it as soon as a profile is in hand; it accumulates, so a caller that
+    learns of a second one later just calls it again. Both sources are here
+    because both are in the profile: an option the adapter declared secret,
+    and a credential inside a `conn_str`.
+
+    Strings only. A secret that is not one -- a port, a flag -- has no literal
+    to look for in a message, and hunting for `True` in prose would redact
+    every sentence containing it.
+    """
+    declared = _declarations(options)
+    for key, value in profile.items():
+        items = value if isinstance(value, (list, tuple)) else [value]
+        if key == "conn_str":
+            for item in items:
+                if isinstance(item, str):
+                    _HIDDEN.update(text for _, _, text in _secret_spans(item))
+        elif _is_secret(key, declared):
+            _HIDDEN.update(item for item in items if isinstance(item, str) and item)
 
 
 def redact_profile(
@@ -100,7 +120,7 @@ def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:
 
     The backstop for output this module never shaped: a driver exception that
     quotes the DSN it was handed, or an error message that names the value it
-    could not use. `secrets` defaults to everything `hide()` has been told,
+    could not use. `secrets` defaults to what `hide_secrets_in()` was told,
     which is what a caller about to print wants. Longest first, so a secret
     that contains another is masked whole rather than leaving the shorter
     one's mask embedded in it.
@@ -112,33 +132,6 @@ def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:
     ):
         text = text.replace(secret, REDACTED)
     return text
-
-
-def secrets_in(
-    profile: Mapping[str, Any], options: Sequence[AbstractOption] | None = None
-) -> set[str]:
-    """The literal values in this profile that must not be printed.
-
-    What `redact_text` needs and cannot work out for itself. Both sources are
-    here because both are in the profile: an option the adapter declared
-    secret, and a credential inside a `conn_str`.
-
-    Strings only. A secret that is not one -- a port, a flag -- has no literal
-    to look for in a message, and hunting for `True` in prose would redact
-    every sentence containing it.
-    """
-    declared = _declarations(options)
-    found: set[str] = set()
-    for key, value in profile.items():
-        if key == "conn_str":
-            items = value if isinstance(value, (list, tuple)) else [value]
-            for item in items:
-                if isinstance(item, str):
-                    found.update(text for _, _, text in _secret_spans(item))
-        elif _is_secret(key, declared):
-            items = value if isinstance(value, (list, tuple)) else [value]
-            found.update(item for item in items if isinstance(item, str) and item)
-    return found
 
 
 def _declarations(

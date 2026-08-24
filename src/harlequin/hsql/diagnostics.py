@@ -11,10 +11,9 @@ footer, where psql puts it and where `-t` can decline it; timings are a field of
 Exit codes are hsql's contract rather than Harlequin's, which is why the
 mapping lives here and not in `harlequin.exception`.
 
-Nothing written here carries a secret, either: every line is checked against
-what `harlequin.redact.hide()` has been told, which covers the one channel
-nothing can shape in advance -- a driver exception that quotes back the DSN it
-was handed.
+Nothing written here carries a secret, either: every line goes through
+`harlequin.redact`, which covers the one channel nothing can shape in advance
+-- a driver exception that quotes back the DSN it was handed.
 """
 
 from __future__ import annotations

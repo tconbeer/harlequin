@@ -13,11 +13,10 @@ import pytest
 from harlequin.options import FlagOption, ListOption, TextOption
 from harlequin.redact import (
     REDACTED,
-    hide,
+    hide_secrets_in,
     redact_conn_str,
     redact_profile,
     redact_text,
-    secrets_in,
 )
 
 SECRET = "hunter2-and-then-some"
@@ -238,42 +237,45 @@ def test_text_with_nothing_to_hide_is_unchanged() -> None:
 # --- what the backstop is given ----------------------------------------------
 
 
-def test_the_secrets_of_a_profile_are_its_declared_values_and_its_dsn(
+def test_a_profiles_declared_values_and_its_dsn_are_both_hidden(
     declared: list[TextOption],
 ) -> None:
-    assert secrets_in(
+    """Registered rather than returned: a caller that had to carry the set
+    around would be a caller that could forget to."""
+    hide_secrets_in(
         {
             "host": "warehouse",
             "md_token": SECRET,
             "conn_str": ["postgresql://me:hunter2@h/db"],
         },
         declared,
-    ) == {SECRET, "hunter2"}
+    )
+    assert redact_text(f"{SECRET} and hunter2") == f"{REDACTED} and {REDACTED}"
+    # the host is not a secret, and a report that hid it would answer nothing
+    assert redact_text("connected to warehouse") == "connected to warehouse"
 
 
-def test_the_secrets_of_a_profile_are_strings(declared: list[TextOption]) -> None:
+def test_only_strings_are_hidden(declared: list[TextOption]) -> None:
     """A port or a flag has no literal to look for in a message, and hunting
     for `True` in prose would redact every sentence containing it."""
     option = FlagOption(name="secret_mode", description="x", secret=True)
-    assert secrets_in({"secret_mode": True, "port": 5432}, [option]) == set()
-
-
-def test_a_profile_with_no_secrets_yields_none() -> None:
-    assert secrets_in({"conn_str": [":memory:"], "read_only": True}) == set()
+    hide_secrets_in({"secret_mode": True, "port": 5432}, [option])
+    assert redact_text("True, and the port is 5432") == "True, and the port is 5432"
 
 
 # --- what the process has been told ------------------------------------------
 
 
 def test_hiding_secrets_accumulates() -> None:
-    """Two calls, both remembered, and both applied by default.
+    """Two profiles, both remembered, and both applied by default.
 
-    Callers hide a value as soon as they have one rather than collecting every
-    secret first and handing them over in one go -- which would mean each of
-    them keeping a set of its own, and one of them forgetting to.
+    Callers hide a profile's secrets as soon as they have it rather than
+    collecting every secret first and handing them over in one go -- which
+    would mean each of them keeping a set of its own, and one of them
+    forgetting to.
     """
-    hide(["first-secret-value"])
-    hide(["second-secret-value"])
+    hide_secrets_in({"password": "first-secret-value"})
+    hide_secrets_in({"password": "second-secret-value"})
     assert redact_text("saw first-secret-value and second-secret-value") == (
         f"saw {REDACTED} and {REDACTED}"
     )
@@ -282,7 +284,7 @@ def test_hiding_secrets_accumulates() -> None:
 def test_hiding_nothing_hides_nothing() -> None:
     """An option set to an empty string is not a secret, and substituting for
     it would replace the gap between every two characters."""
-    hide([""])
+    hide_secrets_in({"password": "", "conn_str": [":memory:"]})
     assert redact_text("nothing to hide here") == "nothing to hide here"
 
 
