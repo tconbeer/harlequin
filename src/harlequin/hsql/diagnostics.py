@@ -29,7 +29,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinError,
 )
-from harlequin.redact import hidden, redact_text
+from harlequin.redact import redact_text
 
 PROGRAM = "hsql"
 
@@ -227,4 +227,4 @@ def _write(line: str) -> None:
     # Redacting here rather than at each call site is what makes this a
     # promise: an error raised by a driver, a note, a `--stats` payload with a
     # message in it, and whatever is added next all leave through this line.
-    print(redact_text(line, hidden()), file=sys.stderr)
+    print(redact_text(line), file=sys.stderr)

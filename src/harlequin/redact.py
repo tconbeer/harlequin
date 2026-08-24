@@ -58,11 +58,6 @@ def hide(secrets: Iterable[str]) -> None:
     _HIDDEN.update(secret for secret in secrets if secret)
 
 
-def hidden() -> frozenset[str]:
-    """Everything `hide()` has been told, for a caller about to print."""
-    return frozenset(_HIDDEN)
-
-
 def redact_profile(
     profile: Profile, options: Sequence[AbstractOption] | None = None
 ) -> Profile:
@@ -100,14 +95,18 @@ def redact_conn_str(conn_str: Sequence[str]) -> list[str]:
     return [_mask_spans(item) for item in conn_str]
 
 
-def redact_text(text: str, secrets: Iterable[str]) -> str:
+def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:
     """`text` with every one of `secrets` replaced, wherever it appears.
 
     The backstop for output this module never shaped: a driver exception that
     quotes the DSN it was handed, or an error message that names the value it
-    could not use. Longest first, so a secret that contains another is masked
-    whole rather than leaving the shorter one's mask embedded in it.
+    could not use. `secrets` defaults to everything `hide()` has been told,
+    which is what a caller about to print wants. Longest first, so a secret
+    that contains another is masked whole rather than leaving the shorter
+    one's mask embedded in it.
     """
+    if secrets is None:
+        secrets = _HIDDEN
     for secret in sorted(
         {s for s in secrets if len(s) >= _TOO_SHORT_TO_HIDE}, key=len, reverse=True
     ):

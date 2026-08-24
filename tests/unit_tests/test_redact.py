@@ -13,7 +13,6 @@ import pytest
 from harlequin.options import FlagOption, ListOption, TextOption
 from harlequin.redact import (
     REDACTED,
-    hidden,
     hide,
     redact_conn_str,
     redact_profile,
@@ -267,29 +266,29 @@ def test_a_profile_with_no_secrets_yields_none() -> None:
 
 
 def test_hiding_secrets_accumulates() -> None:
-    """Two calls, both remembered.
+    """Two calls, both remembered, and both applied by default.
 
     Callers hide a value as soon as they have one rather than collecting every
     secret first and handing them over in one go -- which would mean each of
     them keeping a set of its own, and one of them forgetting to.
-
-    Asserted as a subset, because this is process-wide state and a test is not
-    the only thing that has run in this interpreter.
     """
     hide(["first-secret-value"])
     hide(["second-secret-value"])
-    assert {"first-secret-value", "second-secret-value"} <= hidden()
+    assert redact_text("saw first-secret-value and second-secret-value") == (
+        f"saw {REDACTED} and {REDACTED}"
+    )
 
 
 def test_hiding_nothing_hides_nothing() -> None:
     """An option set to an empty string is not a secret, and substituting for
     it would replace the gap between every two characters."""
-    hide(["", "third-secret-value"])
-    assert "" not in hidden()
+    hide([""])
+    assert redact_text("nothing to hide here") == "nothing to hide here"
 
 
-def test_what_was_hidden_is_what_text_redacts() -> None:
-    hide(["fourth-secret-value"])
-    assert redact_text("driver said fourth-secret-value", hidden()) == (
-        f"driver said {REDACTED}"
+def test_text_given_secrets_uses_those_instead() -> None:
+    """The default is a convenience, not the only way in: a caller that holds
+    a secret this process was never told still gets it masked."""
+    assert redact_text("saw fifth-secret-value", {"fifth-secret-value"}) == (
+        f"saw {REDACTED}"
     )
