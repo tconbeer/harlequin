@@ -61,18 +61,7 @@ class AbstractOption(ABC):
     """
 
     secret: bool = False
-    """Whether this option's value must never be printed. e.g., a password.
-
-    Core cannot enumerate what is sensitive -- `--service-account-key`,
-    `--token`, `--tls-key`, whatever the next adapter invents -- so each
-    adapter declares its own once and every consumer gets it free:
-    `to_dict()` reports it, which is what teaches an agent not to construct
-    `hsql --password hunter2`; `to_questionary()` stops echoing the input; and
-    `harlequin.redact` masks the value wherever a profile is reported.
-
-    A class attribute *and* a keyword, so a third-party subclass that has never
-    passed it answers False rather than raising.
-    """
+    """Whether this option's value must never be printed. e.g., a password."""
 
     def __init__(
         self,
@@ -132,10 +121,6 @@ class AbstractOption(ABC):
             "default": getattr(self, "default", None),
             "choices": None,
             "multiple": False,
-            # `getattr` for the same reason the rest of this method exists: a
-            # subclass that predates the attribute inherits it from the class,
-            # unless it also predates this class -- and a value that reports no
-            # answer is one a consumer would have to guess about
             "secret": bool(getattr(self, "secret", False)),
         }
 
@@ -244,8 +229,6 @@ class TextOption(AbstractOption):
             default=default,
             placeholder=placeholder,
             validator=merge_validator if self.validator is not None else None,
-            # either half saying so is enough: an option two adapters spell the
-            # same way, one of them a password, is a password
             secret=self.secret or getattr(other, "secret", False),
         )
 
@@ -300,9 +283,7 @@ class TextOption(AbstractOption):
         except (ValueError, TypeError):
             safe_existing_value = None
 
-        # a prompt that echoes a password writes it into a terminal, a
-        # screen share and a scrollback buffer at once. `password` is
-        # `text` that does not echo, so the wizard is the same wizard
+        # do not echo secrets in questionary prompt
         ask = questionary.password if self.secret else questionary.text
         return ask(
             message=self.name,
@@ -385,6 +366,7 @@ class ListOption(AbstractOption):
         else:
             safe_existing_value = None
 
+        # do not echo secrets in questionary prompt
         ask = questionary.password if self.secret else questionary.text
         return ask(
             message=self.name,
@@ -541,9 +523,7 @@ class PathOption(AbstractOption):
             safe_existing_value = None
 
         if self.secret:
-            # completion is worth losing here: a path an adapter declared
-            # secret is one whose characters must not reach the terminal,
-            # and `path` has no way to take input it does not echo
+            # do not echo secrets in questionary prompt
             return questionary.password(
                 message=self.name,
                 default=(

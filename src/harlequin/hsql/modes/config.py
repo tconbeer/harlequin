@@ -234,47 +234,27 @@ def _writable(value: Any) -> Any:
 
 
 def _redacted(config: Config) -> Config:
-    """The same config with every profile's secrets masked.
+    """Returns a copy of the config, with secrets masked.
 
-    A copy, because the caller holds the config a run would use, and because a
-    `Config` is what both renderings read: masking once here means the TOML and
-    the JSON cannot disagree about what they hide.
-
-    Each profile is redacted against the options *its own* adapter declares,
-    which takes importing that adapter -- one per distinct name, as `validate`
-    does, and none at all for a config with no profiles in it. A profile that
-    names no adapter is redacted against the default's, because that is the one
-    a run under it would connect with.
-
-    An adapter this cannot import declares nothing readable, and the profile
-    falls back to `redact_profile`'s reading of the key's name. That is said
-    out loud rather than silently: it is the one path where a value this mode
-    would have masked might print.
+    Each profile is masked against the options its own adapter declares, which
+    takes importing that adapter -- or, where it will not import, against the
+    key's name alone, which is said out loud because it is the weaker answer.
     """
     import msgspec
 
-    from harlequin.plugins import load_adapter
     from harlequin.redact import redact_profile
 
-    declared: dict[str, Sequence[AbstractOption] | None] = {}
-
-    def options(adapter: str) -> Sequence[AbstractOption] | None:
-        if adapter not in declared:
-            try:
-                declared[adapter] = load_adapter(adapter).ADAPTER_OPTIONS
-            except HarlequinConfigError:
-                # once per adapter, because the answer is cached under its name
-                # whether it was an answer or a failure
-                diagnostics.note(
-                    f"could not import {adapter}, so its profiles were masked by "
-                    "option name alone; run --config validate for the reason."
-                )
-                declared[adapter] = None
-        return declared[adapter]
-
+    options = _adapter_options(
+        on_error=lambda name: diagnostics.note(
+            f"could not import {name}, so its profiles were masked by option "
+            "name alone; run --config validate for the reason."
+        )
+    )
     return msgspec.structs.replace(
         config,
         profiles={
+            # a profile that names no adapter runs under the default, so those
+            # are the declarations that apply to it
             name: redact_profile(
                 profile, options(str(profile.get("adapter") or DEFAULT_ADAPTER))
             )
@@ -451,12 +431,18 @@ def _write_problems(
     return ExitCode.USAGE if problems else ExitCode.OK
 
 
-def _adapter_options() -> Callable[[str], Sequence[AbstractOption] | None]:
+def _adapter_options(
+    on_error: Callable[[str], None] | None = None,
+) -> Callable[[str], Sequence[AbstractOption] | None]:
     """A way to ask what one adapter declares, importing each of them once.
 
     The cache is per invocation rather than per process: four profiles naming
     duckdb is one import, and a second call in the same interpreter -- which is
     every test, and no `hsql` -- gets to see whatever is installed then.
+
+    An adapter that will not import raises, which is what `validate` records
+    against the profile that named it. A caller that would rather carry on
+    passes `on_error`: it is called once per adapter, and the answer is None.
     """
     from harlequin.plugins import load_adapter
 
@@ -464,9 +450,13 @@ def _adapter_options() -> Callable[[str], Sequence[AbstractOption] | None]:
 
     def options(name: str) -> Sequence[AbstractOption] | None:
         if name not in declared:
-            # raises for a name nothing installed provides, which the validator
-            # records against the profile that named it
-            declared[name] = load_adapter(name).ADAPTER_OPTIONS
+            try:
+                declared[name] = load_adapter(name).ADAPTER_OPTIONS
+            except HarlequinConfigError:
+                if on_error is None:
+                    raise
+                on_error(name)
+                declared[name] = None
         return declared[name]
 
     return options

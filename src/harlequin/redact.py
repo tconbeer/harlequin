@@ -1,40 +1,18 @@
 """Hiding a secret from output that would otherwise have printed it.
 
-Everything that reports on a profile -- `hsql --info`, `hsql --config show`,
-the IDE's debug screen -- prints values a user wrote in a config file, and one
-of those values is a password often enough that
-[#667](https://github.com/tconbeer/harlequin/issues/667) is open about it. This
-is the layer those consumers route through, and nothing else: a helper here
-hides a value, and never decides on its own which values a database driver
-considers sensitive.
+An adapter declares which of its options hold one (`AbstractOption.secret`),
+because core cannot enumerate what every driver considers sensitive, and this
+is the layer every consumer that reports on a profile routes through. Two
+things the declaration cannot reach: a connection string, which is positional
+and so described by no option, and a driver exception that echoes one, which
+never passes through the option layer at all -- hence `redact_conn_str()` and
+`redact_text()` beside `redact_profile()`
+([#667](https://github.com/tconbeer/harlequin/issues/667),
+[#354](https://github.com/tconbeer/harlequin/issues/354)).
 
-**What to hide is a declaration, not a list.** `AbstractOption.secret` is where
-an adapter says so, once, and every consumer gets it free -- core cannot
-enumerate `--service-account-key`, `--token`, `--tls-key` and whatever the next
-adapter invents. Two things the declaration cannot reach, and they are why this
-module has three functions instead of one:
-
-- **A connection string is positional**, so no option describes
-  `postgres://user:pw@host/db`. `redact_conn_str` reads the DSN shapes people
-  actually write ([#354](https://github.com/tconbeer/harlequin/issues/354) is
-  evidence they write passwords into them), which does take a list of key
-  names -- the DSN's keys, not any adapter's options.
-- **A driver exception that echoes a DSN** never passes through the option
-  layer at all, so `redact_text` is the backstop: hand it the literal values
-  `secrets_in()` found and it hides them wherever they turn up.
-
-`_SECRET_NAME` is also applied to a profile's own keys, which is the one place
-this second-guesses an adapter. It has to: as of this writing every adapter's
-options predate `secret=`, so a `password` key declared by an adapter that has
-not adopted the flag yet would print in full -- and so would every key of an
-adapter that is not installed on the machine reading the config, or will not
-import on it. Redacting a key named like a secret that is not one costs a
-reader nothing they cannot get from the file they wrote. Over-redaction is the
-safe direction, and it is the only direction that makes "the secret appears in
-no byte of the report" true today.
-
-It is a backstop and not the mechanism, though: a caller that can ask the
-adapter passes `options`, and every one of them does.
+A key *named* like a password is masked too, declared or not: nearly every
+adapter's options predate `secret=`, an adapter that is not installed declares
+nothing at all, and over-redaction is the safe direction.
 """
 
 from __future__ import annotations
@@ -55,44 +33,34 @@ _SECRET_NAME = re.compile(
     r"password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key",
     re.IGNORECASE,
 )
-"""The names a value that must not be printed is written under.
+"""The names a secret is written under, in a profile's keys and in a DSN's."""
 
-Read against a profile's keys and against a DSN's, which are the same
-vocabulary -- `password=` in a libpq connection string and `password = "..."`
-in a `[profiles.x]` table are the same key written twice.
-"""
+_URI_PASSWORD = re.compile(r"://[^/?#@\s]*?:([^/?#@\s]+)@")
+"""The password in `scheme://user:password@host`, and not the user beside it."""
 
-_USERINFO = re.compile(r"://[^/?#@\s]*?:([^/?#@\s]+)@")
-"""The password in `scheme://user:password@host`, and nothing else in it.
-
-The user is a name, not a secret, and a reader troubleshooting a connection
-needs it. Non-greedy up to the first `:` so a user containing no colon is not
-mistaken for one.
-"""
-
-_KEYED = re.compile(
+_DSN_PASSWORD = re.compile(
     r"[\w.\-]*(?:" + _SECRET_NAME.pattern + r")[\w.\-]*"
     r"\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^&;\s]*))",
     re.IGNORECASE,
 )
-"""`password=hunter2`, wherever it is written.
-
-One pattern covers the two DSN shapes that carry one: a URL's query string
-(`?password=hunter2&sslmode=require`) and libpq's space-separated pairs
-(`host=db password='hunter 2'`), which is also what ODBC and several drivers
-take. The quoted alternatives are first so a quoted value containing a space or
-an `&` is taken whole.
-"""
+"""`password=hunter2`, in a URL's query string or in libpq's space-separated
+pairs, quoted or bare."""
 
 _TOO_SHORT_TO_HIDE = 4
-"""The floor `redact_text` will substitute below.
+"""Below this, substituting a secret into prose would mangle the message."""
 
-A three-character secret appears inside ordinary words, and replacing every
-occurrence would mangle the message it was meant to make safe. Nothing is lost
-where the value is printed as itself -- `redact_profile` masks a declared
-secret whatever its length -- and a password this short is not one this can
-protect in prose.
-"""
+_HIDDEN: set[str] = set()
+"""Every secret this process has been handed, by however many callers."""
+
+
+def hide(secrets: Iterable[str]) -> None:
+    """Add values that must never be printed. Call it as soon as you have one."""
+    _HIDDEN.update(secret for secret in secrets if secret)
+
+
+def hidden() -> frozenset[str]:
+    """Everything `hide()` has been told, for a caller about to print."""
+    return frozenset(_HIDDEN)
 
 
 def redact_profile(
@@ -213,7 +181,7 @@ def _masked(value: Any) -> Any:
 def _secret_spans(conn_str: str) -> list[tuple[int, int, str]]:
     """Every `(start, end, value)` in one DSN that is a credential."""
     spans: list[tuple[int, int, str]] = []
-    for pattern in (_USERINFO, _KEYED):
+    for pattern in (_URI_PASSWORD, _DSN_PASSWORD):
         for match in pattern.finditer(conn_str):
             # one group per alternative the value could have been written as,
             # and exactly one of them matched

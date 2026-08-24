@@ -60,7 +60,7 @@ from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES, INIT
 from harlequin.plugins import adapter_names, load_adapter
-from harlequin.redact import secrets_in
+from harlequin.redact import hide, secrets_in
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
@@ -357,6 +357,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         for key in TUI_ONLY_KEYS:
             values.pop(key, None)
 
+        # redact secrets in config values and CLI args
+        hide(
+            secrets_in(
+                values, adapter_cls.ADAPTER_OPTIONS if adapter_cls is not None else None
+            )
+        )
+
         # every key hsql owns comes off here; whatever is left is the adapter's
         conn_str: Sequence[str] | str = values.pop("conn_str", tuple())
         if isinstance(conn_str, str):
@@ -379,14 +386,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         color_when: str = str(values.pop("color", "never"))
         raw_limit = values.pop("limit", DEFAULT_LIMIT)
         raw_display_rows = values.pop("display_rows", None)
-
-        # redact secrets in config values and CLI args
-        diagnostics.hide(
-            secrets_in(
-                {"conn_str": conn_str, **values},
-                adapter_cls.ADAPTER_OPTIONS if adapter_cls is not None else None,
-            )
-        )
 
         format_name = _resolve_format(values, explicitly_set)
         if format_name is None:

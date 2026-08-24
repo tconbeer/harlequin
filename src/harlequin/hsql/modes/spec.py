@@ -15,12 +15,9 @@ command line, and `default` is what the command uses when it is not passed.
 That last one is why a flag reads `false` here whatever it declares -- a flag
 that is absent is false, and this document is about the command line.
 
-**It says which options must not be typed.** `secret` is the adapter's own
-declaration, carried through so that a caller reading this to learn the surface
-learns the one thing `--help` never says: that `--md-token` exists, and that a
-command line -- readable by `ps`, kept by a shell history -- is the wrong place
-to put its value. Nothing in this document is a value, so there is nothing here
-to redact but a default an adapter shipped, which is masked.
+**It says which options must not be typed**: `secret` carries the adapter's
+declaration through, so a caller learns that `--md-token` exists and that a
+command line is the wrong place to put its value.
 
 **It costs every adapter, and no connection.** Reading one adapter's options
 means importing it; reporting all of them means importing all of them, which is
@@ -240,12 +237,7 @@ def _from_option(
 
 
 def _from_parameter(param: click.Parameter) -> dict[str, Any]:
-    """One of hsql's own options, as click holds it.
-
-    `secret` is false for all of them, and written out rather than left off:
-    the two halves of this document are read with the same keys, and a key that
-    is only there on one side is one a reader has to branch on.
-    """
+    """One of hsql's own options, as click holds it."""
     return {
         "name": param.name,
         "decls": [*param.opts, *param.secondary_opts],

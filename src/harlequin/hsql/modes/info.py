@@ -7,12 +7,8 @@ files this machine has and in what order they are read, which profile an
 invocation would run under, and what each installed adapter *declares* it can
 do.
 
-**It reports the profile, so it redacts it.** The profile is the half of this
-document with a user's own values in it, and one of those values is a password
-often enough to be worth the rule: every value goes through
-`harlequin.redact`, which masks what the adapter declared secret and the
-credentials inside a connection string. What it prints is a document safe to
-paste into an issue, which is what most callers reach for it to do.
+**It reports the profile, so it redacts it**, which is what makes this a
+document safe to paste into an issue.
 
 **It opens no connection**, which is the point rather than an omission: the
 diagnostic a caller reaches for when the database is unreachable must not
@@ -163,10 +159,7 @@ def _redacted(options: Any, adapter: str) -> Any:
 
     Which of them are secret is the adapter's declaration, so this asks the one
     the invocation would connect with -- and imports it to ask, which this mode
-    was going to pay for anyway. An adapter that is not installed or will not
-    import declares nothing readable, and `redact_profile` falls back to the
-    key's name, which is the case that matters most: almost every adapter's
-    options predate `secret=`.
+    was going to pay for anyway.
     """
     from harlequin.plugins import load_adapter
     from harlequin.redact import redact_profile

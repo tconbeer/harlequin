@@ -13,6 +13,8 @@ import pytest
 from harlequin.options import FlagOption, ListOption, TextOption
 from harlequin.redact import (
     REDACTED,
+    hidden,
+    hide,
     redact_conn_str,
     redact_profile,
     redact_text,
@@ -259,3 +261,35 @@ def test_the_secrets_of_a_profile_are_strings(declared: list[TextOption]) -> Non
 
 def test_a_profile_with_no_secrets_yields_none() -> None:
     assert secrets_in({"conn_str": [":memory:"], "read_only": True}) == set()
+
+
+# --- what the process has been told ------------------------------------------
+
+
+def test_hiding_secrets_accumulates() -> None:
+    """Two calls, both remembered.
+
+    Callers hide a value as soon as they have one rather than collecting every
+    secret first and handing them over in one go -- which would mean each of
+    them keeping a set of its own, and one of them forgetting to.
+
+    Asserted as a subset, because this is process-wide state and a test is not
+    the only thing that has run in this interpreter.
+    """
+    hide(["first-secret-value"])
+    hide(["second-secret-value"])
+    assert {"first-secret-value", "second-secret-value"} <= hidden()
+
+
+def test_hiding_nothing_hides_nothing() -> None:
+    """An option set to an empty string is not a secret, and substituting for
+    it would replace the gap between every two characters."""
+    hide(["", "third-secret-value"])
+    assert "" not in hidden()
+
+
+def test_what_was_hidden_is_what_text_redacts() -> None:
+    hide(["fourth-secret-value"])
+    assert redact_text("driver said fourth-secret-value", hidden()) == (
+        f"driver said {REDACTED}"
+    )
