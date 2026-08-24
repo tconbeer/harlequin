@@ -2816,3 +2816,179 @@ def test_the_secret_still_reaches_the_adapter(
     hsql("-c", "select 1")
     assert seen["md_token"] == SECRET
     assert list(seen["conn_str"]) == [f"md:my_db?motherduck_token={SECRET}"]
+
+
+# --- `${VAR}`, the environment a config file reads ----------------------------
+
+
+def test_a_profile_reads_a_variable_from_the_environment(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: a config file that names a variable, and a query that runs.
+
+    Which is what the feature is for -- a profile a team shares, and a
+    credential each of them keeps in their own environment.
+    """
+    monkeypatch.setenv("HARLEQUIN_TEST_DB", ":memory:")
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "prod"\n'
+        "[profiles.prod]\n"
+        'adapter = "duckdb"\n'
+        'conn_str = ["${HARLEQUIN_TEST_DB}"]\n'
+        "no_init = true\n"
+    )
+    res = hsql("-tA", "-c", "select 42")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "42\n"
+
+
+def test_an_unset_variable_is_a_usage_error_that_names_it(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit 2 before the connection, rather than an empty string three layers in."""
+    monkeypatch.delenv("HARLEQUIN_TEST_TOKEN", raising=False)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "prod"\n'
+        "[profiles.prod]\n"
+        'adapter = "duckdb"\n'
+        'md_token = "${HARLEQUIN_TEST_TOKEN}"\n'
+    )
+    res = hsql("-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "HARLEQUIN_TEST_TOKEN" in res.stderr
+    assert str(cwd / ".harlequin.toml") in res.stderr
+
+
+def test_info_reports_an_unset_variable_rather_than_refusing(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller whose config is broken is one of the likeliest to run `--info`,
+    so the variable it could not read is part of the answer."""
+    monkeypatch.delenv("HARLEQUIN_TEST_TOKEN", raising=False)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "prod"\n'
+        "[profiles.prod]\n"
+        'adapter = "duckdb"\n'
+        'md_token = "${HARLEQUIN_TEST_TOKEN}"\n'
+    )
+    res = hsql("--info")
+    assert res.exit_code == ExitCode.OK
+    profile = json.loads(res.stdout)["profile"]
+    assert profile["options"] is None
+    assert "HARLEQUIN_TEST_TOKEN" in profile["error"]
+
+
+def test_config_validate_reports_an_unset_variable(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mode that reads every file reports this like any other problem."""
+    monkeypatch.delenv("HARLEQUIN_TEST_TOKEN", raising=False)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.prod]\nadapter = "duckdb"\nmd_token = "${HARLEQUIN_TEST_TOKEN}"\n'
+    )
+    res = hsql("--config", "validate", "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, problem, _ = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "profiles.prod.md_token"
+    assert "HARLEQUIN_TEST_TOKEN" in problem
+
+
+def test_config_show_prints_the_variable_rather_than_what_it_resolves_to(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mode reports on config files, so it reports what they say.
+
+    Which is also the answer a reader wants: `${HARLEQUIN_TEST_TOKEN}` says
+    where the value comes from, where the value itself would not -- and an
+    unset variable is not a reason to refuse a report about the file naming it.
+    """
+    monkeypatch.delenv("HARLEQUIN_TEST_TOKEN", raising=False)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        '[profiles.md]\nadapter = "duckdb"\nconn_str = ["${HARLEQUIN_TEST_TOKEN}"]\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert 'conn_str = ["${HARLEQUIN_TEST_TOKEN}"]' in res.stdout
+
+
+def test_info_masks_a_secret_read_from_the_environment(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interpolation resolves a value; it does not make one printable.
+
+    Both mechanisms, over a value that was never written in the file: the
+    option DuckDB declares secret, and the credential inside the DSN.
+    """
+    monkeypatch.setenv("HARLEQUIN_TEST_TOKEN", SECRET)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "md"\n'
+        "[profiles.md]\n"
+        'adapter = "duckdb"\n'
+        'conn_str = ["md:my_db?motherduck_token=${HARLEQUIN_TEST_TOKEN}"]\n'
+        'md_token = "${HARLEQUIN_TEST_TOKEN}"\n'
+    )
+    res = hsql("--info")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    options = json.loads(res.stdout)["profile"]["options"]
+    assert options["md_token"] == "********"
+    assert options["conn_str"] == ["md:my_db?motherduck_token=********"]
+
+
+def test_config_init_writes_the_variable_rather_than_what_it_resolves_to(
+    hsql: Hsql, init_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Writing is the other side of reading, and it writes what it was given.
+
+    `--config init` is how a caller puts `${MD_TOKEN}` in a config file from a
+    script, so what lands in the file has to be the six characters they typed.
+    """
+    monkeypatch.setenv("HARLEQUIN_TEST_TOKEN", SECRET)
+    cwd, _ = init_dirs
+    res = hsql(
+        "--config",
+        "init",
+        "-P",
+        "md",
+        "-a",
+        "duckdb",
+        "--md_token",
+        "${HARLEQUIN_TEST_TOKEN}",
+        "md:my_db",
+    )
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in (cwd / ".harlequin.toml").read_text()
+    assert written(cwd / ".harlequin.toml")["profiles"]["md"]["md_token"] == (
+        "${HARLEQUIN_TEST_TOKEN}"
+    )
+
+
+def test_a_secret_read_from_the_environment_is_hidden_in_an_error(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backstop reaches a value that was never in a config file either."""
+    monkeypatch.setenv("HARLEQUIN_TEST_TOKEN", SECRET)
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        'default_profile = "md"\n'
+        "[profiles.md]\n"
+        'adapter = "duckdb"\n'
+        'md_token = "${HARLEQUIN_TEST_TOKEN}"\n'
+    )
+
+    def exploding_connect(self: Any) -> Any:
+        raise HarlequinConnectionError(f"token {self.md_token} rejected")
+
+    monkeypatch.setattr("harlequin_duckdb.DuckDbAdapter.connect", exploding_connect)
+    res = hsql("-c", "select 1")
+    assert res.exit_code == ExitCode.CONNECTION
+    assert SECRET not in res.output
+    assert "token ******** rejected" in res.stderr

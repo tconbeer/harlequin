@@ -5,7 +5,7 @@ from typing import Any, Callable, Sequence
 
 import pytest
 
-from harlequin.config import load_config
+from harlequin.config import load_config, load_profile
 from harlequin.config_wizard import _wizard
 
 
@@ -148,6 +148,43 @@ class TestSecrets:
         printed = capsys.readouterr().out
         assert self.SECRET not in printed
         assert "********" in printed
+
+    def test_a_variable_the_file_reads_a_secret_from_is_written_back_unresolved(
+        self,
+        tmp_path: Path,
+        run_wizard: Callable[..., None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`${PGPASSWORD}` is what the author typed, and what they keep.
+
+        The wizard reads a config file and writes it back, so a value resolved
+        on the way in would be a plaintext password on the way out -- which is
+        why interpolation happens on the read path and not in `ConfigFile`.
+        """
+        monkeypatch.setenv("PGPASSWORD", self.SECRET)
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            '[profiles.one]\nmd_token = "${PGPASSWORD}"\ntheme = "fruity"\n'
+        )
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Which adapter": "duckdb",
+                # checked, and its value left at what the file already says
+                "adapter options": ["md_token"],
+            },
+        )
+
+        written = path.read_text()
+        assert "${PGPASSWORD}" in written
+        assert self.SECRET not in written
+        # and the run path still resolves it
+        assert (
+            load_profile(config_path=path, profile_name="one")["md_token"]
+            == self.SECRET
+        )
 
 
 class TestProfileWrite:

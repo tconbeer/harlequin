@@ -1122,3 +1122,230 @@ class TestValidatingEveryConfigFile:
         (home / ".harlequin.toml").write_text("[profiles.prod]\nread_only = true\n")
 
         assert self.validate() == []
+
+
+class TestInterpolatingEnvironmentVariables:
+    """`${VAR}` in a config file, and everything that is not one.
+
+    Read-path only, which is the half of this that can write a plaintext
+    password into a user's file if it is wrong -- so the file itself is
+    asserted to still say what its author typed.
+    """
+
+    def config(self, tmp_path: Path, body: str) -> Path:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(body)
+        return path
+
+    def profile(self, tmp_path: Path, body: str) -> Profile:
+        return load_profile(
+            config_path=self.config(tmp_path, f"[profiles.prod]\n{body}"),
+            profile_name="prod",
+        )
+
+    def test_a_variable_is_read_from_the_environment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PGPASSWORD", "hunter2")
+        assert self.profile(tmp_path, 'password = "${PGPASSWORD}"') == {
+            "password": "hunter2"
+        }
+
+    def test_a_variable_is_substituted_where_it_stands(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A DSN is the case this feature is for, and it is not the whole value."""
+        monkeypatch.setenv("PGPASSWORD", "hunter2")
+        assert self.profile(
+            tmp_path, 'conn_str = ["postgresql://me:${PGPASSWORD}@db:5432/prod"]'
+        ) == {"conn_str": ["postgresql://me:hunter2@db:5432/prod"]}
+
+    def test_a_default_is_what_an_unset_variable_reads_as(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PGHOST", raising=False)
+        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+            "host": "localhost"
+        }
+
+    def test_a_variable_that_is_set_beats_its_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PGHOST", "warehouse")
+        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+            "host": "warehouse"
+        }
+
+    def test_a_variable_set_to_nothing_takes_its_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What `:-` means to a shell, and the reading a caller can predict."""
+        monkeypatch.setenv("PGHOST", "")
+        assert self.profile(tmp_path, 'host = "${PGHOST:-localhost}"') == {
+            "host": "localhost"
+        }
+
+    def test_a_default_may_be_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PGOPTIONS", raising=False)
+        assert self.profile(tmp_path, 'options = "${PGOPTIONS:-}"') == {"options": ""}
+
+    @pytest.mark.parametrize(
+        "written,expected",
+        [
+            ("$${HOME}", "${HOME}"),
+            ("{HOME}", "{HOME}"),
+            ("$HOME", "$HOME"),
+            ("${not a var}", "${not a var}"),
+            ("${HOME", "${HOME"),
+            ("100$", "100$"),
+            ("p@ss{w0rd}$", "p@ss{w0rd}$"),
+        ],
+    )
+    def test_what_is_not_a_substitution_is_left_alone(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        written: str,
+        expected: str,
+    ) -> None:
+        """Nothing anyone has in a password today needs escaping.
+
+        `$${` is the escape for the one spelling that does, and every other
+        arrangement of the same characters is text.
+        """
+        monkeypatch.setenv("HOME", "/home/someone")
+        assert self.profile(tmp_path, f'password = "{written}"') == {
+            "password": expected
+        }
+
+    def test_every_string_in_the_profile_is_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Through arrays and tables, and over values rather than keys."""
+        monkeypatch.setenv("HARLEQUIN_TEST_VAR", "resolved")
+        assert self.profile(
+            tmp_path,
+            'conn_str = ["one_${HARLEQUIN_TEST_VAR}", "two_${HARLEQUIN_TEST_VAR}"]\n'
+            "[profiles.prod.nested]\n"
+            'key = "${HARLEQUIN_TEST_VAR}"\n',
+        ) == {
+            "conn_str": ["one_resolved", "two_resolved"],
+            "nested": {"key": "resolved"},
+        }
+
+    def test_a_profile_an_invocation_is_not_running_is_not_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The rule `default_profile` follows: a key an invocation overrode is
+        not a key to refuse it over.
+
+        A team's config file names a variable each of them keeps in their own
+        environment, and the one querying the dev database has never had it set.
+        """
+        monkeypatch.delenv("HARLEQUIN_TEST_VAR", raising=False)
+        path = self.config(
+            tmp_path,
+            'default_profile = "dev"\n'
+            "[profiles.dev]\n"
+            'conn_str = ["dev.db"]\n'
+            "[profiles.prod]\n"
+            'password = "${HARLEQUIN_TEST_VAR}"\n',
+        )
+        assert load_profile(config_path=path, profile_name=None) == {
+            "conn_str": ["dev.db"]
+        }
+        assert load_profile_and_keymaps(config_path=path, profile_name="dev")[0] == {
+            "conn_str": ["dev.db"]
+        }
+        with pytest.raises(HarlequinConfigError):
+            load_profile(config_path=path, profile_name="prod")
+
+    def test_a_document_that_is_being_reported_on_is_not_resolved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`--config show` and the debug screen report on files, so they report
+        what the files say -- and neither is stopped by an unset variable."""
+        monkeypatch.delenv("HARLEQUIN_TEST_VAR", raising=False)
+        path = self.config(
+            tmp_path, '[profiles.prod]\npassword = "${HARLEQUIN_TEST_VAR}"\n'
+        )
+        config = load_config(config_path=path)
+        assert config.profiles["prod"] == {"password": "${HARLEQUIN_TEST_VAR}"}
+
+    def test_a_number_is_still_a_number(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HARLEQUIN_TEST_VAR", "1")
+        assert self.profile(tmp_path, "limit = 10\nread_only = true") == {
+            "limit": 10,
+            "read_only": True,
+        }
+
+    def test_an_unset_variable_names_itself_the_key_and_the_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An error rather than an empty string.
+
+        A password that silently became `""` is an authentication error three
+        layers away from the config file that caused it.
+        """
+        monkeypatch.delenv("HARLEQUIN_TEST_VAR", raising=False)
+        path = self.config(
+            tmp_path, '[profiles.prod]\npassword = "${HARLEQUIN_TEST_VAR}"\n'
+        )
+        with pytest.raises(HarlequinConfigError) as excinfo:
+            load_profile(config_path=path, profile_name="prod")
+        assert "HARLEQUIN_TEST_VAR" in excinfo.value.msg
+        assert "profiles.prod.password" in excinfo.value.msg
+        assert str(path) in excinfo.value.msg
+
+    def test_an_unset_variable_in_an_array_names_where_it_is(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("HARLEQUIN_TEST_VAR", raising=False)
+        path = self.config(
+            tmp_path,
+            '[profiles.prod]\nconn_str = ["fine.db", "${HARLEQUIN_TEST_VAR}"]\n',
+        )
+        with pytest.raises(HarlequinConfigError) as excinfo:
+            load_profile(config_path=path, profile_name="prod")
+        assert "profiles.prod.conn_str[1]" in excinfo.value.msg
+
+    def test_an_unset_variable_is_a_problem_validation_reports_and_reads_past(
+        self, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The reader a problem does not stop finds the rest of them too."""
+        monkeypatch.delenv("HARLEQUIN_TEST_VAR", raising=False)
+        cwd, home = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            '[profiles.prod]\npassword = "${HARLEQUIN_TEST_VAR}"\n'
+        )
+        (home / ".harlequin.toml").write_text("[profiles.dev]\nreed_only = true\n")
+
+        unset, misspelled = validate_config_files(
+            None,
+            adapter_options=lambda _: [
+                FlagOption(name="read_only", description="x"),
+                TextOption(name="password", description="x"),
+            ],
+            command_options={"adapter", *TUI_ONLY_KEYS},
+        )
+        assert unset.path == cwd / ".harlequin.toml"
+        assert unset.key == "profiles.prod.password"
+        assert "HARLEQUIN_TEST_VAR" in unset.message
+        assert misspelled.key == "profiles.dev.reed_only"
+
+    def test_the_file_the_write_path_reads_says_what_its_author_typed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The one place getting the layering wrong writes a secret to disk.
+
+        `harlequin --config` reads this, edits it, and writes it back, so a
+        value resolved here is a resolved password in the user's file.
+        """
+        monkeypatch.setenv("PGPASSWORD", "hunter2")
+        path = self.config(tmp_path, '[profiles.prod]\npassword = "${PGPASSWORD}"\n')
+        raw = ConfigFile(path).relevant_config
+        assert raw["profiles"]["prod"]["password"] == "${PGPASSWORD}"

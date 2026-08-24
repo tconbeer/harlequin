@@ -78,7 +78,7 @@ def mock_empty_config(no_discovered_config: None) -> None:
 def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
     """A merged config, in place of whatever is on the machine running this."""
     config = Config(profiles={"test-profile": {"theme": "fruity"}})
-    monkeypatch.setattr("harlequin.config.load_config", lambda *_: config)
+    monkeypatch.setattr("harlequin.config.load_config", lambda *_, **__: config)
     return config
 
 
