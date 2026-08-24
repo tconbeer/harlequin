@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-08-24
+
 ### Breaking Changes
 
 - Config files now merge profile by profile; higher-priority files that define profiles no longer clobber profiles with different names defined in lower-priority profiles ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
@@ -1015,7 +1017,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.9.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.10.0...HEAD
+[2.10.0]: https://github.com/tconbeer/harlequin/compare/2.9.0...2.10.0
 [2.9.0]: https://github.com/tconbeer/harlequin/compare/2.8.1...2.9.0
 [2.8.1]: https://github.com/tconbeer/harlequin/compare/2.8.0...2.8.1
 [2.8.0]: https://github.com/tconbeer/harlequin/compare/2.7.0...2.8.0
