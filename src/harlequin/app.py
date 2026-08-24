@@ -1007,6 +1007,7 @@ class Harlequin(AppBase):
         harlequin_info = HarlequinDebugInfo(
             active_profile_config=active_profile_config,
             active_profile_name=active_profile_name,
+            adapter_options=adapter_options,
             all_keymaps=list(self.all_keymaps.keys()),
             config=config,
             config_path=config_path,

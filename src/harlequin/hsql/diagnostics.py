@@ -10,6 +10,10 @@ footer, where psql puts it and where `-t` can decline it; timings are a field of
 
 Exit codes are hsql's contract rather than Harlequin's, which is why the
 mapping lives here and not in `harlequin.exception`.
+
+Nothing written here carries a secret, either: every line goes through
+`harlequin.redact`, which covers the one channel nothing can shape in advance
+-- a driver exception that quotes back the DSN it was handed.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinError,
 )
+from harlequin.redact import redact_text
 
 PROGRAM = "hsql"
 
@@ -217,4 +222,8 @@ def _write(line: str) -> None:
     sys.stdout.flush()
     # sys.stderr is resolved on each call, not bound at import: a test harness
     # that swaps the stream out has to be able to see what was written.
-    print(line, file=sys.stderr)
+    #
+    # Redacting here rather than at each call site is what makes this a
+    # promise: an error raised by a driver, a note, a `--stats` payload with a
+    # message in it, and whatever is added next all leave through this line.
+    print(redact_text(line), file=sys.stderr)

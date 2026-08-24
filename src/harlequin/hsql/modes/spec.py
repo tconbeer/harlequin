@@ -15,6 +15,10 @@ command line, and `default` is what the command uses when it is not passed.
 That last one is why a flag reads `false` here whatever it declares -- a flag
 that is absent is false, and this document is about the command line.
 
+**It says which options must not be typed**: `secret` carries the adapter's
+declaration through, so a caller learns that `--md-token` exists and that a
+command line is the wrong place to put its value.
+
 **It costs every adapter, and no connection.** Reading one adapter's options
 means importing it; reporting all of them means importing all of them, which is
 ~300ms and rising with what is installed. That is the right trade for a
@@ -40,6 +44,7 @@ from harlequin.config import sluggify_option_name
 from harlequin.exception import HarlequinConfigError
 from harlequin.hsql import diagnostics
 from harlequin.hsql.diagnostics import ExitCode
+from harlequin.redact import REDACTED
 
 if TYPE_CHECKING:
     from harlequin.options import AbstractOption
@@ -190,6 +195,11 @@ def _from_option(
     what a profile writes it as, and `default` is what the command line does
     when the flag is absent -- false for a flag, however it declares itself for
     a GUI.
+
+    `secret` is the key that teaches an agent reading this not to construct
+    `hsql --password hunter2`: the flag exists, and a command line is the one
+    place its value must not be typed, where `ps` and a shell history can read
+    it.
     """
     declared = option.to_dict()
     name = sluggify_option_name(str(declared["name"]))
@@ -201,6 +211,13 @@ def _from_option(
     if not decls or name in taken:
         return None
     is_flag = declared["type"] == "flag"
+    secret = bool(declared["secret"])
+    default = False if is_flag else declared["default"]
+    if secret and isinstance(default, str) and default:
+        # an adapter that ships a default for a secret has shipped the secret,
+        # and this document is the one place a reader would find it written
+        # down for every installation at once
+        default = REDACTED
     # `metavar`, `required` and `envvar` are constants: `to_click()` passes
     # none of the three, so no adapter option has one
     return {
@@ -209,11 +226,12 @@ def _from_option(
         "type": TYPES.get(str(declared["type"]), str(declared["type"])),
         "metavar": None,
         "choices": declared["choices"],
-        "default": False if is_flag else declared["default"],
+        "default": default,
         "multiple": declared["multiple"],
         "is_flag": is_flag,
         "required": False,
         "envvar": None,
+        "secret": secret,
         "help": declared["description"],
     }
 
@@ -231,6 +249,7 @@ def _from_parameter(param: click.Parameter) -> dict[str, Any]:
         "is_flag": bool(getattr(param, "is_flag", False)),
         "required": bool(param.required),
         "envvar": _envvar(param),
+        "secret": False,
         "help": getattr(param, "help", None),
     }
 

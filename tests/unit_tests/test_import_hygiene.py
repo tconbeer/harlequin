@@ -30,6 +30,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.layout",
     "import harlequin.options",
     "import harlequin.plugins",
+    "import harlequin.redact",
     "import harlequin.query",
     "import harlequin.statements",
     "import harlequin.transaction_mode",
@@ -209,10 +210,12 @@ def test_the_config_modes_import_no_database(
     forbidden: tuple[str, ...],
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:
-    """A mode that reports on config files must work when the database does not.
+    """Neither mode reaches for a database driver of its own accord.
 
-    So it imports no adapter, and nothing an adapter would have brought with
-    it. `--format csv|json|parquet` is the exception a caller asks for by name:
+    There is no config file here, so `show` has no profile to redact and no
+    adapter to ask about one -- which is the floor this asserts. What it costs
+    when there *is* a profile is the test below.
+    `--format csv|json|parquet` is the exception a caller asks for by name:
     those are written by `harlequin.export`, which serializes through duckdb or
     pyarrow whatever produced the rows.
     """
@@ -439,3 +442,73 @@ def test_unknown_attribute_still_raises_attribute_error() -> None:
 
     with pytest.raises(AttributeError):
         _ = harlequin.NotAThing
+
+
+def test_config_show_imports_the_adapters_its_profiles_name(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """What `show` buys with an import, and what it refuses to pay for.
+
+    Which of a profile's values are secret is the adapter's declaration, so a
+    mode that prints those values asks the adapter -- one import per adapter
+    its profiles name, and not one more. It stays a document either way: no
+    pyarrow, whatever it had to import to redact.
+
+    `tmp_path` is the subprocess's cwd and its home, so this file is the whole
+    of the config it discovers.
+    """
+    (tmp_path / ".harlequin.toml").write_text(
+        "[profiles.lite]\n"
+        'adapter = "sqlite"\n'
+        "[profiles.md]\n"
+        'adapter = "duckdb"\n'
+        'conn_str = [ "md:my_db?motherduck_token=hunter2-and-then-some" ]\n'
+        'md_token = "hunter2-and-then-some"\n'
+    )
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'show']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('pyarrow',) if m in sys.modules), "
+        "file=sys.stderr)\n"
+    )
+    assert "hunter2-and-then-some" not in proc.stdout
+    assert "********" in proc.stdout
+    # the last two lines this wrote, and the second is empty when nothing
+    # forbidden was imported -- so they are indexed rather than unpacked off a
+    # stripped string, which would have swallowed the empty one
+    lines = proc.stderr.split("\n")
+    assert lines[-3] == "harlequin_duckdb,harlequin_sqlite"
+    assert not lines[-2]
+
+
+def test_config_show_masks_by_name_when_an_adapter_will_not_import(
+    tmp_path: Path, run_python: Callable[[str], subprocess.CompletedProcess[str]]
+) -> None:
+    """The backstop, and the line that says it is standing in.
+
+    A profile naming an adapter this machine cannot import has no declaration
+    to redact against, so the key's name is all there is -- and a caller whose
+    report was masked the weaker way is told which adapter it was.
+    """
+    (tmp_path / ".harlequin.toml").write_text(
+        '[profiles.pg]\nadapter = "nonesuch"\npassword = "hunter2-and-then-some"\n'
+    )
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--config', 'show']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+    )
+    assert "hunter2-and-then-some" not in proc.stdout
+    assert 'password = "********"' in proc.stdout
+    assert "could not import nonesuch" in proc.stderr

@@ -310,6 +310,11 @@ def _from_option(schema: Mapping[str, Any], option: AbstractOption) -> dict[str,
         described["description"] = declared["description"]
     if isinstance(declared["default"], (str, int, float, bool)):
         described["default"] = declared["default"]
+    if declared["secret"]:
+        # JSON Schema uses "write only" to flag secrets
+        described["writeOnly"] = True
+        # a default that is a secret is still a secret
+        described.pop("default", None)
     return described
 
 

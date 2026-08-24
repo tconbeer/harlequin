@@ -18,14 +18,24 @@ nothing, which is the whole point of having it beside a wizard -- each command
 gets the affordance right for its audience, and `hsql` may not import
 questionary.
 
+`show` prints a user's own values, so it redacts them. It is the one reporting
+mode that does, because it is the only one that prints a value at all --
+`list-profiles` prints names, and `validate` prints what is wrong with a key
+rather than what is under it. Which values are secret is the adapter's
+declaration, so this is the mode that pays an import per adapter its profiles
+name to ask. That is the trade taken deliberately: ~200ms on a mode a caller
+runs by hand, against a token printed in full because nobody asked the one
+thing that knows. `redact_profile`'s fallback to the key's name stays under it
+for the adapter that is not installed, will not import, or has not adopted
+`secret=` yet -- which is nearly all of them.
+
 None of them connects, and `schema` does not even read a file: it describes the
-shape a config file may take, whether or not this machine has one. `show` and
-`list-profiles` import no adapter either -- a mode that reports on config files
-must work when the database does not. The other three do: `validate` imports one
-per adapter its profiles name, `schema` every installed one, and `init` the one
-whose options it is writing, because all three are describing options only the
-adapter declares. `show` does not import the execution core either -- it writes
-a document, not rows -- which is why the two imports the row-shaped modes need
+shape a config file may take, whether or not this machine has one.
+`list-profiles` imports no adapter, because it prints no value that could need
+one. The other four do: `show` and `validate` one per adapter their profiles
+name, `schema` every installed one, and `init` the one whose options it is
+writing. `show` does not import the execution core, though -- it writes a
+document, not rows -- which is why the two imports the row-shaped modes need
 are deferred into them.
 
 The renderings are the merge, told two ways: TOML for a person, because that is
@@ -40,6 +50,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
 
 from harlequin.config import (
+    DEFAULT_ADAPTER,
     ConfigFile,
     Provenance,
     get_highest_priority_existing_config_file,
@@ -105,7 +116,7 @@ def report(
 
     if mode == SHOW:
         _write_document(
-            config,
+            _redacted(config),
             provenance,
             out,
             mode=mode,
@@ -220,6 +231,36 @@ def _writable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     return value
+
+
+def _redacted(config: Config) -> Config:
+    """Returns a copy of the config, with secrets masked.
+
+    Each profile is masked against the options its own adapter declares, which
+    takes importing that adapter -- or, where it will not import, against the
+    key's name alone, which is said out loud because it is the weaker answer.
+    """
+    import msgspec
+
+    from harlequin.redact import redact_profile
+
+    options = _adapter_options(
+        on_error=lambda name: diagnostics.note(
+            f"could not import {name}, so its profiles were masked by option "
+            "name alone; run --config validate for the reason."
+        )
+    )
+    return msgspec.structs.replace(
+        config,
+        profiles={
+            # a profile that names no adapter runs under the default, so those
+            # are the declarations that apply to it
+            name: redact_profile(
+                profile, options(str(profile.get("adapter") or DEFAULT_ADAPTER))
+            )
+            for name, profile in config.profiles.items()
+        },
+    )
 
 
 def _write_document(
@@ -390,12 +431,18 @@ def _write_problems(
     return ExitCode.USAGE if problems else ExitCode.OK
 
 
-def _adapter_options() -> Callable[[str], Sequence[AbstractOption] | None]:
+def _adapter_options(
+    on_error: Callable[[str], None] | None = None,
+) -> Callable[[str], Sequence[AbstractOption] | None]:
     """A way to ask what one adapter declares, importing each of them once.
 
     The cache is per invocation rather than per process: four profiles naming
     duckdb is one import, and a second call in the same interpreter -- which is
     every test, and no `hsql` -- gets to see whatever is installed then.
+
+    An adapter that will not import raises, which is what `validate` records
+    against the profile that named it. A caller that would rather carry on
+    passes `on_error`: it is called once per adapter, and the answer is None.
     """
     from harlequin.plugins import load_adapter
 
@@ -403,9 +450,13 @@ def _adapter_options() -> Callable[[str], Sequence[AbstractOption] | None]:
 
     def options(name: str) -> Sequence[AbstractOption] | None:
         if name not in declared:
-            # raises for a name nothing installed provides, which the validator
-            # records against the profile that named it
-            declared[name] = load_adapter(name).ADAPTER_OPTIONS
+            try:
+                declared[name] = load_adapter(name).ADAPTER_OPTIONS
+            except HarlequinConfigError:
+                if on_error is None:
+                    raise
+                on_error(name)
+                declared[name] = None
         return declared[name]
 
     return options

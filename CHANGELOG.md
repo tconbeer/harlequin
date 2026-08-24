@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
+- Harlequin and `hsql` now redact secrets instead of showing them in output, including passwords in a connection string ([#667](https://github.com/tconbeer/harlequin/issues/667), [#354](https://github.com/tconbeer/harlequin/issues/354)). Adapter maintainers can flag secrets by setting `secret=True` on an adapter's options.
 - Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does.
 - Harlequin's Results Viewer can now show a cell's value in a scrollable modal (press `space`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
 - Formatting a query now shows a notification, so it is clear the formatter ran even when it changed little or nothing ([#874](https://github.com/tconbeer/harlequin/issues/874)).

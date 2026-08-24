@@ -66,6 +66,9 @@ md_token = TextOption(
         "MotherDuck Token. Pass your MotherDuck service token in this option, or "
         "set the `motherduck_token` environment variable."
     ),
+    # a service token, so nothing that reports on a profile may print it back,
+    # and the wizard must not echo it as it is typed
+    secret=True,
 )
 
 md_saas = FlagOption(

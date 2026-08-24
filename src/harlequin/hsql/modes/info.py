@@ -7,6 +7,9 @@ files this machine has and in what order they are read, which profile an
 invocation would run under, and what each installed adapter *declares* it can
 do.
 
+**It reports the profile, so it redacts it**, which is what makes this a
+document safe to paste into an issue.
+
 **It opens no connection**, which is the point rather than an omission: the
 diagnostic a caller reaches for when the database is unreachable must not
 itself require the database. Capabilities are class attributes for exactly that
@@ -72,6 +75,8 @@ def report(
         diagnostics.report_document_format_ignored("--info", format_name)
 
     profile = _profile(profile_name, config_path)
+    adapter_in_use = _adapter_in_use(adapter, profile["options"])
+    profile["options"] = _redacted(profile["options"], adapter_in_use["name"])
     document = {
         "program": "hsql",
         "version": version("harlequin"),
@@ -87,7 +92,7 @@ def report(
         },
         "config": _config_files(config_path),
         "profile": profile,
-        "adapter": _adapter_in_use(adapter, profile["options"]),
+        "adapter": adapter_in_use,
         "adapters": _adapters(adapter),
     }
     out.write((json.dumps(document, indent=2, default=str) + "\n").encode("utf-8"))
@@ -147,6 +152,27 @@ def _adapter_in_use(typed: str | None, options: Any) -> dict[str, Any]:
     if named:
         return {"name": str(named), "from": "profile"}
     return {"name": DEFAULT_ADAPTER, "from": "default"}
+
+
+def _redacted(options: Any, adapter: str) -> Any:
+    """The profile's values with its secrets masked.
+
+    Which of them are secret is the adapter's declaration, so this asks the one
+    the invocation would connect with -- and imports it to ask, which this mode
+    was going to pay for anyway.
+    """
+    from harlequin.plugins import load_adapter
+    from harlequin.redact import redact_profile
+
+    if not isinstance(options, dict):
+        # a profile the name resolved to nothing, already reported as null
+        return options
+    try:
+        declared = load_adapter(adapter).ADAPTER_OPTIONS
+    except HarlequinConfigError:
+        # said once, by `_adapters()`, which is about to try the same import
+        declared = None
+    return redact_profile(options, declared)
 
 
 def _adapters(only: str | None) -> dict[str, Any]:

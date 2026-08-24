@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import questionary
 import tomlkit
@@ -20,8 +20,9 @@ from harlequin.config import (
     sluggify_option_name,
 )
 from harlequin.exception import HarlequinWizardError, pretty_print_error
-from harlequin.options import ListOption
+from harlequin.options import AbstractOption, ListOption
 from harlequin.plugins import load_adapter_plugins, load_keymap_plugins
+from harlequin.redact import redact_profile
 
 
 def wizard(config_path: Path | None) -> None:
@@ -188,7 +189,9 @@ def _wizard(config_path: Path | None) -> None:
 
     new_profile.update(adapter_options)
 
-    _confirm_profile_generation(default_profile, profile_name, new_profile)
+    _confirm_profile_generation(
+        default_profile, profile_name, new_profile, adapter_cls.ADAPTER_OPTIONS
+    )
 
     config["profiles"][profile_name] = new_profile
 
@@ -287,13 +290,19 @@ def _prompt_to_set_default_profile(
 
 
 def _confirm_profile_generation(
-    default_profile: str | None, profile_name: str, new_profile: Profile
+    default_profile: str | None,
+    profile_name: str,
+    new_profile: Profile,
+    adapter_options: Sequence[AbstractOption] | None = None,
 ) -> None:
     # raw TOML data, like everything on the write path, rather than a `Config`
     new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
-    new_config.update({"profiles": {profile_name: new_profile}})
+    # redact secrets from the displayed config preview
+    new_config.update(
+        {"profiles": {profile_name: redact_profile(new_profile, adapter_options)}}
+    )
     new_config_toml = tomlkit.dumps(new_config).rstrip()
 
     rich_print("[italic] We generated the following profile:[/]")

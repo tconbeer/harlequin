@@ -60,6 +60,9 @@ class AbstractOption(ABC):
     useful -- and better than claiming a type it is not.
     """
 
+    secret: bool = False
+    """Whether this option's value must never be printed. e.g., a password."""
+
     def __init__(
         self,
         name: str,
@@ -67,6 +70,7 @@ class AbstractOption(ABC):
         *args: Any,
         label: str | None = None,
         short_decls: Sequence[str] | None = None,
+        secret: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -78,6 +82,8 @@ class AbstractOption(ABC):
             label (str | None): For GUI options, a human-friendly label for this option.
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key. See the class attribute.
         """
         # names should be valid html/css ids
         if re.match(r"[A-Za-z](\w|-)*", name):
@@ -94,6 +100,7 @@ class AbstractOption(ABC):
         self.short_decls = [
             decl if decl.startswith("-") else f"-{decl}" for decl in short_decls
         ]
+        self.secret = bool(secret)
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -114,6 +121,7 @@ class AbstractOption(ABC):
             "default": getattr(self, "default", None),
             "choices": None,
             "multiple": False,
+            "secret": bool(getattr(self, "secret", False)),
         }
 
     @abstractmethod
@@ -153,6 +161,7 @@ class TextOption(AbstractOption):
         default: str | None = None,
         placeholder: str | None = None,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -169,8 +178,12 @@ class TextOption(AbstractOption):
                 receives the raw input as a string returns a tuple. The first item of
                 the tuple is either True for valid input or False for invalid input.
                 The second item is a message shown to the user if the validation fails.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.validator = validator
         self.default = default
         self.placeholder = placeholder
@@ -216,6 +229,7 @@ class TextOption(AbstractOption):
             default=default,
             placeholder=placeholder,
             validator=merge_validator if self.validator is not None else None,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -269,7 +283,9 @@ class TextOption(AbstractOption):
         except (ValueError, TypeError):
             safe_existing_value = None
 
-        return questionary.text(
+        # do not echo secrets in questionary prompt
+        ask = questionary.password if self.secret else questionary.text
+        return ask(
             message=self.name,
             default=(
                 safe_existing_value
@@ -290,6 +306,7 @@ class ListOption(AbstractOption):
         description: str,
         label: str | None = None,
         short_decls: list[str] | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -300,8 +317,12 @@ class ListOption(AbstractOption):
             label (str | None): For GUI options, a human-friendly label for this option.
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Repeatable, which is the one thing that separates it from a text
@@ -319,6 +340,7 @@ class ListOption(AbstractOption):
             description=description,
             label=label,
             short_decls=list(short_decls),
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -344,7 +366,9 @@ class ListOption(AbstractOption):
         else:
             safe_existing_value = None
 
-        return questionary.text(
+        # do not echo secrets in questionary prompt
+        ask = questionary.password if self.secret else questionary.text
+        return ask(
             message=self.name,
             instruction="Separate items by a space.",
             default=safe_existing_value if safe_existing_value is not None else "",
@@ -372,6 +396,7 @@ class PathOption(AbstractOption):
         path_type: type | None = Path,
         default: str | None = None,
         placeholder: str | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -391,8 +416,12 @@ class PathOption(AbstractOption):
                 (usually str or pathlib.Path).
             default (str): The default path.
             placeholder (str): For GUI options, the placeholder text for the input.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.exists = exists
         self.file_okay = file_okay
         self.dir_okay = dir_okay
@@ -436,6 +465,7 @@ class PathOption(AbstractOption):
             path_type=path_type,
             default=default,
             placeholder=placeholder,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -492,6 +522,19 @@ class PathOption(AbstractOption):
         except (ValueError, TypeError):
             safe_existing_value = None
 
+        if self.secret:
+            # do not echo secrets in questionary prompt
+            return questionary.password(
+                message=self.name,
+                default=(
+                    safe_existing_value
+                    if safe_existing_value is not None
+                    else self.default or ""
+                ),
+                validate=_path_validator,
+                style=HARLEQUIN_QUESTIONARY_STYLE,
+            )
+
         return questionary.path(
             message=self.name,
             default=(
@@ -516,8 +559,11 @@ class SelectOption(AbstractOption):
         label: str | None = None,
         short_decls: list[str] | None = None,
         default: str | None = None,
+        secret: bool = False,
     ) -> None:
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.choices = choices
         self.default = default
         """
@@ -532,6 +578,8 @@ class SelectOption(AbstractOption):
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
             default (str | None): The default value for this option.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
 
     def to_dict(self) -> dict[str, Any]:
@@ -562,6 +610,7 @@ class SelectOption(AbstractOption):
             label=label,
             short_decls=list(short_decls),
             default=default,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -636,8 +685,11 @@ class FlagOption(AbstractOption):
         label: str | None = None,
         short_decls: Sequence[str] | None = None,
         default: bool = False,
+        secret: bool = False,
     ) -> None:
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.default = default
 
     def merge(self, other: AbstractOption) -> AbstractOption:
@@ -654,6 +706,7 @@ class FlagOption(AbstractOption):
             label=label,
             short_decls=list(short_decls),
             default=default,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:

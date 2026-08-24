@@ -2546,3 +2546,273 @@ def test_info_is_in_the_help(hsql: Hsql) -> None:
     assert res.exit_code == ExitCode.OK
     assert "--info" in res.output
     assert f"{PROGRAM} --info" in res.output
+
+
+# --- secrets, and the promise that none of them is printed -------------------
+
+SECRET = "hunter2-and-then-some"
+"""One value, in a profile and in a connection string, asserted for negatively.
+
+Long enough that finding it in the output is unambiguous, and distinctive
+enough that a substring search over every byte written means what it says.
+"""
+
+
+@pytest.fixture
+def secret_config(config_dirs: tuple[Path, Path]) -> Path:
+    """A profile with a secret in an option *and* in a connection string.
+
+    Both halves, because they are hidden by two different mechanisms:
+    `md_token` is masked because the DuckDB adapter declares it secret, and the
+    token in the connection string because `redact_conn_str` reads the DSN.
+    """
+    cwd, _ = config_dirs
+    path = cwd / ".harlequin.toml"
+    path.write_text(
+        'default_profile = "md"\n'
+        "[profiles.md]\n"
+        'adapter = "duckdb"\n'
+        f'conn_str = [ "md:my_db?motherduck_token={SECRET}" ]\n'
+        f'md_token = "{SECRET}"\n'
+        "limit = 500\n"
+    )
+    return path
+
+
+def test_info_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
+    """The document a caller pastes into an issue."""
+    res = hsql("--info")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    options = json.loads(res.stdout)["profile"]["options"]
+    assert options["md_token"] == "********"
+    assert options["conn_str"] == ["md:my_db?motherduck_token=********"]
+    # and still the document it was: what a reader needs is all still there
+    assert options["limit"] == 500
+    assert options["adapter"] == "duckdb"
+
+
+def test_config_show_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
+    """Masked without importing an adapter to ask, which is why the fallback to
+    the key's name exists."""
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'md_token = "********"' in res.stdout
+    assert "motherduck_token=********" in res.stdout
+    # the provenance is the whole point of the mode, and survives
+    assert f"# from {secret_config}" in res.stdout
+
+
+def test_config_show_masks_a_secret_the_key_name_does_not_give_away(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reason this mode imports the adapters its profiles name.
+
+    A key called `hush` is not one core could have guessed at, and guessing is
+    what the fallback does. Only the adapter knows, so the mode asks it.
+    """
+    from harlequin.options import TextOption
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.ADAPTER_OPTIONS",
+        [TextOption(name="hush", description="x", secret=True)],
+    )
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f'[profiles.one]\nadapter = "duckdb"\nhush = "{SECRET}"\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'hush = "********"' in res.stdout
+
+
+def test_config_show_asks_the_default_adapter_for_a_profile_that_names_none(
+    hsql: Hsql, config_dirs: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A profile with no `adapter` connects with the default, so that is the
+    one whose declarations decide what it is hiding."""
+    from harlequin.options import TextOption
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.ADAPTER_OPTIONS",
+        [TextOption(name="hush", description="x", secret=True)],
+    )
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(f'[profiles.one]\nhush = "{SECRET}"\n')
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'hush = "********"' in res.stdout
+
+
+def test_config_show_says_when_it_masked_by_name_alone(
+    hsql: Hsql, config_dirs: tuple[Path, Path]
+) -> None:
+    """The one path where a value this would have masked might print, so it is
+    said out loud rather than left for a reader to notice."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f'[profiles.one]\nadapter = "nonesuch"\npassword = "{SECRET}"\n'
+    )
+    res = hsql("--config", "show")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert 'password = "********"' in res.stdout
+    assert "could not import nonesuch" in res.stderr
+
+
+def test_config_show_json_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
+    res = hsql("--config", "show", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    profile = json.loads(res.stdout)["profiles"]["md"]["value"]
+    assert profile["md_token"] == "********"
+
+
+def test_config_list_profiles_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
+    """It prints names rather than values, and this is what says so."""
+    res = hsql("--config", "list-profiles")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    assert "md" in res.stdout
+
+
+def test_config_validate_prints_no_secret(hsql: Hsql, secret_config: Path) -> None:
+    res = hsql("--config", "validate")
+    assert SECRET not in res.output
+
+
+def test_spec_prints_no_secret_and_says_which_options_are(
+    hsql: Hsql, secret_config: Path
+) -> None:
+    """`--spec` publishes no values, and publishes which options hold one.
+
+    That key is what teaches an agent not to construct `hsql --md_token
+    hunter2`, where `ps` and a shell history can read it.
+    """
+    res = hsql("--spec", "-a", "duckdb")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    options = {
+        entry["name"]: entry
+        for entry in json.loads(res.stdout)["adapters"]["duckdb"]["options"]
+    }
+    assert options["md_token"]["secret"] is True
+    assert options["read_only"]["secret"] is False
+    # both halves of the document answer with the same keys
+    assert all("secret" in entry for entry in json.loads(res.stdout)["options"])
+
+
+def test_spec_masks_a_default_an_adapter_shipped_for_a_secret(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter that ships a default for a secret has shipped the secret, and
+    this document would otherwise write it down for every installation."""
+    from harlequin.options import TextOption
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.ADAPTER_OPTIONS",
+        [TextOption(name="md_token", description="x", default=SECRET, secret=True)],
+    )
+    res = hsql("--spec", "-a", "duckdb")
+    assert res.exit_code == ExitCode.OK
+    assert SECRET not in res.output
+    (option,) = json.loads(res.stdout)["adapters"]["duckdb"]["options"]
+    assert option["default"] == "********"
+
+
+def test_an_error_that_echoes_the_connection_string_prints_no_secret(
+    hsql: Hsql, secret_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backstop, and the case the option layer cannot reach: a driver that
+    quotes back the DSN it was handed."""
+
+    def exploding_connect(self: Any) -> Any:
+        raise HarlequinConnectionError(f"could not connect to {self.conn_str[0]}")
+
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.connect", exploding_connect, raising=True
+    )
+    res = hsql("-c", "select 1")
+    assert res.exit_code == ExitCode.CONNECTION
+    assert SECRET not in res.output
+    assert "could not connect to md:my_db?motherduck_token=********" in res.stderr
+
+
+class _RefusingConnection:
+    """A connection that refuses every statement, quoting the DSN as it does.
+
+    Which is the shape of the failure that matters here: the message comes from
+    the driver, so nothing in the option layer has had a chance to shape it.
+    """
+
+    def execute(self, query: str) -> Any:
+        raise HarlequinQueryError(f"rejected: md:my_db?motherduck_token={SECRET}")
+
+
+def test_stats_prints_no_secret(
+    hsql: Hsql, secret_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--stats` carries the failure's message, so it carries this promise too.
+
+    It is a second channel rather than the same one twice: the error goes to
+    stderr as prose, and this goes to stderr as JSON a script parses.
+    """
+    monkeypatch.setattr(
+        "harlequin_duckdb.DuckDbAdapter.connect", lambda self: _RefusingConnection()
+    )
+    res = hsql("--stats", "-c", "select 1")
+    assert res.exit_code == ExitCode.QUERY
+    assert SECRET not in res.output
+    stats = json.loads(res.stderr.strip().splitlines()[-1])
+    assert stats["status"] == "error"
+    assert "motherduck_token=********" in stats["error"]
+
+
+def test_a_secret_typed_on_the_command_line_is_still_hidden_in_errors(
+    hsql: Hsql, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Typing one there is the thing `--spec` teaches a caller not to do, and
+    it is not a reason to print it back."""
+    monkeypatch.chdir(tmp_path)
+
+    def exploding_connect(self: Any) -> Any:
+        raise HarlequinConnectionError(f"token {self.md_token} rejected")
+
+    monkeypatch.setattr("harlequin_duckdb.DuckDbAdapter.connect", exploding_connect)
+    res = hsql(
+        "-a", "duckdb", "--no-init", ":memory:", "--md_token", SECRET, "-c", "select 1"
+    )
+    assert res.exit_code == ExitCode.CONNECTION
+    assert SECRET not in res.output
+    assert "token ******** rejected" in res.stderr
+
+
+def test_nothing_is_hidden_from_a_run_with_no_secrets(
+    hsql: Hsql, duck: list[str]
+) -> None:
+    """The other half: a message with nothing to hide is printed as it is."""
+    res = hsql(*duck, "-c", "select nope")
+    assert res.exit_code == ExitCode.QUERY
+    assert "********" not in res.output
+    assert "nope" in res.stderr
+
+
+def test_the_secret_still_reaches_the_adapter(
+    hsql: Hsql, secret_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redaction is for output. A run that connected with asterisks would be a
+    worse bug than the one this is fixing."""
+    seen: dict[str, Any] = {}
+
+    def recording_connect(self: Any) -> Any:
+        seen["md_token"] = self.md_token
+        seen["conn_str"] = self.conn_str
+        raise HarlequinConnectionError("stop here")
+
+    monkeypatch.setattr("harlequin_duckdb.DuckDbAdapter.connect", recording_connect)
+    hsql("-c", "select 1")
+    assert seen["md_token"] == SECRET
+    assert list(seen["conn_str"]) == [f"md:my_db?motherduck_token={SECRET}"]
