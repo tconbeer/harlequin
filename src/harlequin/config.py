@@ -6,44 +6,37 @@ define something is the one that defines it.
 
 Who reads what:
 
-| caller                 | function                     | files read           |
-| ---------------------- | ---------------------------- | -------------------- |
-| `hsql`                 | `load_profile()`             | up to the one that   |
-|                        |                              | defines the profile  |
-| `hsql --info`          | `resolve_profile()`          | the same, plus the   |
-|                        |                              | name it resolved     |
-| `harlequin`, `--keys`  | `load_profile_and_keymaps()` | all: keymaps merge   |
-|                        |                              | across every file    |
-| the IDE's debug screen | `load_config()`              | all                  |
-| `hsql --config show`   | `load_config()`, with a      | all                  |
-|                        | `Provenance` to fill in      |                      |
-| `hsql --config`        | `validate_config_files()`    | all, and none of     |
-| `validate`             |                              | them fatally         |
-| `harlequin --config`,  | `ConfigFile`, at the path    | one, and unvalidated |
-| `hsql --config init`   | `get_highest_priority_...()` | (it is about to be   |
-|                        | returns, or `--config-path`  | written back)        |
+| function                     | who calls it                 | files read           |
+|------------------------------|------------------------------|----------------------|
+| `load_profile()`             | both commands' first pass    | up to the one that   |
+| `resolve_profile()`          | `hsql --info`                | defines the profile  |
+| `load_profile_and_keymaps()` | `harlequin`, `--keys`,       | all: keymaps merge   |
+|                              | `--config`, the debug screen | across every file    |
+| `load_config()`              | the debug screen,            | all                  |
+|                              | `hsql --config show`         |                      |
+| `validate_config_files()`    | `hsql --config validate`     | all, and none of     |
+|                              |                              | them fatally         |
+| `ConfigFile`                 | `harlequin --config`,        | one, and unvalidated |
+|                              | `--keys`, `--config init`    | (it is about to be   |
+|                              |                              | written back)        |
 
-`load_profile()` is the fast path: it stops at the file that answers the
-question, so `hsql -P prod` never opens the files behind that one, and
-`hsql -P None` opens none. `resolve_profile()` is the same walk, returning the
-name it resolved beside the profile. The others need the whole document.
+So `hsql -P prod` never opens the files behind the one that defines it, and
+`-P None` opens none at all.
 
-A profile's strings have their `${VAR}`s resolved from the environment as the
-profile is selected -- not as its file is read, so that an invocation is never
-refused over a variable named in a profile it is not running, and not in
-`ConfigFile.relevant_config`, which is what the write path edits and hands
-back: a `${MYPASSWORD}` a user wrote is still a `${MYPASSWORD}` after
-`harlequin --config` has rewritten the file around it.
+A `Provenance` records which file supplied each merged name: what `--config
+show` reports, and what any message that has to name the file behind a profile
+or a `default_profile` is written from. A profile's `${VAR}`s are resolved
+where the profile is selected -- so an invocation is never refused over a
+variable in a profile it is not running -- and never in
+`ConfigFile.relevant_config`, which the write path edits and hands back.
 
 Config files are validated twice, and the halves know different things.
 `_read_config_files()` checks one file's shape before it is merged with any
-other, so the error can name the file. `parse_profile_options()` runs once the
-adapter is known and checks the profile's remaining keys -- each of which is
-some adapter's option -- against the options that adapter declares.
-
-Both passes raise at the first problem, because every caller but one is on its
-way to a database. Hand them a `Problems` and they record it and carry on
-instead, which is the whole of `--config validate`.
+other, so the error can name the file; `parse_profile_options()` runs once the
+adapter is known and checks the profile's remaining keys against the options
+that adapter declares. Both raise at the first problem, because every caller
+but one is on its way to a database; hand them a `Problems` and they record it
+and read on, which is the whole of `--config validate`.
 """
 
 from __future__ import annotations
@@ -753,7 +746,7 @@ def _read_config_files(
             yield path, config
 
 
-_ENV_VAR = re.compile(
+_INTERPOLATED_ENV_VAR_PROG = re.compile(
     r"""
       \$\$\{                                  # $${ -- a literal ${, escaped
     | \$\{
@@ -819,7 +812,7 @@ def _interpolated_text(
         unset.append(name)
         return match.group(0)
 
-    resolved = _ENV_VAR.sub(resolve, text)
+    resolved = _INTERPOLATED_ENV_VAR_PROG.sub(resolve, text)
     if not unset:
         return resolved
 
