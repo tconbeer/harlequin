@@ -8,7 +8,8 @@ type, and that a subclass written before the method existed still answers.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Generator
+from contextlib import contextmanager
+from typing import Any, Callable, Generator, Iterator
 
 import pytest
 
@@ -254,10 +255,31 @@ def test_a_secret_option_prompts_without_echoing(option_type: type) -> None:
     A prompt that echoes a token puts it in a terminal, a screen share and a
     scrollback buffer at once, and the wizard is where a token is typed.
     """
-    plain = option_type(name="token", description="x").to_questionary()
-    secret = option_type(name="token", description="x", secret=True).to_questionary()
+    with _no_terminal():
+        plain = option_type(name="token", description="x").to_questionary()
+        secret = option_type(
+            name="token", description="x", secret=True
+        ).to_questionary()
     assert not _masks_input(plain)
     assert _masks_input(secret)
+
+
+@contextmanager
+def _no_terminal() -> Iterator[None]:
+    """A prompt_toolkit session with nothing behind it.
+
+    `to_questionary()` builds a real `PromptSession`, which reaches for the
+    terminal as it is constructed -- and a test runner has none, which on
+    Windows is an error rather than a fallback. So both ends are replaced: a
+    pipe for input, and an output that draws nowhere.
+    """
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    with create_pipe_input() as pipe:
+        with create_app_session(input=pipe, output=DummyOutput()):
+            yield
 
 
 def _masks_input(question: Any) -> bool:
