@@ -187,6 +187,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Claude Code
-CLAUDE.md
-.claude/
+# Claude Code -- CLAUDE.md and .claude/rules/ are checked in. Only the
+# per-user permission grants Claude Code writes for itself stay local.
+.claude/settings.local.json
