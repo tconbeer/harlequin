@@ -394,10 +394,10 @@ def resolve_profile(
         name = profile_name or config.default_profile
         if name is not None and name in config.profiles:
             # the files behind this one go unread
-            return name, _profile_for_use(config, requested=name, provenance=provenance)
+            return name, _select_profile(config, requested=name, provenance=provenance)
     return (
         profile_name or config.default_profile,
-        _profile_for_use(config, requested=profile_name, provenance=provenance),
+        _select_profile(config, requested=profile_name, provenance=provenance),
     )
 
 
@@ -421,7 +421,7 @@ def load_profile_and_keymaps(
         for keymap_name, bindings in config.keymaps.items()
     ]
     return (
-        _profile_for_use(config, requested=profile_name, provenance=provenance),
+        _select_profile(config, requested=profile_name, provenance=provenance),
         keymaps,
     )
 
@@ -935,7 +935,11 @@ def _plain(value: Any) -> Any:
 
 
 def _select_profile(
-    config: Config, *, requested: str | None, problems: Problems | None = None
+    config: Config,
+    *,
+    requested: str | None,
+    provenance: Provenance | None = None,
+    problems: Problems | None = None,
 ) -> Profile:
     """The profile a name resolves to, once every file has had its say.
 
@@ -943,12 +947,26 @@ def _select_profile(
     that was going to use it: `-P other` has overridden the key. It is the one
     problem no single file has, so it is also the one a `Problems` collects
     here rather than in the pass over a file.
+
+    Pass the merge's `Provenance` to get the profile ready to run: its `${VAR}`s
+    resolved from the environment, and the file each one is written in on hand
+    to name if the environment does not set it. Resolving them here, where a
+    profile is chosen, rather than where its file is read, is what keeps an
+    invocation from being refused over a variable named in a profile it is not
+    running -- the rule `default_profile` follows one paragraph up.
     """
     name = requested or config.default_profile
     if name is None or name == "None":
         return {}
     if (profile := config.profiles.get(name, None)) is not None:
-        return profile
+        source = provenance.profiles.get(name) if provenance is not None else None
+        if source is None:
+            # a caller that did not ask, or a profile that came out of no file
+            # this merge read: nothing written by anyone, and no file to name
+            return profile
+        return cast(
+            Profile, _interpolated(profile, path=source[0], key=f"profiles.{name}")
+        )
     if requested is not None:
         # a name typed at the command line rather than written in a file, so
         # there is nowhere to record it and nobody to read it there
@@ -965,28 +983,6 @@ def _select_profile(
         raise HarlequinConfigError(message, title=CONFIG_ERROR_TITLE)
     problems.add(message, key="default_profile")
     return {}
-
-
-def _profile_for_use(
-    config: Config, *, requested: str | None, provenance: Provenance
-) -> Profile:
-    """The profile an invocation runs under, with its `${VAR}`s resolved.
-
-    Resolved here, where a profile is chosen, rather than where its file is
-    read: a variable named in a profile this invocation is not running is not
-    something to refuse it over, which is the rule `default_profile` follows
-    too. The cost of resolving it here is `provenance`, which is the only thing
-    a merged config keeps that can still name the file a profile was written
-    in -- and naming it is most of what an unset variable's message is worth.
-    """
-    profile = _select_profile(config, requested=requested)
-    name = requested or config.default_profile
-    source = provenance.profiles.get(name) if name is not None else None
-    if not profile or source is None:
-        # a profile that came out of no file this merge read has nothing in it
-        # written by anyone, and no file to name if it had
-        return profile
-    return cast(Profile, _interpolated(profile, path=source[0], key=f"profiles.{name}"))
 
 
 def _declared_type(option: AbstractOption) -> Any:
