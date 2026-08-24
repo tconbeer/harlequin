@@ -763,13 +763,7 @@ _ENV_VAR = re.compile(
     """,
     re.VERBOSE,
 )
-"""What a profile's strings are read for: `${VAR}` and `${VAR:-default}`.
-
-Nothing else is a substitution. A bare `{`, a lone `$`, and a `${` that neither
-closes nor names an environment variable are all left as they were written, so
-a password that happens to contain one needs no escaping -- and `$${` is there
-for the one that contains the whole spelling.
-"""
+"""The only substitutions read out of a profile's strings; a bare `{` is not one."""
 
 
 def _interpolated(
@@ -777,8 +771,9 @@ def _interpolated(
 ) -> Any:
     """One profile's values, with `${VAR}` resolved from the environment.
 
-    Recursively through tables and arrays, and over values alone: a key is a
-    name this program knows, not something a user parameterizes.
+    Recursively through the tables and arrays `tomllib` parsed, and over values
+    alone: a key is a name this program knows, not something a user
+    parameterizes.
 
     Raises: HarlequinConfigError naming the variable, the key and the file, for
     a variable that is not set and has no default -- unless a `Problems` is
