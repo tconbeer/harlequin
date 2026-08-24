@@ -6,26 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking Changes
 
-- Config files now merge profile by profile; higher-priority files the define profiles no longer clobber profiles with different names defined in lower-priority profiles ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- Config files now merge profile by profile; higher-priority files that define profiles no longer clobber profiles with different names defined in lower-priority profiles ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
 - A profile's adapter options are now validated against what that adapter declares; incorrect configurations may raise errors instead of being silently ignored.
 
 ### Features
 
-- Adds `hsql --config MODE`, which reports on your config files — or writes a profile into one — instead of running SQL. 
-  - `list-profiles` lists every profile you can pass to `-P`, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
-  - `show` prints the merged config with the file each value came from, and the files it overrode — so you can see which file is winning. `--json` for JSON.
-  - `validate` reports every problem in every discovered config file: the file, the key, what is wrong, and the line. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
-  - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
-  - `init` writes a profile into a config file, without prompting for anything: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed.
-- Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
-- Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
-- Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
-- Harlequin and `hsql` now redact secrets instead of showing them in output, including passwords in a connection string ([#667](https://github.com/tconbeer/harlequin/issues/667), [#354](https://github.com/tconbeer/harlequin/issues/354)). Adapter maintainers can flag secrets by setting `secret=True` on an adapter's options.
-- A profile can now take values from your environment, so a config file you share does not have to hold a password: write `password = "${MYPASSWORD}"`, or `host = "${MYHOST:-localhost}"` to give it a default ([#898](https://github.com/tconbeer/harlequin/issues/898)). A variable that is not set is an error naming it, not an empty value; write `$${` for a literal `${`.
-- Config file errors now name the file the problem is written in, and the key it is written under. A key Harlequin does not recognize is reported with the nearest one it does.
 - Harlequin's Results Viewer can now show a cell's value in a scrollable modal (press `space`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
 - Formatting a query now shows a notification, so it is clear the formatter ran even when it changed little or nothing ([#874](https://github.com/tconbeer/harlequin/issues/874)).
-
+- Adds `hsql --config MODE`, which provides tools to manage Harlequin and hsql config files. 
+  - `list-profiles` lists every profile, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `show` prints the merged config with the file each value came from. Use `--json` to output JSON instead of TOML.
+  - `validate` reports every problem in every discovered config file. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
+  - `init` creates a profile from the passed CLI options: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed.
+- Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
+- Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
+- Harlequin and `hsql` now redact secrets instead of showing them in output ([#667](https://github.com/tconbeer/harlequin/issues/667)
+- A profile can now interpolate environment variables: write `password = "${MYPASSWORD}"`, or `host = "${MYHOST:-localhost}"` (to set a default) ([#898](https://github.com/tconbeer/harlequin/issues/898)). Use `$${` for a literal `${`.
+- Errors in Config files now reference the files and keys they originate from.
 
 ### Bug Fixes
 
@@ -34,16 +32,21 @@ All notable changes to this project will be documented in this file.
 - `harlequin --config` and `harlequin --keys` no longer strip the comments you wrote inside a profile or keymap table; a value they did not change now keeps the comments and formatting you gave it ([#1033](https://github.com/tconbeer/harlequin/issues/1033)).
 - `harlequin --config` now removes `default_profile` from your config file when you choose `[No default]`, instead of leaving the old default in place.
 - `harlequin` prints an error naming the missing adapter, and the adapters you do have installed, when a profile's `adapter` names a plug-in that is not installed. It used to fail with a `KeyError` traceback.
+- Multi-line values in Harlequin's Results Viewer are now end in a truncation marker (a dim `…⏎`); the full value is visible in a tooltip (on hover) or by pressing `space` to view in the new cell view modal ([#635](https://github.com/tconbeer/harlequin/issues/635)).
 - Hovering over a cell in Harlequin with content that overflows the screen no longer causes a crash ([#894](https://github.com/tconbeer/harlequin/issues/894)).
+
+### Adapter API Changes
+
+- Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
+- Adds `AbstractOption.secret`, which allows adapter maintainers to flag option values as secrets by setting `secret=True`.
 
 ### Performance
 
-- `hsql` and `harlequin` read config files in priority order and stop at the file that defines the profile they were asked for, so the files behind it are never opened. `hsql -P None` now reads none at all.
+- `hsql` and `harlequin` read config files in priority order and stop at the file that defines the requested profile. `hsql -P None` now reads none at all.
 - `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
 
 ### Dependencies
 
-- Upgrades `textual-fastdatatable` to 0.19.0, which marks multi-line cells with a dim `…⏎`, gives them a tooltip, and measures their full value when sizing columns.
 - Adds `msgspec`.
 - Drops `pandas`. It was declared on Python 3.14 only, but is no longer required, since the DataTable component dropped it.
 
