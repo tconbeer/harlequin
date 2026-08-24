@@ -475,7 +475,7 @@ def validate_config_files(
     if merged.default_profile is not None:
         # the one problem no single file has, so the only one asked after the
         # merge -- and the file that is wrong about it is the one that set it
-        _select_profile(
+        _resolve_profile_name(
             merged,
             requested=None,
             problems=problems.at(provenance.default_profile[0]),
@@ -922,39 +922,24 @@ def _plain(value: Any) -> Any:
     return unwrap() if unwrap is not None else value
 
 
-def _select_profile(
-    config: Config,
-    *,
-    requested: str | None,
-    provenance: Provenance | None = None,
-    problems: Problems | None = None,
-) -> Profile:
-    """The profile a name resolves to, once every file has had its say.
+def _resolve_profile_name(
+    config: Config, *, requested: str | None, problems: Problems | None = None
+) -> str | None:
+    """Which profile an invocation runs under, once every file has had its say.
+
+    None where nothing named one, and for `-P None`, which is how a caller asks
+    for none of them.
 
     A `default_profile` that names nothing is only an error for an invocation
     that was going to use it: `-P other` has overridden the key. It is the one
     problem no single file has, so it is also the one a `Problems` collects
     here rather than in the pass over a file.
-
-    Pass the merge's `Provenance` to get the profile ready to run: its `${VAR}`s
-    resolved from the environment, and the file each one is written in on hand
-    to name if the environment does not set it. Resolving them here, where a
-    profile is chosen, rather than where its file is read, is what keeps an
-    invocation from being refused over a variable named in a profile it is not
-    running -- the rule `default_profile` follows one paragraph up.
     """
     name = requested or config.default_profile
     if name is None or name == "None":
-        return {}
-    if (profile := config.profiles.get(name, None)) is not None:
-        source = provenance.profiles.get(name) if provenance is not None else None
-        if source is None:
-            # a caller that did not ask, or a profile that came out of no file
-            # this merge read: nothing written by anyone, and no file to name
-            return profile
-        return cast(
-            Profile, _interpolated(profile, path=source[0], key=f"profiles.{name}")
-        )
+        return None
+    if name in config.profiles:
+        return name
     if requested is not None:
         # a name typed at the command line rather than written in a file, so
         # there is nowhere to record it and nobody to read it there
@@ -970,7 +955,33 @@ def _select_profile(
     if problems is None:
         raise HarlequinConfigError(message, title=CONFIG_ERROR_TITLE)
     problems.add(message, key="default_profile")
-    return {}
+    return None
+
+
+def _select_profile(
+    config: Config, *, requested: str | None, provenance: Provenance
+) -> Profile:
+    """The profile an invocation runs under, ready to be run under.
+
+    Which means its `${VAR}`s resolved from the environment, here, where the
+    profile is chosen: doing it as each file was read would refuse an
+    invocation over a variable named in a profile it is not running, which is
+    the rule `_resolve_profile_name()` follows for a name. That is what the
+    `Provenance` is for: once the files are merged, it is the only thing that
+    still knows which one a profile was written in, which is the file an unset
+    variable's error has to name.
+    """
+    name = _resolve_profile_name(config, requested=requested)
+    if name is None:
+        return {}
+    return cast(
+        Profile,
+        _interpolated(
+            config.profiles[name],
+            path=provenance.profiles[name][0],
+            key=f"profiles.{name}",
+        ),
+    )
 
 
 def _declared_type(option: AbstractOption) -> Any:

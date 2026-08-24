@@ -18,7 +18,7 @@ from harlequin.cli import (
     hsql_profile_keys,
     hsql_spellings,
 )
-from harlequin.config import Config
+from harlequin.config import Config, Provenance, _merge
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
 
@@ -76,9 +76,22 @@ def mock_empty_config(no_discovered_config: None) -> None:
 
 @pytest.fixture()
 def mock_load_config(monkeypatch: pytest.MonkeyPatch) -> Config:
-    """A merged config, in place of whatever is on the machine running this."""
+    """A merged config, in place of whatever is on the machine running this.
+
+    Merged by the real `_merge()` rather than handed over as a literal, because
+    a caller that asks for a `Provenance` gets one filled in -- and a double
+    that filled it in itself would be a second copy of the merge's bookkeeping.
+    """
     config = Config(profiles={"test-profile": {"theme": "fruity"}})
-    monkeypatch.setattr("harlequin.config.load_config", lambda *_, **__: config)
+
+    def load_config(
+        config_path: Path | None = None, provenance: Provenance | None = None
+    ) -> Config:
+        merged = Config()
+        _merge(config, into=merged, source=Path("test.toml"), provenance=provenance)
+        return merged
+
+    monkeypatch.setattr("harlequin.config.load_config", load_config)
     return config
 
 
