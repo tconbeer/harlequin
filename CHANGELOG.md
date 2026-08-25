@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 
 - `hsql` and `harlequin` read config files in priority order and stop at the file that defines the requested profile. `hsql -P None` now reads none at all.
 - `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
+- Harlequin now shares one Query Editor across all buffers, so start-up no longer slows down as you keep more buffers open ([#636](https://github.com/tconbeer/harlequin/issues/636)).
 
 ### Dependencies
 

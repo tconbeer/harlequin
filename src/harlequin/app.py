@@ -19,7 +19,7 @@ from typing import (
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.css.query import DOMQuery, NoMatches
+from textual.css.query import DOMQuery
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.lazy import Lazy
@@ -75,7 +75,7 @@ from harlequin.config import (
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
-from harlequin.editor_cache import BufferState, Cache
+from harlequin.editor_cache import Cache
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinBindingError,
@@ -514,20 +514,7 @@ class Harlequin(AppBase):
     def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched
     ) -> None:
-        if message.active_editor is not None:
-            self.editor = message.active_editor
-        else:
-            try:
-                self.editor = self.editor_collection.current_editor
-            except NoMatches:
-                # This shouldn't happen, but sometimes on Windows we
-                # get into this state where we receive EditorSwitched
-                # but current_editor raises NoMatches because it
-                # can't find the ContentSwitcher. Recycle the event
-                # to try again.
-                callback = partial(self.post_message, message)
-                self.set_timer(delay=0.1, callback=callback)
-                return
+        self.editor = message.active_editor or self.editor_collection.current_editor
         self.editor.focus()
         self._sync_run_button_disabled()
         self._sync_run_button_text()
@@ -971,12 +958,12 @@ class Harlequin(AppBase):
         self.results_viewer.focus()
 
     async def action_quit(self) -> None:
-        buffers = []
-        for i, editor in enumerate(self.editor_collection.all_editors):
-            if editor == self.editor_collection.current_editor:
-                focus_index = i
-            buffers.append(BufferState(editor.selection, editor.text))
-        write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
+        write_editor_cache(
+            Cache(
+                focus_index=self.editor_collection.active_buffer_index,
+                buffers=self.editor_collection.buffers,
+            )
+        )
         update_catalog_cache(
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.

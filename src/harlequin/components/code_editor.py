@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual.content import ContentType
-from textual.css.query import InvalidQueryFormat, NoMatches
+from textual.app import ComposeResult
+from textual.containers import Vertical
+from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import ContentSwitcher, TabbedContent, TabPane, Tabs
-from textual.widgets.text_area import Location, Selection
+from textual.widgets import Tab, Tabs
+from textual.widgets.text_area import EditHistory, Location, Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import MemberCompleter, WordCompleter
@@ -17,6 +19,25 @@ from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators
+
+
+@dataclass
+class EditorState:
+    """One buffer's state; the active buffer's lives in the editor, the rest here."""
+
+    text: str = ""
+    selection: Selection = field(default_factory=Selection)
+    scroll_offset: Offset = field(default_factory=Offset)
+    undo_history: Union[EditHistory, None] = None
+
+
+def _blank_history(template: EditHistory) -> EditHistory:
+    """Returns an empty undo history, configured like the template."""
+    return EditHistory(
+        max_checkpoints=template.max_checkpoints,
+        checkpoint_timer=template.checkpoint_timer,
+        checkpoint_max_characters=template.checkpoint_max_characters,
+    )
 
 
 class CodeEditor(TextEditor, inherit_bindings=False):
@@ -87,6 +108,34 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         # the cursor is in trailing whitespace after the last query.
         return [queries[-1][2]]
 
+    def capture_state(self) -> Union[EditorState, None]:
+        """
+        Returns the state of the buffer loaded in the editor, or None if the
+        editor has not yet composed its TextArea.
+        """
+        if self.text_input is None:
+            return None
+        return EditorState(
+            text=self.text_input.text,
+            selection=self.text_input.selection,
+            scroll_offset=self.text_input.scroll_offset,
+            undo_history=self.text_input.history,
+        )
+
+    def load_state(self, state: EditorState) -> None:
+        """Swaps a buffer's state into the editor, in place of what it holds now."""
+        if self.text_input is None:
+            return
+        # load_text clears the history it finds, so hand it a throwaway one and
+        # install the buffer's own history afterwards.
+        self.text_input.history = _blank_history(self.text_input.history)
+        self.text_input.load_text(state.text)
+        self.text_input.history = state.undo_history or _blank_history(
+            self.text_input.history
+        )
+        self.text_input.selection = state.selection
+        self.text_input.scroll_to(*state.scroll_offset, animate=False)
+
     def on_mount(self) -> None:
         self.post_message(EditorCollection.EditorSwitched(active_editor=self))
         self.post_message(WidgetMounted(widget=self))
@@ -146,7 +195,12 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             self.app.action_focus_data_catalog()
 
 
-class EditorCollection(TabbedContent):
+class EditorCollection(Vertical):
+    """
+    A row of tabs over a single editor. Switching tabs swaps the loaded buffer's
+    state out of the editor and the newly-active buffer's state in.
+    """
+
     BORDER_TITLE = "Query Editor"
     theme: reactive[str] = reactive("harlequin")
 
@@ -157,8 +211,6 @@ class EditorCollection(TabbedContent):
 
     def __init__(
         self,
-        *titles: ContentType,
-        initial: str = "",
         name: Union[str, None] = None,
         id: Union[str, None] = None,  # noqa: A002
         classes: Union[str, None] = None,
@@ -167,41 +219,55 @@ class EditorCollection(TabbedContent):
         theme: str = "harlequin",
     ):
         super().__init__(
-            *titles,
-            initial=initial,
             name=name,
             id=id,
             classes=classes,
             disabled=disabled,
         )
         self.language = language
-        self.theme = theme
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
         self.startup_cache = load_cache()
+        self.buffer_states: dict[str, EditorState] = {}
+        self.loaded_buffer_id: str | None = None
+        self.tabs = Tabs()
+        self.tabs.can_focus = False
+        self.editor = CodeEditor(id="buffer", language=language, theme=theme)
+        self.theme = theme
+
+    def compose(self) -> ComposeResult:
+        yield self.tabs
+        yield self.editor
 
     @property
     def current_editor(self) -> CodeEditor:
-        content = self.query_one(ContentSwitcher)
-        active_tab_id = self.active
-        if active_tab_id:
-            try:
-                tab_pane = content.query_one(f"#{active_tab_id}", TabPane)
-                return tab_pane.query_one(CodeEditor)
-            except (NoMatches, InvalidQueryFormat):
-                pass
-        all_editors = content.query(CodeEditor)
-        return all_editors.first(CodeEditor)
+        return self.editor
 
     @property
-    def all_editors(self) -> List[CodeEditor]:
-        try:
-            content = self.query_one(ContentSwitcher)
-            all_editors = content.query(CodeEditor)
-        except NoMatches:
-            return []
-        return list(all_editors)
+    def active(self) -> Union[str, None]:
+        """The ID of the active buffer's tab."""
+        return self.tabs.active or None
+
+    @property
+    def tab_count(self) -> int:
+        return len(self.buffer_states)
+
+    @property
+    def buffers(self) -> List[BufferState]:
+        """The state of every buffer, in tab order, for the editor cache."""
+        self._save_loaded_buffer()
+        return [
+            BufferState(selection=state.selection, text=state.text)
+            for state in self.buffer_states.values()
+        ]
+
+    @property
+    def active_buffer_index(self) -> int:
+        buffer_ids = list(self.buffer_states)
+        if self.loaded_buffer_id is None or self.loaded_buffer_id not in buffer_ids:
+            return 0
+        return buffer_ids.index(self.loaded_buffer_id)
 
     @property
     def member_completer(self) -> MemberCompleter | None:
@@ -210,10 +276,7 @@ class EditorCollection(TabbedContent):
     @member_completer.setter
     def member_completer(self, new_completer: MemberCompleter) -> None:
         self._member_completer = new_completer
-        try:
-            self.current_editor.member_completer = new_completer
-        except NoMatches:
-            pass
+        self.editor.member_completer = new_completer
 
     @property
     def word_completer(self) -> WordCompleter | None:
@@ -222,96 +285,90 @@ class EditorCollection(TabbedContent):
     @word_completer.setter
     def word_completer(self, new_completer: WordCompleter) -> None:
         self._word_completer = new_completer
-        try:
-            self.current_editor.word_completer = new_completer
-        except NoMatches:
-            pass
+        self.editor.word_completer = new_completer
 
     async def on_mount(self) -> None:
-        if self.startup_cache is not None:
-            for _i, buffer in enumerate(self.startup_cache.buffers):
-                await self.action_new_buffer(state=buffer)
-                # we can't load the focus state here, since Tabs
-                # really wants to activate the first tab when it's
-                # mounted
+        if self.startup_cache is not None and self.startup_cache.buffers:
+            for buffer in self.startup_cache.buffers:
+                # the cache's focus state isn't restored, so the first
+                # buffer stays active, as it does on a cold start.
+                await self.action_new_buffer(state=buffer, activate=False)
         else:
             await self.action_new_buffer()
-        self.query_one(Tabs).can_focus = False
-        self.current_editor.word_completer = self.word_completer
-        self.current_editor.member_completer = self.member_completer
+        self.editor.theme = self.theme
+        self.editor.word_completer = self.word_completer
+        self.editor.member_completer = self.member_completer
         self.remove_class("premount")
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
-        self.current_editor.focus()
+        self.editor.focus()
 
-    def on_tabbed_content_tab_activated(
-        self, message: TabbedContent.TabActivated
-    ) -> None:
+    def on_tabs_tab_activated(self, message: Tabs.TabActivated) -> None:
         message.stop()
-        self.post_message(self.EditorSwitched(active_editor=None))
-        self.current_editor.word_completer = self.word_completer
-        self.current_editor.member_completer = self.member_completer
-        self.current_editor.focus()
+        new_buffer_id = message.tab.id
+        if new_buffer_id is None or new_buffer_id == self.loaded_buffer_id:
+            return
+        self._save_loaded_buffer()
+        self.loaded_buffer_id = new_buffer_id
+        state = self.buffer_states.get(new_buffer_id)
+        if state is not None:
+            self.editor.load_state(state)
+        self.post_message(self.EditorSwitched(active_editor=self.editor))
+        self.editor.focus()
 
     def watch_theme(self, theme: str) -> None:
-        for editor in self.all_editors:
-            editor.theme = theme
+        if self.editor.is_mounted:
+            self.editor.theme = theme
 
     async def insert_buffer_with_text(self, query_text: str) -> None:
         state = BufferState(selection=Selection(), text=query_text)
-        new_editor = await self.action_new_buffer(state=state)
-        new_editor.focus()
+        await self.action_new_buffer(state=state)
 
     async def action_new_buffer(
-        self, state: Union[BufferState, None] = None
+        self, state: Union[BufferState, None] = None, activate: bool = True
     ) -> CodeEditor:
         self.counter += 1
-        new_tab_id = f"tab-{self.counter}"
-        editor = CodeEditor(
-            id=f"buffer-{self.counter}",
-            text=state.text if state is not None else "",
-            language=self.language,
-            theme=self.theme,
-            word_completer=self.word_completer,
-            member_completer=self.member_completer,
+        new_buffer_id = f"tab-{self.counter}"
+        self.buffer_states[new_buffer_id] = (
+            EditorState(text=state.text, selection=state.selection)
+            if state is not None
+            else EditorState()
         )
-        pane = TabPane(
-            f"Tab {self.counter}",
-            editor,
-            id=new_tab_id,
-        )
-        await self.add_pane(pane)
-        if state is not None:
-            editor.selection = state.selection
-        else:
-            self.active = new_tab_id
-            try:
-                self.current_editor.focus()
-            except NoMatches:
-                pass
+        await self.tabs.add_tab(Tab(f"Tab {self.counter}", id=new_buffer_id))
+        if activate:
+            # adding the first tab activates it; any later tab has to be
+            # activated here to swap its state into the editor.
+            self.tabs.active = new_buffer_id
+            self.editor.focus()
         if self.counter > 1:
             self.remove_class("hide-tabs")
-        return editor
+        return self.editor
 
     def action_close_buffer(self) -> None:
         if self.tab_count > 1:
             if self.tab_count == 2:
                 self.add_class("hide-tabs")
-            self.remove_pane(self.active)
+            closed_buffer_id = self.active
+            # the editor's contents belong to the buffer being closed, so they
+            # are dropped rather than saved when the next tab is activated.
+            self.loaded_buffer_id = None
+            if closed_buffer_id is not None:
+                self.buffer_states.pop(closed_buffer_id, None)
+                self.tabs.remove_tab(closed_buffer_id)
         else:
-            self.current_editor.text = ""
-            self.current_editor.cursor = (0, 0)  # type: ignore
-        self.current_editor.focus()
+            self.editor.load_state(EditorState())
+        self.editor.focus()
 
     def action_next_buffer(self) -> None:
-        active = self.active
-        if self.tab_count < 2 or active is None:
+        if self.tab_count < 2:
             return
-        tabs = self.query(TabPane)
-        next_tabs = tabs[1:]
-        next_tabs.append(tabs[0])
-        lookup = {t.id: nt.id for t, nt in zip(tabs, next_tabs, strict=False)}
-        self.active = lookup[active]  # type: ignore
-        self.post_message(self.EditorSwitched(active_editor=None))
-        self.current_editor.focus()
+        self.tabs.action_next_tab()
+
+    def _save_loaded_buffer(self) -> None:
+        """Copies the editor's contents back into the buffer they were loaded from."""
+        if self.loaded_buffer_id is None:
+            return
+        state = self.editor.capture_state()
+        if state is not None and self.loaded_buffer_id in self.buffer_states:
+            self.buffer_states[self.loaded_buffer_id] = state

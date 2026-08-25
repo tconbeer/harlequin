@@ -67,7 +67,7 @@ async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
         assert app.editor_collection is not None
         assert app.editor is not None
         assert app.editor_collection.tab_count == len(cache.buffers)
-        assert [editor.text for editor in app.editor_collection.all_editors] == [
+        assert [buffer.text for buffer in app.editor_collection.buffers] == [
             buffer.text for buffer in cache.buffers
         ]
 
