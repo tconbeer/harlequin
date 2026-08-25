@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - Harlequin and `hsql` now redact secrets instead of showing them in output ([#667](https://github.com/tconbeer/harlequin/issues/667)
 - A profile can now interpolate environment variables: write `password = "${MYPASSWORD}"`, or `host = "${MYHOST:-localhost}"` (to set a default) ([#898](https://github.com/tconbeer/harlequin/issues/898)). Use `$${` for a literal `${`.
 - Errors in Config files now reference the files and keys they originate from.
+- Harlequin now reopens the buffer you were last using, instead of always starting on the first one.
 
 ### Bug Fixes
 
@@ -44,6 +45,7 @@ All notable changes to this project will be documented in this file.
 
 - `hsql` and `harlequin` read config files in priority order and stop at the file that defines the requested profile. `hsql -P None` now reads none at all.
 - `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
+- Harlequin now shares one Query Editor across all buffers, so start-up no longer slows down as you keep more buffers open ([#636](https://github.com/tconbeer/harlequin/issues/636)).
 
 ### Dependencies
 

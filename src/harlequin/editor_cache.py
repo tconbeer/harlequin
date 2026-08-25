@@ -17,7 +17,7 @@ class BufferState:
 
 @dataclass
 class Cache:
-    focus_index: int  # currently doesn't impact focus on load
+    focus_index: int
     buffers: List[BufferState]
 
 

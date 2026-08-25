@@ -150,6 +150,8 @@ Both query workers are thin wrappers over the execution core above: `_execute_qu
 
 Adapters are third-party code: a raw driver exception (not a `HarlequinQueryError`) must surface as an error modal, never crash the app.
 
+**There is exactly one `CodeEditor`, however many buffers are open.** `EditorCollection` (`components/code_editor.py`) is a row of `Tabs` over that single editor; every other buffer lives in `buffer_states` as an `EditorState`, and activating a tab swaps the loaded buffer's state out and the new one's in. A `TextArea` costs a tree-sitter parse and a full widget mount to build, so the count of them is what start-up used to scale with. Anything the editor holds and a user would expect to survive a tab switch — text, selection, scroll position, undo history — has to be in `EditorState`, or it silently belongs to whichever buffer was last loaded.
+
 The Data Catalog (`components/data_catalog/database_tree.py`) loads by viewport, not eagerly: an `asyncio.PriorityQueue` feeds a background loader, with user-expanded nodes at `DEMAND_PRIORITY` jumping ahead of speculative `PREFETCH_PRIORITY` work near the viewport, and children added in chunks so a wide node can't stall rendering.
 
 ### Keys and actions (`actions.py`, `keymap.py`, `bindings.py`, `keys_app.py`)

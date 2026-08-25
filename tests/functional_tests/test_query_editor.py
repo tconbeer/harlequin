@@ -115,6 +115,61 @@ async def test_multiple_buffers(
         assert all(snap_results)
 
 
+@pytest.mark.asyncio
+async def test_buffers_keep_their_state(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Switching buffers has to carry everything the editor holds, not just the text."""
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        app.editor.focus()
+        await pilot.press(*"select 1")
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        await pilot.press(*"select 2")
+        await pilot.press("ctrl+k")
+        await pilot.pause()
+
+        assert app.editor_collection.active == "tab-1"
+        assert app.editor.text == "select 1"
+        assert app.editor.selection == Selection((0, 8), (0, 8))
+
+        # the undo history moves with the buffer: this undoes the typing
+        # in buffer one, not the switch that loaded it.
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.editor.text == ""
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.editor.text == ""
+
+        await pilot.press("ctrl+k")
+        await pilot.pause()
+        assert app.editor_collection.active == "tab-2"
+        assert app.editor.text == "select 2"
+
+        # a buffer scrolled away from its cursor comes back where it was,
+        # instead of snapping to the cursor.
+        assert app.editor.text_input is not None
+        app.editor.text = "\n".join(f"select {i}" for i in range(100))
+        await pilot.press("ctrl+down", "ctrl+down", "ctrl+down")
+        await pilot.pause()
+        scrolled_to = app.editor.text_input.scroll_offset
+        assert scrolled_to.y > 0
+        assert app.editor.selection == Selection((0, 0), (0, 0))
+
+        await pilot.press("ctrl+k")
+        await pilot.pause()
+        await pilot.press("ctrl+k")
+        await pilot.pause()
+        assert app.editor_collection.active == "tab-2"
+        assert app.editor.text_input.scroll_offset == scrolled_to
+
+
 @pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_word_autocomplete(
