@@ -32,6 +32,7 @@ class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
         parent: "RelationCatalogItem",
         label: str,
         type_label: str,
+        type_name: str,
     ) -> "ColumnCatalogItem":
         column_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
         column_query_name = f'"{label}"'
@@ -40,6 +41,7 @@ class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
             query_name=column_query_name,
             label=label,
             type_label=type_label,
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
             loaded=True,
@@ -67,6 +69,7 @@ class RelationCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
                 parent=self,
                 label=column_name,
                 type_label=self.connection._short_column_type(column_type),
+                type_name=column_type,
             )
             for column_name, column_type in result
         ]
@@ -83,6 +86,7 @@ class ViewCatalogItem(RelationCatalogItem):
         cls,
         parent: "SchemaCatalogItem",
         label: str,
+        type_name: str,
     ) -> "ViewCatalogItem":
         relation_query_name = f'"{parent.label}"."{label}"'
         relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
@@ -91,6 +95,7 @@ class ViewCatalogItem(RelationCatalogItem):
             query_name=relation_query_name,
             label=label,
             type_label="v",
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
         )
@@ -107,6 +112,7 @@ class TableCatalogItem(RelationCatalogItem):
         cls,
         parent: "SchemaCatalogItem",
         label: str,
+        type_name: str,
     ) -> "TableCatalogItem":
         relation_query_name = f'"{parent.label}"."{label}"'
         relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
@@ -115,6 +121,7 @@ class TableCatalogItem(RelationCatalogItem):
             query_name=relation_query_name,
             label=label,
             type_label="t",
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
         )
@@ -131,6 +138,7 @@ class TempTableCatalogItem(TableCatalogItem):
         cls,
         parent: "SchemaCatalogItem",
         label: str,
+        type_name: str,
     ) -> "TempTableCatalogItem":
         relation_query_name = f'"{parent.label}"."{label}"'
         relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
@@ -139,6 +147,7 @@ class TempTableCatalogItem(TableCatalogItem):
             query_name=relation_query_name,
             label=label,
             type_label="tmp",
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
         )
@@ -164,6 +173,7 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
             query_name=schema_identifier,
             label=label,
             type_label="sch",
+            type_name="schema",
             connection=parent.connection,
             parent=parent,
         )
@@ -179,6 +189,7 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
                     ViewCatalogItem.from_parent(
                         parent=self,
                         label=table_label,
+                        type_name=table_type,
                     )
                 )
             elif table_type == "LOCAL TEMPORARY":
@@ -186,6 +197,7 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
                     TempTableCatalogItem.from_parent(
                         parent=self,
                         label=table_label,
+                        type_name=table_type,
                     )
                 )
             else:
@@ -193,6 +205,7 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
                     TableCatalogItem.from_parent(
                         parent=self,
                         label=table_label,
+                        type_name=table_type,
                     )
                 )
 
@@ -215,6 +228,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
             query_name=database_identifier,
             label=label,
             type_label="db",
+            type_name="database",
             connection=connection,
         )
 

@@ -6,9 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children, the database's own name for the object's type (`DECIMAL(18,2)`, `BASE TABLE`, `schema`), and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
 - Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
+
+### Adapter API Changes
+
+- Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`. It defaults to `None`, and `hsql --catalog` prints it in its `type` column, beside the short `type_label`. It is a new dataclass field appended after `children`, so subclasses that add their own fields should be constructed with keyword arguments.
 
 ## [2.10.0] - 2026-08-25
 

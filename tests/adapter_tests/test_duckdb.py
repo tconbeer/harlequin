@@ -257,6 +257,34 @@ def test_get_catalog(tiny_duck: Path, small_duck: Path) -> None:
                 ]
 
 
+def test_catalog_items_carry_duckdbs_own_type_names(tmp_path: Path) -> None:
+    """`type_name` is the full type duckdb spells, which a 1-3 character
+    `type_label` cannot carry."""
+    conn = DuckDbAdapter([str(tmp_path / "types.db")], no_init=True).connect()
+    conn.execute("create table t (id bigint, total decimal(18,2))")
+    conn.execute("create view v as select 1 as n")
+
+    (database_item,) = conn.get_catalog().items
+    assert isinstance(database_item, InteractiveCatalogItem)
+    assert database_item.type_name == "database"
+    (schema_item,) = database_item.fetch_children()
+    assert isinstance(schema_item, InteractiveCatalogItem)
+    assert schema_item.type_name == "schema"
+
+    relation_items = schema_item.fetch_children()
+    assert [(item.label, item.type_name) for item in relation_items] == [
+        ("t", "BASE TABLE"),
+        ("v", "VIEW"),
+    ]
+
+    table_item = relation_items[0]
+    assert isinstance(table_item, InteractiveCatalogItem)
+    assert [
+        (item.label, item.type_label, item.type_name)
+        for item in table_item.fetch_children()
+    ] == [("id", "##", "BIGINT"), ("total", "#.#", "DECIMAL(18,2)")]
+
+
 def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     script = (
         f".bail on\nselect \n1;\n.bail off\n.open {tiny_duck}\n"
