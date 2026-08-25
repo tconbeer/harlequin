@@ -1,6 +1,6 @@
 # hsql
 
-`hsql` is your agent's favorite SQL client. It the headless CLI for
+`hsql` is your agent's favorite SQL client. It's the headless CLI for
 [Harlequin](https://harlequin.sh), and shares the same config and query engine,
 with an interface optimized for agents, scripts, and automations.
 
@@ -135,6 +135,31 @@ $ hsql -P dev -c "select * from users" --vertical --limit 5
 $ hsql -P warehouse -c "..." --parquet -o invoices.pq
 ```
 
+hsql reads the same config files as Harlequin, and merges them one profile at a time, nearest file first; pass `--config-path PATH` to read a single file instead, or `-P None` to skip them entirely. A profile's string values can name environment variables — `password = "${MYPASSWORD}"`, or `${MYHOST:-localhost}` to supply a default — so a config file your team shares holds no credentials. Values an adapter declares as secrets are masked wherever hsql prints them, including the password inside a connection string.
+
+### Inspecting and Writing Config Files
+
+Five `--config` modes work on your config files instead of running SQL, and none of them connects to a database:
+
+- `list-profiles` — the names you can pass to `-P`, with each one's adapter, and which is the default.
+- `show` — the merged config as TOML, with the file each value came from beside it; `--json` for JSON.
+- `validate` — every problem in every discovered file, exiting `2` if it finds any.
+- `schema` — a JSON Schema for a config file, covering every adapter you have installed; point your editor at it for completion and validation as you type.
+- `init` — a profile written from the options you pass, prompting for nothing: `hsql --config init -P prod -a sqlite ./my.db --limit -1` writes `[profiles.prod]` into the nearest config file.
+
+```bash
+$ hsql --config show
+default_profile = "dev" # from /home/user/.config/harlequin/harlequin.toml
+
+[profiles.dev] # from /home/user/proj/harlequin.toml, overriding /home/user/.config/harlequin/harlequin.toml
+adapter = "postgres"
+host = "${MYHOST:-localhost}"
+password = "********"
+limit = 100
+```
+
+`list-profiles` and `validate` are result sets, so `--csv`, `-t`, `-A` and `-o` work on them as they do on a query.
+
 ## Data Layouts and File Formats
 
 hsql supports all of the following formats for displaying and writing data:
@@ -206,6 +231,24 @@ You can also use `--stats` and `jq` together to error on a truncated query:
 ```bash
 hsql --limit -1 -c "select 1" --csv -o data.csv --stats 2>&1 | jq -e '.truncated | not' > /dev/null
 ```
+
+## Describing hsql to an Agent
+
+`hsql --help` is written for a person; two flags answer the same questions as JSON, so an agent can find its way around an installation it has never seen. `--spec` is a machine-readable `--help`: every option on the command, plus the connection options every installed adapter declares, each with its type, choices, default and help text. `--info` describes the installation instead — versions, platform, the config files hsql found, the profile that would be active, and what each installed adapter declares it supports — so a script can check that an adapter is there, and what it can do, before depending on it.
+
+```bash
+$ hsql --info -a sqlite | jq '.adapters.sqlite'
+{
+  "distribution": "harlequin",
+  "version": "2.9.0",
+  "capabilities": {
+    "implements_cancel": true
+  },
+  "error": null
+}
+```
+
+Neither connects to a database, both write JSON to stdout, and `-a NAME` narrows either one to a single adapter, which is much faster than importing them all.
 
 ## Keep Reading at [harlequin.sh](https://harlequin.sh/docs/getting-started/hsql)
 
