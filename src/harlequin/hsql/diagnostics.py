@@ -24,6 +24,7 @@ from enum import IntEnum
 from typing import Any, Sequence
 
 from harlequin.exception import (
+    HarlequinCatalogPathError,
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
@@ -83,7 +84,9 @@ def exit_code_for(error: BaseException) -> ExitCode:
     """The code hsql exits with, having failed with `error`."""
     if isinstance(error, KeyboardInterrupt):
         return ExitCode.INTERRUPT
-    if isinstance(error, HarlequinConfigError):
+    if isinstance(error, (HarlequinCatalogPathError, HarlequinConfigError)):
+        # a path that names nothing is a bad argument, not a failed query: the
+        # catalog answered, and what it answered is that there is no such item.
         return ExitCode.USAGE
     if isinstance(error, HarlequinConnectionError):
         return ExitCode.CONNECTION
@@ -166,6 +169,20 @@ def report_row_cap_ignored(format_name: str) -> None:
     note(
         f"--display-rows caps the text layouts, so it had no effect on "
         f"{format_name}; use --limit to fetch fewer rows"
+    )
+
+
+def report_limit_ignored() -> None:
+    """Say that `--limit` does not reach a listing.
+
+    It is the *hard* limit -- fewer rows leave the database -- and a catalog
+    listing is however many objects the adapter reported. Silence would read as
+    a limit that was applied, and a caller who thinks they capped a listing at
+    ten and got four hundred rows has no way to tell which happened.
+    """
+    note(
+        "--limit fetches fewer rows from the database, so it had no effect on "
+        "--catalog; use --display-rows to print fewer of them"
     )
 
 

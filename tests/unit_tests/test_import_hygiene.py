@@ -28,6 +28,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.hsql.cli",
     "import harlequin.keymap",
     "import harlequin.layout",
+    "import harlequin.navigate",
     "import harlequin.options",
     "import harlequin.plugins",
     "import harlequin.redact",
@@ -234,6 +235,52 @@ def test_the_config_modes_import_no_database(
     )
     leaked = [m for m in proc.stderr.strip().replace("\n", ",").split(",") if m]
     assert not leaked, f"`hsql --config {mode}` imported {leaked}"
+
+
+def test_the_catalog_mode_imports_only_the_adapter_it_connects_with(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """A listing is rows that never went through a database, so nothing casts.
+
+    `ResultSet.text_columns()` returns strings unchanged, which is what keeps
+    duckdb out of a listing from any other adapter -- it is ~85ms, on the one
+    mode whose whole job is a fast look at what is there.
+    """
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '-a', 'sqlite', '--catalog', ':memory:']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(sorted({m.split('.')[0] for m in sys.modules "
+        "if m.startswith('harlequin_')})), file=sys.stderr)\n"
+        "print(','.join(m for m in ('duckdb', 'tomlkit') if m in sys.modules), "
+        "file=sys.stderr)\n"
+    )
+    adapters, forbidden = proc.stderr.split("\n")[:2]
+    assert adapters == "harlequin_sqlite"
+    assert not forbidden
+
+
+def test_a_run_does_not_import_the_catalog_walk(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The other half of the mode-per-module rule: a query pays for no mode."""
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '-c', 'select 1']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(','.join(m for m in sys.modules "
+        "if m.startswith('harlequin.hsql.modes.') "
+        "or m == 'harlequin.navigate'), file=sys.stderr)\n"
+    )
+    assert not proc.stderr.strip()
 
 
 def test_config_validate_imports_only_the_adapters_its_profiles_name(
