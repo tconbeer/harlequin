@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from harlequin.navigate import CatalogPath
     from harlequin.query import ResultSet
 
-COLUMNS = ("path", "name", "type", "type_label", "query_name")
+COLUMNS = ("path", "name", "query_name", "type", "type_label")
 """Both type columns: `type` is the database's own name for what this object is,
 and `type_label` is the short label, which an adapter always populates."""
 
@@ -44,9 +44,9 @@ def report(
         (
             spell([*path.segments, item.label]),
             item.label,
+            item.query_name,
             item.type_name,
             item.type_label,
-            item.query_name,
         )
         for item in listing.items
     ]

@@ -2697,7 +2697,7 @@ def catalog_db(hsql: Hsql, tmp_path: Path) -> list[str]:
 def test_catalog_lists_the_top_level(hsql: Hsql, catalog_db: list[str]) -> None:
     res = hsql(*catalog_db, "--catalog", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout == 'cat|cat|database|db|"cat"\n'
+    assert res.stdout == 'cat|cat|"cat"|database|db\n'
 
 
 def test_catalog_lists_one_level_below_path(hsql: Hsql, catalog_db: list[str]) -> None:
@@ -2723,12 +2723,12 @@ def test_catalog_describes_a_relation_by_listing_it(
         [
             "cat.analytics.orders.customer_id",
             "customer_id",
+            '"customer_id"',
             "BIGINT",
             "##",
-            '"customer_id"',
         ],
-        ["cat.analytics.orders.id", "id", "BIGINT", "##", '"id"'],
-        ["cat.analytics.orders.total", "total", "DECIMAL(18,2)", "#.#", '"total"'],
+        ["cat.analytics.orders.id", "id", '"id"', "BIGINT", "##"],
+        ["cat.analytics.orders.total", "total", '"total"', "DECIMAL(18,2)", "#.#"],
     ]
 
 
@@ -2738,14 +2738,14 @@ def test_every_level_reports_the_type_its_database_calls_it(
     """`type` is the adapter's own vocabulary, not one core invented for it."""
     res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert [(row[1], row[2]) for row in cells(res.stdout)] == [
+    assert [(row[1], row[3]) for row in cells(res.stdout)] == [
         ("order_summary", "VIEW"),
         ("orders", "BASE TABLE"),
     ]
 
     res = hsql(*catalog_db, "--catalog", "--path", "cat", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert {row[2] for row in cells(res.stdout)} == {"schema"}
+    assert {row[3] for row in cells(res.stdout)} == {"schema"}
 
 
 def test_an_item_with_no_type_keeps_its_short_label(tmp_path: Path) -> None:
@@ -2782,8 +2782,8 @@ def test_an_item_with_no_type_keeps_its_short_label(tmp_path: Path) -> None:
             file_options={},
         )
     assert destination.read_text(encoding="utf-8").splitlines() == [
-        "path,name,type,type_label,query_name",
-        't,t,,t,"""t"""',
+        "path,name,query_name,type,type_label",
+        't,t,"""t""",,t',
     ]
 
 
@@ -2816,7 +2816,7 @@ def test_type_answers_for_every_bundled_adapter(
 
     res = hsql(*argv, "--catalog", "--path", ".".join([database_path, *levels]), "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
-    assert [(row[1], row[2]) for row in cells(res.stdout)] == [
+    assert [(row[1], row[3]) for row in cells(res.stdout)] == [
         ("n", type_names[0]),
         ("s", type_names[1]),
     ]
@@ -2907,7 +2907,7 @@ def test_catalog_takes_every_format_a_result_set_does(
     """A listing is rows, so it inherits the output layer rather than adding one."""
     res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--csv")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout.splitlines()[0] == "path,name,type,type_label,query_name"
+    assert res.stdout.splitlines()[0] == "path,name,query_name,type,type_label"
 
     res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--json")
     assert res.exit_code == ExitCode.OK
@@ -3007,7 +3007,7 @@ def test_catalog_carries_the_adapters_options(
     """
     res = hsql(*catalog_db, "--catalog", "--force-install-extensions", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout == 'cat|cat|database|db|"cat"\n'
+    assert res.stdout == 'cat|cat|"cat"|database|db\n'
 
 
 def test_catalog_reads_the_profile_a_run_would(
@@ -3024,7 +3024,7 @@ def test_catalog_reads_the_profile_a_run_would(
     )
     res = hsql("--config-path", str(config_file), "-P", "cat", "--catalog", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout == 'cat|cat|database|db|"cat"\n'
+    assert res.stdout == 'cat|cat|"cat"|database|db\n'
 
 
 def test_catalog_answers_for_every_bundled_adapter(
@@ -3033,7 +3033,7 @@ def test_catalog_answers_for_every_bundled_adapter(
     """Every adapter names its levels differently, and every one has a top."""
     res = hsql(*both_adapters, "--catalog", "-tA")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout.count("|db|") == 1
+    assert [row[4] for row in cells(res.stdout)] == ["db"]
 
 
 def test_catalog_is_in_the_help(hsql: Hsql) -> None:
