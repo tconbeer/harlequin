@@ -137,6 +137,18 @@ def test_an_unterminated_quote_is_refused() -> None:
         CatalogPath.parse('mydb."analytics')
 
 
+@pytest.mark.parametrize("text", ['"a"b', 'a"b"c', 'schema."quoted rel"*'])
+def test_a_segment_quoted_in_part_is_refused(text: str) -> None:
+    """A segment is quoted whole or not at all.
+
+    Concatenating the two would leave one `quoted` flag describing a segment
+    that was half quoted -- and `"rel"*` would then ask for a wildcard the
+    quotes have already said is a character.
+    """
+    with pytest.raises(HarlequinCatalogPathError, match="quotes part of"):
+        CatalogPath.parse(text)
+
+
 @pytest.mark.parametrize(
     "segments",
     [

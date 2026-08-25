@@ -25,10 +25,8 @@ WILDCARDS = "*?"
 MUST_QUOTE = '."' + WILDCARDS
 """Characters a segment cannot hold without being written in quotes."""
 
-_TOKEN = re.compile(
-    r'"(?P<quoted>(?:[^"]|"")*)"|(?P<bare>[^."]+)|(?P<dot>\.)|(?P<unterminated>")'
-)
-"""One path token. The last alternative is a quote no closing quote matched."""
+_SEGMENT = re.compile(r'"(?P<quoted>(?:[^"]|"")*)"|(?P<bare>[^."]*)')
+"""One path segment: a quoted run, or a run holding neither a dot nor a quote."""
 
 
 @dataclass(frozen=True)
@@ -136,36 +134,57 @@ def _has_wildcard(segment: str) -> bool:
 def _split(text: str) -> list[tuple[str, bool]]:
     """Each segment of a dotted path, and whether it was written in quotes.
 
-    A `*` in a quoted segment is a character in a name, not a wildcard.
+    A segment is one or the other and never a mix, so `"a"b` is refused rather
+    than read as `ab` -- and `"a"*` cannot ask for a wildcard the quotes have
+    already said is a character.
     """
     segments: list[tuple[str, bool]] = []
-    value: list[str] = []
-    quoted = False
-    for token in _TOKEN.finditer(text):
-        kind = token.lastgroup
-        if kind == "dot":
-            segments.append(("".join(value), quoted))
-            value, quoted = [], False
-        elif kind == "quoted":
-            value.append(str(token["quoted"]).replace('""', '"'))
-            quoted = True
-        elif kind == "bare":
-            value.append(str(token["bare"]))
-        else:
-            raise HarlequinCatalogPathError(
-                f"{text!r} opens a quoted path segment and never closes it. "
-                'Write a literal quote inside one as "".',
-                title="Invalid catalog path.",
-            )
-    segments.append(("".join(value), quoted))
-    for segment, was_quoted in segments:
-        if not segment and not was_quoted:
+    position = 0
+    while True:
+        segment = _SEGMENT.match(text, position)
+        # `bare` matches the empty string, so there is always a match
+        assert segment is not None
+        quoted = segment["quoted"]
+        segments.append(
+            (str(segment["bare"]), False)
+            if quoted is None
+            else (quoted.replace('""', '"'), True)
+        )
+        position = segment.end()
+        if position == len(text):
+            break
+        if text[position] != ".":
+            raise _misplaced_quote(text, position)
+        position += 1
+    for value, was_quoted in segments:
+        if not value and not was_quoted:
             raise HarlequinCatalogPathError(
                 f"{text!r} has an empty path segment. Segments are separated by "
                 "a dot, and a name that contains one is written in quotes.",
                 title="Invalid catalog path.",
             )
     return segments
+
+
+def _misplaced_quote(text: str, position: int) -> HarlequinCatalogPathError:
+    """Which of the two things a quote that did not end a segment was.
+
+    A quote with no closing quote after it opened a segment that never ends;
+    one with a closing quote made a segment part quoted and part not.
+    """
+    opened = _SEGMENT.match(text, position)
+    assert opened is not None
+    if text[position] == '"' and opened["quoted"] is None:
+        return HarlequinCatalogPathError(
+            f"{text!r} opens a quoted path segment and never closes it. "
+            'Write a literal quote inside one as "".',
+            title="Invalid catalog path.",
+        )
+    return HarlequinCatalogPathError(
+        f"{text!r} quotes part of a path segment. A segment is quoted whole or "
+        'not at all, and a literal quote inside a quoted one is written as "".',
+        title="Invalid catalog path.",
+    )
 
 
 def _find(
