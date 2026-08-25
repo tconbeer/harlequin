@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 from collections.abc import Callable
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.autocomplete.constants import get_functions, get_keywords
@@ -44,14 +44,15 @@ class WordCompleter:
         def _label(c: HarlequinCompletion) -> tuple[str, str]:
             return (c.label, c.type_label)
 
-        match_val = prefix.lower()
-        candidates = self._candidates(match_val)
+        match_val = prefix.casefold()
 
-        exact = [c for c in candidates if c.match_val == match_val]
-        prefixed = [c for c in candidates if c.match_val.startswith(match_val)]
+        exact = [c for c in self._candidates(match_val) if c.match_val == match_val]
+        prefixed = [
+            c for c in self._candidates(match_val) if c.match_val.startswith(match_val)
+        ]
         # Only add fuzzy matches if there are not enough exact matches
         fuzzy = (
-            self._fuzzy_match(match_val, candidates)
+            self._fuzzy_match(match_val, self._candidates(match_val))
             if len(exact) + len(prefixed) < 20
             else []
         )
@@ -83,13 +84,17 @@ class WordCompleter:
 
     def update_buffer_symbols(self, symbols: BufferSymbols) -> None:
         """
-        Offer the symbols a user has typed but nothing else knows about, and rank
-        every completion the buffer mentions above the ones it does not. This runs
-        on every edit of the buffer, so it stays O(n) in the number of symbols by
-        matching against the index merge() built.
+        Replace the buffer state -- the symbols, the values matches are ranked
+        against, and the completions built from the symbols nothing else offers.
+
+        The Query Editor calls this on every edit, so it is O(n) in the number of
+        symbols rather than the number of completions: the index it deduplicates
+        against is the one merge() built.
         """
         self._buffer_symbols = symbols
-        self._buffer_symbol_values = frozenset(name.lower() for name in symbols.names)
+        self._buffer_symbol_values = frozenset(
+            name.casefold() for name in symbols.names
+        )
         self._buffer_completions = self._build_buffer_completions(symbols)
 
     def merge(self) -> None:
@@ -109,18 +114,20 @@ class WordCompleter:
         self._known_keys = self._build_known_keys()
         self._buffer_completions = self._build_buffer_completions(self._buffer_symbols)
 
-    def _candidates(self, match_val: str) -> list[HarlequinCompletion]:
+    def _candidates(self, match_val: str) -> Iterator[HarlequinCompletion]:
         """
-        The completions to match against: the merged list, plus the buffer's own
-        symbols. A buffer symbol identical to what the user has typed would
-        complete to itself, so it is dropped.
+        Everything to match against: the buffer's own completions, then the merged
+        list. A buffer symbol identical to what the user has typed would complete
+        to itself, so it is dropped.
+
+        This is an iterator, and each pass over the candidates gets its own -- the
+        merged list is the whole catalog, and a copy of it per keystroke is a copy
+        nothing reads twice.
         """
-        if not self._buffer_completions:
-            return self.completions
-        return [
-            *(c for c in self._buffer_completions if c.match_val != match_val),
-            *self.completions,
-        ]
+        return itertools.chain(
+            (c for c in self._buffer_completions if c.match_val != match_val),
+            self.completions,
+        )
 
     def _rank(self, matches: list[HarlequinCompletion]) -> list[HarlequinCompletion]:
         """
@@ -153,12 +160,12 @@ class WordCompleter:
                 priority=BUFFER_PRIORITY,
             )
             for name in symbols.names
-            if name.lower() not in self._known_keys
+            if name.casefold() not in self._known_keys
         ]
 
     @staticmethod
     def _fuzzy_match(
-        match_val: str, completions: list[HarlequinCompletion]
+        match_val: str, completions: Iterable[HarlequinCompletion]
     ) -> list[HarlequinCompletion]:
         regex_base = ".{0,2}?".join(f"({re.escape(c)})" for c in match_val)
         regex = "^.*" + regex_base + ".*$"
@@ -212,11 +219,11 @@ class MemberCompleter(WordCompleter):
             quote_match = ANY_QUOTE_PROG.match(item_prefix)
             if quote_match is not None:
                 quote_char = quote_match.group(0)
-                match_val = item_prefix[1:].lower()
+                match_val = item_prefix[1:].casefold()
             else:
                 quote_char = ""
-                match_val = item_prefix.lower()
-            match_context = context.strip("'`\"").lower()
+                match_val = item_prefix.casefold()
+            match_context = context.strip("'`\"").casefold()
             separators = SEPARATOR_PROG.findall(prefix)
         value_prefix = "".join(
             f"{w}{sep}" for w, sep in zip([*others, context], separators, strict=False)
@@ -271,10 +278,10 @@ class MemberCompleter(WordCompleter):
                 type_label=BUFFER_TYPE_LABEL,
                 value=name,
                 priority=BUFFER_PRIORITY,
-                context=context.lower(),
+                context=context.casefold(),
             )
             for context, name in symbols.members
-            if (context.lower(), name.lower()) not in self._known_keys
+            if (context.casefold(), name.casefold()) not in self._known_keys
         ]
 
     @staticmethod

@@ -44,8 +44,7 @@ NO_SYMBOLS = BufferSymbols()
 def find_symbols(text: str) -> BufferSymbols:
     """Extract every identifier in `text`, and each `context.name` pair among them.
 
-    Names are deduplicated case-insensitively, keeping the spelling that appears
-    first.
+    Names are deduplicated caselessly, keeping the spelling that appears first.
     """
     if not text.strip():
         return NO_SYMBOLS
@@ -60,13 +59,13 @@ def find_symbols(text: str) -> BufferSymbols:
     for node in sorted(matched.get("identifier", []), key=lambda n: n.start_byte):
         name = _identifier(node)
         if name:
-            names.setdefault(name.lower(), name)
+            names.setdefault(name.casefold(), name)
 
     members: dict[tuple[str, str], tuple[str, str]] = {}
     for node in sorted(matched.get("reference", []), key=lambda n: n.start_byte):
         parts = _dotted_parts(node)
         for context, name in pairwise(parts):
-            members.setdefault((context.lower(), name.lower()), (context, name))
+            members.setdefault((context.casefold(), name.casefold()), (context, name))
 
     return BufferSymbols(names=tuple(names.values()), members=tuple(members.values()))
 

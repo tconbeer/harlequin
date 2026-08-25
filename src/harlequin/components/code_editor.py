@@ -82,7 +82,6 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             )
 
     def _scan_for_symbols(self) -> None:
-        # the text is read here, on the main thread, and parsed on a worker.
         self._symbol_scan_timer = None
         self.read_symbols(self.text)
 

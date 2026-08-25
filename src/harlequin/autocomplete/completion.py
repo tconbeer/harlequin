@@ -50,9 +50,9 @@ class HarlequinCompletion:
 
     @cached_property
     def match_val(self) -> str:
-        return self.label.lower()
+        return self.label.casefold()
 
     @cached_property
     def match_context(self) -> str:
         """The context, folded for comparison; the empty string if there is none."""
-        return self.context.lower() if self.context is not None else ""
+        return self.context.casefold() if self.context is not None else ""
