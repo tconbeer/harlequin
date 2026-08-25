@@ -15,7 +15,9 @@ class HarlequinCompletion:
     priority (lowest first). Harlequin gives reserved keywords a priority of 100,
     Catalog items a priority of 500, and functions a priority of 1000. Completions
     can have a context, which will cause them to be shown as member completions after
-    the user types the context followed by a `.` or `:`.
+    the user types the context followed by a `.` or `:`. Completions whose label
+    or context appears in the Query Editor are ranked above those that do not,
+    and a symbol found only in the editor gets a priority of 400.
 
     Args:
         label (str): The text shown to the user in the autocomplete menu.
@@ -49,3 +51,8 @@ class HarlequinCompletion:
     @cached_property
     def match_val(self) -> str:
         return self.label.lower()
+
+    @cached_property
+    def match_context(self) -> str:
+        """The context, folded for comparison; the empty string if there is none."""
+        return self.context.lower() if self.context is not None else ""

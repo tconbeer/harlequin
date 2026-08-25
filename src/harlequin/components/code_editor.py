@@ -5,20 +5,31 @@ from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
+from textual import on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Tab, Tabs
+from textual.timer import Timer
+from textual.widgets import Tab, Tabs, TextArea
 from textual.widgets.text_area import EditHistory, Location, Selection
 from textual_textarea import TextAreaSaved, TextEditor
 
-from harlequin.autocomplete import MemberCompleter, WordCompleter
+from harlequin.autocomplete import (
+    NO_SYMBOLS,
+    BufferSymbols,
+    MemberCompleter,
+    WordCompleter,
+    find_symbols,
+)
 from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators
+
+SYMBOL_SCAN_INTERVAL = 0.3
+"""Seconds an edit waits before the buffer is re-read for symbols."""
 
 
 @dataclass
@@ -52,6 +63,32 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         def __init__(self, text: str) -> None:
             super().__init__()
             self.text = text
+
+    class SymbolsFound(Message):
+        """Posted when the loaded buffer's identifiers have been re-read."""
+
+        def __init__(self, symbols: BufferSymbols) -> None:
+            super().__init__()
+            self.symbols = symbols
+
+    _symbol_scan_timer: Union[Timer, None] = None
+
+    @on(TextArea.Changed)
+    def schedule_symbol_scan(self, message: TextArea.Changed) -> None:
+        """Re-read the buffer's symbols, at most once per scan interval."""
+        if self._symbol_scan_timer is None:
+            self._symbol_scan_timer = self.set_timer(
+                SYMBOL_SCAN_INTERVAL, self._scan_for_symbols
+            )
+
+    def _scan_for_symbols(self) -> None:
+        # the text is read here, on the main thread, and parsed on a worker.
+        self._symbol_scan_timer = None
+        self.read_symbols(self.text)
+
+    @work(thread=True, exclusive=True, group="symbol_scanners")
+    def read_symbols(self, text: str) -> None:
+        self.post_message(self.SymbolsFound(symbols=find_symbols(text)))
 
     def selected_queries(self) -> list[str]:
         """
@@ -228,6 +265,7 @@ class EditorCollection(Vertical):
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
+        self._buffer_symbols: BufferSymbols = NO_SYMBOLS
         self.startup_cache = load_cache()
         self.buffer_states: dict[str, EditorState] = {}
         self.loaded_buffer_id: str | None = None
@@ -276,6 +314,7 @@ class EditorCollection(Vertical):
     @member_completer.setter
     def member_completer(self, new_completer: MemberCompleter) -> None:
         self._member_completer = new_completer
+        new_completer.update_buffer_symbols(self._buffer_symbols)
         self.editor.member_completer = new_completer
 
     @property
@@ -285,7 +324,21 @@ class EditorCollection(Vertical):
     @word_completer.setter
     def word_completer(self, new_completer: WordCompleter) -> None:
         self._word_completer = new_completer
+        new_completer.update_buffer_symbols(self._buffer_symbols)
         self.editor.word_completer = new_completer
+
+    @on(CodeEditor.SymbolsFound)
+    def update_completer_symbols(self, message: CodeEditor.SymbolsFound) -> None:
+        """Hand the loaded buffer's symbols to the completers.
+
+        They are kept here as well, since the app swaps in whole new completers
+        every time it rebuilds them from the catalog.
+        """
+        message.stop()
+        self._buffer_symbols = message.symbols
+        for completer in (self._word_completer, self._member_completer):
+            if completer is not None:
+                completer.update_buffer_symbols(message.symbols)
 
     async def on_mount(self) -> None:
         if self.startup_cache is not None and self.startup_cache.buffers:
