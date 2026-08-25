@@ -465,6 +465,12 @@ filters one resolved parent's children in the client and stays one round trip.
 `--path *.orders` cannot be evaluated without fetching every candidate level, so it belongs
 to `--find` (§3.8) and is refused here rather than quietly walked.
 
+**Quoting is this syntax's own, not a database's.** A segment holding a dot, a quote or a
+wildcard is written in double quotes on every adapter -- not MySQL's backticks or SQL
+Server's brackets, since accepting those would make a label that *contains* one unreachable,
+and a path an agent copies out of a listing would then depend on which adapter wrote it. A
+path is `spell()`'s output, and the `path` column of a listing is where a caller gets one.
+
 There is nothing to instrument, either. An earlier draft had `--stats` report `round_trips`,
 which existed to make a recursive walk's cost visible after the fact; without recursion the
 number is `len(path) + 1` and a caller can read it off the path they typed.

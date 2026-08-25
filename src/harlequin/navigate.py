@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import difflib
 import fnmatch
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Sequence
 
@@ -20,6 +21,14 @@ if TYPE_CHECKING:
 
 WILDCARDS = "*?"
 """What makes an unquoted segment a filter rather than a name."""
+
+MUST_QUOTE = '."' + WILDCARDS
+"""Characters a segment cannot hold without being written in quotes."""
+
+_TOKEN = re.compile(
+    r'"(?P<quoted>(?:[^"]|"")*)"|(?P<bare>[^."]+)|(?P<dot>\.)|(?P<unterminated>")'
+)
+"""One path token. The last alternative is a quote no closing quote matched."""
 
 
 @dataclass(frozen=True)
@@ -36,8 +45,8 @@ class CatalogPath:
     def parse(cls, text: str | None) -> "CatalogPath":
         """Read a dotted path, honoring double quotes around a segment.
 
-        A label containing a dot, or a literal `*`, is written in quotes, as it
-        is in SQL.
+        Double quotes on every adapter, whatever that database quotes its own
+        identifiers with: a path is `spell()`'s output, not SQL.
 
         Raises: HarlequinCatalogPathError for an unterminated quote, an empty
         segment, or a wildcard anywhere but the last segment.
@@ -109,9 +118,15 @@ def spell(segments: Sequence[str]) -> str:
 
 
 def _spell_segment(segment: str) -> str:
-    if segment and not any(char in segment for char in '."' + WILDCARDS):
+    # `parse()` reads a blank path as the top level, so a label that is empty or
+    # padded has to come back quoted or it would name the whole catalog
+    if segment.strip() == segment and segment and not _needs_quoting(segment):
         return segment
     return '"' + segment.replace('"', '""') + '"'
+
+
+def _needs_quoting(segment: str) -> bool:
+    return any(char in segment for char in MUST_QUOTE)
 
 
 def _has_wildcard(segment: str) -> bool:
@@ -126,32 +141,22 @@ def _split(text: str) -> list[tuple[str, bool]]:
     segments: list[tuple[str, bool]] = []
     value: list[str] = []
     quoted = False
-    in_quotes = False
-    position = 0
-    while position < len(text):
-        char = text[position]
-        if in_quotes:
-            if char != '"':
-                value.append(char)
-            elif text[position + 1 : position + 2] == '"':
-                value.append('"')
-                position += 1
-            else:
-                in_quotes = False
-        elif char == '"':
-            in_quotes = quoted = True
-        elif char == ".":
+    for token in _TOKEN.finditer(text):
+        kind = token.lastgroup
+        if kind == "dot":
             segments.append(("".join(value), quoted))
             value, quoted = [], False
+        elif kind == "quoted":
+            value.append(str(token["quoted"]).replace('""', '"'))
+            quoted = True
+        elif kind == "bare":
+            value.append(str(token["bare"]))
         else:
-            value.append(char)
-        position += 1
-    if in_quotes:
-        raise HarlequinCatalogPathError(
-            f"{text!r} opens a quoted path segment and never closes it. "
-            'Write a literal quote inside one as "".',
-            title="Invalid catalog path.",
-        )
+            raise HarlequinCatalogPathError(
+                f"{text!r} opens a quoted path segment and never closes it. "
+                'Write a literal quote inside one as "".',
+                title="Invalid catalog path.",
+            )
     segments.append(("".join(value), quoted))
     for segment, was_quoted in segments:
         if not segment and not was_quoted:

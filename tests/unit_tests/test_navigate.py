@@ -12,6 +12,7 @@ assert against a shape no bundled adapter has.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from typing import Iterator, Sequence
 
@@ -152,6 +153,54 @@ def test_a_spelled_path_parses_back_to_the_same_segments(
     """The property the `path` column depends on: a cell from one listing is
     the argument that lists that item's children."""
     assert CatalogPath.parse(spell(segments)).segments == segments
+
+
+NASTY = ["a", ".", '"', "`", "[", "]", "*", "?", " ", "\\", "'"]
+"""Every character that could break a splitter, plus one that could not."""
+
+
+def test_every_label_a_catalog_can_hand_us_round_trips() -> None:
+    """`spell()` and `parse()` are inverses, over labels nobody would type.
+
+    An adapter's label is whatever the database holds, so a label this pair
+    disagrees about is a row whose `path` column names something the next
+    invocation cannot reach.
+    """
+    for size in (1, 2, 3):
+        for combination in itertools.product(NASTY, repeat=size):
+            label = "".join(combination)
+            assert CatalogPath.parse(spell([label])).segments == (label,), label
+
+
+def test_two_such_labels_round_trip_together() -> None:
+    """The same, where a dot between the two is the thing being escaped."""
+    labels = ["".join(pair) for pair in itertools.product(NASTY, repeat=2)]
+    for first, second in itertools.product(labels, repeat=2):
+        parsed = CatalogPath.parse(spell([first, second])).segments
+        assert parsed == (first, second), (first, second)
+
+
+@pytest.mark.parametrize("label", ["my`table", "[bracketed]", "'quoted'"])
+def test_another_dialects_quoting_is_a_label_like_any_other(label: str) -> None:
+    """A backtick or a bracket is a character in a name here, not quoting.
+
+    Treating either as a quote would make a MySQL table named ``my`table``
+    unreachable, which is the cost of accepting more than one spelling.
+    """
+    connection = FakeConnection(item(label))
+    listing = list_children(connection, CatalogPath.parse(spell([label])))
+    assert listing.parent is not None
+    assert listing.parent.label == label
+
+
+@pytest.mark.parametrize("typed", ["`mydb`", "[mydb]"])
+def test_a_path_quoted_for_a_database_says_what_to_type_instead(
+    connection: FakeConnection, typed: str
+) -> None:
+    """So an agent that reached for its dialect's quoting is told the spelling
+    this takes, rather than left with a path that names nothing."""
+    with pytest.raises(HarlequinCatalogPathError, match="Did you mean mydb"):
+        list_children(connection, CatalogPath.parse(typed))
 
 
 def test_a_plain_segment_is_spelled_without_quotes() -> None:
