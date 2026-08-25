@@ -5,6 +5,10 @@ the same one-line query the Query Editor has always used, so a script run with
 `-f` and the same script in the editor cannot disagree about where a statement
 ends.
 
+This module also owns the grammar itself: `captures()` runs a tree-sitter query
+over parsed SQL, so the grammar is loaded and each query compiled exactly once,
+however many things ask questions of a buffer.
+
 Tree-sitter reports positions as **byte** offsets. Everything this module
 returns is in **characters**, because that is what both callers slice with:
 `str` for `split()`, and Textual's `Document.get_text_range()` for
@@ -19,7 +23,7 @@ from bisect import bisect_right
 from dataclasses import dataclass
 
 import tree_sitter_sql
-from tree_sitter import Language, Parser, Query, QueryCursor
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
 SEMICOLON_QUERY = '(";" @semicolon)'
 """Capture every semicolon the grammar considers a statement separator.
@@ -42,22 +46,36 @@ class Statement:
 
 
 _LANGUAGE: Language | None = None
-_QUERY: Query | None = None
+_QUERIES: dict[str, Query] = {}
 
 
-def _grammar() -> tuple[Language, Query]:
-    """Load the grammar and prepare the query once, on first use.
+def _grammar(pattern: str) -> tuple[Language, Query]:
+    """Load the grammar and compile `pattern` once, on first use.
 
-    Together they cost ~16ms, which nothing that never splits SQL should pay --
-    `hsql --help` being the case that matters. The `Query` is reused across
-    calls, as tree-sitter intends; the `Parser` is not, since it holds the tree
-    it last produced.
+    The grammar and one query cost ~16ms together, which nothing that never
+    parses SQL should pay -- `hsql --help` being the case that matters. Each
+    `Query` is reused across calls, as tree-sitter intends; the `Parser` is not,
+    since it holds the tree it last produced.
     """
-    global _LANGUAGE, _QUERY
-    if _LANGUAGE is None or _QUERY is None:
+    global _LANGUAGE
+    if _LANGUAGE is None:
         _LANGUAGE = Language(tree_sitter_sql.language())
-        _QUERY = Query(_LANGUAGE, SEMICOLON_QUERY)
-    return _LANGUAGE, _QUERY
+    query = _QUERIES.get(pattern)
+    if query is None:
+        query = _QUERIES[pattern] = Query(_LANGUAGE, pattern)
+    return _LANGUAGE, query
+
+
+def captures(text: str, pattern: str) -> dict[str, list[Node]]:
+    """Parse `text` and return the nodes each capture in `pattern` matched.
+
+    Nodes keep their tree alive, so they stay valid after this returns. They
+    arrive in the order tree-sitter's patterns matched them, which is not the
+    order they appear in the buffer; sort on a byte offset to recover that.
+    """
+    language, query = _grammar(pattern)
+    tree = Parser(language).parse(text.encode("utf-8"))
+    return QueryCursor(query).captures(tree.root_node)
 
 
 def _separator_offsets(text: str) -> list[int]:
@@ -66,19 +84,15 @@ def _separator_offsets(text: str) -> list[int]:
         # cheap, and the common case for a single statement.
         return []
 
-    language, query = _grammar()
-    encoded = text.encode("utf-8")
-    tree = Parser(language).parse(encoded)
-    captures = QueryCursor(query).captures(tree.root_node)
-    # tree-sitter captures nodes in the order its patterns match them, which is
-    # not the order they appear in the buffer.
-    byte_offsets = sorted(node.end_byte for node in captures.get("semicolon", []))
+    matched = captures(text, SEMICOLON_QUERY)
+    byte_offsets = sorted(node.end_byte for node in matched.get("semicolon", []))
 
     if text.isascii():
         return byte_offsets
 
     # decode the gaps between offsets rather than the prefix of each, so a
     # script with thousands of statements stays linear in its length.
+    encoded = text.encode("utf-8")
     offsets: list[int] = []
     byte_cursor = 0
     char_cursor = 0

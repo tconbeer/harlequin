@@ -436,3 +436,53 @@ async def test_selected_queries_split_on_character_columns(
         app.editor.selection = Selection((0, 0), (0, 22))
         assert app.editor.selected_queries() == ["select '日本語';", "select 2"]
         assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]
+
+
+@pytest.mark.asyncio
+async def test_buffer_symbols_reach_the_completers(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None or app.editor_collection.word_completer is None:
+            await pilot.pause()
+        word_completer = app.editor_collection.word_completer
+        member_completer = app.editor_collection.member_completer
+        assert member_completer is not None
+
+        assert not word_completer("my_c")
+        assert not member_completer("t.my_c")
+
+        app.editor.text = (
+            "with my_cte as (select 1 as my_col) select t.my_col from my_cte t"
+        )
+
+        # the editor re-reads the buffer on a timer
+        for _ in range(20):
+            if word_completer("my_c"):
+                break
+            await pilot.pause(0.1)
+
+        assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")
+        assert member_completer("t.my_c") == [(("t.my_col", "buf"), "t.my_col")]
+
+        # symbols belong to the buffer they were read from, so switching tabs
+        # away from that query drops them, and switching back brings them back.
+        first_buffer_id = app.editor_collection.active
+        assert first_buffer_id is not None
+        await app.editor_collection.action_new_buffer()
+        for _ in range(20):
+            if not word_completer("my_c"):
+                break
+            await pilot.pause(0.1)
+
+        assert not word_completer("my_c")
+
+        app.editor_collection.tabs.active = first_buffer_id
+        for _ in range(20):
+            if word_completer("my_c"):
+                break
+            await pilot.pause(0.1)
+
+        assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")

@@ -63,6 +63,23 @@ def test_headless_imports_do_not_load_the_tui(
     assert not leaked, f"{statement!r} imported {leaked}"
 
 
+def test_importing_the_completers_does_not_parse_sql(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """Every adapter imports the completers; only the Query Editor parses SQL.
+
+    `find_symbols()` defers `harlequin.statements`, so loading the grammar stays
+    off the path of everything that never reads a buffer.
+    """
+    proc = run_python(
+        "import harlequin.autocomplete\n"
+        "import sys\n"
+        "print(','.join(m for m in ('tree_sitter', 'tree_sitter_sql') "
+        "if m in sys.modules))\n"
+    )
+    assert not proc.stdout.strip(), f"importing the completers loaded {proc.stdout}"
+
+
 @pytest.mark.parametrize("argv", [["--help"], ["--version"]])
 def test_building_the_hsql_command_imports_no_adapter(
     argv: list[str], run_python: Callable[[str], subprocess.CompletedProcess[str]]

@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children, the correctly-quoted name to paste into a query, and the database's own name for the object's type (`DECIMAL(18,2)`, `BASE TABLE`, `schema`), and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
 - Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
+- Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Adapter API Changes
 
