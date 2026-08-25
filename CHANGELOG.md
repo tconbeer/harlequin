@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
+### Bug Fixes
+
+- The autocomplete menu no longer opens for tokens that start with a number, and fuzzy matches now have to start at the beginning of a name or just after a `_`, so typing `1` and pressing enter inserts a newline again ([#803](https://github.com/tconbeer/harlequin/issues/803)).
+
 ### Adapter API Changes
 
 - Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`. It defaults to `None`, and `hsql --catalog` prints it in its `type` column, beside the short `type_label`. It is a new dataclass field appended after `children`, so subclasses that add their own fields should be constructed with keyword arguments.

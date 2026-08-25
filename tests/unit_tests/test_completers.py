@@ -176,3 +176,35 @@ def test_buffer_symbols_survive_a_catalog_update(
     word_completer.update_buffer_symbols(BufferSymbols(names=("my_cte",)))
     word_completer.update_catalog(catalog)
     assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")
+
+
+def test_numbers_do_not_complete(word_completer: WordCompleter) -> None:
+    word_completer.update_buffer_symbols(BufferSymbols(names=("foo_1", "code_2021")))
+    assert word_completer("1") == []
+    assert word_completer("2021") == []
+    assert "foo_1" in {label for (label, _), _ in word_completer("foo")}
+
+
+def test_unquoted_numeric_members_do_not_complete(
+    member_completer: MemberCompleter,
+) -> None:
+    member_completer.update_buffer_symbols(
+        BufferSymbols(names=("alpha",), members=(("alpha", "2021_total"),))
+    )
+    assert member_completer("alpha.2021") == []
+    assert member_completer('alpha."2021') == [
+        (('alpha."2021_total', "buf"), 'alpha."2021_total')
+    ]
+
+
+def test_fuzzy_matches_start_at_a_word_boundary(
+    word_completer: WordCompleter,
+) -> None:
+    assert "col_b" in {label for (label, _), _ in word_completer("cb")}
+    assert "col_b" not in {label for (label, _), _ in word_completer("ob")}
+
+
+def test_one_character_does_not_fuzzy_match(word_completer: WordCompleter) -> None:
+    word_completer.update_buffer_symbols(BufferSymbols(names=("my_col",)))
+    assert "my_col" not in {label for (label, _), _ in word_completer("c")}
+    assert "my_col" in {label for (label, _), _ in word_completer("co")}
