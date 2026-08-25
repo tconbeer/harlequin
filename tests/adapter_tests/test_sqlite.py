@@ -208,6 +208,35 @@ def test_get_catalog(tiny_sqlite: Path, small_sqlite: Path) -> None:
                 ]
 
 
+def test_catalog_items_carry_sqlites_own_type_names(tmp_path: Path) -> None:
+    """The declared type, which sqlite keeps verbatim -- and None for a column
+    declared without one, since an empty string is not a type."""
+    conn = HarlequinSqliteAdapter([str(tmp_path / "types.sqlite")]).connect()
+    conn.execute("create table t (id bigint, note, total decimal(18,2))")
+    conn.execute("create view v as select 1 as n")
+
+    (database_item,) = conn.get_catalog().items
+    assert isinstance(database_item, InteractiveCatalogItem)
+    assert database_item.type_name == "database"
+
+    relation_items = database_item.fetch_children()
+    assert [(item.label, item.type_name) for item in relation_items] == [
+        ("t", "table"),
+        ("v", "view"),
+    ]
+
+    table_item = relation_items[0]
+    assert isinstance(table_item, InteractiveCatalogItem)
+    assert [
+        (item.label, item.type_label, item.type_name)
+        for item in table_item.fetch_children()
+    ] == [
+        ("id", "##", "bigint"),
+        ("note", "#.#", None),
+        ("total", "#.#", "decimal(18,2)"),
+    ]
+
+
 def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
     script = (
         f".bail on\nselect \n1;\n.bail off\n.open {tiny_sqlite}\n"

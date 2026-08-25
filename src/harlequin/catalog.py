@@ -30,6 +30,9 @@ class CatalogItem:
             a list of columns if this is a table.). If the list is empty and
             a CatalogItem subclass implements the `fetch_children()` method,
             Harlequin will attempt to call that method to lazy-load children.
+        type_name (str | None): The full type of this object, spelled the way
+            this database spells it, e.g. "DECIMAL(18,2)" for a column or
+            "BASE TABLE" for a table. None if the adapter does not know it.
     """
 
     qualified_identifier: str
@@ -37,6 +40,7 @@ class CatalogItem:
     label: str
     type_label: str
     children: list["CatalogItem"] = field(default_factory=list)
+    type_name: str | None = None
 
 
 TCatalogItem_contra = TypeVar(
