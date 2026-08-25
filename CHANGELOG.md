@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+
 ## [2.10.0] - 2026-08-25
 
 ### Breaking Changes

@@ -190,6 +190,15 @@
           ],
           "description": "Report on the config files hsql found, or write a profile into one, and exit without running SQL. One of: show, list-profiles, validate, schema, init."
         },
+        "catalog": {
+          "type": "boolean",
+          "description": "List the catalog objects one level below --path, and exit without running SQL.",
+          "default": false
+        },
+        "path": {
+          "type": "string",
+          "description": "Where in the catalog --catalog looks. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters."
+        },
         "spec": {
           "type": "boolean",
           "description": "Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter.",

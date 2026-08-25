@@ -2548,6 +2548,295 @@ def test_info_is_in_the_help(hsql: Hsql) -> None:
     assert f"{PROGRAM} --info" in res.output
 
 
+# --- `--catalog`, the mode that lists one level of the catalog ----------------
+
+CATALOG_DDL = (
+    "create schema analytics; "
+    "create table analytics.orders "
+    "(id bigint, customer_id bigint, total decimal(18,2)); "
+    "create view analytics.order_summary as select 1 as n; "
+    'create schema "empty schema"; '
+    'create schema "my.schema"; '
+    'create table "my.schema"."t" (n bigint); '
+    "create schema \u5206\u6790"
+)
+"""Two levels below the database, a node with no children, and two labels a path
+cannot spell without quoting one and measuring the other in terminal cells."""
+
+
+def cells(stdout: str) -> list[list[str]]:
+    """One `-tA` listing, as rows of cells."""
+    return [row.split("|") for row in stdout.splitlines()]
+
+
+def path_of(stdout: str, name: str) -> str:
+    """The path cell of the row named `name`, which lists that item's children."""
+    return next(row[0] for row in cells(stdout) if row[1] == name)
+
+
+@pytest.fixture
+def catalog_db(hsql: Hsql, tmp_path: Path) -> list[str]:
+    """The arguments that reach a DuckDB file with a known catalog in it."""
+    argv = ["-a", "duckdb", "--no-init", str(tmp_path / "cat.db")]
+    res = hsql(*argv, "--format", "none", "-c", CATALOG_DDL)
+    assert res.exit_code == ExitCode.OK
+    return argv
+
+
+def test_catalog_lists_the_top_level(hsql: Hsql, catalog_db: list[str]) -> None:
+    res = hsql(*catalog_db, "--catalog", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == 'cat|cat|db|"cat"\n'
+
+
+def test_catalog_lists_one_level_below_path(hsql: Hsql, catalog_db: list[str]) -> None:
+    res = hsql(*catalog_db, "--catalog", "--path", "cat", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert [row[1] for row in cells(res.stdout)] == [
+        "analytics",
+        "empty schema",
+        "main",
+        "my.schema",
+        "\u5206\u6790",
+    ]
+
+
+def test_catalog_describes_a_relation_by_listing_it(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """There is no second mode for describing: a relation's children are its
+    columns, with their types and their quoted identifiers."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics.orders", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert cells(res.stdout) == [
+        ["cat.analytics.orders.customer_id", "customer_id", "##", '"customer_id"'],
+        ["cat.analytics.orders.id", "id", "##", '"id"'],
+        ["cat.analytics.orders.total", "total", "#.#", '"total"'],
+    ]
+
+
+def test_the_path_column_is_what_lists_that_items_children(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """Walking a catalog is copying a cell out of the last answer.
+
+    A path an agent has to spell for itself is one it will spell wrong for a
+    label with a dot in it, which is the case this walks through.
+    """
+    path = ""
+    for name in ("cat", "my.schema", "t"):
+        argv = ["--catalog", *(["--path", path] if path else [])]
+        res = hsql(*catalog_db, *argv, "-tA")
+        assert res.exit_code == ExitCode.OK, res.stderr
+        path = path_of(res.stdout, name)
+    assert path == 'cat."my.schema".t'
+
+    res = hsql(*catalog_db, "--catalog", "--path", path, "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert [row[1] for row in cells(res.stdout)] == ["n"]
+
+
+def test_catalog_measures_a_label_in_terminal_cells(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """A listing is laid out like any other result set: two ideographs are four
+    cells, where `len()` would call them two."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat")
+    assert res.exit_code == ExitCode.OK
+    # the path column is as wide as `cat.empty schema` and the name column as
+    # wide as `empty schema`; measured with len() these would be two cells short
+    assert " cat.\u5206\u6790         | \u5206\u6790         |" in res.stdout
+
+
+def test_catalog_query_name_is_the_adapters_own_quoting(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """The reason it is a column: the agent never guesses at a spelling."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert '"analytics"."orders"' in res.stdout
+
+
+def test_a_trailing_wildcard_filters_one_level(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics.order_s*", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert [row[1] for row in cells(res.stdout)] == ["order_summary"]
+
+
+def test_an_interior_wildcard_is_a_usage_error(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """It cannot be answered in one round trip, so it is refused rather than
+    quietly walked."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.*.orders")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "wildcard" in res.stderr
+
+
+def test_a_path_that_names_nothing_says_what_is_there(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytic")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "Did you mean analytics?" in res.stderr
+
+
+def test_a_node_with_no_children_is_zero_rows(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """Not an error: an empty schema is an answer, and the footer says so."""
+    res = hsql(*catalog_db, "--catalog", "--path", 'cat."empty schema"')
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.endswith("(0 rows)\n")
+
+
+def test_catalog_takes_every_format_a_result_set_does(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """A listing is rows, so it inherits the output layer rather than adding one."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--csv")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.splitlines()[0] == "path,name,type_label,query_name"
+
+    res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--json")
+    assert res.exit_code == ExitCode.OK
+    assert [row["name"] for row in json.loads(res.stdout)] == [
+        "order_summary",
+        "orders",
+    ]
+
+
+def test_catalog_goes_to_the_file_dash_o_names(
+    hsql: Hsql, catalog_db: list[str], tmp_path: Path
+) -> None:
+    destination = tmp_path / "catalog.csv"
+    res = hsql(*catalog_db, "--catalog", "-o", str(destination), "--csv")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert destination.read_text(encoding="utf-8").splitlines()[1].startswith("cat,cat")
+
+
+def test_catalog_writes_nothing_under_format_none(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    res = hsql(*catalog_db, "--catalog", "--format", "none")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+
+
+def test_display_rows_caps_a_listing(hsql: Hsql, catalog_db: list[str]) -> None:
+    """A listing with four hundred rows in it is a display problem, and the
+    layouts already solved it."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat", "--display-rows", "2")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.endswith("(2 of 5 rows)\n")
+
+
+def test_display_rows_says_on_stderr_what_the_footer_cannot(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    res = hsql(*catalog_db, "--catalog", "--path", "cat", "--display-rows", "2", "-t")
+    assert res.exit_code == ExitCode.OK
+    assert len(res.stdout.splitlines()) == 2
+    assert "printed 2 of 5 rows" in res.stderr
+
+
+def test_limit_says_it_did_not_reach_the_listing(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """It is the hard fetch limit, and a listing is however many objects the
+    adapter reported. Silence would read as a limit that was applied."""
+    res = hsql(*catalog_db, "--catalog", "--path", "cat", "--limit", "1", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert len(res.stdout.splitlines()) == 5
+    assert "--limit" in res.stderr and "no effect" in res.stderr
+
+
+def test_limit_left_at_its_default_says_nothing(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    res = hsql(*catalog_db, "--catalog", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stderr == ""
+
+
+def test_catalog_does_not_run_sql(hsql: Hsql, catalog_db: list[str]) -> None:
+    res = hsql(*catalog_db, "--catalog", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "does not run SQL" in res.stderr
+
+
+@pytest.mark.parametrize("other", [["--info"], ["--spec"], ["--config", "show"]])
+def test_catalog_beside_another_mode_is_a_usage_error(
+    hsql: Hsql, other: list[str]
+) -> None:
+    res = hsql("--catalog", *other)
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "--catalog" in res.stderr
+
+
+def test_path_without_catalog_is_a_usage_error(hsql: Hsql, duck: list[str]) -> None:
+    """A flag that silently did nothing is the thing this command does not have."""
+    res = hsql(*duck, "--path", "main", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "--path must be used with --catalog" in res.stderr
+
+
+def test_catalog_carries_the_adapters_options(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
+    """It connects, so unlike the other modes it takes what a connection takes.
+
+    `--force-install-extensions` because it reaches the adapter and changes
+    nothing on the way: with no `--extension` beside it there is nothing to
+    install.
+    """
+    res = hsql(*catalog_db, "--catalog", "--force-install-extensions", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == 'cat|cat|db|"cat"\n'
+
+
+def test_catalog_reads_the_profile_a_run_would(
+    hsql: Hsql, catalog_db: list[str], tmp_path: Path
+) -> None:
+    """It connects like a run, so it is configured like one."""
+    config_file = tmp_path / "profile.toml"
+    # json.dumps, not an f-string: TOML reads a backslash in a basic string as
+    # an escape, so a Windows path would be a parse error rather than a path.
+    config_file.write_text(
+        f'[profiles.cat]\nadapter = "duckdb"\n'
+        f"conn_str = [{json.dumps(catalog_db[-1])}]\n"
+        "no_init = true\n"
+    )
+    res = hsql("--config-path", str(config_file), "-P", "cat", "--catalog", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == 'cat|cat|db|"cat"\n'
+
+
+def test_catalog_answers_for_every_bundled_adapter(
+    hsql: Hsql, both_adapters: list[str]
+) -> None:
+    """Every adapter names its levels differently, and every one has a top."""
+    res = hsql(*both_adapters, "--catalog", "-tA")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout.count("|db|") == 1
+
+
+def test_catalog_is_in_the_help(hsql: Hsql) -> None:
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--catalog" in res.output
+    assert "--path" in res.output
+    assert f"{PROGRAM} --catalog --path" in res.output
+
+
 # --- secrets, and the promise that none of them is printed -------------------
 
 SECRET = "hunter2-and-then-some"

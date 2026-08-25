@@ -17,13 +17,14 @@ one is the default.
 A **mode** is the third shape. `--config MODE` reports on the config files --
 or, under `init`, writes a profile into one -- `--spec` reports on the command
 itself and `--info` on the installation, rather than any of them running SQL, so
-the first pass skips the profile. It names no adapter either, and the command
-carries no connection options at all, except for `--config init`: the options it
-writes into a profile are the ones an adapter declares. Modes are options rather
-than subcommands because `CONN_STR` is positional: `hsql catalog` and a DuckDB
-file named `catalog` would have needed a rule, and `--catalog` needs none. They are
-mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
-callback when it is chosen.
+the first pass skips the profile. None of them names an adapter either, and the
+command carries no connection options at all, except for `--config init`: the
+options it writes into a profile are the ones an adapter declares. `--catalog`
+is the mode that does connect, so it takes a profile and an adapter exactly as a
+run does. Modes are options rather than subcommands because `CONN_STR` is
+positional: `hsql catalog` and a DuckDB file named `catalog` would have needed a
+rule, and `--catalog` needs none. They are mutually exclusive, and each lives in
+`harlequin.hsql.modes`, imported by the callback when it is chosen.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ from harlequin.config import (
     parse_row_count,
 )
 from harlequin.exception import (
+    HarlequinCatalogPathError,
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
@@ -65,6 +67,7 @@ from harlequin.redact import hide_secrets_in
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
     from harlequin.layout import LayoutOptions
+    from harlequin.navigate import CatalogPath
     from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
     from harlequin.statements import Statement
 
@@ -260,6 +263,22 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--catalog",
+        is_flag=True,
+        help=(
+            "List the catalog objects one level below --path, and exit without "
+            "running SQL."
+        ),
+    )
+    @click.option(
+        "--path",
+        metavar="TEXT",
+        help=(
+            "Where in the catalog --catalog looks. Dotted segments, named by the "
+            "adapter; the top of the catalog by default. A trailing * filters."
+        ),
+    )
+    @click.option(
         "--spec",
         is_flag=True,
         help=(
@@ -325,6 +344,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         config_mode: str | None,
         spec: bool,
         info: bool,
+        catalog: bool,
+        path: str | None,
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
@@ -391,7 +412,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
 
         sources: list[tuple[str, tuple[str, ...]]] = ctx.meta.get(SOURCES, [])
 
-        mode = _one_mode(ctx, config_mode=config_mode, spec=spec, info=info)
+        mode = _one_mode(
+            ctx, catalog=catalog, config_mode=config_mode, spec=spec, info=info
+        )
+        if path is not None and not catalog:
+            diagnostics.error("--path must be used with --catalog.")
+            ctx.exit(ExitCode.USAGE)
         if mode is not None and sources:
             # a mode does not run SQL, so `-c` or `-f` beside one is two
             # invocations spelled as one, and refusing is the safer half of the
@@ -402,6 +428,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 f"or drop {mode.split()[0]}."
             )
             ctx.exit(ExitCode.USAGE)
+
+        if "tuples_only" in explicitly_set:
+            # ahead of the modes as well as the connection: `-t nord` does not
+            # reliably fail, so there may be no error for this to explain.
+            diagnostics.report_theme_confusion(conn_str)
 
         if info:
             ctx.exit(
@@ -471,6 +502,29 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
+        if catalog:
+            catalog_path = _catalog_path(ctx, path)
+            if "limit" in explicitly_set:
+                # ahead of the connection, so it is said whether or not the
+                # database answers
+                diagnostics.report_limit_ignored()
+            ctx.exit(
+                _report_catalog(
+                    ctx,
+                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    catalog_path,
+                    destination=destination,
+                    format_name=format_name,
+                    display_rows=raw_display_rows,
+                    tuples_only=tuples_only,
+                    no_align=no_align,
+                    no_header=no_header,
+                    no_footer=no_footer,
+                    null_string=null_string,
+                    color=_use_color(color_when, destination),
+                )
+            )
+
         if not sources:
             diagnostics.error(
                 "no SQL to run. Pass -c/--command or -f/--file, "
@@ -503,23 +557,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=limit is not None,
         )
 
-        if "tuples_only" in explicitly_set:
-            # ahead of the connection rather than after it: `-t nord` does not
-            # reliably fail, so there may be no error for this to explain.
-            diagnostics.report_theme_confusion(conn_str)
-
-        try:
-            adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
-        except HarlequinConfigError as e:
-            diagnostics.report_error(e)
-            ctx.exit(ExitCode.USAGE)
-
-        connection: HarlequinConnection
-        try:
-            connection = adapter_instance.connect()
-        except HarlequinConnectionError as e:
-            diagnostics.report_error(e)
-            ctx.exit(ExitCode.CONNECTION)
+        connection = _connect(ctx, adapter=adapter, conn_str=conn_str, values=values)
 
         run = _Run()
         executed = _execute_all(
@@ -602,7 +640,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
 
 
 def _one_mode(
-    ctx: click.Context, *, config_mode: str | None, spec: bool, info: bool
+    ctx: click.Context,
+    *,
+    catalog: bool,
+    config_mode: str | None,
+    spec: bool,
+    info: bool,
 ) -> str | None:
     """The one mode this invocation chose, or exit having named the two it did.
 
@@ -611,6 +654,7 @@ def _one_mode(
     answer that is not a guess about which they meant.
     """
     asked = (
+        ("--catalog", catalog),
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
         ("--info", info),
@@ -622,6 +666,90 @@ def _one_mode(
         )
         ctx.exit(ExitCode.USAGE)
     return chosen[0] if chosen else None
+
+
+def _connect(
+    ctx: click.Context,
+    *,
+    adapter: str,
+    conn_str: Sequence[str],
+    values: Mapping[str, Any],
+) -> "HarlequinConnection":
+    """The connection this invocation runs on, or exit having said why not."""
+    try:
+        adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+
+    try:
+        return adapter_instance.connect()
+    except HarlequinConnectionError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.CONNECTION)
+
+
+def _catalog_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
+    """What `--path` named, or exit having said why it cannot be read.
+
+    Called ahead of the connection, so a path this cannot read is refused
+    without waiting on a database.
+    """
+    from harlequin.navigate import CatalogPath
+
+    try:
+        return CatalogPath.parse(raw)
+    except HarlequinCatalogPathError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+
+
+def _report_catalog(
+    ctx: click.Context,
+    connection: "HarlequinConnection",
+    path: "CatalogPath",
+    *,
+    destination: Path | None,
+    format_name: str,
+    display_rows: Any,
+    **output_options: Any,
+) -> ExitCode:
+    """Write one level of the catalog and return its code, or exit saying why not."""
+    # here rather than at module scope, for the reason each mode lives in its
+    # own module: this one reaches the catalog walk and the row machinery.
+    from harlequin.hsql.modes import catalog as catalog_mode
+
+    try:
+        display_limit = _display_limit(display_rows, format_name)
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    layout_options, file_options = _output_options(
+        format_name=format_name, display_limit=display_limit, **output_options
+    )
+
+    try:
+        with _sink(destination) as out:
+            result = catalog_mode.report(
+                out,
+                connection=connection,
+                path=path,
+                format_name=format_name,
+                layout_options=layout_options,
+                file_options=file_options,
+            )
+            out.flush()
+    except OSError as e:
+        # a `-o PATH` it could not write, which is the caller's to fix
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    except Exception as e:  # noqa: BLE001 -- adapters are third-party code
+        # a path that names nothing, or whatever the adapter raised fetching a
+        # level: a code rather than a traceback for both.
+        diagnostics.report_error(e)
+        ctx.exit(diagnostics.exit_code_for(e))
+    _report_hidden_rows(result, layout_options)
+    return ExitCode.OK
 
 
 def _report_info(
@@ -1166,6 +1294,12 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             "Limits:\n"
             "  --limit N         rows fetched from the database. -1 for all\n"
             "  --display-rows N  rows the text layouts print, of those fetched"
+        ),
+        (
+            "Catalog:\n"
+            f"  {PROGRAM} --catalog                     the top of the catalog\n"
+            f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
+            f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns"
         ),
         (
             "Exit codes:\n"

@@ -253,6 +253,7 @@ source_modules = [
     "harlequin.config",
     "harlequin.exception",
     "harlequin.keymap",
+    "harlequin.navigate",
     "harlequin.options",
     "harlequin.plugins",
     "harlequin.redact",

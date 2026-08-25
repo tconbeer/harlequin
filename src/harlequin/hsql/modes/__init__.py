@@ -1,8 +1,8 @@
 """One module per `hsql` mode, imported only when that mode is asked for.
 
-A mode is an option rather than a subcommand (`--config show`, `--spec`,
-`--info`, and later `--catalog`), so the command stays one click command with one
-parse. What each mode costs is why they live in separate modules: the callback
+A mode is an option rather than a subcommand (`--catalog`, `--config show`,
+`--spec`, `--info`), so the command stays one click command with one parse.
+What each mode costs is why they live in separate modules: the callback
 imports the one it was given and nothing else, so that no mode pays for what it
 did not ask for -- `--spec` imports every installed adapter, and is the clearest
 case of a cost that must not reach the query path.

@@ -25,6 +25,12 @@ class HarlequinBindingError(HarlequinError):
     pass
 
 
+class HarlequinCatalogPathError(HarlequinError):
+    """A path into the catalog that cannot be read, or names nothing."""
+
+    pass
+
+
 class HarlequinConnectionError(HarlequinError):
     pass
 
