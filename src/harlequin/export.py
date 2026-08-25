@@ -48,13 +48,7 @@ def file_suffix(format_name: str) -> str:
 
 
 def names_a_directory(destination: str | Path) -> bool:
-    """Whether a destination names a folder to write into, rather than a file.
-
-    A folder that has not been made yet is still a folder, so the filesystem
-    cannot be the only question: a trailing separator or a name with no
-    extension names one too, which is what lets `-o ~/exports` mean the same
-    thing before and after the first write.
-    """
+    """Whether a destination names a folder to write into, rather than a file."""
     path = Path(destination).expanduser()
     if path.exists():
         return path.is_dir()

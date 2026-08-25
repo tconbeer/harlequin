@@ -62,7 +62,7 @@ def export_callback(
         error_callback(e)
 
 
-def _starting_text(default_path: str | None) -> str:
+def _normalize_default_path(default_path: str | None) -> str:
     """What the path input starts with, for the `-o` the IDE was given.
 
     A folder gets a trailing separator: what follows it is the file name, and
@@ -139,7 +139,7 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
     ) -> None:
         super().__init__(name, id, classes)
         self.formats = formats
-        self.starting_text = _starting_text(default_path)
+        self.default_path = _normalize_default_path(default_path)
 
     def compose(self) -> ComposeResult:
         assert self.formats is not None
@@ -180,11 +180,11 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
             "#options_container", NoFocusVerticalScroll
         )
         self.export_button = self.query_one("#export", Button)
-        if self.starting_text:
+        if self.default_path:
             # assigning posts Input.Changed, so a path with an extension picks
             # its format the way a typed one does, and the cursor lands at the
             # end -- after a folder's separator, ready for a file name
-            self.file_input.value = self.starting_text
+            self.file_input.value = self.default_path
         self.file_input.focus()
 
     def on_key(self, event: events.Key) -> None:

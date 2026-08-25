@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
-- Harlequin now takes `-o/--output`, the default directory or file path for the Data Exporter, so exports can default to a folder like `.harlequin/` ([#926](https://github.com/tconbeer/harlequin/issues/926)). It is created on the first export if it does not exist.
+- Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
 
 ## [2.10.0] - 2026-08-25

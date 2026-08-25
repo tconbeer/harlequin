@@ -374,12 +374,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.option(
         "-o",
         "--output",
-        metavar="PATH",
-        help=(
-            "The default directory or file path for the Data Exporter. A "
-            "directory -- an existing one, a trailing separator, or a name with "
-            "no extension -- is created on the first export."
-        ),
+        type=click.Path(file_okay=True, dir_okay=True, path_type=Path),
+        help="The default directory or file path for the Data Exporter.",
     )
     @click.option(
         "--adapter",

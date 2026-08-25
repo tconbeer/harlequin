@@ -217,8 +217,7 @@ class Harlequin(AppBase):
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
-        # kept as text: what the Data Exporter starts with is what a user typed
-        # at `-o`, trailing separator and `~` included
+        # kept as text: it is what the Data Exporter's path input starts with
         self.export_path = str(export_path) if export_path is not None else None
         # None is no cap: the viewer holds every row that was fetched. So are 0
         # and -1, which the CLI has already normalized -- a Results Viewer that

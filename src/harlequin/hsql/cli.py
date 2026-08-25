@@ -182,12 +182,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "-o",
         "--output",
         metavar="PATH",
-        help=(
-            "Write results to PATH instead of stdout. A directory -- an "
-            "existing one, a trailing separator, or a name with no extension "
-            "-- takes one file per result set, and is created if it is not "
-            "there."
-        ),
+        help="Write results to PATH instead of stdout. Accepts a file or directory.",
     )
     # long spelling only: -F is psql's --field-separator, and a flag that sets
     # a delimiter in one command and picks a format in the other is a mistake
@@ -998,12 +993,11 @@ class _Destination:
     is_directory: bool = False
 
     @classmethod
-    def parse(cls, raw: Any) -> _Destination:
+    def parse(cls, raw: str | Path | None) -> _Destination:
         """One `-o` value, as typed or as a profile wrote it."""
         if raw is None or raw == "":
             return cls()
-        text = str(raw)
-        return cls(path=Path(text).expanduser(), is_directory=names_a_directory(text))
+        return cls(path=Path(raw).expanduser(), is_directory=names_a_directory(raw))
 
     @property
     def directory(self) -> Path | None:
