@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+
 ## [2.10.0] - 2026-08-25
 
 ### Breaking Changes
@@ -21,7 +25,6 @@ All notable changes to this project will be documented in this file.
   - `validate` reports every problem in every discovered config file. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
   - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
   - `init` creates a profile from the passed CLI options: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed.
-- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children and the correctly-quoted name to paste into a query, and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
 - Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
 - Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
 - Harlequin and `hsql` now redact secrets instead of showing them in output ([#667](https://github.com/tconbeer/harlequin/issues/667)

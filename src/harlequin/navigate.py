@@ -28,6 +28,14 @@ MUST_QUOTE = '."' + WILDCARDS
 _SEGMENT = re.compile(r'"(?P<quoted>(?:[^"]|"")*)"|(?P<bare>[^."]*)')
 """One path segment: a quoted run, or a run holding neither a dot nor a quote."""
 
+_SEGMENTS = re.compile(rf"(?:{_SEGMENT.pattern})(?P<end>\.|\Z)|(?P<misplaced>[\s\S])")
+"""Every segment, with the dot or end of path that closes it.
+
+The last alternative is where a quote that closes no segment lands. `finditer`
+skips text that matches nothing, so without it `"a"b` would quietly parse as
+`b` -- a path that names something, rather than the error it is.
+"""
+
 
 @dataclass(frozen=True)
 class CatalogPath:
@@ -139,23 +147,19 @@ def _split(text: str) -> list[tuple[str, bool]]:
     already said is a character.
     """
     segments: list[tuple[str, bool]] = []
-    position = 0
-    while True:
-        segment = _SEGMENT.match(text, position)
-        # `bare` matches the empty string, so there is always a match
-        assert segment is not None
-        quoted = segment["quoted"]
+    for match in _SEGMENTS.finditer(text):
+        if match["misplaced"] is not None:
+            raise _misplaced_quote(text, match.start())
+        quoted = match["quoted"]
         segments.append(
-            (str(segment["bare"]), False)
+            (str(match["bare"]), False)
             if quoted is None
             else (quoted.replace('""', '"'), True)
         )
-        position = segment.end()
-        if position == len(text):
+        if not match["end"]:
+            # the end of the path rather than a dot. It is zero-width, so
+            # another empty match is waiting at this same position.
             break
-        if text[position] != ".":
-            raise _misplaced_quote(text, position)
-        position += 1
     for value, was_quoted in segments:
         if not value and not was_quoted:
             raise HarlequinCatalogPathError(
