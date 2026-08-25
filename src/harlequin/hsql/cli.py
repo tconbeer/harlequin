@@ -30,6 +30,7 @@ rule, and `--catalog` needs none. They are mutually exclusive, and each lives in
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import sys
 import time
@@ -53,6 +54,7 @@ from harlequin.exception import (
     HarlequinConnectionError,
     HarlequinError,
 )
+from harlequin.export import names_a_directory
 from harlequin.first_pass import (
     attach_adapter_options,
     command_spellings,
@@ -179,9 +181,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.option(
         "-o",
         "--output",
-        type=click.Path(dir_okay=False, path_type=Path),
         metavar="PATH",
-        help="Write results to PATH instead of stdout.",
+        help=(
+            "Write results to PATH instead of stdout. A directory -- an "
+            "existing one, a trailing separator, or a name with no extension "
+            "-- takes one file per result set, and is created if it is not "
+            "there."
+        ),
     )
     # long spelling only: -F is psql's --field-separator, and a flag that sets
     # a delimiter in one command and picks a format in the other is a mistake
@@ -388,7 +394,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
         adapter: str = values.pop("adapter", DEFAULT_ADAPTER)
-        destination: Path | None = values.pop("output", None)
+        destination = _Destination.parse(values.pop("output", None))
         result_spec: str = str(values.pop("result", "all"))
         raw_on_error = str(values.pop("on_error", "stop"))
         if raw_on_error not in ("stop", "continue"):
@@ -567,11 +573,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         selected = _select_results(executed, result_spec)
         if selected is None:
             ctx.exit(ExitCode.USAGE)
-        if len(selected) > 1 and not output.holds_many(format_name):
+        if (
+            len(selected) > 1
+            and not destination.is_directory
+            and not output.holds_many(format_name)
+        ):
             n = len(selected)
             diagnostics.error(
                 f"{n} result sets, but {format_name} holds one; "
-                f"use --result last or --result {n}"
+                f"use --result last, --result {n}, or -o DIR for one file each"
             )
             ctx.exit(ExitCode.USAGE)
 
@@ -587,10 +597,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         )
 
         try:
-            with _sink(destination) as out:
-                _emit(
+            if (directory := destination.directory) is not None:
+                _emit_files(
                     selected,
-                    out,
+                    directory,
                     limit=row_limit,
                     format_name=format_name,
                     layout_options=layout_options,
@@ -598,6 +608,20 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     on_error=on_error,
                     run=run,
                 )
+            else:
+                with _sink(
+                    destination, filename=f"results{output.suffix(format_name)}"
+                ) as out:
+                    _emit(
+                        selected,
+                        out,
+                        limit=row_limit,
+                        format_name=format_name,
+                        layout_options=layout_options,
+                        file_options=file_options,
+                        on_error=on_error,
+                        run=run,
+                    )
         except OSError as e:
             diagnostics.report_error(e)
             ctx.exit(ExitCode.USAGE)
@@ -709,7 +733,7 @@ def _report_catalog(
     connection: "HarlequinConnection",
     path: "CatalogPath",
     *,
-    destination: Path | None,
+    destination: _Destination,
     format_name: str,
     display_rows: Any,
     **output_options: Any,
@@ -729,7 +753,7 @@ def _report_catalog(
     )
 
     try:
-        with _sink(destination) as out:
+        with _sink(destination, filename=f"catalog{output.suffix(format_name)}") as out:
             result = catalog_mode.report(
                 out,
                 connection=connection,
@@ -758,7 +782,7 @@ def _report_info(
     adapter: str | None,
     profile_name: str | None,
     config_path: Path | None,
-    destination: Path | None,
+    destination: _Destination,
     format_name: str,
     format_chosen: bool,
 ) -> ExitCode:
@@ -774,7 +798,7 @@ def _report_info(
     from harlequin.hsql.modes import info as info_mode
 
     try:
-        with _sink(destination) as out:
+        with _sink(destination, filename=info_mode.FILENAME) as out:
             code = info_mode.report(
                 out,
                 adapter=adapter,
@@ -796,7 +820,7 @@ def _report_spec(
     ctx: click.Context,
     *,
     adapter: str | None,
-    destination: Path | None,
+    destination: _Destination,
     format_name: str,
     format_chosen: bool,
 ) -> ExitCode:
@@ -812,7 +836,7 @@ def _report_spec(
     from harlequin.hsql.modes import spec as spec_mode
 
     try:
-        with _sink(destination) as out:
+        with _sink(destination, filename=spec_mode.FILENAME) as out:
             code = spec_mode.report(
                 out,
                 adapter=adapter,
@@ -832,7 +856,7 @@ def _report_config(
     mode: str,
     *,
     config_path: Path | None,
-    destination: Path | None,
+    destination: _Destination,
     format_name: str,
     format_chosen: bool,
     display_rows: Any,
@@ -852,7 +876,9 @@ def _report_config(
         layout_options, file_options = _output_options(
             format_name=format_name, display_limit=display_limit, **output_options
         )
-        with _sink(destination) as out:
+        with _sink(
+            destination, filename=config_mode.filename(mode, format_name)
+        ) as out:
             code = config_mode.report(
                 mode,
                 out,
@@ -959,6 +985,42 @@ def bare_command() -> click.Command:
     return build_cli(["-P", "None", "--help"])
 
 
+@dataclass(frozen=True)
+class _Destination:
+    """Where `-o` said to write: a file, a folder to name files in, or stdout.
+
+    A folder is what lets a format that holds one result set take a script that
+    produced several -- one file each, named here rather than by the caller,
+    which is why `diagnostics.report_written()` says what they were called.
+    """
+
+    path: Path | None = None
+    is_directory: bool = False
+
+    @classmethod
+    def parse(cls, raw: Any) -> _Destination:
+        """One `-o` value, as typed or as a profile wrote it."""
+        if raw is None or raw == "":
+            return cls()
+        text = str(raw)
+        return cls(path=Path(text).expanduser(), is_directory=names_a_directory(text))
+
+    @property
+    def directory(self) -> Path | None:
+        """The folder to write files into, or None for a file and for stdout."""
+        return self.path if self.is_directory else None
+
+    def file(self, filename: str) -> Path | None:
+        """The one file to write, for a caller that writes exactly one.
+
+        None is stdout. In a folder it is `filename`, which whatever is being
+        written names -- a document has no position to be numbered by.
+        """
+        if self.path is None or not self.is_directory:
+            return self.path
+        return self.path / filename
+
+
 @dataclass
 class _Run:
     """What one invocation did, accumulated as it does it.
@@ -1033,32 +1095,114 @@ def _emit(
     on_error: OnError,
     run: _Run,
 ) -> None:
-    """Fetch each selected result set and write it out."""
+    """Fetch each selected result set and write them all to one open stream."""
+    for _, result in _fetched(selected, limit=limit, on_error=on_error, run=run):
+        _write_result(
+            result,
+            out,
+            limit=limit,
+            format_name=format_name,
+            layout_options=layout_options,
+            file_options=file_options,
+            run=run,
+        )
+    out.flush()
+
+
+def _emit_files(
+    selected: Sequence[ExecutedStatement],
+    directory: Path,
+    *,
+    limit: RowLimit,
+    format_name: str,
+    layout_options: LayoutOptions,
+    file_options: Mapping[str, Any],
+    on_error: OnError,
+    run: _Run,
+) -> None:
+    """Fetch each selected result set and write it to its own file in `directory`.
+
+    Numbered as `--result` numbers them, so the second result set is
+    `results_2` whether it was written beside four others or on its own.
+    """
+    if format_name == output.NONE:
+        # the rows are discarded, so there is no file to name and no directory
+        # to make -- but the fetch still runs, for --stats and for errors
+        _emit(
+            selected,
+            io.BytesIO(),
+            limit=limit,
+            format_name=format_name,
+            layout_options=layout_options,
+            file_options=file_options,
+            on_error=on_error,
+            run=run,
+        )
+        return
+    directory.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for position, result in _fetched(selected, limit=limit, on_error=on_error, run=run):
+        path = directory / f"results_{position}{output.suffix(format_name)}"
+        with path.open("wb") as f:
+            _write_result(
+                result,
+                f,
+                limit=limit,
+                format_name=format_name,
+                layout_options=layout_options,
+                file_options=file_options,
+                run=run,
+            )
+        written.append(path)
+    diagnostics.report_written(written)
+
+
+def _fetched(
+    selected: Sequence[ExecutedStatement],
+    *,
+    limit: RowLimit,
+    on_error: OnError,
+    run: _Run,
+) -> Iterator[tuple[int, ResultSet]]:
+    """Each selected result set, fetched, with its position among them."""
     from harlequin.query import fetch
 
-    for item in selected:
+    for position, item in enumerate(selected, start=1):
         try:
             result = fetch(item, limit=limit)
         except Exception as e:  # noqa: BLE001 -- adapters are third-party code
             run.failure = e
             diagnostics.report_error(e)
             if on_error == "stop":
-                break
+                return
             continue
-        output.write(
-            result,
-            format_name,
-            out,
-            layout_options=layout_options,
-            file_options=file_options,
-        )
-        run.rows += result.row_count
-        run.truncated = run.truncated or result.truncated
-        run.columns = result.columns
-        if result.truncated and limit.max_rows is not None:
-            diagnostics.report_truncation(limit.max_rows)
-        _report_hidden_rows(result, layout_options)
-    out.flush()
+        yield position, result
+
+
+def _write_result(
+    result: ResultSet,
+    out: BinaryIO,
+    *,
+    limit: RowLimit,
+    format_name: str,
+    layout_options: LayoutOptions,
+    file_options: Mapping[str, Any],
+    run: _Run,
+) -> None:
+    """Write one fetched result set, and record what it was."""
+    output.write(
+        result,
+        format_name,
+        out,
+        layout_options=layout_options,
+        file_options=file_options,
+    )
+    run.rows += result.row_count
+    run.truncated = run.truncated or result.truncated
+    run.columns = result.columns
+    if result.truncated and limit.max_rows is not None:
+        diagnostics.report_truncation(limit.max_rows)
+    _report_hidden_rows(result, layout_options)
 
 
 def _report_hidden_rows(result: ResultSet, layout_options: LayoutOptions) -> None:
@@ -1229,14 +1373,14 @@ def _output_options(
     return layout_options, file_options
 
 
-def _use_color(when: str, destination: Path | None) -> bool:
+def _use_color(when: str, destination: _Destination) -> bool:
     """Whether to style text output.
 
     The default is `never`, so the bytes do not depend on what stdout happens
     to be. `auto` opts into that dependence, and honors NO_COLOR; `always` is
     the caller saying they meant it. A file never gets escapes either way.
     """
-    if destination is not None or when == "never":
+    if destination.path is not None or when == "never":
         return False
     if when == "always":
         return True
@@ -1244,18 +1388,25 @@ def _use_color(when: str, destination: Path | None) -> bool:
 
 
 @contextlib.contextmanager
-def _sink(destination: Path | None) -> Iterator[BinaryIO]:
-    """Where result sets go: a path, or stdout.
+def _sink(destination: _Destination, *, filename: str) -> Iterator[BinaryIO]:
+    """Where one document or one run of result sets goes: a path, or stdout.
 
     Binary in both cases. duckdb writes `\\n` and the layouts write `\\n`, and
     text-mode translation would turn that into `\\r\\n` on Windows for the same
     query that produced `\\n` everywhere else.
+
+    The directory the file is in is created if it is not there, so that a path
+    a caller has not made yet is a path they can write to.
     """
-    if destination is None:
+    path = destination.file(filename)
+    if path is None:
         yield click.get_binary_stream("stdout")
-    else:
-        with destination.expanduser().open("wb") as f:
-            yield f
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as f:
+        yield f
+    if destination.is_directory:
+        diagnostics.report_written([path])
 
 
 def _message_for(failure: BaseException | None) -> str | None:

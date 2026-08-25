@@ -198,6 +198,7 @@ class Harlequin(AppBase):
         theme: str = "harlequin",
         show_files: Path | None = None,
         show_s3: str | None = None,
+        export_path: Path | str | None = None,
         viewer_max_rows: int | str | None = 100_000,
         query_limit: int | str | None = None,
         driver_class: Union[Type[Driver], None] = None,
@@ -216,6 +217,9 @@ class Harlequin(AppBase):
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
+        # kept as text: what the Data Exporter starts with is what a user typed
+        # at `-o`, trailing separator and `~` included
+        self.export_path = str(export_path) if export_path is not None else None
         # None is no cap: the viewer holds every row that was fetched. So are 0
         # and -1, which the CLI has already normalized -- a Results Viewer that
         # holds no rows serves nobody, so neither spelling can mean that here.
@@ -910,6 +914,7 @@ class Harlequin(AppBase):
                     if sys.platform == "win32"
                     else HARLEQUIN_COPY_FORMATS
                 ),
+                default_path=self.export_path,
                 id="export_screen",
             ),
             callback,

@@ -18,9 +18,12 @@ from harlequin.exception import HarlequinCopyError
 from harlequin.export import (
     _deduplicate_column_names,
     file_format_names,
+    file_suffix,
+    names_a_directory,
     write_file,
     write_stream,
 )
+from harlequin.layout import layout_suffix
 from harlequin.options import HarlequinCopyFormat, SelectOption
 
 TEXT_FORMATS = ["csv", "tsv", "json", "jsonl", "ndjson"]
@@ -389,3 +392,52 @@ class TestStream:
         """duckdb writes \\n. The copy out is binary so that Python's text-mode
         translation cannot turn it into \\r\\n on Windows."""
         assert b"\r\n" not in to_bytes(data, format_name)
+
+
+class TestDestinationPaths:
+    """What a `-o` value names, which both commands ask before writing."""
+
+    @pytest.mark.parametrize(
+        "destination", ["exports", "exports/", "~/exports", ".harlequin"]
+    )
+    def test_a_path_with_no_extension_is_a_directory(self, destination: str) -> None:
+        assert names_a_directory(destination)
+
+    @pytest.mark.parametrize("destination", ["out.csv", "exports/out.parquet"])
+    def test_a_path_with_an_extension_is_a_file(self, destination: str) -> None:
+        assert not names_a_directory(destination)
+
+    def test_an_existing_directory_is_one_whatever_it_is_called(
+        self, tmp_path: Path
+    ) -> None:
+        dotted = tmp_path / "exports.old"
+        dotted.mkdir()
+        assert names_a_directory(dotted)
+
+    def test_an_existing_file_is_one_whatever_it_is_called(
+        self, tmp_path: Path
+    ) -> None:
+        extensionless = tmp_path / "exports"
+        extensionless.write_text("")
+        assert not names_a_directory(extensionless)
+
+    def test_a_missing_parent_is_created(self, data: pa.Table, tmp_path: Path) -> None:
+        """A caller who names a folder to export into names one that may not
+        exist yet."""
+        path = tmp_path / "exports" / "nested" / "out.csv"
+        write_file(data, path, "csv")
+        assert path.is_file()
+
+
+class TestSuffixes:
+    @pytest.mark.parametrize("format_name", TEXT_FORMATS + BINARY_FORMATS)
+    def test_every_file_format_names_its_extension(self, format_name: str) -> None:
+        assert file_suffix(format_name).lstrip(".") == format_name
+
+    def test_a_layout_names_one_too(self) -> None:
+        assert layout_suffix("table") == ".txt"
+        assert layout_suffix("markdown") == ".md"
+
+    def test_an_unknown_layout_raises(self) -> None:
+        with pytest.raises(ValueError):
+            layout_suffix("csv")

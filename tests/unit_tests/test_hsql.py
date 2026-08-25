@@ -471,6 +471,7 @@ def test_two_result_sets_will_not_fit_in_a_csv(hsql: Hsql, duck: list[str]) -> N
     assert res.stdout == ""
     assert "2 result sets, but csv holds one" in res.stderr
     assert "--result last" in res.stderr
+    assert "-o DIR" in res.stderr
 
 
 def test_two_result_sets_do_fit_in_jsonl(hsql: Hsql, duck: list[str]) -> None:
@@ -570,9 +571,119 @@ def test_a_file_never_gets_color(hsql: Hsql, duck: list[str], tmp_path: Path) ->
 def test_an_unwritable_destination_is_a_usage_error(
     hsql: Hsql, duck: list[str], tmp_path: Path
 ) -> None:
-    res = hsql(*duck, "-o", str(tmp_path / "nope" / "out.csv"), "-c", "select 1")
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("")
+    res = hsql(*duck, "-o", str(in_the_way / "out.csv"), "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
     assert res.stderr.startswith("hsql: error: ")
+
+
+def test_a_missing_parent_directory_is_created(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    destination = tmp_path / "exports" / "nested" / "out.csv"
+    res = hsql(*duck, "-o", str(destination), "-tA", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert destination.read_text() == "1\n"
+
+
+# --- writing to a directory --------------------------------------------------
+
+
+def test_a_directory_takes_one_file_per_result_set(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    """A folder is what lets a format that holds one result set take a script
+    that produced several."""
+    destination = tmp_path / "exports"
+    res = hsql(*duck, "--csv", "-o", str(destination), "-c", "select 1; select 2")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == ""
+    assert (destination / "results_1.csv").read_text() == "1\n1\n"
+    assert (destination / "results_2.csv").read_text() == "2\n2\n"
+
+
+def test_a_directory_names_what_it_wrote_on_stderr(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    """The caller did not name these files, so stderr says what they are."""
+    destination = tmp_path / "exports"
+    res = hsql(*duck, "--csv", "-o", str(destination), "-c", "select 1; select 2")
+    assert "results_1.csv" in res.stderr
+    assert "results_2.csv" in res.stderr
+
+
+def test_a_named_file_is_not_named_again(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    destination = tmp_path / "out.csv"
+    res = hsql(*duck, "-o", str(destination), "-c", "select 1")
+    assert res.stderr == ""
+
+
+@pytest.mark.parametrize("format_name", FILE_FORMATS + LAYOUTS)
+def test_a_directory_file_holds_what_the_same_format_writes(
+    hsql: Hsql, duck: list[str], tmp_path: Path, format_name: str
+) -> None:
+    destination = tmp_path / "exports"
+    hsql(*duck, "--format", format_name, "-o", str(destination), "-c", "select 1 as a")
+    (written,) = destination.iterdir()
+    piped = hsql(*duck, "--format", format_name, "-c", "select 1 as a")
+    assert written.read_bytes() == piped.stdout_bytes
+
+
+def test_a_directory_is_created_when_it_is_not_there(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    destination = tmp_path / "exports" / "nested"
+    res = hsql(*duck, "--csv", "-o", f"{destination}/", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert (destination / "results_1.csv").is_file()
+
+
+def test_an_existing_directory_takes_files_whatever_it_is_called(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    destination = tmp_path / "exports.old"
+    destination.mkdir()
+    res = hsql(*duck, "--csv", "-o", str(destination), "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert (destination / "results_1.csv").is_file()
+
+
+@pytest.mark.parametrize(
+    "args,written",
+    [
+        (("--info",), "info.json"),
+        (("--spec",), "spec.json"),
+        (("--config", "show"), "config-show.toml"),
+        (("--config", "show", "--format", "json"), "config-show.json"),
+        (("--config", "schema"), "config-schema.json"),
+        (("--config", "list-profiles", "--csv"), "config-list-profiles.csv"),
+    ],
+)
+def test_a_mode_names_its_document_in_a_directory(
+    hsql: Hsql, tmp_path: Path, args: tuple[str, ...], written: str
+) -> None:
+    """A document has no position to be numbered by, so it takes its own name --
+    and the extension of what it is actually written as."""
+    destination = tmp_path / "exports"
+    res = hsql(*args, "-o", str(destination))
+    assert res.stdout == ""
+    assert (destination / written).stat().st_size > 0
+    assert written in res.stderr
+
+
+def test_format_none_names_no_file(hsql: Hsql, duck: list[str], tmp_path: Path) -> None:
+    """The rows are discarded, so there is no file to write and no folder to
+    make -- but the run still reports what it did."""
+    destination = tmp_path / "exports"
+    res = hsql(
+        *duck, "--format", "none", "-o", str(destination), "--stats", "-c", "select 1"
+    )
+    assert res.exit_code == ExitCode.OK
+    assert not destination.exists()
+    assert json.loads(res.stderr.splitlines()[-1])["rows"] == 1
 
 
 # --- color -------------------------------------------------------------------

@@ -94,7 +94,7 @@
         },
         "output": {
           "type": "string",
-          "description": "Write results to PATH instead of stdout."
+          "description": "Write results to PATH instead of stdout. A directory -- an existing one, a trailing separator, or a name with no extension -- takes one file per result set, and is created if it is not there."
         },
         "format": {
           "type": "string",

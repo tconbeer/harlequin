@@ -134,6 +134,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
             "--keymap-name",
             "--viewer-max-rows",
             "--limit",
+            "--output",
             "--config-path",
             "--locale",
             "--no-download-tzdata",
@@ -371,6 +372,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "-o",
+        "--output",
+        metavar="PATH",
+        help=(
+            "The path the Data Exporter starts with. A directory -- an existing "
+            "one, a trailing separator, or a name with no extension -- is the "
+            "folder it exports into, and is created on the first export."
+        ),
+    )
+    @click.option(
         "--adapter",
         "-a",
         default=DEFAULT_ADAPTER,
@@ -532,6 +543,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
+        export_path: Path | str | None = config.pop("output", None)
 
         # instantiate the adapter, which was named and imported above -- the
         # key comes off either way, because what is left is its options
@@ -559,6 +571,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             theme=theme,
             show_files=show_files,
             show_s3=show_s3,
+            export_path=export_path,
         )
         tui.run()
 

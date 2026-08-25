@@ -16,8 +16,8 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING, Any, BinaryIO, Mapping
 
-from harlequin.export import file_format_names, write_stream
-from harlequin.layout import get_layout, layout_names
+from harlequin.export import file_format_names, file_suffix, write_stream
+from harlequin.layout import get_layout, layout_names, layout_suffix
 
 if TYPE_CHECKING:
     from harlequin.layout import LayoutOptions
@@ -41,6 +41,20 @@ def is_layout(format_name: str) -> bool:
     switches are the layouts', and a file format has neither.
     """
     return format_name in layout_names()
+
+
+def suffix(format_name: str) -> str:
+    """The extension a file of this format gets, when hsql has to name one.
+
+    Empty for `none`, which discards the rows and so names no file.
+    """
+    if format_name == NONE:
+        return ""
+    return (
+        layout_suffix(format_name)
+        if is_layout(format_name)
+        else file_suffix(format_name)
+    )
 
 
 def holds_many(format_name: str) -> bool:

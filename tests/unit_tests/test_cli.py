@@ -139,6 +139,7 @@ def test_default(
         theme=DEFAULT_THEME,
         show_files=None,
         show_s3=None,
+        export_path=None,
     )
 
 
@@ -307,6 +308,31 @@ def test_show_files(
     mock_harlequin.assert_called_once()
     assert mock_harlequin.call_args
     assert mock_harlequin.call_args.kwargs["show_files"] == Path(".")
+
+
+@pytest.mark.parametrize(
+    "harlequin_args,export_path",
+    [
+        ("--output .harlequin", ".harlequin"),
+        ("-o .harlequin/", ".harlequin/"),
+        ("-o exports/out.csv", "exports/out.csv"),
+        ("", None),
+    ],
+)
+def test_output_sets_the_export_path(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    export_path: str | None,
+    mock_empty_config: None,
+) -> None:
+    """`-o` reaches the app as text: the Data Exporter starts with what was
+    typed, trailing separator and all."""
+    runner = CliRunner()
+    res = invoke(runner, harlequin_args)
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args
+    assert mock_harlequin.call_args.kwargs["export_path"] == export_path
 
 
 @pytest.mark.parametrize(

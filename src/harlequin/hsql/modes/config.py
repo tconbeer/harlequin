@@ -76,6 +76,24 @@ JSON = "json"
 NONE = "none"
 
 
+def filename(mode: str, format_name: str) -> str:
+    """What a mode's answer is called when `-o` names a folder to write it into.
+
+    Three of these write a document -- JSON, or the TOML a config file is
+    written in -- and two write rows, which take the format's own extension.
+    """
+    if mode == SCHEMA:
+        return "config-schema.json"
+    if mode == SHOW:
+        return f"config-show{'.json' if format_name == JSON else '.toml'}"
+
+    # deferred like the writing itself: a document mode does not pay for the
+    # execution core to learn what a row-shaped one would have been called
+    from harlequin.hsql import output
+
+    return f"config-{mode}{output.suffix(format_name)}"
+
+
 def report(
     mode: str,
     out: BinaryIO,

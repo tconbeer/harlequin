@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from typing import Awaitable, Callable, List
@@ -5,6 +6,7 @@ from typing import Awaitable, Callable, List
 import pytest
 
 from harlequin import Harlequin
+from harlequin.adapter import HarlequinAdapter
 from harlequin.components import ExportScreen
 
 
@@ -159,3 +161,73 @@ async def test_export_under_a_limit_stops_at_the_limit(
         await pilot.pause()
 
         assert len(export_path.read_text().splitlines()) == 6  # header and 5 rows
+
+
+@pytest.mark.asyncio
+async def test_export_starts_at_the_export_path(
+    duckdb_adapter: type[HarlequinAdapter],
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """`-o` names the folder the Data Exporter opens in, so a user who exports
+    into the same place every time types a file name and nothing else."""
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="foo",
+        export_path=str(tmp_path / "exports"),
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1 as a"
+        await pilot.press("ctrl+j")
+        for _ in range(3):
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        await pilot.press("ctrl+e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportScreen)
+        assert app.screen.file_input.value == f"{tmp_path / 'exports'}{os.sep}"
+
+        # the folder does not exist yet, and exporting into it makes it
+        app.screen.file_input.value += "one.csv"
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        assert (tmp_path / "exports" / "one.csv").read_text() == "a\n1\n"
+        assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_export_path_with_a_file_name_picks_its_format(
+    duckdb_adapter: type[HarlequinAdapter],
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A whole path prefills whole, and the extension chooses the format the
+    same way a typed one does."""
+    export_path = tmp_path / "out.parquet"
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="foo",
+        export_path=str(export_path),
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1 as a"
+        await pilot.press("ctrl+j")
+        for _ in range(3):
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        await pilot.press("ctrl+e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportScreen)
+        assert app.screen.file_input.value == str(export_path)
+        assert app.screen.format_select.value == "parquet"

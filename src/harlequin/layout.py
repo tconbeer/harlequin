@@ -88,6 +88,14 @@ def layout_names() -> list[str]:
     return list(_LAYOUTS)
 
 
+def layout_suffix(name: str) -> str:
+    """The extension a layout's text is saved under, for a caller naming a file."""
+    try:
+        return _LAYOUTS[name].SUFFIX
+    except KeyError as e:
+        raise ValueError(f"{name} is not a layout Harlequin can render.") from e
+
+
 def default_max_rows(name: str) -> int:
     """How many rows `name` prints when its caller has no preference.
 
@@ -113,6 +121,7 @@ def get_layout(name: str, options: LayoutOptions | None = None) -> Layout:
 
 class _BaseLayout:
     DEFAULT_MAX_ROWS = 40
+    SUFFIX = ".txt"
 
     def __init__(self, options: LayoutOptions) -> None:
         self.options = options
@@ -239,6 +248,8 @@ class _MarkdownLayout(_BaseLayout):
     The one layout that escapes what it prints: an unescaped `|` in a value
     would start a new cell, and a newline would end the row.
     """
+
+    SUFFIX = ".md"
 
     MIN_WIDTH = 3
     """The shortest delimiter row GFM accepts is `---`."""
