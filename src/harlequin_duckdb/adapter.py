@@ -13,13 +13,26 @@ except ImportError:
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinQueryError,
 )
-from harlequin_duckdb.catalog import DatabaseCatalogItem
+from harlequin_duckdb.catalog import (
+    ColumnCatalogItem,
+    DatabaseCatalogItem,
+    RelationCatalogItem,
+    SchemaCatalogItem,
+    TableCatalogItem,
+    TempTableCatalogItem,
+    ViewCatalogItem,
+)
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
@@ -27,6 +40,56 @@ if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_LIKE_ESCAPE = "\\"
+"""What escapes a LIKE metacharacter in a term the caller typed."""
+
+_SEARCH_RELATIONS = """
+select t.table_catalog, t.table_schema, t.table_name, t.table_type, null, null
+from information_schema.tables t
+where t.table_schema not in ('pg_catalog', 'information_schema')
+    and t.table_catalog in (
+        select database_name from duckdb_databases() where not internal
+    )
+    and t.table_name ilike ? escape '\\'
+"""
+
+_SEARCH_COLUMNS = """
+select
+    c.table_catalog, c.table_schema, c.table_name, t.table_type,
+    c.column_name, c.data_type
+from information_schema.columns c
+join information_schema.tables t
+    on t.table_catalog = c.table_catalog
+    and t.table_schema = c.table_schema
+    and t.table_name = c.table_name
+where c.table_schema not in ('pg_catalog', 'information_schema')
+    and c.table_catalog in (
+        select database_name from duckdb_databases() where not internal
+    )
+    and c.column_name ilike ? escape '\\'
+"""
+
+_SEARCH_SQL = {
+    "relations": f"{_SEARCH_RELATIONS} order by 1, 2, 3",
+    "columns": f"{_SEARCH_COLUMNS} order by 1, 2, 3, 5",
+    "all": f"{_SEARCH_RELATIONS} union all {_SEARCH_COLUMNS} order by 1, 2, 3, 5",
+}
+"""One query per kind, over the catalogs `pragma show_databases` reports.
+
+Scoped to those so that every path a search reports is one `--catalog --path`
+walks: duckdb's temp catalog holds objects the catalog tree never shows.
+Ordered so that a relation arrives before its own columns, since a null column
+name sorts first.
+"""
+
+
+def _contains_pattern(term: str) -> str:
+    """A term as the LIKE pattern that matches any label containing it."""
+    escaped = term
+    for character in (_LIKE_ESCAPE, "%", "_"):
+        escaped = escaped.replace(character, f"{_LIKE_ESCAPE}{character}")
+    return f"%{escaped}%"
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -151,6 +214,53 @@ class DuckDbConnection(HarlequinConnection):
             )
         return Catalog(items=catalog_items)
 
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        cur = self.conn.cursor()
+        pattern = _contains_pattern(term)
+        # "all" is the two queries unioned, so it binds the pattern twice
+        parameters = [pattern] * (2 if kind == "all" else 1)
+        try:
+            found = cur.execute(_SEARCH_SQL[kind], parameters).fetchall()
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error searching the catalog:"
+            ) from e
+        databases: dict[str, DatabaseCatalogItem] = {}
+        schemas: dict[tuple[str, str], SchemaCatalogItem] = {}
+        relations: dict[tuple[str, str, str], RelationCatalogItem] = {}
+        results: list[CatalogSearchResult] = []
+        for catalog, schema, relation, relation_type, column, column_type in found:
+            database_item = databases.setdefault(
+                catalog, DatabaseCatalogItem.from_label(label=catalog, connection=self)
+            )
+            schema_item = schemas.setdefault(
+                (catalog, schema),
+                SchemaCatalogItem.from_parent(parent=database_item, label=schema),
+            )
+            relation_item = relations.setdefault(
+                (catalog, schema, relation),
+                self._relation_item(schema_item, relation, relation_type),
+            )
+            if column is None:
+                results.append(
+                    CatalogSearchResult(item=relation_item, parents=(catalog, schema))
+                )
+            else:
+                results.append(
+                    CatalogSearchResult(
+                        item=ColumnCatalogItem.from_parent(
+                            parent=relation_item,
+                            label=column,
+                            type_label=self._short_column_type(column_type),
+                            type_name=column_type,
+                        ),
+                        parents=(catalog, schema, relation),
+                    )
+                )
+        return results
+
     def get_completions(self) -> list[HarlequinCompletion]:
         cur = self.conn.cursor()
         return [
@@ -226,6 +336,23 @@ class DuckDbConnection(HarlequinConnection):
         ).fetchall()
         return columns
 
+    @staticmethod
+    def _relation_item(
+        parent: SchemaCatalogItem, label: str, relation_type: str
+    ) -> RelationCatalogItem:
+        """A relation of the class `fetch_children()` would have built for it."""
+        if relation_type == "VIEW":
+            return ViewCatalogItem.from_parent(
+                parent=parent, label=label, type_name=relation_type
+            )
+        if relation_type == "LOCAL TEMPORARY":
+            return TempTableCatalogItem.from_parent(
+                parent=parent, label=label, type_name=relation_type
+            )
+        return TableCatalogItem.from_parent(
+            parent=parent, label=label, type_name=relation_type
+        )
+
     @classmethod
     def _short_relation_type(cls, native_type: str) -> str:
         return cls.RELATION_TYPE_MAPPING.get(native_type, cls.UNKNOWN_TYPE)
@@ -251,6 +378,7 @@ class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
     COPY_FORMATS = None
     IMPLEMENTS_CANCEL = True
+    IMPLEMENTS_CATALOG_SEARCH = True
     ADAPTER_DETAILS = "This is a DuckDB adapter part of Harlequin core."
 
     def __init__(

@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Generic, Protocol, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Generic,
+    Literal,
+    Protocol,
+    Sequence,
+    TypeVar,
+)
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
@@ -41,6 +49,26 @@ class CatalogItem:
     type_label: str
     children: list["CatalogItem"] = field(default_factory=list)
     type_name: str | None = None
+
+
+CatalogSearchKind = Literal["relations", "columns", "all"]
+"""Which items a catalog search looks at: relations, their columns, or both."""
+
+
+@dataclass
+class CatalogSearchResult:
+    """
+    One item a catalog search found, and where in the catalog it sits.
+
+    Args:
+        item (CatalogItem): The object whose label matched the search term.
+        parents (tuple[str, ...]): The labels of the item's ancestors,
+            outermost first, e.g. ("mydb", "analytics") for a table. Empty for
+            an item at the top of the catalog.
+    """
+
+    item: CatalogItem
+    parents: tuple[str, ...] = ()
 
 
 TCatalogItem_contra = TypeVar(

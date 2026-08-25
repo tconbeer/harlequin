@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog
+from harlequin.catalog import Catalog, CatalogSearchKind, CatalogSearchResult
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
 
@@ -112,6 +112,30 @@ class HarlequinConnection(ABC):
         Returns: Catalog
         """
         pass
+
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        """
+        Returns every catalog item whose label contains term, matched
+        case-insensitively, without walking the catalog a level at a time.
+
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_CATALOG_SEARCH to True.
+
+        Args:
+            term (str): The substring to match against an item's label.
+            kind (CatalogSearchKind): Which items to match: "relations",
+                "columns", or "all".
+
+        Returns: list[CatalogSearchResult], each pairing a matched item with
+            the labels of its ancestors, so that a caller can spell the path
+            that reaches it.
+
+        Raises: NotImplementedError if the adapter does not provide this
+            optional functionality.
+        """
+        raise NotImplementedError
 
     def get_completions(self) -> list[HarlequinCompletion]:
         """
@@ -223,6 +247,8 @@ class HarlequinAdapter(ABC):
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
     IMPLEMENTS_CANCEL = False
+    IMPLEMENTS_CATALOG_SEARCH = False
+    """True if the connection's search_catalog() is real."""
     ADAPTER_DETAILS: str | None = None
     ADAPTER_DRIVER_DETAILS: str | None = None
 

@@ -13,8 +13,13 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Sequence
 
-from harlequin.catalog import CatalogItem, InteractiveCatalogItem
-from harlequin.exception import HarlequinCatalogPathError
+from harlequin.catalog import (
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+    InteractiveCatalogItem,
+)
+from harlequin.exception import HarlequinCatalogPathError, HarlequinQueryError
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
@@ -116,6 +121,36 @@ def list_children(connection: "HarlequinConnection", path: CatalogPath) -> Listi
         # can rely on.
         items = [item for item in items if fnmatch.fnmatchcase(item.label, path.glob)]
     return Listing(parent=parent, items=list(items))
+
+
+def search(
+    connection: "HarlequinConnection",
+    term: str,
+    path: CatalogPath,
+    kind: CatalogSearchKind = "all",
+) -> list[CatalogSearchResult]:
+    """Every catalog item whose label contains `term`, wherever it is.
+
+    The adapter answers the whole catalog in one query -- this is the call a
+    walk cannot serve -- and `path` narrows the answer to one subtree. A scope
+    is resolved first, so a `--path` that names nothing says so rather than
+    coming back with no rows.
+
+    Raises: HarlequinCatalogPathError if the scope names nothing, and
+    HarlequinQueryError if the adapter declared a search it does not implement.
+    """
+    if path.segments:
+        resolve(connection, path)
+    try:
+        found = connection.search_catalog(term, kind)
+    except NotImplementedError as e:
+        raise HarlequinQueryError(
+            "This adapter declares that it can search its catalog, but its "
+            "connection does not implement it.",
+            title="Harlequin could not search the catalog.",
+        ) from e
+    depth = len(path.segments)
+    return [result for result in found if result.parents[:depth] == path.segments]
 
 
 def spell(segments: Sequence[str]) -> str:

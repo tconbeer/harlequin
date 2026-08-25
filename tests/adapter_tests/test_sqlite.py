@@ -237,6 +237,63 @@ def test_catalog_items_carry_sqlites_own_type_names(tmp_path: Path) -> None:
     ]
 
 
+def test_search_catalog_finds_relations_and_columns(tmp_path: Path) -> None:
+    """One query per attached database, rather than one per relation, and every
+    match carries the path that reaches it."""
+    conn = HarlequinSqliteAdapter([str(tmp_path / "search.sqlite")]).connect()
+    conn.execute("create table orders (id bigint, customer_id bigint)")
+    conn.execute("create view order_summary as select 1 as n")
+    conn.execute("create table customers (customer_id bigint)")
+
+    assert [
+        (result.parents, result.item.label, result.item.type_name)
+        for result in conn.search_catalog("ORDER")
+    ] == [
+        (("main",), "order_summary", "view"),
+        (("main",), "orders", "table"),
+    ]
+    assert [
+        (result.parents, result.item.label, result.item.type_name)
+        for result in conn.search_catalog("customer_id")
+    ] == [
+        (("main", "customers"), "customer_id", "bigint"),
+        (("main", "orders"), "customer_id", "bigint"),
+    ]
+
+
+def test_search_catalog_takes_one_kind_at_a_time(tmp_path: Path) -> None:
+    conn = HarlequinSqliteAdapter([str(tmp_path / "kinds.sqlite")]).connect()
+    conn.execute("create table orders (orders bigint)")
+
+    assert [
+        result.item.type_label for result in conn.search_catalog("orders", "relations")
+    ] == ["t"]
+    assert [
+        result.item.type_label for result in conn.search_catalog("orders", "columns")
+    ] == ["##"]
+    assert len(conn.search_catalog("orders", "all")) == 2
+
+
+def test_search_catalog_reads_a_wildcard_as_a_character(tmp_path: Path) -> None:
+    """The term is a substring, so a LIKE metacharacter in it matches itself."""
+    conn = HarlequinSqliteAdapter([str(tmp_path / "wild.sqlite")]).connect()
+    conn.execute('create table "a%b" (n bigint)')
+    conn.execute("create table ab (n bigint)")
+
+    assert [result.item.label for result in conn.search_catalog("a%b")] == ["a%b"]
+    assert [result.item.label for result in conn.search_catalog("a_b")] == []
+
+
+def test_search_catalog_covers_every_attached_database(
+    tiny_sqlite: Path, small_sqlite: Path
+) -> None:
+    conn = HarlequinSqliteAdapter([str(tiny_sqlite), str(small_sqlite)]).connect()
+    assert {result.parents[0] for result in conn.search_catalog("")} == {
+        "main",
+        "small",
+    }
+
+
 def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
     script = (
         f".bail on\nselect \n1;\n.bail off\n.open {tiny_sqlite}\n"

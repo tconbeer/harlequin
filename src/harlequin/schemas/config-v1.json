@@ -195,9 +195,13 @@
           "description": "List the catalog objects one level below --path, and exit without running SQL.",
           "default": false
         },
+        "find": {
+          "type": "string",
+          "description": "Search the whole catalog for relations and columns whose name contains TERM, and exit without running SQL. Not every adapter can; see --info."
+        },
         "path": {
           "type": "string",
-          "description": "Where in the catalog --catalog looks. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters."
+          "description": "Where in the catalog --catalog looks, and what --find searches under. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters a --catalog listing."
         },
         "spec": {
           "type": "boolean",

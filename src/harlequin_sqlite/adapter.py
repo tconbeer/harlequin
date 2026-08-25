@@ -9,7 +9,12 @@ from urllib.parse import unquote, urlparse
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -17,7 +22,13 @@ from harlequin.exception import (
 )
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
-from harlequin_sqlite.catalog import DatabaseCatalogItem
+from harlequin_sqlite.catalog import (
+    ColumnCatalogItem,
+    DatabaseCatalogItem,
+    RelationCatalogItem,
+    TableCatalogItem,
+    ViewCatalogItem,
+)
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
 
@@ -25,6 +36,55 @@ if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_LIKE_ESCAPE = "\\"
+"""What escapes a LIKE metacharacter in a term the caller typed."""
+
+_SEARCH_RELATIONS = """
+select m.name, m.type, null, null
+from {db}.sqlite_schema m
+where m.type in ('table', 'view') and m.name like ? escape '\\'
+"""
+
+_SEARCH_COLUMNS = """
+select m.name, m.type, p.name, p.type
+from {db}.sqlite_schema m
+join pragma_table_info(m.name, ?) p
+where m.type in ('table', 'view') and p.name like ? escape '\\'
+"""
+
+_SEARCH_SQL = {
+    "relations": f"{_SEARCH_RELATIONS} order by 1",
+    "columns": f"{_SEARCH_COLUMNS} order by 1, 3",
+    "all": f"{_SEARCH_RELATIONS} union all {_SEARCH_COLUMNS} order by 1, 3",
+}
+"""One query per kind, per attached database, which is what SQLite has.
+
+`pragma_table_info` is the table-valued form of the pragma, so every relation's
+columns come back in one query rather than one per relation. Ordered so that a
+relation arrives before its own columns, since a null column name sorts first.
+"""
+
+
+def _search_parameters(kind: CatalogSearchKind, db_name: str, term: str) -> list[str]:
+    """What `_SEARCH_SQL[kind]` binds, in the order it binds them."""
+    pattern = _contains_pattern(term)
+    relation_parameters = [pattern]
+    # the pragma's schema argument sits ahead of the pattern in the query text
+    column_parameters = [db_name, pattern]
+    if kind == "relations":
+        return relation_parameters
+    if kind == "columns":
+        return column_parameters
+    return [*relation_parameters, *column_parameters]
+
+
+def _contains_pattern(term: str) -> str:
+    """A term as the LIKE pattern that matches any label containing it."""
+    escaped = term
+    for character in (_LIKE_ESCAPE, "%", "_"):
+        escaped = escaped.replace(character, f"{_LIKE_ESCAPE}{character}")
+    return f"%{escaped}%"
 
 
 class HarlequinSqliteCursor(HarlequinCursor):
@@ -154,6 +214,51 @@ class HarlequinSqliteConnection(HarlequinConnection):
             )
         return Catalog(items=catalog_items)
 
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        results: list[CatalogSearchResult] = []
+        for db_name in self._get_databases():
+            database_item = DatabaseCatalogItem.from_label(
+                label=db_name, connection=self
+            )
+            relations: dict[str, RelationCatalogItem] = {}
+            quoted_db = '"' + db_name.replace('"', '""') + '"'
+            try:
+                found = self.conn.execute(
+                    _SEARCH_SQL[kind].format(db=quoted_db),
+                    _search_parameters(kind, db_name, term),
+                ).fetchall()
+            except sqlite3.Error as e:
+                raise HarlequinQueryError(
+                    msg=str(e),
+                    title="SQLite raised an error searching the catalog:",
+                ) from e
+            for relation, relation_type, column, column_type in found:
+                relation_item = relations.setdefault(
+                    relation,
+                    self._relation_item(database_item, relation, relation_type),
+                )
+                if column is None:
+                    results.append(
+                        CatalogSearchResult(item=relation_item, parents=(db_name,))
+                    )
+                else:
+                    results.append(
+                        CatalogSearchResult(
+                            item=ColumnCatalogItem.from_parent(
+                                parent=relation_item,
+                                label=column,
+                                type_label=self._short_column_type(column_type),
+                                # a column can be declared without a type, and
+                                # an empty string is not one
+                                type_name=column_type or None,
+                            ),
+                            parents=(db_name, relation),
+                        )
+                    )
+        return results
+
     def get_completions(self) -> list[HarlequinCompletion]:
         return get_completion_data(self.conn)
 
@@ -199,6 +304,16 @@ class HarlequinSqliteConnection(HarlequinConnection):
         return self.conn.execute(
             f"pragma {db_name}.table_info('{rel_name}')"
         ).fetchall()
+
+    @staticmethod
+    def _relation_item(
+        parent: DatabaseCatalogItem, label: str, relation_type: str
+    ) -> RelationCatalogItem:
+        """A relation of the class `fetch_children()` would have built for it."""
+        item_class = ViewCatalogItem if relation_type == "view" else TableCatalogItem
+        return item_class.from_parent(
+            parent=parent, label=label, type_name=relation_type
+        )
 
     @staticmethod
     def _short_column_type(raw_type: str) -> str:
@@ -258,6 +373,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = SQLITE_OPTIONS
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
+    IMPLEMENTS_CATALOG_SEARCH = True
     ADAPTER_DETAILS = "This is an SQLite adapter part of Harlequin core."
 
     def __init__(
