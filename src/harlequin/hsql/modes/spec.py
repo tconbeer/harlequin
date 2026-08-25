@@ -49,6 +49,9 @@ from harlequin.redact import REDACTED
 if TYPE_CHECKING:
     from harlequin.options import AbstractOption
 
+FILENAME = "spec.json"
+"""What this document is called when `-o` names a folder to write it into."""
+
 JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
 

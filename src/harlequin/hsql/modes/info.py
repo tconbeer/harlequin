@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 
     from harlequin.adapter import HarlequinAdapter
 
+FILENAME = "info.json"
+"""What this document is called when `-o` names a folder to write it into."""
+
 JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
 

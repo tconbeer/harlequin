@@ -94,7 +94,7 @@
         },
         "output": {
           "type": "string",
-          "description": "Write results to PATH instead of stdout."
+          "description": "Write results to PATH instead of stdout. Accepts a file or directory."
         },
         "format": {
           "type": "string",

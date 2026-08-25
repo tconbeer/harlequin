@@ -7,6 +7,7 @@ defaults, and any option the caller passes overrides a default.
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -41,6 +42,19 @@ def file_format_names() -> list[str]:
     return list(_FILE_FORMATS)
 
 
+def file_suffix(format_name: str) -> str:
+    """The extension `format_name` writes under, for a caller naming a file."""
+    return _get_format(format_name).suffix
+
+
+def names_a_directory(destination: str | Path) -> bool:
+    """Whether a destination names a folder to write into, rather than a file."""
+    path = Path(destination).expanduser()
+    if path.exists():
+        return path.is_dir()
+    return str(destination).endswith(("/", os.sep)) or not path.suffix
+
+
 def write_file(
     data: "pa.Table",
     path: Path,
@@ -51,11 +65,16 @@ def write_file(
 
     Zero rows is not an error: an empty file is how "the query matched nothing"
     is told apart from "the query failed".
+
+    The directory `path` is in is created if it is not there: a caller who
+    names a folder to export into names one that may not exist yet.
     """
     fmt = _get_format(format_name)
+    destination = path.expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
     fmt.exporter(
         _deduplicate_column_names(data),
-        str(path.expanduser()),
+        str(destination),
         **_merge_options(fmt, options),
     )
 

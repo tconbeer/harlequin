@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import sys
 from enum import IntEnum
+from pathlib import Path
 from typing import Any, Sequence
 
 from harlequin.exception import (
@@ -198,6 +199,21 @@ def report_document_format_ignored(mode: str, format_name: str) -> None:
         f"{mode} writes a document, so --format {format_name} had no effect; "
         "--format json is the machine-readable one"
     )
+
+
+def report_written(paths: Sequence[Path]) -> None:
+    """Name the files a directory `-o` wrote, since the caller did not name them.
+
+    A file the caller named needs no line -- they know where it is. What hsql
+    chose is the one thing about the run that stdout cannot carry.
+    """
+    if not paths:
+        return
+    if len(paths) == 1:
+        note(f"wrote {paths[0]}")
+    else:
+        listed = ", ".join(path.name for path in paths)
+        note(f"wrote {len(paths)} files to {paths[0].parent}: {listed}")
 
 
 def report_stats(
