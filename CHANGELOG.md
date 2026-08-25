@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - Harlequin and `hsql` now redact secrets instead of showing them in output ([#667](https://github.com/tconbeer/harlequin/issues/667)
 - A profile can now interpolate environment variables: write `password = "${MYPASSWORD}"`, or `host = "${MYHOST:-localhost}"` (to set a default) ([#898](https://github.com/tconbeer/harlequin/issues/898)). Use `$${` for a literal `${`.
 - Errors in Config files now reference the files and keys they originate from.
+- Harlequin now reopens the buffer you were last using, instead of always starting on the first one.
 
 ### Bug Fixes
 

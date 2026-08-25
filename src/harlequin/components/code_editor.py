@@ -290,9 +290,8 @@ class EditorCollection(Vertical):
     async def on_mount(self) -> None:
         if self.startup_cache is not None and self.startup_cache.buffers:
             for buffer in self.startup_cache.buffers:
-                # the cache's focus state isn't restored, so the first
-                # buffer stays active, as it does on a cold start.
                 await self.action_new_buffer(state=buffer, activate=False)
+            self._activate_cached_buffer(self.startup_cache.focus_index)
         else:
             await self.action_new_buffer()
         self.editor.theme = self.theme
@@ -364,6 +363,13 @@ class EditorCollection(Vertical):
         if self.tab_count < 2:
             return
         self.tabs.action_next_tab()
+
+    def _activate_cached_buffer(self, focus_index: int) -> None:
+        """Reopens the buffer that was active when the cache was written."""
+        buffer_ids = list(self.buffer_states)
+        if not 0 <= focus_index < len(buffer_ids):
+            focus_index = 0
+        self.tabs.active = buffer_ids[focus_index]
 
     def _save_loaded_buffer(self) -> None:
         """Copies the editor's contents back into the buffer they were loaded from."""

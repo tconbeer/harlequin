@@ -70,6 +70,9 @@ async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
         assert [buffer.text for buffer in app.editor_collection.buffers] == [
             buffer.text for buffer in cache.buffers
         ]
+        # the buffer that was active when the cache was written is active again
+        assert app.editor_collection.active_buffer_index == cache.focus_index
+        assert app.editor.text == cache.buffers[cache.focus_index].text
 
 
 @pytest.mark.use_cache
@@ -92,3 +95,4 @@ async def test_harlequin_writes_cache(app: Harlequin) -> None:
         cache = pickle.load(f)
     assert isinstance(cache, Cache)
     assert [buffer.text for buffer in cache.buffers] == ["first", "second"]
+    assert cache.focus_index == 1
