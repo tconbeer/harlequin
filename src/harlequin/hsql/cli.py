@@ -115,10 +115,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--config"]),
             click.Option(["--spec"], is_flag=True),
             click.Option(["--info"], is_flag=True),
-            # not a mode, and not read here: declared so that the probe consumes
-            # its value the way the real parse will, rather than leaving a path
-            # among the arguments for `-a` or `-P` to trip over.
-            click.Option(["--path"]),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -274,10 +270,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             "running SQL."
         ),
     )
-    # `--path`, and not a reused `-c`: `-c` means SQL here, in psql and in
-    # duckdb, and a flag that means an identifier in one invocation and a query
-    # in another is one an agent will sooner or later get wrong in the direction
-    # that runs something.
     @click.option(
         "--path",
         metavar="TEXT",
@@ -424,9 +416,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx, catalog=catalog, config_mode=config_mode, spec=spec, info=info
         )
         if path is not None and not catalog:
-            # `--path` says where in the catalog to look, so on its own there is
-            # nothing for it to say it about.
-            diagnostics.error("--path says where --catalog looks; pass --catalog.")
+            diagnostics.error("--path must be used with --catalog.")
             ctx.exit(ExitCode.USAGE)
         if mode is not None and sources:
             # a mode does not run SQL, so `-c` or `-f` beside one is two
@@ -440,9 +430,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(ExitCode.USAGE)
 
         if "tuples_only" in explicitly_set:
-            # ahead of everything it could explain, including the connection:
-            # `-t nord` does not reliably fail, so there may be no error for
-            # this to attach itself to.
+            # ahead of the modes as well as the connection: `-t nord` does not
+            # reliably fail, so there may be no error for this to explain.
             diagnostics.report_theme_confusion(conn_str)
 
         if info:
@@ -516,9 +505,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         if catalog:
             catalog_path = _catalog_path(ctx, path)
             if "limit" in explicitly_set:
-                # ahead of the connection, so that a caller who capped a listing
-                # that cannot be capped hears about it whether or not the
-                # database answers.
+                # ahead of the connection, so it is said whether or not the
+                # database answers
                 diagnostics.report_limit_ignored()
             ctx.exit(
                 _report_catalog(
@@ -687,12 +675,7 @@ def _connect(
     conn_str: Sequence[str],
     values: Mapping[str, Any],
 ) -> "HarlequinConnection":
-    """The connection this invocation runs on, or exit having said why not.
-
-    Two exit codes, because they are two different things to fix: options the
-    adapter refused are the caller's, and a database that would not answer is
-    the database's.
-    """
+    """The connection this invocation runs on, or exit having said why not."""
     try:
         adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
     except HarlequinConfigError as e:
@@ -709,9 +692,8 @@ def _connect(
 def _catalog_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
     """What `--path` named, or exit having said why it cannot be read.
 
-    Ahead of the connection: a wildcard in the middle of a path is refused by
-    the grammar, and refusing it after opening a connection would make the
-    caller wait to be told they typed something this cannot answer.
+    Called ahead of the connection, so a path this cannot read is refused
+    without waiting on a database.
     """
     from harlequin.navigate import CatalogPath
 
@@ -732,14 +714,9 @@ def _report_catalog(
     display_rows: Any,
     **output_options: Any,
 ) -> ExitCode:
-    """Write one level of the catalog and return its code, or exit saying why not.
-
-    A listing is rows, so it takes the same options a result set does and says
-    the same thing on stderr when the row cap dropped some of them.
-    """
+    """Write one level of the catalog and return its code, or exit saying why not."""
     # here rather than at module scope, for the reason each mode lives in its
-    # own module: this one reaches the catalog walk and the row machinery, and a
-    # run that is not asking for a listing should pay for neither.
+    # own module: this one reaches the catalog walk and the row machinery.
     from harlequin.hsql.modes import catalog as catalog_mode
 
     try:
@@ -767,9 +744,8 @@ def _report_catalog(
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
     except Exception as e:  # noqa: BLE001 -- adapters are third-party code
-        # a path that names nothing, and whatever the adapter raised fetching a
-        # level. Both are the answer to what was asked, so both get a code
-        # rather than a traceback.
+        # a path that names nothing, or whatever the adapter raised fetching a
+        # level: a code rather than a traceback for both.
         diagnostics.report_error(e)
         ctx.exit(diagnostics.exit_code_for(e))
     _report_hidden_rows(result, layout_options)

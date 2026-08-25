@@ -398,6 +398,15 @@ flag should not change meaning with context. An agent that has learned `-c` type
 lookup for a relation named `select 1`. `--path` also leaves `-c` free to mean what it
 means, if a later milestone wants `--catalog` and a query in one invocation.
 
+**Nor a value on `--catalog` itself** (Ted's question, taken after PR 9). `--catalog PATH`
+reads better and costs two tokens fewer, but click takes an optional value greedily -- the
+next token, whether or not an `=` is written -- and `CONN_STR` is a variadic positional. So
+`hsql --catalog mydb.db` would read the file as a catalog path against an in-memory
+database, which is the `hsql catalog`-versus-a-file-named-`catalog` ambiguity in a different
+spelling, and it would need the rule §3.1 exists to avoid. With `--path`, `CONN_STR` stays
+free to sit anywhere on the line and `hsql --catalog mydb.db` lists what is in `mydb.db`.
+`--find` composes either way: `--path` is the scope for it too (§3.8).
+
 **Which mode needs what**, because this is the table that keeps §3's second rule true:
 
 | mode | adapter import | connection | notable import |
@@ -995,8 +1004,10 @@ would land.
 
 - *Modes are options, not subcommands* (Ted's call, §3.1) — consistent with
   `harlequin --config`, and no verb-versus-conn_str ambiguity to adjudicate.
-- *The catalog path is `--path`*, not a reused `-c`, so no flag means SQL in one invocation
-  and an identifier in another (§3.1).
+- *The catalog path is `--path`*, not a reused `-c` and not a value on `--catalog` itself
+  (§3.1). `-c` would mean SQL in one invocation and an identifier in another; `--catalog
+  PATH` would take its value greedily and read `hsql --catalog mydb.db` as a path against an
+  in-memory database.
 - *One level, no `--depth`, no node budget* (§3.2). Recursion returns with
   `fetch_descendants()`, which is what would make it one round trip instead of 403.
 - *No `child_count` field* (§1.3). A count is only knowable by fetching, and `len(children)`

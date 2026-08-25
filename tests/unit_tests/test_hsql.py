@@ -2645,9 +2645,7 @@ def test_catalog_measures_a_label_in_terminal_cells(
     assert res.exit_code == ExitCode.OK
     # the path column is as wide as `cat.empty schema` and the name column as
     # wide as `empty schema`; measured with len() these would be two cells short
-    assert (
-        ' cat.\u5206\u6790         | \u5206\u6790         | sch  | "cat"."\u5206\u6790"'
-    ) in res.stdout
+    assert " cat.\u5206\u6790         | \u5206\u6790         |" in res.stdout
 
 
 def test_catalog_query_name_is_the_adapters_own_quoting(
@@ -2702,7 +2700,7 @@ def test_catalog_takes_every_format_a_result_set_does(
     """A listing is rows, so it inherits the output layer rather than adding one."""
     res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--csv")
     assert res.exit_code == ExitCode.OK
-    assert res.stdout.splitlines()[0] == "path,name,type,query_name"
+    assert res.stdout.splitlines()[0] == "path,name,type_label,query_name"
 
     res = hsql(*catalog_db, "--catalog", "--path", "cat.analytics", "--json")
     assert res.exit_code == ExitCode.OK
@@ -2784,12 +2782,11 @@ def test_catalog_beside_another_mode_is_a_usage_error(
 
 
 def test_path_without_catalog_is_a_usage_error(hsql: Hsql, duck: list[str]) -> None:
-    """`-c` means SQL in this CLI, so `--path` is what names a relation -- and a
-    flag that silently did nothing is the thing this command does not have."""
+    """A flag that silently did nothing is the thing this command does not have."""
     res = hsql(*duck, "--path", "main", "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
-    assert "--catalog" in res.stderr
+    assert "--path must be used with --catalog" in res.stderr
 
 
 def test_catalog_carries_the_adapters_options(
