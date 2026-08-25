@@ -2808,8 +2808,11 @@ def test_catalog_reads_the_profile_a_run_would(
 ) -> None:
     """It connects like a run, so it is configured like one."""
     config_file = tmp_path / "profile.toml"
+    # json.dumps, not an f-string: TOML reads a backslash in a basic string as
+    # an escape, so a Windows path would be a parse error rather than a path.
     config_file.write_text(
-        f'[profiles.cat]\nadapter = "duckdb"\nconn_str = ["{catalog_db[-1]}"]\n'
+        f'[profiles.cat]\nadapter = "duckdb"\n'
+        f"conn_str = [{json.dumps(catalog_db[-1])}]\n"
         "no_init = true\n"
     )
     res = hsql("--config-path", str(config_file), "-P", "cat", "--catalog", "-tA")
