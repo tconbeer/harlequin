@@ -13,8 +13,9 @@ out-of-tree ones that are never changed.** Nothing here is implemented yet.
   `ssh` verbatim. Anything they cannot say goes in a `Host` block, which `--ssh-host` names.
 - **No new dependencies** — the blocker on the issue since 2025 — and the user's whole
   `~/.ssh/config` comes for free: `LocalForward`, `ProxyJump`, agent, certificates, `Match`.
-- **The tunnel starts before Textual**, so a passphrase or 2FA prompt reaches a human. It is a
-  child process, not `ssh -f`, so it dies with the session instead of outliving it.
+- **The tunnel starts before Textual**, so a passphrase or 2FA prompt reaches a human — or
+  `--ssh-no-prompt` refuses to prompt at all, for scripts and agents. It is a child process,
+  not `ssh -f`, so it dies with the session instead of outliving it.
 
 ## 1. Ten seconds of SSH
 
@@ -25,6 +26,7 @@ out-of-tree ones that are never changed.** Nothing here is implemented yet.
 | `-N` | run no remote command; I am here for the forwards |
 | `-f` | fork to the background once the forwards are up |
 | `-o ExitOnForwardFailure=yes` | exit if a forward cannot be set up, rather than connecting anyway |
+| `-o BatchMode=yes` | never prompt for a passphrase, password or host key; fail instead |
 | `ssh -G host` | print the resolved config — `Host`/`Match` blocks plus this command line's flags — and connect to nothing |
 
 `ssh -fN redshift_prod` and `ssh -L …` are not alternatives. `-f` and `-N` say *how to run*;
@@ -91,7 +93,8 @@ end, which is all the contract says.
 ```bash
 harlequin -a postgres --host localhost --port 15439 --dbname prod --user tco \
   --ssh-host tco@web-1 \
-  --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439
+  --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
+  --ssh-no-prompt
 ```
 
 `HostName` + `User` → `--ssh-host tco@web-1`. `LocalForward` → `--ssh-forward`, the same text
@@ -119,6 +122,7 @@ cannot ask a human to run `ssh -fN` first.
 |---|---|---|
 | `--ssh-host TEXT` | `ssh_host` | the destination, verbatim to `ssh`: a `Host` alias, `host`, `user@host`, or `ssh://user@host:port` |
 | `--ssh-forward TEXT` | `ssh_forward` | repeatable; whatever follows `ssh -L`, verbatim. Omit when `ssh_config` has it |
+| `--ssh-no-prompt` | `ssh_no_prompt` | `-o BatchMode=yes`: fail rather than ask for a passphrase, password or host key (§5.2) |
 | `--ssh-allow-reuse` | `ssh_allow_reuse` | on a bind collision, warn and connect anyway instead of failing (§5.3) |
 | `--ssh-timeout FLOAT` | `ssh_timeout` | seconds to wait for the forwards (default 10) |
 
@@ -172,7 +176,7 @@ first_pass -> click parses -> profile merge -> SshTunnel.start()   <-- prompts h
 - **Foreground, not `-f`.** The child keeps the terminal, so prompts work, and we keep the
   handle, so it can be killed. Teardown is `terminate()` then `kill()` from a
   `contextlib.ExitStack` around `tui.run()` and the `hsql` run, plus an `atexit` backstop.
-- **`ExitOnForwardFailure=yes` is the only `-o` Harlequin imposes**, because a forward that
+- **`ExitOnForwardFailure=yes` is the only `-o` Harlequin imposes on its own**, because a forward that
   silently did not happen is the one failure a user cannot diagnose. Notably not imposed:
   `ServerAliveInterval`. A command-line `-o` beats the config file, and §3.1 already sets
   keepalives — overriding them would be Harlequin retuning someone else's connection.
@@ -196,11 +200,21 @@ socket path (which counts as a forward but is not polled). It costs one subproce
 no network. If `-G` fails or prints something unparseable, Harlequin degrades: no poll, no
 forwards-nothing error, a short grace period, and the adapter's connection is the test.
 
-### 5.2 Readiness
+### 5.2 Readiness, and prompts
 
 Connect-poll each local port `-G` reported until `--ssh-timeout` (default 10s), noticing the
 child exiting early. On failure, the error quotes ssh's stderr verbatim — its diagnostics are
 better than any we would write.
+
+**A prompt nobody answers is what the timeout catches**, and catching it late is not good
+enough for a script: `ssh` asks for a passphrase, a password, or confirmation of an unknown
+host key, and an unattended caller waits out the whole timeout and then reports something
+vague. `--ssh-no-prompt` passes `-o BatchMode=yes`, so `ssh` fails immediately and says which
+credential it wanted. An agent, a cron job and CI should all set it.
+
+Without the flag the timeout is still the backstop, so nothing hangs forever — and when it
+fires with the child still running, the error names the flag, because waiting on input is the
+likeliest reason a live `ssh` never opened its forwards.
 
 ### 5.3 A local port that is already bound
 
@@ -253,8 +267,9 @@ No SSH server, no `online` marker.
 - **Unit**: `--ssh-forward` reaches argv unchanged and repeats in order; `--ssh-host` is
   unparsed; `-G` lines with a bind address, IPv6 and a socket path parse; `-G` returning only
   `dynamicforward` is a usage error; `-G` garbage degrades; no forward anywhere is a usage
-  error; the argv carries `ExitOnForwardFailure` and no other `-o`; `-o` still means
-  `--output`; profile round trip; two ssh hosts hash differently.
+  error; the argv carries `ExitOnForwardFailure` and, with `--ssh-no-prompt`, `BatchMode=yes` and
+  nothing else; `-o` still means `--output`; a timeout with the child alive names
+  `--ssh-no-prompt`; profile round trip; two ssh hosts hash differently.
 - One test runs `ssh -V` and skips if absent, proving the argv is accepted by a real client.
 
 Phasing: **(1)** `harlequin/ssh.py` — argv, `-G` probe and parser, poll, reuse,
@@ -292,6 +307,7 @@ contract, and the `Host` block as the recommended setup — plus a `CHANGELOG.md
 | `--tunnel-command` for non-SSH proxies | a Cloud SQL or `kubectl` user wants Harlequin to own the proxy's lifetime, with an answer to the code-execution problem above |
 | a paramiko backend, `harlequin[ssh]` | a user on Windows or in a container with no `ssh` binary |
 | reconnect after a drop | the death notification proves not to be enough |
+| `--ssh-no-prompt` on by default in `hsql` | interactive `hsql` users turn out to be rarer than scripted ones. Default-off is the same behavior in both commands today, which is easier to explain |
 
 Each is additive: the flags are namespaced, one class has no ABC to satisfy, and no adapter is
 involved in any of it.
