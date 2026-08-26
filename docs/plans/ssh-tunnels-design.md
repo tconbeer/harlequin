@@ -168,15 +168,39 @@ the only thing the contract says.
 
 ### 4.2 The same cluster, with nothing in `~/.ssh/config`
 
+The §4.1 `Host` block, translated flag for flag — every line of it, so that what the five
+options can and cannot say is visible:
+
 ```bash
-hsql -a postgres --host localhost --port 15439 --dbname prod \
-     --ssh-host tco@web-1 \
-     --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
-     -c "select 1"
+harlequin -a postgres \
+  --host localhost --port 15439 --dbname prod --user tco \
+  --ssh-host tco@web-1 \
+  --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
+  --ssh-option ServerAliveInterval=60 \
+  --ssh-option ServerAliveCountMax=3
 ```
 
-The docs' advice will be to write the `Host` block instead and go back to 4.1 — but this
-works, and it is what an agent or a CI job with no dotfiles has to do.
+```toml
+[profiles.redshift-no-dotfiles]
+adapter = "postgres"
+host = "localhost"
+port = 15439
+dbname = "prod"
+user = "tco"
+ssh_host = "tco@web-1"
+ssh_forward = ["15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439"]
+ssh_option = ["ServerAliveInterval=60", "ServerAliveCountMax=3"]
+```
+
+Line by line: `HostName web-1` and `User tco` are `--ssh-host tco@web-1`; `LocalForward`
+is `--ssh-forward`, the same text with the space turned into a colon; and the two keepalive
+settings are the **only** lines that need `--ssh-option`. Note the two unrelated users, which
+happen to share a name here: `--user` is Redshift's, `tco@` is the SSH host's.
+
+Compare §4.1, which is the same connection in one key. This is the shape for a CI job or an
+agent with no dotfiles, and the docs' advice is to write the `Host` block instead.
+
+**What this example is really for** is §14.1: `--ssh-option` exists for those last two lines.
 
 ### 4.3 Postgres running on the bastion itself
 
@@ -563,7 +587,17 @@ client where one exists.
 
 ## 14. Open questions for review
 
-1. **Does `--ssh-option` earn its place at all?** It is the only option that needs a
-   deny-list, and everything it can express a `Host` block can express better. Dropping it
-   would take v1 to four flags and delete §6.1 outright. Keeping it is the answer for a CI job
-   or an agent with no dotfiles, which is the same audience `--ssh-forward` exists for.
+1. **Does `--ssh-option` earn its place?** §4.2 is the evidence: translating a real `Host`
+   block, four of its five lines land on `--ssh-host` and `--ssh-forward`, and only the
+   keepalives need `--ssh-option`. Three ways to go, and the recommendation is the second:
+
+   | | |
+   |---|---|
+   | **Keep it, with the §6.1 deny-list** | The full escape hatch. Costs a deny-list against a program that keeps adding keywords — `KnownHostsCommand` arrived in OpenSSH 8.5, so the list is a standing obligation, and a keyword we miss is a hole. |
+   | **Drop it — four flags, no §6.1** ← | A setup these four cannot express goes in a `Host` block, which `--ssh-host` names. Closed by construction rather than by a list we maintain. The CI job this would strand can write four lines of ssh config beside the key it already had to write. |
+   | **Replace it with `--ssh-keepalive SECONDS`** | `-o ServerAliveInterval=N -o ServerAliveCountMax=3`, which is exactly what §4.2 needed and nothing else. One narrow option, no arbitrary keywords, no deny-list. A good follow-up if dropping `--ssh-option` turns out to sting. |
+
+   Related and rejected either way: **`--ssh-config PATH`** (point `ssh -F` at another config
+   file). It looks safer than `--ssh-option` — a path, not a keyword — but the file it names
+   can hold a `ProxyCommand`, and a repo-local Harlequin config naming a repo-local ssh config
+   is the §6.1 threat with an extra step and no deny-list possible.
