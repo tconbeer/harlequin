@@ -40,6 +40,15 @@ IN_MEMORY_CONN_STR = (":memory:",)
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
 
+_SEARCH_DATABASES = """
+select name from pragma_database_list where name like ? escape '\\'
+"""
+"""The attached databases whose name matches, which is SQLite's top level.
+
+Its own query rather than a branch of the one below: the others are per
+database, and this one asks about all of them at once.
+"""
+
 _SEARCH_RELATIONS = """
 select m.name, m.type, null, null
 from {db}.sqlite_schema m
@@ -53,16 +62,29 @@ join pragma_table_info(m.name, ?) p
 where m.type in ('table', 'view') and p.name like ? escape '\\'
 """
 
+_SEARCH_BRANCHES = {
+    "relations": (_SEARCH_RELATIONS,),
+    "columns": (_SEARCH_COLUMNS,),
+    "all": (_SEARCH_RELATIONS, _SEARCH_COLUMNS),
+}
+"""Which levels each kind unions, both branches in the same four columns.
+
+The database level is not here: it is one query for all of them rather than
+one per database, so `_matched_databases()` asks it separately.
+`_search_parameters()` binds in this order.
+"""
+
 _SEARCH_SQL = {
-    "relations": f"{_SEARCH_RELATIONS} order by 1",
-    "columns": f"{_SEARCH_COLUMNS} order by 1, 3",
-    "all": f"{_SEARCH_RELATIONS} union all {_SEARCH_COLUMNS} order by 1, 3",
+    # `nulls first` explicitly rather than on SQLite's default, so that both
+    # bundled adapters promise the same thing about their order.
+    kind: " union all ".join(branches) + " order by 1, 3 nulls first"
+    for kind, branches in _SEARCH_BRANCHES.items()
 }
 """One query per kind, per attached database, which is what SQLite has.
 
 `pragma_table_info` is the table-valued form of the pragma, so every relation's
 columns come back in one query rather than one per relation. Ordered so that a
-relation arrives before its own columns, since a null column name sorts first.
+relation arrives before its own columns.
 """
 
 
@@ -218,10 +240,13 @@ class HarlequinSqliteConnection(HarlequinConnection):
         self, term: str, kind: CatalogSearchKind = "all"
     ) -> list[CatalogSearchResult]:
         results: list[CatalogSearchResult] = []
+        matched_databases = self._matched_databases(term) if kind == "all" else set()
         for db_name in self._get_databases():
             database_item = DatabaseCatalogItem.from_label(
                 label=db_name, connection=self
             )
+            if db_name in matched_databases:
+                results.append(CatalogSearchResult(item=database_item))
             relations: dict[str, RelationCatalogItem] = {}
             quoted_db = '"' + db_name.replace('"', '""') + '"'
             try:
@@ -258,6 +283,23 @@ class HarlequinSqliteConnection(HarlequinConnection):
                         )
                     )
         return results
+
+    def _matched_databases(self, term: str) -> set[str]:
+        """The attached databases whose name contains term.
+
+        Asked in SQL rather than compared here, so that the top level matches a
+        term the same way every level below it does.
+        """
+        try:
+            found = self.conn.execute(
+                _SEARCH_DATABASES, [_contains_pattern(term)]
+            ).fetchall()
+        except sqlite3.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title="SQLite raised an error searching the catalog:",
+            ) from e
+        return {name for (name,) in found}
 
     def get_completions(self) -> list[HarlequinCompletion]:
         return get_completion_data(self.conn)

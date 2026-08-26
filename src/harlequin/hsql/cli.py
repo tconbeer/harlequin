@@ -276,9 +276,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "--find",
         metavar="TERM",
         help=(
-            "Search the whole catalog for relations and columns whose name "
-            "contains TERM, and exit without running SQL. Not every adapter "
-            "can; see --info."
+            "Search the whole catalog, at every level, for objects whose "
+            "name contains TERM, and exit without running SQL. Not every "
+            "adapter can; see --info."
         ),
     )
     @click.option(
@@ -1584,7 +1584,7 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             f"  {PROGRAM} --catalog                     the top of the catalog\n"
             f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
             f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns\n"
-            f"  {PROGRAM} --find orders                 a relation or column named that"
+            f"  {PROGRAM} --find orders                 anything in it named that"
         ),
         (
             "Exit codes:\n"

@@ -44,17 +44,39 @@ IN_MEMORY_CONN_STR = (":memory:",)
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
 
-_SEARCH_RELATIONS = """
+_ATTACHED = """
+    in (select database_name from duckdb_databases() where not internal)
+"""
+"""The catalogs `pragma show_databases` reports, as a predicate.
+
+Every search is scoped to them so that each path it reports is one
+`--catalog --path` walks: duckdb's temp catalog holds objects the catalog tree
+never shows.
+"""
+
+_SEARCH_DATABASES = """
+select d.database_name, null, null, null, null, null
+from duckdb_databases() d
+where not d.internal and d.database_name ilike ? escape '\\'
+"""
+
+_SEARCH_SCHEMAS = f"""
+select s.catalog_name, s.schema_name, null, null, null, null
+from information_schema.schemata s
+where s.schema_name not in ('pg_catalog', 'information_schema')
+    and s.catalog_name {_ATTACHED}
+    and s.schema_name ilike ? escape '\\'
+"""
+
+_SEARCH_RELATIONS = f"""
 select t.table_catalog, t.table_schema, t.table_name, t.table_type, null, null
 from information_schema.tables t
 where t.table_schema not in ('pg_catalog', 'information_schema')
-    and t.table_catalog in (
-        select database_name from duckdb_databases() where not internal
-    )
+    and t.table_catalog {_ATTACHED}
     and t.table_name ilike ? escape '\\'
 """
 
-_SEARCH_COLUMNS = """
+_SEARCH_COLUMNS = f"""
 select
     c.table_catalog, c.table_schema, c.table_name, t.table_type,
     c.column_name, c.data_type
@@ -64,24 +86,29 @@ join information_schema.tables t
     and t.table_schema = c.table_schema
     and t.table_name = c.table_name
 where c.table_schema not in ('pg_catalog', 'information_schema')
-    and c.table_catalog in (
-        select database_name from duckdb_databases() where not internal
-    )
+    and c.table_catalog {_ATTACHED}
     and c.column_name ilike ? escape '\\'
 """
 
-_SEARCH_SQL = {
-    "relations": f"{_SEARCH_RELATIONS} order by 1, 2, 3",
-    "columns": f"{_SEARCH_COLUMNS} order by 1, 2, 3, 5",
-    "all": f"{_SEARCH_RELATIONS} union all {_SEARCH_COLUMNS} order by 1, 2, 3, 5",
+_SEARCH_BRANCHES = {
+    "relations": (_SEARCH_RELATIONS,),
+    "columns": (_SEARCH_COLUMNS,),
+    "all": (_SEARCH_DATABASES, _SEARCH_SCHEMAS, _SEARCH_RELATIONS, _SEARCH_COLUMNS),
 }
-"""One query per kind, over the catalogs `pragma show_databases` reports.
+"""Which levels each kind unions, every branch in the same six columns.
 
-Scoped to those so that every path a search reports is one `--catalog --path`
-walks: duckdb's temp catalog holds objects the catalog tree never shows.
-Ordered so that a relation arrives before its own columns, since a null column
-name sorts first.
+A row names one item by filling in the levels above it and leaving the rest
+null, so `all` is every level of the catalog rather than the two at the bottom.
 """
+
+_SEARCH_SQL = {
+    kind: " union all ".join(branches)
+    # `nulls first` explicitly, because duckdb's default for ascending is
+    # `nulls last`: without it a schema would sort after the columns under it.
+    + " order by 1, 2 nulls first, 3 nulls first, 5 nulls first"
+    for kind, branches in _SEARCH_BRANCHES.items()
+}
+"""One query per kind, ordered so that an item arrives before its children."""
 
 
 def _contains_pattern(term: str) -> str:
@@ -219,8 +246,7 @@ class DuckDbConnection(HarlequinConnection):
     ) -> list[CatalogSearchResult]:
         cur = self.conn.cursor()
         pattern = _contains_pattern(term)
-        # "all" is the two queries unioned, so it binds the pattern twice
-        parameters = [pattern] * (2 if kind == "all" else 1)
+        parameters = [pattern] * len(_SEARCH_BRANCHES[kind])
         try:
             found = cur.execute(_SEARCH_SQL[kind], parameters).fetchall()
         except duckdb.Error as e:
@@ -231,14 +257,24 @@ class DuckDbConnection(HarlequinConnection):
         schemas: dict[tuple[str, str], SchemaCatalogItem] = {}
         relations: dict[tuple[str, str, str], RelationCatalogItem] = {}
         results: list[CatalogSearchResult] = []
+        # a row names the deepest level it fills in, and carries its ancestors
+        # so that each one is built once and the match knows its own path
         for catalog, schema, relation, relation_type, column, column_type in found:
             database_item = databases.setdefault(
                 catalog, DatabaseCatalogItem.from_label(label=catalog, connection=self)
             )
+            if schema is None:
+                results.append(CatalogSearchResult(item=database_item))
+                continue
             schema_item = schemas.setdefault(
                 (catalog, schema),
                 SchemaCatalogItem.from_parent(parent=database_item, label=schema),
             )
+            if relation is None:
+                results.append(
+                    CatalogSearchResult(item=schema_item, parents=(catalog,))
+                )
+                continue
             relation_item = relations.setdefault(
                 (catalog, schema, relation),
                 self._relation_item(schema_item, relation, relation_type),
@@ -247,18 +283,18 @@ class DuckDbConnection(HarlequinConnection):
                 results.append(
                     CatalogSearchResult(item=relation_item, parents=(catalog, schema))
                 )
-            else:
-                results.append(
-                    CatalogSearchResult(
-                        item=ColumnCatalogItem.from_parent(
-                            parent=relation_item,
-                            label=column,
-                            type_label=self._short_column_type(column_type),
-                            type_name=column_type,
-                        ),
-                        parents=(catalog, schema, relation),
-                    )
+                continue
+            results.append(
+                CatalogSearchResult(
+                    item=ColumnCatalogItem.from_parent(
+                        parent=relation_item,
+                        label=column,
+                        type_label=self._short_column_type(column_type),
+                        type_name=column_type,
+                    ),
+                    parents=(catalog, schema, relation),
                 )
+            )
         return results
 
     def get_completions(self) -> list[HarlequinCompletion]:

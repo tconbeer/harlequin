@@ -3075,14 +3075,14 @@ def test_find_matches_a_column_wherever_it_is(
     ]
 
 
-def test_find_does_not_match_the_levels_above_a_relation(
+def test_find_matches_the_levels_above_a_relation_too(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
-    """Relations and columns, not the schemas and databases over them: listing
-    a level of those is one round trip already."""
+    """A caller searching a catalog does not know its shape, so zero rows has
+    to mean nothing is named that -- not that the level was not looked at."""
     res = hsql(*catalog_db, "--find", "analytics", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
-    assert res.stdout == ""
+    assert [(row[0], row[4]) for row in cells(res.stdout)] == [("cat.analytics", "sch")]
 
 
 def test_a_found_path_is_a_path_catalog_walks(

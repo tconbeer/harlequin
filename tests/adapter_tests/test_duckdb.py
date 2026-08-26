@@ -310,6 +310,25 @@ def test_search_catalog_finds_relations_and_columns(tmp_path: Path) -> None:
     ]
 
 
+def test_search_catalog_matches_every_level(tmp_path: Path) -> None:
+    """A caller searching a catalog does not know its shape, so a database or a
+    schema named like the term is an answer too -- and each arrives before the
+    items under it."""
+    conn = DuckDbAdapter([str(tmp_path / "sales.db")], no_init=True).connect()
+    conn.execute("create schema sales_eu")
+    conn.execute("create table sales_eu.sales (sales bigint)")
+
+    assert [
+        (result.parents, result.item.label, result.item.type_label)
+        for result in conn.search_catalog("sales")
+    ] == [
+        ((), "sales", "db"),
+        (("sales",), "sales_eu", "sch"),
+        (("sales", "sales_eu"), "sales", "t"),
+        (("sales", "sales_eu", "sales"), "sales", "##"),
+    ]
+
+
 def test_search_catalog_takes_one_kind_at_a_time(tmp_path: Path) -> None:
     conn = DuckDbAdapter([str(tmp_path / "kinds.db")], no_init=True).connect()
     conn.execute("create table orders (orders bigint)")

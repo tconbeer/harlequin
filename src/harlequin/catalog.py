@@ -52,7 +52,12 @@ class CatalogItem:
 
 
 CatalogSearchKind = Literal["relations", "columns", "all"]
-"""Which items a catalog search looks at: relations, their columns, or both."""
+"""Which items a catalog search looks at.
+
+"all" is every level the catalog has, not the two named beside it: a caller
+searching a catalog is one that does not know its shape, so a database or a
+schema whose name matches is an answer rather than a level to walk to.
+"""
 
 
 @dataclass

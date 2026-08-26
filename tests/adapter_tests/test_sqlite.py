@@ -288,10 +288,37 @@ def test_search_catalog_covers_every_attached_database(
     tiny_sqlite: Path, small_sqlite: Path
 ) -> None:
     conn = HarlequinSqliteAdapter([str(tiny_sqlite), str(small_sqlite)]).connect()
-    assert {result.parents[0] for result in conn.search_catalog("")} == {
+    found = conn.search_catalog("")
+    assert {result.parents[0] for result in found if result.parents} == {
         "main",
         "small",
     }
+
+
+def test_search_catalog_matches_every_level(tmp_path: Path) -> None:
+    """A caller searching a catalog does not know its shape, so an attached
+    database named like the term is an answer too. SQLite has no schema between
+    a database and its relations, which is why this path is one level shorter
+    than duckdb's.
+
+    Grouped by attached database, since that is what SQLite asks one query per,
+    and within each one an item arrives before the items under it.
+    """
+    database = tmp_path / "sales.sqlite"
+    conn = HarlequinSqliteAdapter([str(database)]).connect()
+    conn.execute("create table sales (sales bigint)")
+    conn.execute(f"attach database '{database}' as sales")
+
+    assert [
+        (result.parents, result.item.label, result.item.type_label)
+        for result in conn.search_catalog("sales")
+    ] == [
+        (("main",), "sales", "t"),
+        (("main", "sales"), "sales", "##"),
+        ((), "sales", "db"),
+        (("sales",), "sales", "t"),
+        (("sales", "sales"), "sales", "##"),
+    ]
 
 
 def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:

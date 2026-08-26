@@ -126,7 +126,8 @@ class HarlequinConnection(ABC):
         Args:
             term (str): The substring to match against an item's label.
             kind (CatalogSearchKind): Which items to match: "relations",
-                "columns", or "all".
+                "columns", or "all" -- every level the catalog has, including
+                the databases and schemas above a relation.
 
         Returns: list[CatalogSearchResult], each pairing a matched item with
             the labels of its ancestors, so that a caller can spell the path

@@ -197,7 +197,7 @@
         },
         "find": {
           "type": "string",
-          "description": "Search the whole catalog for relations and columns whose name contains TERM, and exit without running SQL. Not every adapter can; see --info."
+          "description": "Search the whole catalog, at every level, for objects whose name contains TERM, and exit without running SQL. Not every adapter can; see --info."
         },
         "path": {
           "type": "string",

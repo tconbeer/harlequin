@@ -1,10 +1,10 @@
-"""Implements `hsql --find`: the relations and columns whose name matches a term.
+"""Implements `hsql --find`: the catalog objects whose name matches a term.
 
 The question a walk cannot answer -- *where does `orders` live*, *which tables
 have a `customer_id`* -- so it is an optional capability rather than a
 recursive listing: one introspection query where the adapter can serve it, and
-a refusal naming the adapter where it cannot. The levels above a relation are
-not searched, since listing them is one round trip anyway.
+a refusal naming the adapter where it cannot. Every level the catalog has, so
+that a term matching nothing means nothing is named that.
 
 Its rows are `--catalog`'s rows, built by that mode, so a path this prints is
 one `--catalog --path` walks.
