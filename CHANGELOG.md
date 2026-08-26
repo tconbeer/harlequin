@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- The SQLite adapter's `--mode` (`-m`) option now has an effect: it was silently ignored, so `--mode ro` opened a database that could still be written to, and `--read-only --mode rwc` connected instead of raising.
 - The autocomplete menu no longer opens for tokens that start with a number, and fuzzy matches now have to start at the beginning of a name or just after a `_`, so typing `1` and pressing enter inserts a newline again ([#803](https://github.com/tconbeer/harlequin/issues/803)).
 
 ### Adapter API Changes

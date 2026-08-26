@@ -211,6 +211,31 @@ def test_nothing_is_secret_unless_it_says_so(option: AbstractOption) -> None:
     assert option.to_dict()["secret"] is False
 
 
+@pytest.mark.parametrize("adapter", ["duckdb", "sqlite"])
+def test_every_declared_option_is_a_parameter_the_constructor_names(
+    adapter: str,
+) -> None:
+    """The name a caller types and the name the adapter is handed are one name.
+
+    An adapter takes supersets of what it declares and drops the rest, so a
+    declaration whose name no parameter matches is an option that parses,
+    validates, and does nothing -- in silence, which is how `--mode ro` opened
+    a writable database.
+    """
+    import inspect
+
+    from harlequin.config import sluggify_option_name
+    from harlequin.plugins import load_adapter
+
+    adapter_cls = load_adapter(adapter)
+    declared = {
+        sluggify_option_name(option.name)
+        for option in adapter_cls.ADAPTER_OPTIONS or []
+    }
+    named = set(inspect.signature(adapter_cls.__init__).parameters)
+    assert declared <= named
+
+
 def test_the_duckdb_adapter_declares_its_token_secret() -> None:
     """The one secret in tree, and the reason the declaration is not theory."""
     from harlequin_duckdb import DUCKDB_OPTIONS
