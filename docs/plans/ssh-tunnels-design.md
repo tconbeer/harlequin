@@ -81,16 +81,23 @@ backwards. So `--ssh-forward` is optional, and §4.1 is the case where it is not
    --ssh-host redshift_prod    ───────►  ssh -N -o ExitOnForwardFailure=yes redshift_prod
                                          (the -L comes from ~/.ssh/config)
 
-   -a postgres                           adapter dials 127.0.0.1:5439
-   "postgresql://me@localhost:5439/prod" which is the far side's redshift.internal:5439
+   -a postgres                            adapter dials 127.0.0.1:15439
+   "postgresql://tco@localhost:15439/prod" the local end of `LocalForward 15439 …:5439`
 ```
 
-Two rules, and they are the whole contract:
+One rule, and it is the whole contract:
 
-1. **Connection details are read from the SSH host's side.** `localhost` means the SSH
-   host's localhost; `redshift.internal` means whatever the SSH host resolves that to.
-2. **A forward binds the same port locally by default**, so the address the user typed is the
-   address that now works here.
+**The connection details name the local end of the forward.** Harlequin runs the tunnel and
+touches nothing else.
+
+That is it. In the config behind that example (§4.1) the forward is `LocalForward 15439 <redshift>:5439`, so the
+local end is `localhost:15439` and that is what the profile says — the ports differ, and
+nothing in Harlequin needs to know or care. The far side's address appears once, in the ssh
+config, where it already was.
+
+"Give the address as the SSH host sees it" is a useful mnemonic for the `--ssh-forward 5432`
+shorthand below, where the local and remote ports match. It is not the rule. The rule is the
+local end.
 
 Nothing is rewritten. `conn_str` and every adapter option reach the adapter exactly as the
 user wrote them, and the adapter is never told a tunnel exists.
@@ -102,11 +109,16 @@ The forward can come from either place, and Harlequin does not care which:
 | `~/.ssh/config` | a `LocalForward` line in the `Host` block. Harlequin passes no `-L`. |
 | Harlequin | `--ssh-forward`, repeatable, in one of three forms below |
 
-| `--ssh-forward` | becomes |
-|---|---|
-| `5432` | `-L 127.0.0.1:5432:localhost:5432` — the database runs on the SSH host |
-| `db.internal:5432` | `-L 127.0.0.1:5432:db.internal:5432` — the SSH host is a jump host |
-| `15432:db.internal:5432` | `-L 127.0.0.1:15432:db.internal:5432` — something local already has 5432 |
+| `--ssh-forward` | becomes | |
+|---|---|---|
+| `15439:db.internal:5439` | `-L 127.0.0.1:15439:db.internal:5439` | the general form, and the one to recommend |
+| `db.internal:5439` | `-L 127.0.0.1:5439:db.internal:5439` | shorthand: same port on both ends |
+| `5432` | `-L 127.0.0.1:5432:localhost:5432` | shorthand: the database runs on the SSH host |
+
+**The docs should recommend a distinct local port**, as the config above does with `15439`.
+It sidesteps the collision case entirely, and it is most of the mitigation for the hazard
+below: nothing else on a developer's laptop is listening on 15439, so a profile run without
+its tunnel fails to connect instead of quietly reaching a local database on 5432.
 
 ### What this model gives up, and what it buys
 
@@ -129,8 +141,9 @@ What it buys, beyond not guessing:
 ### The hazard this model does have
 
 A profile that says `host = "localhost"` is only correct with the tunnel up. Run it without
-`ssh_host` and it connects to whatever is on **your** 5439 — which on a developer's laptop may
-well be a database, just the wrong one.
+`ssh_host` and it connects to whatever is on **your** machine at that port — which, if the
+forward uses the database's own port number, may well be a database, just the wrong one. A
+distinct local port makes this a connection refused instead.
 
 The `ssh_*` keys live in the same profile as the connection details, so they travel together
 and the failure needs someone to have deliberately overridden one; the start-up notice (§6)
@@ -141,38 +154,43 @@ refuse to connect without one. Not proposed for v1.
 
 ### 4.1 A Redshift cluster behind a bastion, with the forward already in `~/.ssh/config`
 
+The motivating case — a real config, from this repo's author:
+
 ```
 Host redshift_prod
-    HostName bastion.example.com
-    User ted
-    IdentityFile ~/.ssh/id_ed25519
-    LocalForward 5439 redshift-prod.abc123.us-east-1.redshift.amazonaws.com:5439
+  HostName web-1
+  User tco
+  LocalForward 15439 data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
 ```
 
-Today: `ssh -fN redshift_prod`, then `harlequin -a postgres --host localhost --port 5439 …`,
+Today: `ssh -fN redshift_prod`, then `harlequin -a postgres --host localhost --port 15439 …`,
 then remember to kill the ssh later.
 
 ```toml
 [profiles.redshift]
 adapter = "postgres"
 host = "localhost"
-port = 5439
+port = 15439
 dbname = "prod"
-user = "ted"
 ssh_host = "redshift_prod"
 ```
 
-`harlequin -P redshift`, and `hsql -P redshift -c "select 1"`. **No `--ssh-forward`, no
-`--ssh-user`, no `--ssh-identity`** — the ssh config already says all of it, and Harlequin
-runs `ssh -N -o ExitOnForwardFailure=yes redshift_prod`. The connection details are unchanged
-from what works today, because `localhost:5439` was already the far side's address.
+`harlequin -P redshift`, and `hsql -P redshift -c "select 1"`. **One key.** No
+`--ssh-forward`, no `--ssh-user`, no `--ssh-identity`, no keepalive settings — the `Host`
+block says all of it, and Harlequin runs `ssh -N -o ExitOnForwardFailure=yes redshift_prod`.
+The connection details are exactly the ones that work today.
+
+Note the ports: local `15439`, remote `5439`. The profile names the **local** end, which is
+the only thing the contract says.
 
 ### 4.2 The same cluster, with nothing in `~/.ssh/config`
 
 ```bash
-hsql -a postgres --host localhost --port 5439 --dbname prod \
-     --ssh-host ted@bastion.example.com \
-     --ssh-forward 5439:redshift-prod.abc123.us-east-1.redshift.amazonaws.com:5439 \
+hsql -a postgres --host localhost --port 15439 --dbname prod \
+     --ssh-host tco@web-1 \
+     --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
      -c "select 1"
 ```
 
@@ -233,8 +251,8 @@ Also `kubectl port-forward svc/pg 5432:5432`, `aws ssm start-session … localPo
 
 ```
 $ hsql -P redshift -c "select count(*) from events"
-Enter passphrase for key '/home/ted/.ssh/id_ed25519':
-tunnel: 127.0.0.1:5439 -> redshift-prod…:5439 via ssh redshift_prod
+Enter passphrase for key '/home/tco/.ssh/id_ed25519':
+tunnel: 127.0.0.1:15439 -> data-analytics…:5439 via ssh redshift_prod
 ```
 
 The prompt is `ssh`'s, on the real terminal, because the child is started before Textual (in
@@ -280,8 +298,16 @@ One implementation, `SubprocessTunnel`. The SSH options build an argv; `--tunnel
   check against, and the fallback has to be good enough on its own.
 - **Teardown** is `terminate()` then `kill()`, from a `contextlib.ExitStack` wrapping
   `tui.run()` and the `hsql` run, plus an `atexit` backstop.
-- `-o ServerAliveInterval=30`. No reconnect in v1: a dead tunnel surfaces as the adapter's own
-  connection error, already an error modal in the IDE and exit 3 in `hsql`.
+- **The only `-o` Harlequin imposes is `ExitOnForwardFailure=yes`**, and only because a
+  forward that silently did not happen is the one failure the user cannot diagnose. Notably
+  *not* imposed: `ServerAliveInterval`. A command-line `-o` beats the user's config file, and
+  keepalives are exactly the sort of thing a working `Host` block already sets — overriding
+  them would be Harlequin quietly retuning a connection someone else configured. The docs say
+  to set them in the `Host` block; `--ssh-option` is there for anyone who wants to anyway.
+- **No reconnect in v1, but the IDE says when the tunnel dies.** A thread waiting on the
+  child posts a notification when it exits, so a session whose forward dropped shows
+  `tunnel closed: <ssh's last line>` rather than an unexplained wall of query errors. `hsql`
+  is short-lived enough that the adapter's own connection error is the whole story.
 
 ## 6. The CLI and config surface
 
@@ -321,7 +347,7 @@ know of none that claims one.
 IDE as a notification and on the debug screen:
 
 ```
-tunnel: 127.0.0.1:5439 -> redshift-prod.abc123.us-east-1.redshift.amazonaws.com:5439 via ssh redshift_prod
+tunnel: 127.0.0.1:15439 -> data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 via ssh redshift_prod
 ```
 
 One line, and it is what tells a user which database they are actually looking at.
@@ -464,7 +490,8 @@ client where one exists.
 
 1. **Should an already-listening local port mean "the tunnel is already up"?** Today's answer
    is a hard error from `ExitOnForwardFailure`, which means a user who still runs
-   `ssh -fN redshift_prod` by hand gets a bind failure from every Harlequin start. Skipping the
+   `ssh -fN redshift_prod` by hand gets `bind: Address already in use` on 15439 from every
+   Harlequin start. Skipping the
    child when every known local port already accepts connections would fix that, at the cost
    of connecting to *something* on that port without knowing it is the right tunnel. Leaning
    toward skip-with-a-notice.
