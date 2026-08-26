@@ -230,11 +230,7 @@ $ hsql "path/to/duck.db" --catalog --path duck.analytics
  duck.analytics.order_totals | order_totals | "analytics"."order_totals" | VIEW       | v
  duck.analytics.orders       | orders       | "analytics"."orders"       | BASE TABLE | t
 (3 rows)
-```
 
-Describing a table is listing it: a relation's children are its columns.
-
-```bash
 $ hsql "path/to/duck.db" --catalog --path duck.analytics.orders
  path                              | name        | query_name    | type          | type_label
 -----------------------------------+-------------+---------------+---------------+------------
@@ -245,27 +241,6 @@ $ hsql "path/to/duck.db" --catalog --path duck.analytics.orders
 (4 rows)
 ```
 
-Every listing has the same five columns:
-
-- `path` — pass it back to `--path` to list this object's children.
-- `name` — the object's name.
-- `query_name` — the identifier to paste into a query, quoted the way this database wants it, so you never have to guess between `"Orders"` and `` `orders` ``.
-- `type` — the database's own name for what this is: `DECIMAL(18,2)`, `BASE TABLE`, `schema`. Some adapters do not report it, and leave it empty.
-- `type_label` — the short label Harlequin shows in its Data Catalog, which every adapter fills in.
-
-How many levels there are, and what they mean, is the adapter's to say: DuckDB has databases, schemas, relations and columns, and other databases differ. Start with `--catalog` and no `--path` to see the top.
-
-A path is dotted segments, and it is not SQL: a segment that contains a dot, a double quote, or a `*` is written in double quotes — `--path 'duck."my.schema".orders'` — on every adapter, whatever that database quotes its own identifiers with. A `*` in the last segment filters the listing:
-
-```bash
-$ hsql "path/to/duck.db" --catalog --path 'duck.analytics.ord*'
- path                        | name         | query_name                 | type       | type_label
------------------------------+--------------+----------------------------+------------+------------
- duck.analytics.order_totals | order_totals | "analytics"."order_totals" | VIEW       | v
- duck.analytics.orders       | orders       | "analytics"."orders"       | BASE TABLE | t
-(2 rows)
-```
-
 A listing is rows, so every format and output option applies to it, exactly as they do to a query:
 
 ```bash
@@ -274,8 +249,6 @@ duck.analytics.customers,customers,"""analytics"".""customers""",BASE TABLE,t
 duck.analytics.order_totals,order_totals,"""analytics"".""order_totals""",VIEW,v
 duck.analytics.orders,orders,"""analytics"".""orders""",BASE TABLE,t
 ```
-
-`--limit` does not, and says so on stderr: it makes the database fetch fewer rows, and a listing is not a query. Cap a long listing with `--display-rows` instead, which the footer reports as `(1 of 2 rows)`.
 
 ### Searching the Catalog
 
@@ -291,7 +264,7 @@ $ hsql "path/to/duck.db" --catalog-search customer_id
 (3 rows)
 ```
 
-The rows are a listing's rows, so the same columns and the same formats apply, and `--path` narrows the search to one subtree:
+`--path` narrows the search to one subtree, and the output can be laid out like any query:
 
 ```bash
 $ hsql "path/to/duck.db" --catalog-search order --path duck.analytics -tA
@@ -299,15 +272,7 @@ duck.analytics.order_totals|order_totals|"analytics"."order_totals"|VIEW|v
 duck.analytics.orders|orders|"analytics"."orders"|BASE TABLE|t
 ```
 
-Searching is an optional adapter capability, because not every database can answer it in one query. The DuckDB and SQLite adapters can; an adapter that does not declare it says so and exits `2`, rather than quietly walking its whole catalog. `--info` reports which of yours can:
-
-```bash
-$ hsql --info -a duckdb | jq '.adapters.duckdb.capabilities'
-{
-  "implements_cancel": true,
-  "implements_catalog_search": true
-}
-```
+Note: not all adapters support catalog search at this time.
 
 ## Scripting with hsql
 
