@@ -289,15 +289,71 @@ One implementation, `SubprocessTunnel`. The SSH options build an argv; `--tunnel
 - **Readiness** is a connect-poll against each known local port until `--tunnel-timeout`
   (default 10s), which also notices the child exiting early. On failure the error quotes the
   child's stderr verbatim, because `ssh`'s diagnostics are better than any we would write.
-- **Ports we do not know**: in the 4.1 shape the forward is in `ssh_config`, so Harlequin has
-  no port to poll. Two ways out, and the first needs verifying: `ssh -G <host>` prints the
-  resolved config and *may* include `localforward` lines, in which case the poll is exact and
-  free; otherwise Harlequin skips the poll, waits for the child to survive a short grace
-  period, and lets the adapter's own connection be the test. **Confirm `-G` behavior on the
-  OpenSSH versions we care about before relying on it** — this container has no `ssh` to
-  check against, and the fallback has to be good enough on its own.
+- **Which ports to poll comes from `ssh -G`**, §5.1.
 - **Teardown** is `terminate()` then `kill()`, from a `contextlib.ExitStack` wrapping
   `tui.run()` and the `hsql` run, plus an `atexit` backstop.
+
+### 5.1 Asking `ssh` what it is about to forward
+
+In the 4.1 shape the forward lives in `ssh_config`, so Harlequin does not know the port it
+should be polling. `ssh -G` answers that: it applies every `Host` and `Match` block, prints
+the resolved configuration, and connects to nothing. Confirmed against the motivating config:
+
+```
+$ ssh -G redshift_prod | grep -i forward
+localforward 15439 [data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com]:5439
+```
+
+**Probe with the argv we are about to run**, not with the destination alone — `ssh -G` echoes
+back command-line `-L` and `-o` flags along with the config's, so
+
+```python
+forwards = _parse_forwards(run([*argv_without_N, "-G"]))
+```
+
+gives one list whether the forward came from `--ssh-forward`, from a `Host` block, or from
+both. There is no "config forwards" path and "flag forwards" path to keep in agreement,
+because `ssh` merges them before we look.
+
+Parsing is two whitespace-separated fields after the keyword, each `port`, `[host]:port`, or a
+unix socket path; brackets are how it writes a host, and they make IPv6 unambiguous. A
+`localforward` whose listen side is a socket path counts as a forward but is not polled.
+`dynamicforward` (SOCKS) and `remoteforward` are not forwards this feature can use — see the
+error below.
+
+Three things now have an exact answer instead of a guess:
+
+- **The readiness poll** watches the real local ports.
+- **`--ssh-host` that forwards nothing** is a usage error, and it can say what it found:
+  `redshift_prod resolves no LocalForward; add one to your Host block or pass --ssh-forward`
+  — with a distinct message when the config has a `DynamicForward` instead, since that is a
+  working SOCKS proxy the adapter cannot use.
+- **The notice and the cache key** can name the far side even when Harlequin never saw it.
+
+`ssh -G` costs one subprocess (~10-30ms, no network) on invocations that tunnel, and nothing
+on the ones that do not. If it exits non-zero or prints something this cannot parse,
+Harlequin degrades rather than fails: no poll, no forwards-nothing error, a short grace
+period, and the adapter's own connection is the test.
+
+### 5.2 A local port that is already bound
+
+The default is to **fail**: `ExitOnForwardFailure=yes` means `ssh` exits with
+`bind: Address already in use`, and Harlequin reports it. A port that is already answering is
+not evidence that the right tunnel is behind it, and connecting to the wrong database because
+something else happened to be on 15439 is worse than an error at start-up.
+
+`--tunnel-reuse` (`tunnel_reuse = true`) opts into the other behavior, for the person who
+keeps a `ssh -fN redshift_prod` running all day and does not want Harlequin fighting it: if
+**every** local port `ssh -G` reported is already accepting connections, skip the child
+entirely and say so.
+
+```
+tunnel: 127.0.0.1:15439 already listening; reusing (--tunnel-reuse)
+```
+
+If only some of them answer, that is a half-open state nobody meant, and it is an error
+naming the ports either way.
+
 - **The only `-o` Harlequin imposes is `ExitOnForwardFailure=yes`**, and only because a
   forward that silently did not happen is the one failure the user cannot diagnose. Notably
   *not* imposed: `ServerAliveInterval`. A command-line `-o` beats the user's config file, and
@@ -322,6 +378,7 @@ most: a cron job or an agent cannot ask a human to run `ssh -fN` in another term
 | `--tunnel-command TEXT` | §4.7; mutually exclusive with `--ssh-host` |
 | `--tunnel-port INT` | repeatable; ports the readiness poll waits for |
 | `--tunnel-timeout FLOAT` | seconds to wait (default 10) |
+| `--tunnel-reuse` | if the forwarded ports already answer, use them instead of starting a child (§5.2) |
 
 Three SSH flags, not nine. An earlier draft had `--ssh-user`, `--ssh-port`, `--ssh-identity`
 and more; every one of them is `ssh_config` or `-o` spelled twice, and the docs' advice is to
@@ -330,9 +387,8 @@ certificate and `Match` rules already live.
 
 `--ssh-host` with neither `--ssh-forward` nor a `LocalForward` in its resolved config is a
 usage error naming both places — a tunnel that forwards nothing is always a mistake, and it is
-better caught before an SSH handshake than after one. (This is the second thing that depends
-on `ssh -G`; without it, this check degrades to "no `--ssh-forward` and no way to know", and
-should then not fire at all rather than fire wrongly.)
+better caught before an SSH handshake than after one. `ssh -G` is what makes the check real
+(§5.1).
 
 No password flag. `--ssh-password` would be a credential in `ps` output and in shell history,
 for a case `ssh` already handles better with a key, an agent, or its own prompt. If one is
@@ -448,7 +504,14 @@ child is dead once the command exits. Runs on all three OSes and needs no secret
 | `--ssh-forward 15432:db.internal:5432` | `-L 127.0.0.1:15432:db.internal:5432` |
 | `--ssh-forward` repeated | one child, two `-L` |
 | `--ssh-host` alone, `-G` reports a `localforward` | argv has no `-L`, poll watches that port |
+| `-G` output `localforward 15439 [host]:5439` | parsed as local 15439, remote host:5439 |
+| `-G` output with a bind address, IPv6, a socket path | parsed; the socket path is not polled |
+| `-G` reports only `dynamicforward` | usage error, distinct message |
+| `-G` exits non-zero or prints garbage | no poll, no forwards-nothing error, still starts |
 | `--ssh-host` alone, no forward anywhere | usage error naming both places |
+| port bound, no `--tunnel-reuse` | ssh's `bind: Address already in use`, exit 3 |
+| port bound, `--tunnel-reuse` | no child started, notice printed, adapter connects |
+| two ports, one bound, `--tunnel-reuse` | error naming both |
 | `--ssh-host` and `--tunnel-command` | usage error, exit 2 |
 | a garbage forward spec | usage error naming the three forms |
 | `tunnel_command` from a cwd-discovered config | config error naming the file (§6.1) |
@@ -486,23 +549,22 @@ client where one exists.
 | **paramiko directly, in v1** | A `cryptography` dependency on every install, and it reimplements the part of `~/.ssh/config` users already have working. Kept as the v2 backend, §9. |
 | **Tell users to run `ssh -fN` themselves** | It works, and it is what people do today — including the author of this repo. It also means a second terminal, an orphaned tunnel to remember to kill, and a profile that only connects if a human ran something first, which is exactly what `hsql` in a cron job or an agent loop cannot do. |
 
-## 13. Open questions for review
+## 13. Settled in review
 
-1. **Should an already-listening local port mean "the tunnel is already up"?** Today's answer
-   is a hard error from `ExitOnForwardFailure`, which means a user who still runs
-   `ssh -fN redshift_prod` by hand gets `bind: Address already in use` on 15439 from every
-   Harlequin start. Skipping the
-   child when every known local port already accepts connections would fix that, at the cost
-   of connecting to *something* on that port without knowing it is the right tunnel. Leaning
-   toward skip-with-a-notice.
-2. **How much do we lean on `ssh -G`?** It is what makes the 4.1 shape fully checkable — the
-   readiness poll and the "you forwarded nothing" error both want it. It needs verifying
-   against real OpenSSH versions (including Windows) before either depends on it.
-3. **Should the local bind address be configurable?** `127.0.0.1` is proposed and hardcoded.
+- **`ssh -G` reports `localforward`**, verified against the config in §4.1:
+  `localforward 15439 [data-analytics.…:5439`. The readiness poll, the forwards-nothing
+  error and the notice all lean on it, with a documented degradation for output it cannot
+  parse (§5.1).
+- **A bound local port fails.** `--tunnel-reuse` is the opt-in for reusing a tunnel someone
+  else started (§5.2).
+
+## 14. Open questions for review
+
+1. **Should the local bind address be configurable?** `127.0.0.1` is proposed and hardcoded.
    `0.0.0.0` would expose the far side's database to the user's network, which seems like a
    thing to make people ask for.
-4. **`require_tunnel = true`** as a profile key, for the §3 hazard — worth it now, or wait for
-   someone to be bitten?
-5. **Naming**: `--ssh-*` for the SSH backend and `--tunnel-*` for the generic one splits
-   `--tunnel-timeout` away from its siblings. Alternative: `--ssh-*` everywhere plus
-   `--tunnel-command`, with `--ssh-timeout` covering both.
+2. **`require_tunnel = true`** as a profile key, for the §3 hazard — worth it now, or wait
+   for someone to be bitten?
+3. **Naming**: `--ssh-*` for the SSH backend and `--tunnel-*` for the generic one splits
+   `--tunnel-timeout` and `--tunnel-reuse` away from their siblings. Alternative: `--ssh-*`
+   everywhere plus `--tunnel-command`, with `--ssh-timeout` and `--ssh-reuse` covering both.
