@@ -16,6 +16,8 @@ out-of-tree ones that are never changed.** Nothing here is implemented yet.
 - **The tunnel starts before Textual**, so a passphrase or 2FA prompt reaches a human — or
   `--ssh-batch-mode` refuses to prompt at all, for scripts and agents. It is a child process,
   not `ssh -f`, so it dies with the session instead of outliving it.
+- **It stays up, and comes back if it drops** (§5.4): keepalives when the user's config sets
+  none, and a lazy restart-and-reconnect in the IDE on the next thing that needs the database.
 
 ## 1. Ten seconds of SSH
 
@@ -196,9 +198,15 @@ along with the config's, so one call returns one list whether the forward came f
 `--ssh-forward`, a `Host` block, or both — there are not two sources to keep in agreement.
 
 Parsing is two whitespace-separated fields after the keyword, each `port`, `[host]:port`, or a
-socket path (which counts as a forward but is not polled). It costs one subprocess, ~10–30ms,
-no network. If `-G` fails or prints something unparseable, Harlequin degrades: no poll, no
-forwards-nothing error, a short grace period, and the adapter's connection is the test.
+socket path (which counts as a forward but is not polled). The same output answers one more
+question — `serveraliveinterval`, for §5.4. It costs one subprocess, ~10–30ms, no network. If
+`-G` fails or prints something unparseable, Harlequin degrades: no poll, no forwards-nothing
+error, no imposed keepalive, a short grace period, and the adapter's connection is the test.
+
+**Why this step exists at all**: it is the only way to know which local port to wait on before
+the adapter connects, and in §3.1 — the motivating case — Harlequin never saw a port number.
+`ssh -f` would signal readiness by exiting, but the surviving process would not be our child
+and could not be killed at exit, which is the orphaned tunnel this feature removes.
 
 ### 5.2 Readiness, and prompts
 
@@ -239,11 +247,57 @@ Failing by default is the safe direction: a port that answers is not proof the r
 behind it. `--ssh-allow-reuse` is for the person who keeps `ssh -fN redshift_prod` running all
 day and does not want Harlequin fighting it.
 
+### 5.4 Keeping it open, and getting it back
+
+A tunnel that drops after lunch is the difference between a feature people trust and one they
+work around. Three layers, cheapest first.
+
+**Keep it alive.** `ssh` sends no keepalives by default, so an idle forward behind a NAT or a
+corporate firewall is reaped silently. The `-G` probe already reports the resolved
+`serveraliveinterval`: if it is `0`, Harlequin passes `-o ServerAliveInterval=30`; if the user
+set one — §3.1 sets 60 — it is left alone. No flag, no override, and the common case stops
+dropping. Not configurable: a keepalive interval is not a thing anyone should have to tune,
+and the one person who wants to has a `Host` block.
+
+**Say so immediately.** A thread waiting on the child posts `tunnel closed: <ssh's last line>`
+when it exits unexpectedly, so a dead forward is not an unexplained wall of query errors.
+
+**Recover on next use.** Restarting `ssh` is not enough on its own: the adapter's TCP
+connection ran *through* the old forward, so it died with it. Recovery is both halves,
+together, and it happens lazily — before the next thing that needs the database (a query, a
+catalog refresh), not on a background timer:
+
+1. the tunnel is marked down when the monitor sees the child exit;
+2. the next database action restarts `ssh` and re-runs the readiness poll;
+3. then re-runs `adapter.connect()`, replacing `self.connection`;
+4. then does what the user asked.
+
+Three things this has to get right:
+
+- **Restarts are always `BatchMode=yes`**, whatever the flag said at start-up. Textual owns
+  the terminal now, so a passphrase prompt has nowhere to go. If the restart needs a
+  credential we cannot supply, it fails once with that message and does not retry — the user
+  restarts Harlequin, having been told why.
+- **Say what was lost.** A reconnect is a new session: open transactions are gone, so are temp
+  tables and anything set with `SET`. The notification says so rather than letting a user
+  believe they are still inside a `BEGIN`.
+- **One attempt per action, no loop.** The user retries by running their query again. A
+  background retry storm against a bastion that is down is how an account gets locked.
+
+**`hsql` does none of this.** It is short-lived, its statements are not idempotent, and an
+unattended caller that loses its connection should fail loudly: the statement errors, and the
+run exits 3 (or continues, per `--on-error`). Only the keepalive applies to both commands.
+
+Reconnecting the adapter is useful beyond tunnels — a server restart or an idle timeout kills
+a connection the same way — but v1 triggers it only from a tunnel that went down, because
+that is the case it can detect without guessing.
+
 ## 6. What this touches
 
 **No public API change.** Nothing in `HarlequinAdapter`, `HarlequinConnection`,
 `HarlequinCursor`, `AbstractOption`, `catalog.py` or `driver.py`. One new
-`HarlequinSshError(HarlequinError)`, one new module.
+`HarlequinSshError(HarlequinError)`, one new module, and — for §5.4 only — a reconnect path in
+`app.py` that re-runs `adapter.connect()` on the existing connect worker.
 
 **No dependency**: `subprocess`, `socket`. `harlequin/ssh.py` imports no Textual and no
 adapter, joins the "adapter API is reachable without the TUI" contract, and is imported only
@@ -271,12 +325,17 @@ No SSH server, no `online` marker.
   error; the argv carries `ExitOnForwardFailure` and, with `--ssh-batch-mode`, `BatchMode=yes` and
   nothing else; `-o` still means `--output`; a timeout with the child alive names
   `--ssh-batch-mode`; profile round trip; two ssh hosts hash differently.
+- **Recovery**: `-G` reporting `serveraliveinterval 0` adds `-o ServerAliveInterval=30`, a
+  non-zero one does not; killing the child marks the tunnel down and notifies; the next action
+  restarts it in batch mode, reconnects, and warns about lost session state; a restart that
+  fails does not retry.
 - One test runs `ssh -V` and skips if absent, proving the argv is accepted by a real client.
 
 Phasing: **(1)** `harlequin/ssh.py` — argv, `-G` probe and parser, poll, reuse,
 `HarlequinSshError`; unit and lifecycle tests, no CLI. **(2)** the four options, the
-`ExitStack`, the notice, the cache key, the end-to-end test. **(3)** `--info` and debug-screen
-reporting, the death notification, regenerated schema. **(4)** docs in `harlequin-web` — the
+`ExitStack`, the notice, the cache key, the end-to-end test. **(3)** the keepalive default, the death
+notification, `--info` and debug-screen reporting, regenerated schema. **(4)** lazy
+restart-and-reconnect in the IDE (§5.4), which is the one step that touches `app.py`. **(5)** docs in `harlequin-web` — the
 contract, and the `Host` block as the recommended setup — plus a `CHANGELOG.md` entry under
 `[Unreleased]` → Features citing [#545](https://github.com/tconbeer/harlequin/issues/545).
 
@@ -307,7 +366,7 @@ contract, and the `Host` block as the recommended setup — plus a `CHANGELOG.md
 | `--ssh-keepalive SECONDS` | someone runs an all-day IDE session with no `~/.ssh/config` and gets dropped (§3.2) |
 | `--tunnel-command` for non-SSH proxies | a Cloud SQL or `kubectl` user wants Harlequin to own the proxy's lifetime, with an answer to the code-execution problem above |
 | a paramiko backend, `harlequin[ssh]` | a user on Windows or in a container with no `ssh` binary |
-| reconnect after a drop | the death notification proves not to be enough |
+| reconnecting a database connection that dropped with the tunnel up | a server restart or idle timeout should recover the same way §5.4 does; v1 only detects the tunnel case |
 | `--ssh-batch-mode` on by default in `hsql` | interactive `hsql` users turn out to be rarer than scripted ones. Default-off is the same behavior in both commands today, which is easier to explain |
 
 Each is additive: the flags are namespaced, one class has no ABC to satisfy, and no adapter is
