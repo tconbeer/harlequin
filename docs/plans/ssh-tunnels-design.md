@@ -20,8 +20,10 @@ Nothing here is implemented. This is the design to argue with before the first P
    answers the four-year-old blocker on the issue — and it inherits the user's whole
    `~/.ssh/config`: `LocalForward`, `ProxyJump`, agent, certificates, hardware keys, `Match`
    blocks, 2FA. `ssh -G` tells us what it is about to forward, so nothing is guessed.
-4. **Five flags, all `--ssh-*`.** No generic `--tunnel-command` in v1 (§12), no
-   `--ssh-user`/`--ssh-port`/`--ssh-identity` — those are `ssh_config` spelled twice.
+4. **Five flags, all `--ssh-*`, none of them parsed.** `--ssh-host` and `--ssh-forward` go
+   to `ssh` verbatim; the one thing Harlequin parses is `ssh -G`'s *output*. No
+   `--ssh-user`/`--ssh-port`/`--ssh-identity`: those are `ssh_config` spelled twice, and a
+   `Host` block is where a complicated setup belongs.
 5. **The tunnel comes up before Textual does**, so a passphrase or 2FA prompt can reach a
    human — and it is a child process, not `ssh -f`, so it dies with the session instead of
    outliving it.
@@ -91,13 +93,17 @@ ssh config, where it already was.
 Nothing is rewritten. `conn_str` and every adapter option reach the adapter exactly as the
 user wrote them, and the adapter is never told a tunnel exists.
 
-When the forward is *not* already in the ssh config, `--ssh-forward` writes one:
+When the forward is *not* already in the ssh config, `--ssh-forward` writes one. **Its value
+is whatever you would write after `ssh -L`, passed through untouched:**
 
-| `--ssh-forward` | becomes | |
-|---|---|---|
-| `15439:db.internal:5439` | `-L 127.0.0.1:15439:db.internal:5439` | the general form, and the one to recommend |
-| `db.internal:5439` | `-L 127.0.0.1:5439:db.internal:5439` | shorthand: same port on both ends |
-| `5432` | `-L 127.0.0.1:5432:localhost:5432` | shorthand: the database runs on the SSH host |
+```
+--ssh-forward 15439:db.internal:5439   ->   ssh -L 15439:db.internal:5439 …
+```
+
+Harlequin defines no shorthands and validates nothing here. `ssh` already documents this
+syntax, already rejects a malformed one with a better message than we would write, and
+already knows what a bare `LOCAL:HOST:PORT` binds. An invented shorthand would be a second
+syntax for users to learn and a parser for us to get wrong.
 
 **The docs should recommend a distinct local port**, as the config in §4.1 does with `15439`.
 It sidesteps the collision case, and it is most of the mitigation for the hazard below:
@@ -175,10 +181,12 @@ works, and it is what an agent or a CI job with no dotfiles has to do.
 ### 4.3 Postgres running on the bastion itself
 
 ```bash
-harlequin -a postgres --host localhost --port 5432 --ssh-host bastion --ssh-forward 5432
+harlequin -a postgres --host localhost --port 5432 \
+          --ssh-host bastion --ssh-forward 5432:localhost:5432
 ```
 
-`--ssh-forward 5432` is `-L 127.0.0.1:5432:localhost:5432`.
+`localhost` in the forward is the SSH host's localhost — that is `ssh -L` semantics, not
+ours.
 
 ### 4.4 You already run a local Postgres on 5432
 
@@ -342,16 +350,27 @@ most: a cron job or an agent cannot ask a human to run `ssh -fN` in another term
 
 | option | profile key | meaning |
 |---|---|---|
-| `--ssh-host TEXT` | `ssh_host` | `[user@]host[:port]`, or a `Host` alias from `~/.ssh/config` |
-| `--ssh-forward TEXT` | `ssh_forward` | repeatable; `PORT`, `HOST:PORT`, or `LOCAL:HOST:PORT`. Omit when `ssh_config` has it |
-| `--ssh-option KEY=VALUE` | `ssh_option` | repeatable `-o`; `IdentityFile`, `ProxyJump`, `User`, anything |
+| `--ssh-host TEXT` | `ssh_host` | the destination, handed to `ssh` verbatim: a `Host` alias, `host`, `user@host`, or `ssh://user@host:port` |
+| `--ssh-forward TEXT` | `ssh_forward` | repeatable; whatever follows `ssh -L`, handed over verbatim. Omit when `ssh_config` has it |
+| `--ssh-option KEY=VALUE` | `ssh_option` | repeatable; becomes one `-o`. Some keywords are refused (§6.1) |
 | `--ssh-reuse` | `ssh_reuse` | if the forwarded ports already answer, use them instead of starting a child (§5.2) |
 | `--ssh-timeout FLOAT` | `ssh_timeout` | seconds to wait for the forwards (default 10) |
 
+**No short declarations for any of them.** In particular `-o` is *not* an alias for
+`--ssh-option`: `-o` is `--output` in both commands, and an ssh flag may not take a spelling
+the output path already has.
+
+**Harlequin parses none of these values.** `--ssh-host` and `--ssh-forward` are handed to
+`ssh` as they were typed, so `ssh` owns their syntax and their error messages, and there is no
+Harlequin-shaped subset of either to document. The only parsing anywhere in this feature is of
+`ssh -G`'s output (§5.1), which is a machine-readable thing `ssh` prints rather than a string
+a user typed.
+
 Five flags. An earlier draft had nine, including `--ssh-user`, `--ssh-port` and
-`--ssh-identity`; every one of those is `ssh_config` or `-o` spelled a second time, and the
-docs' advice is to write a `Host` block — reusable outside Harlequin, and where a user's
-`ProxyJump`, certificate and `Match` rules already live.
+`--ssh-identity`; every one of those is `ssh_config` spelled a second time. **A setup too
+complicated for these five belongs in a `Host` block**, which `--ssh-host` can then name —
+reusable outside Harlequin, and where a user's `ProxyJump`, certificate and `Match` rules
+already live.
 
 No password flag. `--ssh-password` would be a credential in `ps` output and in shell history,
 for a case `ssh` already handles better with a key, an agent, or its own prompt. If one is
@@ -371,23 +390,35 @@ ssh: 127.0.0.1:15439 -> data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.c
 
 One line, and it is what tells a user which database they are actually looking at.
 
-### 6.1 A config file must not be able to run a command
+### 6.1 Some `-o` keywords are refused
 
 Config files are discovered in the **working directory**, including `pyproject.toml`. Clone a
 repository, run `harlequin` in it, and today the worst a hostile config can do is name a
 database.
 
-Four of the five keys above are names, ports and a flag. `ssh_option` is not: `-o
-ProxyCommand=…` runs a command, and so does `LocalCommand` with `PermitLocalCommand`.
+Four of the five options above are a name, a forward spec, a flag and a number. `ssh_option`
+is the one that is not: several `ssh_config` keywords run a program or hand something to the
+far side, and `-o ProxyCommand=…` is arbitrary code execution from a file in the current
+directory.
 
-Proposed rule: **`ssh_option` is honored only from the user's own config** — an explicit
-`--config-path`, the user config dir, or `$HOME` — and from the command line. A profile
-supplied by a file found in the working directory that sets it is a config error naming the
-file. `config.py` already tracks which file supplied each profile (`Provenance`), so the check
-has what it needs.
+So `--ssh-option` **refuses a keyword on a short deny-list**, wherever the value came from —
+command line or config file alike:
 
-This is also the reason a general "run this command" option is a bigger decision than it
-looks, and part of why there isn't one in v1 (§12).
+| refused | because | do this instead |
+|---|---|---|
+| `ProxyCommand` | runs a program | `ProxyJump`, or a `Host` block in `~/.ssh/config` |
+| `LocalCommand`, `PermitLocalCommand` | runs a program | a `Host` block |
+| `KnownHostsCommand` | runs a program | a `Host` block |
+| `ForwardAgent` | hands your agent to the far side | a `Host` block, if you really mean it |
+
+Matched case-insensitively, because `ssh_config` keywords are. The error names the keyword and
+the alternative.
+
+A deny-list rather than a rule about which file the value came from: it is one check in one
+place, it needs no provenance plumbing, and it is the same answer however the value arrived.
+It deliberately does **not** reach into `~/.ssh/config` — a `ProxyCommand` there is the user's
+own, in a file Harlequin never writes and a cloned repository cannot reach. What it stops is
+Harlequin becoming a way to run one.
 
 ## 7. Ordering, cache keys, and the two commands
 
@@ -466,17 +497,19 @@ coverage.
 
 | case | expected |
 |---|---|
-| `--ssh-forward 5432` | argv contains `-L 127.0.0.1:5432:localhost:5432` |
-| `--ssh-forward db.internal:5439` | `-L 127.0.0.1:5439:db.internal:5439` |
-| `--ssh-forward 15439:db.internal:5439` | `-L 127.0.0.1:15439:db.internal:5439` |
-| `--ssh-forward` repeated | one child, two `-L` |
+| `--ssh-forward 15439:db.internal:5439` | argv contains `-L 15439:db.internal:5439`, unchanged |
+| `--ssh-forward` repeated | one child, two `-L`, in order |
+| `--ssh-host ssh://tco@web-1:2222` | argv ends with that string, unparsed |
+| a malformed forward spec | ssh's own error, quoted, exit 3 — no Harlequin message |
 | `-G` line `localforward 15439 [host]:5439` | local 15439, remote host:5439 |
 | `-G` with a bind address, IPv6, a socket path | parsed; the socket path is not polled |
 | `-G` reports only `dynamicforward` | usage error, distinct message |
 | `-G` exits non-zero or prints garbage | no poll, no forwards-nothing error, still starts |
 | `--ssh-host` alone, no forward anywhere | usage error naming both places |
-| a garbage forward spec | usage error naming the three forms |
-| `ssh_option` from a cwd-discovered config | config error naming the file (§6.1) |
+| `--ssh-option ProxyCommand=…`, from CLI or config | usage error naming the keyword (§6.1) |
+| `--ssh-option proxycommand=…` | same; keywords are case-insensitive |
+| `--ssh-option ProxyJump=…` | allowed, reaches argv as one `-o` |
+| `-o` still means `--output` | both commands, with `--ssh-option` also set |
 | child exits during the poll | `HarlequinSshError` quoting its stderr, exit 3 |
 | poll times out | ditto, naming `--ssh-timeout` |
 | profile round trip | `ssh_host`/`ssh_forward` survive the merge and reach the argv |
@@ -518,16 +551,19 @@ client where one exists.
 - **`ssh -G` reports `localforward`**, verified against the config in §4.1, so the readiness
   poll and the forwards-nothing error are exact (§5.1).
 - **A bound local port fails**; `--ssh-reuse` is the opt-in (§5.2).
-- **Every option starts with `ssh`.** Five of them.
+- **Every option starts with `ssh`.** Five of them, no short declarations — `-o` stays
+  `--output`.
+- **Harlequin parses no ssh syntax.** `--ssh-host` and `--ssh-forward` are verbatim; a setup
+  those cannot express goes in a `Host` block that `--ssh-host` names.
+- **The local bind address is not configurable.** Whatever the forward spec or the `Host`
+  block says, which for a bare `LOCAL:HOST:PORT` is ssh's own default.
+- **`--ssh-option` refuses `ProxyCommand` and four friends** (§6.1), which replaces the
+  provenance rule an earlier draft proposed.
 - **No `--tunnel-command` in v1**, and no `require_tunnel` profile key.
 
 ## 14. Open questions for review
 
-1. **Should the local bind address be configurable?** `127.0.0.1` is proposed and hardcoded
-   for `--ssh-forward`; `0.0.0.0` would expose the far side's database to the user's network,
-   which seems like a thing to make people ask for. (`ssh_config` can already do it, which is
-   an argument for leaving the flag simple.)
-2. **`ssh_option` in a project-local config** — §6.1 proposes refusing it there. The
-   alternative is refusing `ssh_option` from *any* config file, CLI only, which is simpler to
-   explain and to test but would stop someone putting `ProxyJump` in their own
-   `~/.config/harlequin/config.toml`.
+1. **Does `--ssh-option` earn its place at all?** It is the only option that needs a
+   deny-list, and everything it can express a `Host` block can express better. Dropping it
+   would take v1 to four flags and delete §6.1 outright. Keeping it is the answer for a CI job
+   or an agent with no dotfiles, which is the same audience `--ssh-forward` exists for.
