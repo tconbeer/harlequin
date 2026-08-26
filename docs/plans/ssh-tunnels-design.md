@@ -14,7 +14,7 @@ out-of-tree ones that are never changed.** Nothing here is implemented yet.
 - **No new dependencies** — the blocker on the issue since 2025 — and the user's whole
   `~/.ssh/config` comes for free: `LocalForward`, `ProxyJump`, agent, certificates, `Match`.
 - **The tunnel starts before Textual**, so a passphrase or 2FA prompt reaches a human — or
-  `--ssh-no-prompt` refuses to prompt at all, for scripts and agents. It is a child process,
+  `--ssh-batch-mode` refuses to prompt at all, for scripts and agents. It is a child process,
   not `ssh -f`, so it dies with the session instead of outliving it.
 
 ## 1. Ten seconds of SSH
@@ -94,7 +94,7 @@ end, which is all the contract says.
 harlequin -a postgres --host localhost --port 15439 --dbname prod --user tco \
   --ssh-host tco@web-1 \
   --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
-  --ssh-no-prompt
+  --ssh-batch-mode
 ```
 
 `HostName` + `User` → `--ssh-host tco@web-1`. `LocalForward` → `--ssh-forward`, the same text
@@ -122,7 +122,7 @@ cannot ask a human to run `ssh -fN` first.
 |---|---|---|
 | `--ssh-host TEXT` | `ssh_host` | the destination, verbatim to `ssh`: a `Host` alias, `host`, `user@host`, or `ssh://user@host:port` |
 | `--ssh-forward TEXT` | `ssh_forward` | repeatable; whatever follows `ssh -L`, verbatim. Omit when `ssh_config` has it |
-| `--ssh-no-prompt` | `ssh_no_prompt` | `-o BatchMode=yes`: fail rather than ask for a passphrase, password or host key (§5.2) |
+| `--ssh-batch-mode` | `ssh_batch_mode` | ssh's `BatchMode`: fail rather than ask for a passphrase, password or host key (§5.2) |
 | `--ssh-allow-reuse` | `ssh_allow_reuse` | on a bind collision, warn and connect anyway instead of failing (§5.3) |
 | `--ssh-timeout FLOAT` | `ssh_timeout` | seconds to wait for the forwards (default 10) |
 
@@ -209,7 +209,8 @@ better than any we would write.
 **A prompt nobody answers is what the timeout catches**, and catching it late is not good
 enough for a script: `ssh` asks for a passphrase, a password, or confirmation of an unknown
 host key, and an unattended caller waits out the whole timeout and then reports something
-vague. `--ssh-no-prompt` passes `-o BatchMode=yes`, so `ssh` fails immediately and says which
+vague. `--ssh-batch-mode` passes `-o BatchMode=yes` — ssh's own name for it, so anyone who
+knows the `ssh_config` keyword knows the flag — and `ssh` fails immediately, saying which
 credential it wanted. An agent, a cron job and CI should all set it.
 
 Without the flag the timeout is still the backstop, so nothing hangs forever — and when it
@@ -267,9 +268,9 @@ No SSH server, no `online` marker.
 - **Unit**: `--ssh-forward` reaches argv unchanged and repeats in order; `--ssh-host` is
   unparsed; `-G` lines with a bind address, IPv6 and a socket path parse; `-G` returning only
   `dynamicforward` is a usage error; `-G` garbage degrades; no forward anywhere is a usage
-  error; the argv carries `ExitOnForwardFailure` and, with `--ssh-no-prompt`, `BatchMode=yes` and
+  error; the argv carries `ExitOnForwardFailure` and, with `--ssh-batch-mode`, `BatchMode=yes` and
   nothing else; `-o` still means `--output`; a timeout with the child alive names
-  `--ssh-no-prompt`; profile round trip; two ssh hosts hash differently.
+  `--ssh-batch-mode`; profile round trip; two ssh hosts hash differently.
 - One test runs `ssh -V` and skips if absent, proving the argv is accepted by a real client.
 
 Phasing: **(1)** `harlequin/ssh.py` — argv, `-G` probe and parser, poll, reuse,
@@ -307,7 +308,7 @@ contract, and the `Host` block as the recommended setup — plus a `CHANGELOG.md
 | `--tunnel-command` for non-SSH proxies | a Cloud SQL or `kubectl` user wants Harlequin to own the proxy's lifetime, with an answer to the code-execution problem above |
 | a paramiko backend, `harlequin[ssh]` | a user on Windows or in a container with no `ssh` binary |
 | reconnect after a drop | the death notification proves not to be enough |
-| `--ssh-no-prompt` on by default in `hsql` | interactive `hsql` users turn out to be rarer than scripted ones. Default-off is the same behavior in both commands today, which is easier to explain |
+| `--ssh-batch-mode` on by default in `hsql` | interactive `hsql` users turn out to be rarer than scripted ones. Default-off is the same behavior in both commands today, which is easier to explain |
 
 Each is additive: the flags are namespaced, one class has no ABC to satisfy, and no adapter is
 involved in any of it.
