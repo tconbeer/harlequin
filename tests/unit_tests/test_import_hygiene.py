@@ -281,13 +281,14 @@ def test_the_catalog_mode_imports_only_the_adapter_it_connects_with(
     assert not forbidden
 
 
-def test_the_find_mode_imports_only_the_adapter_it_connects_with(
+def test_the_search_mode_imports_only_the_adapter_it_connects_with(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:
     """A search is rows that never went through a database, so nothing casts."""
     proc = run_python(
         "import sys\n"
-        "sys.argv = ['hsql', '-a', 'sqlite', '--find', 'orders', ':memory:']\n"
+        "sys.argv = "
+        "['hsql', '-a', 'sqlite', '--catalog-search', 'orders', ':memory:']\n"
         "from harlequin.hsql import main\n"
         "try:\n"
         "    main()\n"

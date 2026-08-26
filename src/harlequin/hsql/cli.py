@@ -20,7 +20,7 @@ itself and `--info` on the installation, rather than any of them running SQL, so
 the first pass skips the profile. None of them names an adapter either, and the
 command carries no connection options at all, except for `--config init`: the
 options it writes into a profile are the ones an adapter declares. `--catalog`
-and `--find` are the modes that do connect, so they take a profile and an
+and `--catalog-search` are the modes that do connect, so they take a profile and an
 adapter exactly as a run does. Modes are options rather than subcommands
 because `CONN_STR` is positional: `hsql catalog` and a DuckDB file named
 `catalog` would have needed a rule, and `--catalog` needs none. They are
@@ -273,7 +273,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
-        "--find",
+        "--catalog-search",
         metavar="TERM",
         help=(
             "Search the whole catalog, at every level, for objects whose "
@@ -285,9 +285,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "--path",
         metavar="TEXT",
         help=(
-            "Where in the catalog --catalog looks, and what --find searches "
-            "under. Dotted segments, named by the adapter; the top of the "
-            "catalog by default. A trailing * filters a --catalog listing."
+            "Where in the catalog --catalog looks, and what --catalog-search "
+            "searches under. Dotted segments, named by the adapter; the top of "
+            "the catalog by default. A trailing * filters a --catalog listing."
         ),
     )
     @click.option(
@@ -357,7 +357,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         spec: bool,
         info: bool,
         catalog: bool,
-        find: str | None,
+        catalog_search: str | None,
         path: str | None,
         **kwargs: Any,
     ) -> None:
@@ -428,13 +428,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         mode = _one_mode(
             ctx,
             catalog=catalog,
-            find=find,
+            catalog_search=catalog_search,
             config_mode=config_mode,
             spec=spec,
             info=info,
         )
-        if path is not None and not catalog and find is None:
-            diagnostics.error("--path must be used with --catalog or --find.")
+        if path is not None and not catalog and catalog_search is None:
+            diagnostics.error("--path must be used with --catalog or --catalog-search.")
             ctx.exit(ExitCode.USAGE)
         if mode is not None and sources:
             # a mode does not run SQL, so `-c` or `-f` beside one is two
@@ -543,24 +543,24 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
-        if find is not None:
-            if not find.strip():
+        if catalog_search is not None:
+            if not catalog_search.strip():
                 # an unset shell variable, far more often than a deliberate ask
                 # for the whole catalog -- which is what --catalog is for, a
                 # level at a time.
-                diagnostics.error("--find needs a term to search for.")
+                diagnostics.error("--catalog-search needs a term to search for.")
                 ctx.exit(ExitCode.USAGE)
             search_path = _search_path(ctx, path)
-            _refuse_undeclared_search(ctx, adapter=adapter, term=find)
+            _refuse_undeclared_search(ctx, adapter=adapter, term=catalog_search)
             if "limit" in explicitly_set:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
-                diagnostics.report_limit_ignored("--find")
+                diagnostics.report_limit_ignored("--catalog-search")
             ctx.exit(
-                _report_find(
+                _report_catalog_search(
                     ctx,
                     _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
-                    find,
+                    catalog_search,
                     search_path,
                     destination=destination,
                     format_name=format_name,
@@ -710,7 +710,7 @@ def _one_mode(
     ctx: click.Context,
     *,
     catalog: bool,
-    find: str | None,
+    catalog_search: str | None,
     config_mode: str | None,
     spec: bool,
     info: bool,
@@ -723,7 +723,7 @@ def _one_mode(
     """
     asked = (
         ("--catalog", catalog),
-        ("--find", find is not None),
+        ("--catalog-search", catalog_search is not None),
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
         ("--info", info),
@@ -776,15 +776,15 @@ def _catalog_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
 def _search_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
     """What `--path` scopes a search to, or exit having said why it cannot.
 
-    A trailing wildcard is refused rather than applied: `--find` already
-    matches on a term, and a second, differently-spelled filter over the same
-    names would only be a way to ask the same question twice.
+    A trailing wildcard is refused rather than applied: `--catalog-search`
+    already matches on a term, and a second, differently-spelled filter over
+    the same names would only be a way to ask the same question twice.
     """
     path = _catalog_path(ctx, raw)
     if path.glob is not None:
         diagnostics.error(
-            "--path cannot end in a wildcard with --find, which matches on "
-            "TERM already."
+            "--path cannot end in a wildcard with --catalog-search, which "
+            "matches on TERM already."
         )
         ctx.exit(ExitCode.USAGE)
     return path
@@ -794,9 +794,9 @@ def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) ->
     """Stop before connecting unless the adapter declares it can search.
 
     An adapter that cannot search is one whose catalog would have to be walked,
-    and a `--find` that quietly walked it is the round-trip cliff this command
-    refuses to have. Read off the class, so it costs the adapter's import and
-    never a connection.
+    and a `--catalog-search` that quietly walked it is the round-trip cliff
+    this command refuses to have. Read off the class, so it costs the
+    adapter's import and never a connection.
     """
     try:
         declares_search = load_adapter(adapter).IMPLEMENTS_CATALOG_SEARCH
@@ -805,8 +805,8 @@ def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) ->
         ctx.exit(ExitCode.USAGE)
     if not declares_search:
         diagnostics.error(
-            f"{adapter} does not declare catalog search, so --find {term!r} "
-            f"cannot be answered. List one level at a time with "
+            f"{adapter} does not declare catalog search, so --catalog-search "
+            f"{term!r} cannot be answered. List one level at a time with "
             f"{PROGRAM} --catalog, or see '{PROGRAM} --info'."
         )
         ctx.exit(ExitCode.USAGE)
@@ -860,7 +860,7 @@ def _report_catalog(
     return ExitCode.OK
 
 
-def _report_find(
+def _report_catalog_search(
     ctx: click.Context,
     connection: "HarlequinConnection",
     term: str,
@@ -874,7 +874,7 @@ def _report_find(
     """Write what the search found and return its code, or exit saying why not."""
     # here rather than at module scope, for the reason each mode lives in its
     # own module: this one reaches the catalog search and the row machinery.
-    from harlequin.hsql.modes import find as find_mode
+    from harlequin.hsql.modes import catalog_search as catalog_search_mode
 
     try:
         display_limit = _display_limit(display_rows, format_name)
@@ -886,8 +886,9 @@ def _report_find(
     )
 
     try:
-        with _sink(destination, filename=f"find{output.suffix(format_name)}") as out:
-            result = find_mode.report(
+        filename = f"catalog-search{output.suffix(format_name)}"
+        with _sink(destination, filename=filename) as out:
+            result = catalog_search_mode.report(
                 out,
                 connection=connection,
                 term=term,
@@ -1584,7 +1585,7 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             f"  {PROGRAM} --catalog                     the top of the catalog\n"
             f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
             f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns\n"
-            f"  {PROGRAM} --find orders                 anything in it named that"
+            f"  {PROGRAM} --catalog-search orders       anything in it named that"
         ),
         (
             "Exit codes:\n"

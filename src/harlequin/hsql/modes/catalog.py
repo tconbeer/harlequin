@@ -21,8 +21,8 @@ def rows(
 ) -> list[tuple[str | None, ...]]:
     """Catalog items as listing rows, each under the path that reaches it.
 
-    `--find` builds its rows here too, so that a row either mode prints carries
-    a path the other one walks.
+    `--catalog-search` builds its rows here too, so that a row either mode
+    prints carries a path the other one walks.
     """
     # deferred: the walk is only reachable from a mode that lists the catalog.
     from harlequin.navigate import spell

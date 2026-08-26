@@ -3045,13 +3045,15 @@ def test_catalog_is_in_the_help(hsql: Hsql) -> None:
     assert f"{PROGRAM} --catalog --path" in res.output
 
 
-# --- `--find`, the mode that searches a catalog instead of walking it --------
+# --- `--catalog-search`, which searches a catalog instead of walking it -----
 
 
-def test_find_reaches_every_level_in_one_ask(hsql: Hsql, catalog_db: list[str]) -> None:
+def test_catalog_search_reaches_every_level_in_one_ask(
+    hsql: Hsql, catalog_db: list[str]
+) -> None:
     """The question a walk cannot answer: where the thing named that lives,
     whatever level it is on."""
-    res = hsql(*catalog_db, "--find", "order", "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "order", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     assert [(row[0], row[3]) for row in cells(res.stdout)] == [
         ("cat.analytics.order_summary", "VIEW"),
@@ -3059,10 +3061,10 @@ def test_find_reaches_every_level_in_one_ask(hsql: Hsql, catalog_db: list[str]) 
     ]
 
 
-def test_find_matches_a_column_wherever_it_is(
+def test_catalog_search_matches_a_column_wherever_it_is(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
-    res = hsql(*catalog_db, "--find", "CUSTOMER_ID", "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "CUSTOMER_ID", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     assert cells(res.stdout) == [
         [
@@ -3075,12 +3077,12 @@ def test_find_matches_a_column_wherever_it_is(
     ]
 
 
-def test_find_matches_the_levels_above_a_relation_too(
+def test_catalog_search_matches_the_levels_above_a_relation_too(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
     """A caller searching a catalog does not know its shape, so zero rows has
     to mean nothing is named that -- not that the level was not looked at."""
-    res = hsql(*catalog_db, "--find", "analytics", "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "analytics", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     assert [(row[0], row[4]) for row in cells(res.stdout)] == [("cat.analytics", "sch")]
 
@@ -3090,7 +3092,7 @@ def test_a_found_path_is_a_path_catalog_walks(
 ) -> None:
     """The two modes build their rows the same way, so a cell copied out of one
     is an argument to the other -- including for a label with a dot in it."""
-    res = hsql(*catalog_db, "--find", "t", "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "t", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     found = path_of(res.stdout, "t")
     assert found == 'cat."my.schema".t'
@@ -3101,7 +3103,7 @@ def test_a_found_path_is_a_path_catalog_walks(
 
 
 def test_path_scopes_a_find(hsql: Hsql, catalog_db: list[str]) -> None:
-    res = hsql(*catalog_db, "--find", "n", "--path", 'cat."my.schema"', "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "n", "--path", 'cat."my.schema"', "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     assert [row[0] for row in cells(res.stdout)] == ['cat."my.schema".t.n']
 
@@ -3109,16 +3111,16 @@ def test_path_scopes_a_find(hsql: Hsql, catalog_db: list[str]) -> None:
 def test_a_scope_that_names_nothing_says_what_is_there(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
-    res = hsql(*catalog_db, "--find", "orders", "--path", "cat.analytic")
+    res = hsql(*catalog_db, "--catalog-search", "orders", "--path", "cat.analytic")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert "Did you mean analytics?" in res.stderr
 
 
 def test_a_wildcard_scope_is_a_usage_error(hsql: Hsql, catalog_db: list[str]) -> None:
-    """`--find` already matches on a term; a second filter over the same names
-    is the same question asked twice."""
-    res = hsql(*catalog_db, "--find", "orders", "--path", "cat.analytic*")
+    """`--catalog-search` already matches on a term; a second filter over the
+    same names is the same question asked twice."""
+    res = hsql(*catalog_db, "--catalog-search", "orders", "--path", "cat.analytic*")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert "wildcard" in res.stderr
@@ -3127,26 +3129,26 @@ def test_a_wildcard_scope_is_a_usage_error(hsql: Hsql, catalog_db: list[str]) ->
 def test_a_term_that_matches_nothing_is_zero_rows(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
-    res = hsql(*catalog_db, "--find", "nothing-is-called-this")
+    res = hsql(*catalog_db, "--catalog-search", "nothing-is-called-this")
     assert res.exit_code == ExitCode.OK
     assert res.stdout.endswith("(0 rows)\n")
 
 
 def test_a_blank_term_is_a_usage_error(hsql: Hsql, catalog_db: list[str]) -> None:
-    """`--find "$NAME"` with nothing in NAME is a mistake, not a request for
-    the whole catalog."""
-    res = hsql(*catalog_db, "--find", "")
+    """`--catalog-search "$NAME"` with nothing in NAME is a mistake, not a
+    request for the whole catalog."""
+    res = hsql(*catalog_db, "--catalog-search", "")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
-    assert "--find needs a term" in res.stderr
+    assert "--catalog-search needs a term" in res.stderr
 
 
-def test_find_refuses_an_adapter_that_does_not_declare_it(
+def test_catalog_search_refuses_an_adapter_that_does_not_declare_it(
     hsql: Hsql, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Refused before it connects: an adapter that cannot search is one whose
-    catalog would have to be walked, and a `--find` that quietly walked it is
-    the round-trip cliff this mode exists to avoid."""
+    catalog would have to be walked, and a `--catalog-search` that quietly
+    walked it is the round-trip cliff this mode exists to avoid."""
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 
     class Unsearchable(HarlequinAdapter):
@@ -3156,28 +3158,28 @@ def test_find_refuses_an_adapter_that_does_not_declare_it(
             pass
 
         def connect(self) -> HarlequinConnection:
-            raise AssertionError("--find connected before checking the declaration")
+            raise AssertionError("connected before checking the declaration")
 
     entry_point = MagicMock()
     entry_point.name = "unsearchable"
     entry_point.load.return_value = Unsearchable
     monkeypatch.setattr("harlequin.plugins.entry_points", lambda group: [entry_point])
 
-    res = hsql("-a", "unsearchable", "--find", "orders")
+    res = hsql("-a", "unsearchable", "--catalog-search", "orders")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert "unsearchable" in res.stderr
     assert "--catalog" in res.stderr and "--info" in res.stderr
 
 
-def test_find_takes_every_format_a_result_set_does(
+def test_catalog_search_takes_every_format_a_result_set_does(
     hsql: Hsql, catalog_db: list[str]
 ) -> None:
-    res = hsql(*catalog_db, "--find", "order", "--csv")
+    res = hsql(*catalog_db, "--catalog-search", "order", "--csv")
     assert res.exit_code == ExitCode.OK
     assert res.stdout.splitlines()[0] == "path,name,query_name,type,type_label"
 
-    res = hsql(*catalog_db, "--find", "order", "--json")
+    res = hsql(*catalog_db, "--catalog-search", "order", "--json")
     assert res.exit_code == ExitCode.OK
     assert [row["name"] for row in json.loads(res.stdout)] == [
         "order_summary",
@@ -3185,11 +3187,13 @@ def test_find_takes_every_format_a_result_set_does(
     ]
 
 
-def test_find_goes_to_the_file_dash_o_names(
+def test_catalog_search_goes_to_the_file_dash_o_names(
     hsql: Hsql, catalog_db: list[str], tmp_path: Path
 ) -> None:
     destination = tmp_path / "found.csv"
-    res = hsql(*catalog_db, "--find", "orders", "-o", str(destination), "--csv")
+    res = hsql(
+        *catalog_db, "--catalog-search", "orders", "-o", str(destination), "--csv"
+    )
     assert res.exit_code == ExitCode.OK
     assert res.stdout == ""
     assert (
@@ -3200,7 +3204,7 @@ def test_find_goes_to_the_file_dash_o_names(
 
 
 def test_display_rows_caps_a_find(hsql: Hsql, catalog_db: list[str]) -> None:
-    res = hsql(*catalog_db, "--find", "order", "--display-rows", "1")
+    res = hsql(*catalog_db, "--catalog-search", "order", "--display-rows", "1")
     assert res.exit_code == ExitCode.OK
     assert res.stdout.endswith("(1 of 2 rows)\n")
 
@@ -3210,14 +3214,14 @@ def test_limit_says_it_did_not_reach_the_find(
 ) -> None:
     """It is the hard fetch limit, and a search is however many objects the
     adapter reported. Silence would read as a limit that was applied."""
-    res = hsql(*catalog_db, "--find", "order", "--limit", "1", "-tA")
+    res = hsql(*catalog_db, "--catalog-search", "order", "--limit", "1", "-tA")
     assert res.exit_code == ExitCode.OK
     assert len(res.stdout.splitlines()) == 2
     assert "--limit" in res.stderr and "no effect" in res.stderr
 
 
-def test_find_does_not_run_sql(hsql: Hsql, catalog_db: list[str]) -> None:
-    res = hsql(*catalog_db, "--find", "orders", "-c", "select 1")
+def test_catalog_search_does_not_run_sql(hsql: Hsql, catalog_db: list[str]) -> None:
+    res = hsql(*catalog_db, "--catalog-search", "orders", "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert "does not run SQL" in res.stderr
@@ -3226,17 +3230,17 @@ def test_find_does_not_run_sql(hsql: Hsql, catalog_db: list[str]) -> None:
 @pytest.mark.parametrize(
     "other", [["--catalog"], ["--info"], ["--spec"], ["--config", "show"]]
 )
-def test_find_beside_another_mode_is_a_usage_error(
+def test_catalog_search_beside_another_mode_is_a_usage_error(
     hsql: Hsql, other: list[str]
 ) -> None:
-    res = hsql("--find", "orders", *other)
+    res = hsql("--catalog-search", "orders", *other)
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
-    assert "--find" in res.stderr
+    assert "--catalog-search" in res.stderr
 
 
 @pytest.mark.parametrize("adapter", ["duckdb", "sqlite"])
-def test_find_answers_for_every_bundled_adapter(
+def test_catalog_search_answers_for_every_bundled_adapter(
     hsql: Hsql, tmp_path: Path, adapter: str
 ) -> None:
     """Both in-tree adapters implement the search, rather than declaring the
@@ -3248,14 +3252,14 @@ def test_find_answers_for_every_bundled_adapter(
     )
     assert res.exit_code == ExitCode.OK, res.stderr
 
-    res = hsql(*argv, "--find", "customer_id", "-tA")
+    res = hsql(*argv, "--catalog-search", "customer_id", "-tA")
     assert res.exit_code == ExitCode.OK, res.stderr
     assert [row[1] for row in cells(res.stdout)] == ["customer_id"]
     assert path_of(res.stdout, "customer_id").endswith("orders.customer_id")
 
 
 def test_every_bundled_adapter_declares_catalog_search(hsql: Hsql) -> None:
-    """`--info` is where a caller learns which adapters `--find` works on."""
+    """`--info` is where a caller learns which adapters can search."""
     res = hsql("--info")
     assert res.exit_code == ExitCode.OK
     adapters = json.loads(res.stdout)["adapters"]
@@ -3265,11 +3269,11 @@ def test_every_bundled_adapter_declares_catalog_search(hsql: Hsql) -> None:
     )
 
 
-def test_find_is_in_the_help(hsql: Hsql) -> None:
+def test_catalog_search_is_in_the_help(hsql: Hsql) -> None:
     res = hsql("--help")
     assert res.exit_code == ExitCode.OK
-    assert "--find" in res.output
-    assert f"{PROGRAM} --find" in res.output
+    assert "--catalog-search" in res.output
+    assert f"{PROGRAM} --catalog-search" in res.output
 
 
 # --- secrets, and the promise that none of them is printed -------------------

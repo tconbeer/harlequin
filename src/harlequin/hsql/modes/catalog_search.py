@@ -1,4 +1,4 @@
-"""Implements `hsql --find`: the catalog objects whose name matches a term.
+"""Implements `hsql --catalog-search`: the objects whose name matches a term.
 
 The question a walk cannot answer -- *where does `orders` live*, *which tables
 have a `customer_id`* -- so it is an optional capability rather than a
