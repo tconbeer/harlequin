@@ -64,6 +64,12 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    read_only = questionary.confirm(
+        message="Should this profile connect read-only?",
+        default=bool(selected_profile.get("read_only", False)),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
     theme = questionary.select(
         message="What theme should this profile use?",
         choices=sorted(VALID_THEMES.keys()),
@@ -177,6 +183,11 @@ def _wizard(config_path: Path | None) -> None:
         # only when there is one: an unlimited fetch is the default, and a key
         # that says so is a line the reader has to work out the meaning of.
         new_profile["limit"] = limit
+
+    if read_only:
+        # only when it is on: read-write is the default, and a profile that
+        # says so is a line a reader has to work out the meaning of
+        new_profile["read_only"] = read_only
 
     if show_files:
         new_profile["show_files"] = show_files

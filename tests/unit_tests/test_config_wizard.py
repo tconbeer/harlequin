@@ -52,8 +52,10 @@ def run_wizard(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     def nothing_checked(**_: Any) -> list[Any]:
         return []
 
-    def yes(**_: Any) -> bool:
-        return True
+    def yes(default: bool = True, **_: Any) -> bool:
+        # the default it offered, which is what an unanswered prompt takes: a
+        # confirm that offers none means yes, as questionary's does
+        return bool(default)
 
     def run(config_path: Path, answers: dict[str, Any]) -> None:
         fallbacks: tuple[tuple[str, Callable[..., Any]], ...] = (
@@ -185,6 +187,72 @@ class TestSecrets:
             load_profile(config_path=path, profile_name="one")["md_token"]
             == self.SECRET
         )
+
+
+class TestReadOnly:
+    """The prompt for the one core option that decides what a session may do."""
+
+    def test_saying_yes_writes_the_key(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\ntheme = "fruity"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "connect read-only": True,
+            },
+        )
+
+        assert load_config(config_path=path).profiles["one"]["read_only"] is True
+
+    def test_a_profile_that_is_not_read_only_says_nothing(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """Read-write is the default, so the key is a line that says nothing."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\ntheme = "fruity"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "connect read-only": False,
+            },
+        )
+
+        assert "read_only" not in load_config(config_path=path).profiles["one"]
+
+    def test_saying_no_turns_off_a_profile_that_was_read_only(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """Turning it off has to reach the file, or it did not happen."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nread_only = true\ntheme = "fruity"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "connect read-only": False,
+            },
+        )
+
+        assert "read_only" not in load_config(config_path=path).profiles["one"]
+
+    def test_the_prompt_offers_what_the_profile_already_says(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """Unanswered, it takes the default -- so a read-only profile rewritten
+        without touching this question is still read-only."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nread_only = true\ntheme = "fruity"\n')
+
+        run_wizard(path, {"Which profile would you like to update?": "one"})
+
+        assert load_config(config_path=path).profiles["one"]["read_only"] is True
 
 
 class TestProfileWrite:

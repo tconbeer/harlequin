@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --catalog-search TERM`, which searches every level of the catalog for objects whose name contains TERM instead of listing a level at a time: `hsql --catalog-search customer_id` says which tables have that column, and `--path` narrows the search. It works with the DuckDB and SQLite adapters; `hsql --info` reports which of your adapters can search, and one that cannot says so instead of walking its catalog.
 - Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
-- Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. An adapter that cannot enforce it refuses to start at all, instead of connecting and hoping; `hsql --info` reports which of your adapters can. The DuckDB and SQLite adapters can.
+- Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. An adapter that cannot enforce it refuses to start at all, instead of connecting and hoping; `hsql --info` reports which of your adapters can. The DuckDB and SQLite adapters can, and `harlequin --config` prompts for it.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Bug Fixes
