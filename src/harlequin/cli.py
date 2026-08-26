@@ -128,6 +128,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
         "options": [
             "--profile",
             "--adapter",
+            "--read-only",
             "--show-files",
             "--show-s3",
             "--theme",
@@ -278,7 +279,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     is the right trade -- the one that got faster is the one that opens the IDE.
     """
     installed_adapter_names = adapter_names()
-    first_pass_config = first_pass(argv, installed_adapter_names, program="harlequin")
+    first_pass_config = first_pass(
+        argv,
+        installed_adapter_names,
+        program="harlequin",
+        # click splits an unknown `-readonly` into a cluster of short options,
+        # one of which is this pass's own `-a`
+        extra_options=[click.Option(["-r", "-readonly", "--read-only"], is_flag=True)],
+    )
     adapters: dict[str, type[HarlequinAdapter]] = {}
     if first_pass_config.wants_help:
         adapters = load_adapter_plugins()
@@ -386,6 +394,19 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         help=(
             "The name of an installed database adapter plug-in "
             "to use to connect to the database at CONN_STR."
+        ),
+    )
+    # `-r` and `-readonly` as well as the long spelling: read-only is core's to
+    # ask for on every adapter, so every spelling of it is core's too.
+    @click.option(
+        "--read-only",
+        "-r",
+        "-readonly",
+        "read_only",
+        is_flag=True,
+        help=(
+            "Connect read-only, and refuse to start at all if the adapter "
+            "cannot. Not every adapter can; see `hsql --info`."
         ),
     )
     @click.option(
@@ -540,12 +561,32 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
         export_path: Path | str | None = config.pop("output", None)
+        # off the options and into an argument of its own: `read_only` is a
+        # parameter of every adapter's constructor rather than an option any of
+        # them declares, and a bool there whatever a profile wrote.
+        read_only: bool = bool(config.pop("read_only", False))
+        if read_only and not adapter_cls.IMPLEMENTS_READ_ONLY:
+            # before connecting, and before the app starts: an adapter that
+            # cannot enforce read-only is free to ignore the argument, and a
+            # session that believed it was read-only would write
+            pretty_print_error(
+                HarlequinConfigError(
+                    msg=(
+                        f"{adapter_name} does not declare read-only support, so "
+                        "--read-only cannot be honored. See `hsql --info`."
+                    ),
+                    title="Harlequin could not start.",
+                )
+            )
+            ctx.exit(2)
 
         # instantiate the adapter, which was named and imported above -- the
         # key comes off either way, because what is left is its options
         config.pop("adapter", None)
         try:
-            adapter_instance = adapter_cls(conn_str=conn_str, **config)
+            adapter_instance = adapter_cls(
+                conn_str=conn_str, read_only=read_only, **config
+            )
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)

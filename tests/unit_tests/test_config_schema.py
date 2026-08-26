@@ -228,17 +228,14 @@ def test_a_key_a_command_reads_is_not_read_as_an_adapters(
 
 
 def test_an_option_a_command_owns_is_described_once() -> None:
-    """Both bundled adapters declare `read-only`, and hsql owns the spelling.
-
-    So the key is described where the command's keys are, with the command's
-    type, rather than twice under an adapter that would never be handed it.
-    """
+    """`read_only` is a parameter every adapter's constructor takes, so it is
+    described among the command's keys -- and stays there even for an adapter
+    that declares an option by the same name."""
+    declared = [*FAKE_OPTIONS, FlagOption(name="read-only", description="Read only.")]
     profile_keys = schema_for(None)["$defs"]["profile"]["properties"]
     assert profile_keys["read_only"]["type"] == "boolean"
-    for name in adapter_names():
-        declared = load_adapter(name).ADAPTER_OPTIONS
-        options = schema_for({name: declared})["$defs"][f"{name}_options"]
-        assert "read_only" not in options["properties"]
+    options = schema_for({"faux": declared})["$defs"]["faux_options"]["properties"]
+    assert "read_only" not in options
 
 
 def test_a_profile_takes_the_keys_the_ide_reads(fake: Draft202012Validator) -> None:

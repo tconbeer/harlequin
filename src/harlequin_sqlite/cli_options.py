@@ -11,11 +11,6 @@ from harlequin.options import (
     TextOption,
 )
 
-read_only = FlagOption(
-    name="read-only",
-    short_decls=["-readonly", "-r"],
-    description="Open the database file in read-only mode.",
-)
 connection_mode = SelectOption(
     name="mode",
     short_decls=["-mode", "-m"],
@@ -137,7 +132,6 @@ extensions = ListOption(
 SQLITE_OPTIONS = [
     init,
     no_init,
-    read_only,
     connection_mode,
     timeout,
     detect_types,

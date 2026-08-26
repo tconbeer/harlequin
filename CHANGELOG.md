@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Adds `hsql --catalog-search TERM`, which searches every level of the catalog for objects whose name contains TERM instead of listing a level at a time: `hsql --catalog-search customer_id` says which tables have that column, and `--path` narrows the search. It works with the DuckDB and SQLite adapters; `hsql --info` reports which of your adapters can search, and one that cannot says so instead of walking its catalog.
 - Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
-- Adds `hsql --read-only` (also `-r`), which connects read-only. An adapter that cannot enforce it makes `hsql` refuse to run at all, instead of connecting and hoping; `hsql --info` reports which of your adapters can. The DuckDB and SQLite adapters can.
+- Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. An adapter that cannot enforce it refuses to start at all, instead of connecting and hoping; `hsql --info` reports which of your adapters can. The DuckDB and SQLite adapters can.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Bug Fixes
@@ -20,7 +20,8 @@ All notable changes to this project will be documented in this file.
 ### Adapter API Changes
 
 - Adds an optional `HarlequinConnection.search_catalog()`, which returns every catalog item whose label contains a term, paired with the labels of its ancestors. Adapters that implement it should set `IMPLEMENTS_CATALOG_SEARCH = True`, which is what `hsql --catalog-search` and `hsql --info` read.
-- Adds `IMPLEMENTS_READ_ONLY` and `IMPLEMENTS_VALIDATE_SQL` to `HarlequinAdapter`, both defaulting to `False`. Set `IMPLEMENTS_READ_ONLY = True` if `connect()` honors a `read_only=True` option, which is what `hsql --read-only` reads before it connects; set `IMPLEMENTS_VALIDATE_SQL = True` if the connection's `validate_sql()` is real. `hsql --info` reports both.
+- `HarlequinAdapter.__init__` now takes a `read_only` argument, which both commands pass to every adapter. Adapters that can connect in a mode the database refuses writes in should honor it and set `IMPLEMENTS_READ_ONLY = True`; adapters no longer need to declare a read-only option of their own, and the DuckDB and SQLite adapters have dropped theirs.
+- Adds `IMPLEMENTS_READ_ONLY` and `IMPLEMENTS_VALIDATE_SQL` to `HarlequinAdapter`, both defaulting to `False`. `--read-only` is refused for an adapter that does not declare the first; set the second if the connection's `validate_sql()` is real. `hsql --info` reports both.
 - Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`. It defaults to `None`, and `hsql --catalog` prints it in its `type` column, beside the short `type_label`. It is a new dataclass field appended after `children`, so subclasses that add their own fields should be constructed with keyword arguments.
 
 ## [2.10.0] - 2026-08-25

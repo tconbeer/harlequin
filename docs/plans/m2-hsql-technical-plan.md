@@ -749,11 +749,15 @@ place.
 
 ### 3.6 Safety: read-only and timeout
 
-**`--read-only`** sets `read_only=True` in the options handed to the adapter, and refuses
-before connecting when `IMPLEMENTS_READ_ONLY` is false (§3.4). In-tree, DuckDB and SQLite
-already accept the kwarg and already do the right thing with it, so they declare the flag and
-are done. Out-of-tree adapters are a long tail, and `hsql --info` is what makes the tail
-legible.
+**`--read-only`** is a `read_only` argument on `HarlequinAdapter.__init__`, passed by both
+commands, and refused before connecting when `IMPLEMENTS_READ_ONLY` is false (§3.4). An
+option of that name in the bag handed to the adapter would have worked in-tree, but only
+because DuckDB and SQLite each declare an option called `read-only` — a convention rather
+than a contract, and the same convention §1.8 rules out for the adapters that declare
+nothing (amended in PR 13, Ted's call). So the two in-tree adapters drop their own
+`read-only` options and take the argument, and `--read-only` is a core flag on `harlequin`
+as well as `hsql`. Out-of-tree adapters are a long tail, and `hsql --info` is what makes the
+tail legible.
 
 **`--timeout SECONDS`** is a wall clock over the whole run — execute *and* fetch, because
 DuckDB executes lazily and the work happens in `fetchall()` (§1.9):

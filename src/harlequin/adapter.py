@@ -254,21 +254,27 @@ class HarlequinAdapter(ABC):
     IMPLEMENTS_CATALOG_SEARCH = False
     """True if the connection's search_catalog() is real."""
     IMPLEMENTS_READ_ONLY = False
-    """True if connect() honors a read_only=True option by opening a connection
-    that cannot write. Harlequin refuses `hsql --read-only` for an adapter that
-    does not declare it, rather than passing an option that may be ignored."""
+    """True if the adapter's read_only argument opens a connection that cannot
+    write. Harlequin refuses `--read-only` for an adapter that does not declare
+    it, rather than passing an argument that may be ignored."""
     IMPLEMENTS_VALIDATE_SQL = False
     """True if the connection's validate_sql() is real."""
     ADAPTER_DETAILS: str | None = None
     ADAPTER_DRIVER_DETAILS: str | None = None
 
     @abstractmethod
-    def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+    def __init__(
+        self, conn_str: Sequence[str], read_only: bool = False, **options: Any
+    ) -> None:
         """
         Initialize an adapter.
 
         Args:
             - conn_str (Sequence[str]): One or more connection strings. May be empty.
+            - read_only (bool): True if this connection must not be able to write.
+                Harlequin passes True only to an adapter that declares
+                IMPLEMENTS_READ_ONLY; an adapter that declares it must connect in
+                a mode the database itself refuses writes in, or raise.
             - **options (Any): Options received from the command line, config file,
                 or env variables. Adapters should be robust to receiving both subsets
                 and supersets of their declared options. They should disregard any

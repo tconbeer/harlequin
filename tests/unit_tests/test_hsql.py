@@ -89,7 +89,7 @@ def test_help_is_adapter_agnostic(hsql: Hsql) -> None:
 def test_help_for_one_adapter(hsql: Hsql) -> None:
     res = hsql("--help", "-a", "duckdb")
     assert res.exit_code == ExitCode.OK
-    assert "--read-only" in res.output
+    assert "--no-init" in res.output
     assert "Showing duckdb's connection options." in res.output
 
 
@@ -2138,7 +2138,6 @@ def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> No
     pins names cannot tell the difference between the two.
     """
     from harlequin.config import sluggify_option_name
-    from harlequin.hsql.cli import bare_command
     from harlequin.plugins import load_adapter
 
     declared = {
@@ -2149,12 +2148,9 @@ def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> No
         o["name"]
         for o in spec_of(hsql("--spec", "-a", name))["adapters"][name]["options"]
     }
-    # every declaration except the ones hsql's own flags claim, `read_only`
-    # today: an option the command drops is not part of the surface a caller
-    # can type, and this document reports that surface
-    owned = {param.name for param in bare_command().params}
-    assert "read_only" in declared & owned
-    assert reported == declared - owned
+    # equal today, because neither in-tree adapter declares a spelling hsql's
+    # own flags take; a name that goes missing here is one hsql has claimed
+    assert reported == declared
 
 
 def test_spec_narrows_to_one_adapter(hsql: Hsql) -> None:

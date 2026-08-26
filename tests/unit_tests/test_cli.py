@@ -127,7 +127,7 @@ def test_default(
     res = invoke(runner, harlequin_args)
     assert res.exit_code == 0
     expected_conn_str = (harlequin_args,) if harlequin_args else tuple()
-    mock_adapter.assert_called_once_with(conn_str=expected_conn_str)
+    mock_adapter.assert_called_once_with(conn_str=expected_conn_str, read_only=False)
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
         profile_name=None,
@@ -569,6 +569,51 @@ def test_sqlite_extension_not_supported(
     res = invoke(runner, f"-a sqlite --extension {extension_path.as_posix()}")
     assert res.exit_code == 2
     assert "No such option" in res.stderr
+
+
+# --- read-only ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("harlequin_args", ["--read-only", "-r", "-readonly"])
+def test_read_only_reaches_the_adapter_however_it_is_spelled(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    harlequin_args: str,
+    mock_empty_config: None,
+) -> None:
+    """It is an argument of the adapter's constructor rather than an option any
+    adapter declares, so every adapter takes it under the same name."""
+    runner = CliRunner()
+    res = invoke(runner, harlequin_args)
+    assert res.exit_code == 0
+    assert mock_adapter.call_args
+    assert mock_adapter.call_args.kwargs["read_only"] is True
+
+
+def test_read_only_from_a_profile_reaches_the_adapter(
+    mock_harlequin: MagicMock, mock_adapter: MagicMock, data_dir: Path
+) -> None:
+    """`read_only` is the command's key in a profile, whatever adapter it names."""
+    config_path = data_dir / "unit_tests" / "config" / "good_config.toml"
+    runner = CliRunner()
+    res = invoke(runner, f"--config-path {config_path.as_posix()}")
+    assert res.exit_code == 0
+    assert mock_adapter.call_args
+    assert mock_adapter.call_args.kwargs["read_only"] is False
+
+
+def test_read_only_refuses_an_adapter_that_does_not_declare_it(
+    mock_harlequin: MagicMock, mock_adapter: MagicMock, mock_empty_config: None
+) -> None:
+    """Before the app starts, and before the adapter is constructed: an adapter
+    that cannot enforce read-only is free to ignore the argument, and a session
+    that believed it was read-only would write."""
+    mock_adapter.IMPLEMENTS_READ_ONLY = False
+    runner = CliRunner()
+    res = invoke(runner, "--read-only")
+    assert res.exit_code == 2
+    mock_adapter.assert_not_called()
+    mock_harlequin.assert_not_called()
 
 
 # --- pointing at the other command -------------------------------------------

@@ -244,9 +244,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         type=click.Choice(installed, case_sensitive=False),
         help="The installed adapter plug-in to connect with.",
     )
-    # hsql owns the spellings an adapter gives its own read-only option, `-r`
-    # and `-readonly` among them, so that the flag means the same thing --
-    # including the refusal -- whichever adapter it is passed with.
+    # `-r` and `-readonly` as well as the long spelling: read-only is core's
+    # to ask for on every adapter, so every spelling of it is core's too.
     @click.option(
         "-r",
         "-readonly",
@@ -426,6 +425,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             diagnostics.error(f"on_error takes stop or continue, not {raw_on_error}.")
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
+        # off the options and into an argument of its own: `read_only` is a
+        # parameter of every adapter's constructor rather than an option any of
+        # them declares, and a bool there whatever a profile wrote.
+        read_only: bool = bool(values.pop("read_only", False))
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
         no_align: bool = bool(values.pop("no_align", False))
@@ -507,7 +510,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             _refuse_undeclared_read_only(
                 ctx,
                 adapter=adapter,
-                asked=bool(values.get("read_only", False)),
+                asked=read_only,
                 typed="read_only" in explicitly_set,
             )
 
@@ -558,7 +561,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(
                 _report_catalog(
                     ctx,
-                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    _connect(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
                     catalog_path,
                     destination=destination,
                     format_name=format_name,
@@ -588,7 +597,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(
                 _report_catalog_search(
                     ctx,
-                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    _connect(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
                     catalog_search,
                     search_path,
                     destination=destination,
@@ -635,7 +650,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=limit is not None,
         )
 
-        connection = _connect(ctx, adapter=adapter, conn_str=conn_str, values=values)
+        connection = _connect(
+            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+        )
 
         run = _Run()
         executed = _execute_all(
@@ -771,11 +788,14 @@ def _connect(
     *,
     adapter: str,
     conn_str: Sequence[str],
+    read_only: bool,
     values: Mapping[str, Any],
 ) -> "HarlequinConnection":
     """The connection this invocation runs on, or exit having said why not."""
     try:
-        adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
+        adapter_instance = load_adapter(adapter)(
+            conn_str=conn_str, read_only=read_only, **values
+        )
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
@@ -846,10 +866,10 @@ def _refuse_undeclared_read_only(
 ) -> None:
     """Stop before connecting unless the adapter declares it can be read-only.
 
-    `read_only` is an option core hands the adapter, and an adapter that does
-    not declare the capability drops what it does not recognize -- so a run
-    that believed it was read-only would write. Read off the class, so it costs
-    the adapter's import and never a connection.
+    `read_only` is an argument of every adapter's constructor, and one that an
+    adapter which cannot enforce it is free to ignore -- so a run that believed
+    it was read-only would write. Read off the class, so it costs the adapter's
+    import and never a connection.
     """
     if not asked:
         return

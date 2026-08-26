@@ -217,7 +217,7 @@ def test_the_duckdb_adapter_declares_its_token_secret() -> None:
 
     declared = {option.name: option.to_dict() for option in DUCKDB_OPTIONS}
     assert declared["md_token"]["secret"] is True
-    assert declared["read-only"]["secret"] is False
+    assert declared["md_saas"]["secret"] is False
 
 
 @pytest.mark.parametrize(
