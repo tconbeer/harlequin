@@ -19,11 +19,7 @@ and `type_label` is the short label, which an adapter always populates."""
 def rows(
     items: Sequence[tuple[Sequence[str], "CatalogItem"]],
 ) -> list[tuple[str | None, ...]]:
-    """Catalog items as listing rows, each under the path that reaches it.
-
-    `--catalog-search` builds its rows here too, so that a row either mode
-    prints carries a path the other one walks.
-    """
+    """Catalog items as listing rows, each under the path that reaches it."""
     # deferred: the walk is only reachable from a mode that lists the catalog.
     from harlequin.navigate import spell
 

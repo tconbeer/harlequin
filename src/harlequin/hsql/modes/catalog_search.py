@@ -5,9 +5,6 @@ have a `customer_id`* -- so it is an optional capability rather than a
 recursive listing: one introspection query where the adapter can serve it, and
 a refusal naming the adapter where it cannot. Every level the catalog has, so
 that a term matching nothing means nothing is named that.
-
-Its rows are `--catalog`'s rows, built by that mode, so a path this prints is
-one `--catalog --path` walks.
 """
 
 from __future__ import annotations
