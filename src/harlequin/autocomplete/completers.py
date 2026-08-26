@@ -12,6 +12,9 @@ from harlequin.catalog import Catalog, CatalogItem
 
 SEPARATOR_PROG = re.compile(r"\.|::?")
 ANY_QUOTE_PROG = re.compile(r"\"|'|`")
+LEADING_DIGIT_PROG = re.compile(r"^\d")
+FUZZY_MIN_LENGTH = 2
+"""The shortest prefix that is fuzzy-matched; anything shorter matches too much."""
 
 BUFFER_TYPE_LABEL = "buf"
 BUFFER_PRIORITY = 400
@@ -43,6 +46,11 @@ class WordCompleter:
 
         def _label(c: HarlequinCompletion) -> tuple[str, str]:
             return (c.label, c.type_label)
+
+        # An unquoted SQL identifier can't start with a digit, so a token that
+        # does is a number being typed, not a name being completed.
+        if LEADING_DIGIT_PROG.match(prefix):
+            return []
 
         match_val = prefix.casefold()
 
@@ -167,16 +175,40 @@ class WordCompleter:
     def _fuzzy_match(
         match_val: str, completions: Iterable[HarlequinCompletion]
     ) -> list[HarlequinCompletion]:
-        regex_base = ".{0,2}?".join(f"({re.escape(c)})" for c in match_val)
-        regex = "^.*" + regex_base + ".*$"
-        match_regex = re.compile(regex, re.IGNORECASE)
-        matches = [c for c in completions if match_regex.match(c.match_val)]
+        """
+        Matches completions whose name contains the typed characters in order,
+        starting at a word boundary.
 
-        # Sort in ascending length.
-        # I am assuming here that more insertions are less likely to be
-        # the "right" match.
-        matches.sort(key=lambda c: len(c.match_val))
-        return matches
+        Anchoring the first character is what keeps the list relevant: without
+        it, a character that appears anywhere in a name is a match, so typing
+        one letter offers most of the catalog.
+        """
+        if len(match_val) < FUZZY_MIN_LENGTH:
+            return []
+
+        head, rest = match_val[0], match_val[1:]
+        regex = (
+            r"(?:^|(?<=[\W_]))"
+            + re.escape(head)
+            + "".join(f".*?{re.escape(c)}" for c in rest)
+        )
+        match_regex = re.compile(regex, re.IGNORECASE)
+        matches = [
+            (match, completion)
+            for completion in completions
+            if (match := match_regex.search(completion.match_val)) is not None
+        ]
+
+        # The fewer characters a match spans, the more of the name the user
+        # typed; ties go to the earlier match, then to the shorter name.
+        matches.sort(
+            key=lambda pair: (
+                pair[0].end() - pair[0].start(),
+                pair[0].start(),
+                len(pair[1].match_val),
+            )
+        )
+        return [completion for _, completion in matches]
 
     @staticmethod
     def _merge_completions(
@@ -223,6 +255,10 @@ class MemberCompleter(WordCompleter):
             else:
                 quote_char = ""
                 match_val = item_prefix.casefold()
+                # A member that starts with a digit has to be quoted to be
+                # queried, so an unquoted one is a number, not a name.
+                if LEADING_DIGIT_PROG.match(match_val):
+                    return []
             match_context = context.strip("'`\"").casefold()
             separators = SEPARATOR_PROG.findall(prefix)
         value_prefix = "".join(

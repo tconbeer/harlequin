@@ -7,6 +7,7 @@ import pytest
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
+from harlequin.autocomplete import BufferSymbols
 from harlequin.statements import find_separators, split
 
 
@@ -486,3 +487,30 @@ async def test_buffer_symbols_reach_the_completers(
             await pilot.pause(0.1)
 
         assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")
+
+
+@pytest.mark.asyncio
+async def test_numbers_do_not_open_the_completion_list(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A number leaves the list closed, so enter inserts a newline."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None or app.editor_collection.word_completer is None:
+            await pilot.pause()
+
+        app.editor_collection.word_completer.update_buffer_symbols(
+            BufferSymbols(names=("foo_1",))
+        )
+        app.editor.focus()
+
+        await pilot.press("1")
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        assert not app.editor.completion_list.is_open
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.editor.text == "1\n"
