@@ -134,6 +134,8 @@ $ hsql -P dev -c "select * from users"
 (2 rows)
 ```
 
+hsql can also explore the catalog without writing SQL: `hsql --catalog --path mydb.analytics` lists a schema's relations (and `--path mydb.analytics.orders` lists that table's columns), while `hsql --catalog-search customer_id` searches every level at once.
+
 For more information on hsql, see the [getting started docs](https://harlequin.sh/docs/getting-started/hsql).
 
 ## Using Harlequin with Django
