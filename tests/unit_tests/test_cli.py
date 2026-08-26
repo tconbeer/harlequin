@@ -630,7 +630,7 @@ def test_what_this_command_reads_off_the_other_one(mock_empty_config: None) -> N
     """
     assert "--csv" in hsql_spellings()
     assert "--theme" not in hsql_spellings()
-    assert "--read-only" not in hsql_spellings(), "an adapter's option, not hsql's"
+    assert "--no-init" not in hsql_spellings(), "an adapter's option, not hsql's"
 
     assert {"format", "stats", "on_error"} <= hsql_profile_keys()
-    assert "read_only" not in hsql_profile_keys()
+    assert "no_init" not in hsql_profile_keys()

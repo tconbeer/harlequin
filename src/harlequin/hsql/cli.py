@@ -118,6 +118,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--config"]),
             click.Option(["--spec"], is_flag=True),
             click.Option(["--info"], is_flag=True),
+            # click splits an unknown `-readonly` into a cluster of short
+            # options, one of which is this pass's own `-a`
+            click.Option(["-r", "-readonly", "--read-only"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -240,6 +243,20 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         metavar="NAME",
         type=click.Choice(installed, case_sensitive=False),
         help="The installed adapter plug-in to connect with.",
+    )
+    # hsql owns the spellings an adapter gives its own read-only option, `-r`
+    # and `-readonly` among them, so that the flag means the same thing --
+    # including the refusal -- whichever adapter it is passed with.
+    @click.option(
+        "-r",
+        "-readonly",
+        "--read-only",
+        "read_only",
+        is_flag=True,
+        help=(
+            "Connect read-only, and refuse to run at all if the adapter cannot. "
+            "Not every adapter can; see --info."
+        ),
     )
     # existence is not click's to check: every mode that reads this path
     # already refuses a file that is not there, naming it, and `--config init`
@@ -480,6 +497,18 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     format_chosen=format_name != DEFAULT_FORMAT
                     or "format" in explicitly_set,
                 )
+            )
+
+        # everything below this connects with the adapter, or writes a profile
+        # that names it, so this is where a read-only the adapter cannot honor
+        # is refused. The modes that only report are not refused over a flag
+        # they ignore -- `--info` least of all, since it is where this points.
+        if not _reports_config(config_mode):
+            _refuse_undeclared_read_only(
+                ctx,
+                adapter=adapter,
+                asked=bool(values.get("read_only", False)),
+                typed="read_only" in explicitly_set,
             )
 
         if config_mode is not None:
@@ -808,6 +837,32 @@ def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) ->
             f"{adapter} does not declare catalog search, so --catalog-search "
             f"{term!r} cannot be answered. List one level at a time with "
             f"{PROGRAM} --catalog, or see '{PROGRAM} --info'."
+        )
+        ctx.exit(ExitCode.USAGE)
+
+
+def _refuse_undeclared_read_only(
+    ctx: click.Context, *, adapter: str, asked: bool, typed: bool
+) -> None:
+    """Stop before connecting unless the adapter declares it can be read-only.
+
+    `read_only` is an option core hands the adapter, and an adapter that does
+    not declare the capability drops what it does not recognize -- so a run
+    that believed it was read-only would write. Read off the class, so it costs
+    the adapter's import and never a connection.
+    """
+    if not asked:
+        return
+    try:
+        declares_read_only = load_adapter(adapter).IMPLEMENTS_READ_ONLY
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    if not declares_read_only:
+        spelled = "--read-only" if typed else "read_only in the profile"
+        diagnostics.error(
+            f"{adapter} does not declare read-only support, so {spelled} "
+            f"cannot be honored. See '{PROGRAM} --info'."
         )
         ctx.exit(ExitCode.USAGE)
 

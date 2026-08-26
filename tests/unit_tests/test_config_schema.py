@@ -44,7 +44,7 @@ FAKE_OPTIONS: list[AbstractOption] = [
         choices=["disable", ("verify-full", "Verify the certificate")],
         default="disable",
     ),
-    FlagOption(name="read-only", description="Connect read-only."),
+    FlagOption(name="no-verify", description="Skip certificate verification."),
 ]
 """One of every option type an adapter can declare, including the two shapes a
 `SelectOption`'s choices come in."""
@@ -137,7 +137,7 @@ def test_a_profile_takes_the_options_of_the_adapter_it_names(
         host="db.example.com",
         extension=["postgis"],
         sslmode="verify-full",
-        read_only=True,
+        no_verify=True,
     )
 
 
@@ -225,6 +225,20 @@ def test_a_key_a_command_reads_is_not_read_as_an_adapters(
     options = schema_for({"faux": FAKE_OPTIONS})["$defs"]["faux_options"]["properties"]
     assert "limit" not in options
     assert profile(fake, adapter="faux", limit=True)
+
+
+def test_an_option_a_command_owns_is_described_once() -> None:
+    """Both bundled adapters declare `read-only`, and hsql owns the spelling.
+
+    So the key is described where the command's keys are, with the command's
+    type, rather than twice under an adapter that would never be handed it.
+    """
+    profile_keys = schema_for(None)["$defs"]["profile"]["properties"]
+    assert profile_keys["read_only"]["type"] == "boolean"
+    for name in adapter_names():
+        declared = load_adapter(name).ADAPTER_OPTIONS
+        options = schema_for({name: declared})["$defs"][f"{name}_options"]
+        assert "read_only" not in options["properties"]
 
 
 def test_a_profile_takes_the_keys_the_ide_reads(fake: Draft202012Validator) -> None:

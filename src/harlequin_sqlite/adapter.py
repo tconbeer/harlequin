@@ -416,6 +416,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
     IMPLEMENTS_CATALOG_SEARCH = True
+    IMPLEMENTS_READ_ONLY = True
     ADAPTER_DETAILS = "This is an SQLite adapter part of Harlequin core."
 
     def __init__(

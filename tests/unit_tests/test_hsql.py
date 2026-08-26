@@ -81,7 +81,7 @@ def test_help_is_adapter_agnostic(hsql: Hsql) -> None:
     assert "Installed adapters:" in res.output
     assert "hsql --help -a <adapter>" in res.output
     # no adapter's connection options, and none of the IDE's options either
-    assert "--read-only" not in res.output
+    assert "--no-init" not in res.output
     assert "--theme" not in res.output
     assert "--show-files" not in res.output
 
@@ -1618,7 +1618,7 @@ def test_config_schema_describes_the_adapters_installed_here(hsql: Hsql) -> None
 
 def test_config_schema_describes_an_adapters_own_options(hsql: Hsql) -> None:
     options = schema_of(hsql("--config", "schema"))["$defs"]["duckdb_options"]
-    assert options["properties"]["read_only"]["type"] == "boolean"
+    assert options["properties"]["no_init"]["type"] == "boolean"
     assert options["properties"]["extension"]["type"] == "array"
 
 
@@ -1760,13 +1760,13 @@ def test_config_init_writes_an_adapters_own_options(
     """The half of a profile only the adapter declares.
 
     Which is why this is the one mode that imports an adapter to write a file:
-    `--read-only` is not a flag hsql has until sqlite's options are on it.
+    `--no-init` is not a flag hsql has until sqlite's options are on it.
     """
     cwd, _ = init_dirs
-    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite", "--read-only")
+    res = hsql("--config", "init", "-P", "prod", "-a", "sqlite", "--no-init")
     assert res.exit_code == ExitCode.OK
     profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
-    assert profile == {"adapter": "sqlite", "read_only": True}
+    assert profile == {"adapter": "sqlite", "no_init": True}
 
 
 def test_config_init_writes_a_shorthand_as_the_format_it_stands_for(
@@ -2098,17 +2098,17 @@ def test_spec_covers_every_installed_adapter(hsql: Hsql) -> None:
 def test_spec_reports_an_adapter_option_the_way_it_is_passed(hsql: Hsql) -> None:
     """The two spellings an adapter option has, and both are needed.
 
-    `--read-only` is what a command line takes; `read_only` is what a profile
+    `--no-init` is what a command line takes; `no_init` is what a profile
     writes, and what the adapter's constructor is handed. A caller that had
     only one of them would write the other wrong.
     """
     duckdb = spec_of(hsql("--spec"))["adapters"]["duckdb"]
-    (read_only,) = [o for o in duckdb["options"] if o["name"] == "read_only"]
-    assert read_only["decls"] == ["--read-only", "-readonly", "-r"]
-    assert read_only["type"] == "boolean"
-    assert read_only["is_flag"] is True
-    assert read_only["default"] is False
-    assert read_only["help"]
+    (no_init,) = [o for o in duckdb["options"] if o["name"] == "no_init"]
+    assert no_init["decls"] == ["--no-init"]
+    assert no_init["type"] == "boolean"
+    assert no_init["is_flag"] is True
+    assert no_init["default"] is False
+    assert no_init["help"]
 
 
 def test_spec_reports_an_adapters_repeatable_and_chosen_options(hsql: Hsql) -> None:
@@ -2138,6 +2138,7 @@ def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> No
     pins names cannot tell the difference between the two.
     """
     from harlequin.config import sluggify_option_name
+    from harlequin.hsql.cli import bare_command
     from harlequin.plugins import load_adapter
 
     declared = {
@@ -2148,9 +2149,12 @@ def test_spec_reports_what_the_adapter_declares_now(hsql: Hsql, name: str) -> No
         o["name"]
         for o in spec_of(hsql("--spec", "-a", name))["adapters"][name]["options"]
     }
-    # equal today, because neither in-tree adapter declares a spelling hsql's
-    # own flags take; a name that goes missing here is one hsql has claimed
-    assert reported == declared
+    # every declaration except the ones hsql's own flags claim, `read_only`
+    # today: an option the command drops is not part of the surface a caller
+    # can type, and this document reports that surface
+    owned = {param.name for param in bare_command().params}
+    assert "read_only" in declared & owned
+    assert reported == declared - owned
 
 
 def test_spec_narrows_to_one_adapter(hsql: Hsql) -> None:
@@ -3276,6 +3280,179 @@ def test_catalog_search_is_in_the_help(hsql: Hsql) -> None:
     assert f"{PROGRAM} --catalog-search" in res.output
 
 
+# --- `--read-only`, and the capability it needs -------------------------------
+
+
+@pytest.fixture
+def declares_nothing(monkeypatch: pytest.MonkeyPatch) -> str:
+    """The name of an installed adapter that declares no capability at all.
+
+    Which is every adapter the day before it adds a declaration, so this is
+    what a refusal has to be right about -- and `connect()` raising is what
+    proves the refusal came first.
+    """
+    from harlequin.adapter import HarlequinAdapter, HarlequinConnection
+
+    class DeclaresNothing(HarlequinAdapter):
+        ADAPTER_OPTIONS = None
+
+        def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+            pass
+
+        def connect(self) -> HarlequinConnection:
+            raise AssertionError("connected before checking the declaration")
+
+    entry_point = MagicMock()
+    entry_point.name = "undeclared"
+    entry_point.load.return_value = DeclaresNothing
+    monkeypatch.setattr("harlequin.plugins.entry_points", lambda group: [entry_point])
+    return "undeclared"
+
+
+def test_read_only_refuses_an_adapter_that_does_not_declare_it(
+    hsql: Hsql, declares_nothing: str
+) -> None:
+    """A flag that no-ops is worse than one that is absent.
+
+    An adapter drops an option it does not recognize, so a run that believed it
+    was read-only would write. Refused before it connects, which is the whole
+    of what the flag promises.
+    """
+    res = hsql("-a", declares_nothing, "--read-only", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+    assert "--read-only" in res.stderr and "--info" in res.stderr
+
+
+def test_read_only_from_a_profile_is_refused_the_same_way(
+    hsql: Hsql, declares_nothing: str, tmp_path: Path
+) -> None:
+    """The spelling a human is likelier to have used, and to trust.
+
+    `read_only = true` in a profile is a promise made once and relied on by
+    every invocation that loads it, so it is refused where the flag is.
+    """
+    path = tmp_path / ".harlequin.toml"
+    path.write_text("[profiles.prod]\nread_only = true\n")
+    res = hsql(
+        "--config-path",
+        str(path),
+        "-P",
+        "prod",
+        "-a",
+        declares_nothing,
+        "-c",
+        "select 1",
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+    assert "profile" in res.stderr
+
+
+def test_read_only_is_refused_ahead_of_the_mode_that_would_connect(
+    hsql: Hsql, declares_nothing: str
+) -> None:
+    """`--catalog` connects too, so it meets the same refusal."""
+    res = hsql("-a", declares_nothing, "--read-only", "--catalog")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+
+
+def test_read_only_is_refused_before_it_is_written_into_a_profile(
+    hsql: Hsql, declares_nothing: str, init_dirs: tuple[Path, Path]
+) -> None:
+    """`--config init` writes a promise rather than keeping one, and a profile
+    saying `read_only = true` to an adapter that cannot is the promise this
+    flag exists to not make."""
+    cwd, _ = init_dirs
+    res = hsql("--config", "init", "-P", "prod", "-a", declares_nothing, "--read-only")
+    assert res.exit_code == ExitCode.USAGE
+    assert not (cwd / ".harlequin.toml").exists()
+
+
+def test_read_only_does_not_refuse_the_mode_that_would_explain_it(
+    hsql: Hsql, declares_nothing: str
+) -> None:
+    """`--info` connects to nothing and promises nothing, and it is where the
+    refusal points, so it answers instead of joining in."""
+    res = hsql("--info", "-a", declares_nothing, "--read-only")
+    assert res.exit_code == ExitCode.OK
+    capabilities = info_of(res)["adapters"][declares_nothing]["capabilities"]
+    assert capabilities["implements_read_only"] is False
+
+
+def test_every_bundled_adapter_declares_read_only(hsql: Hsql) -> None:
+    """`--info` is where a caller learns which adapters can be read-only."""
+    adapters = info_of(hsql("--info"))["adapters"]
+    assert all(
+        adapters[name]["capabilities"]["implements_read_only"]
+        for name in ("duckdb", "sqlite")
+    )
+
+
+def one_row_db(adapter: str, path: Path) -> list[str]:
+    """A database with a table in it, written by the driver itself.
+
+    Built outside hsql because a connection this process still holds is one
+    duckdb will not reopen under a different configuration -- and read-only is
+    a different configuration.
+    """
+    if adapter == "duckdb":
+        import duckdb
+
+        duck = duckdb.connect(str(path))
+        duck.execute("create table t as select 1 as n")
+        duck.close()
+    else:
+        import sqlite3
+
+        lite = sqlite3.connect(str(path))
+        lite.execute("create table t as select 1 as n")
+        lite.commit()
+        lite.close()
+    return ["-a", adapter, "--no-init", str(path)]
+
+
+@pytest.mark.parametrize("adapter", ["duckdb", "sqlite"])
+def test_read_only_stops_a_write_on_every_bundled_adapter(
+    hsql: Hsql, tmp_path: Path, adapter: str
+) -> None:
+    """The flag's whole job, end to end: reads answer, writes fail."""
+    argv = one_row_db(adapter, tmp_path / f"{adapter}.db")
+
+    res = hsql(*argv, "--read-only", "-c", "select n from t", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout == "1\n"
+
+    res = hsql(*argv, "--read-only", "-c", "insert into t values (2)")
+    assert res.exit_code == ExitCode.QUERY
+    assert res.stdout == ""
+    assert res.stderr
+
+
+@pytest.mark.parametrize("spelling", ["-r", "-readonly", "--read-only"])
+def test_read_only_means_the_same_thing_however_it_is_spelled(
+    hsql: Hsql, tmp_path: Path, spelling: str
+) -> None:
+    """The spellings an adapter gives its own read-only option are hsql's, so
+    an invocation that used one of them still connects read-only."""
+    argv = one_row_db("sqlite", tmp_path / "one.db")
+
+    res = hsql(*argv, spelling, "-c", "insert into t values (2)")
+    assert res.exit_code == ExitCode.QUERY
+    assert res.stdout == ""
+
+
+def test_read_only_is_in_the_help(hsql: Hsql) -> None:
+    """On the adapter-agnostic surface, because the refusal is too."""
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--read-only" in res.output
+
+
 # --- secrets, and the promise that none of them is printed -------------------
 
 SECRET = "hunter2-and-then-some"
@@ -3428,7 +3605,7 @@ def test_spec_prints_no_secret_and_says_which_options_are(
         for entry in json.loads(res.stdout)["adapters"]["duckdb"]["options"]
     }
     assert options["md_token"]["secret"] is True
-    assert options["read_only"]["secret"] is False
+    assert options["no_init"]["secret"] is False
     # both halves of the document answer with the same keys
     assert all("secret" in entry for entry in json.loads(res.stdout)["options"])
 

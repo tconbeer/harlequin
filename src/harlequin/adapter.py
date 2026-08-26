@@ -176,6 +176,9 @@ class HarlequinConnection(ABC):
         Parses text as one or more queries; returns text if parsing does not result
         in an error; otherwise returns the empty string ("").
 
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_VALIDATE_SQL to True.
+
         Args:
             text (str): The text, which may compose one or more queries and partial
                 queries.
@@ -250,6 +253,12 @@ class HarlequinAdapter(ABC):
     IMPLEMENTS_CANCEL = False
     IMPLEMENTS_CATALOG_SEARCH = False
     """True if the connection's search_catalog() is real."""
+    IMPLEMENTS_READ_ONLY = False
+    """True if connect() honors a read_only=True option by opening a connection
+    that cannot write. Harlequin refuses `hsql --read-only` for an adapter that
+    does not declare it, rather than passing an option that may be ignored."""
+    IMPLEMENTS_VALIDATE_SQL = False
+    """True if the connection's validate_sql() is real."""
     ADAPTER_DETAILS: str | None = None
     ADAPTER_DRIVER_DETAILS: str | None = None
 
