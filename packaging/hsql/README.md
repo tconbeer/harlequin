@@ -135,7 +135,22 @@ $ hsql -P dev -c "select * from users" --vertical --limit 5
 $ hsql -P warehouse -c "..." --parquet -o invoices.pq
 ```
 
-hsql reads the same config files as Harlequin, and merges them one profile at a time, nearest file first; pass `--config-path PATH` to read a single file instead, or `-P None` to skip them entirely. A profile's string values can name environment variables — `password = "${MYPASSWORD}"`, or `${MYHOST:-localhost}` to supply a default — so a config file your team shares holds no credentials. Values an adapter declares as secrets are masked wherever hsql prints them, including the password inside a connection string.
+hsql reads the same config files as Harlequin, and merges them one profile at a time, nearest file first; pass `--config-path PATH` to read a single file instead, or `-P None` to skip them entirely.
+
+### Keeping Credentials Out of Config Files
+
+A profile's string values can name environment variables, so a config file your team shares — and commits — holds no credentials:
+
+```toml
+[profiles.prod]
+adapter = "postgres"
+host = "${MYHOST:-localhost}"  # ${VAR:-default} supplies a default
+password = "${MYPASSWORD}"     # ${VAR} is required; hsql exits 2 if it is unset
+```
+
+Write `$${` for a literal `${`, if a value really does start with one.
+
+Values an adapter declares as secrets are masked wherever hsql prints them — `--config show`, `--info`, and error messages — as is the password inside a connection string.
 
 ### Inspecting and Writing Config Files
 
@@ -184,6 +199,114 @@ Additionally, for any layout, pass `--stats` to print summary info as JSON to st
 ```bash
 $ hsql -c "select 1" --format none  --stats
 {"status":"ok","statements":1,"rows":1,"truncated":false,"limit":500,"elapsed_ms":1,"columns":[{"name":"1","type":"#"}]}
+```
+
+## Exploring the Catalog
+
+Before you can write a query, you have to know what is in the database. `--catalog` lists the objects one level below `--path`, and exits without running SQL:
+
+```bash
+$ hsql "path/to/duck.db" --catalog
+ path | name | query_name | type     | type_label
+------+------+------------+----------+------------
+ duck | duck | "duck"     | database | db
+(1 row)
+```
+
+Every row's `path` is what lists that object's own children, so you walk down one level at a time:
+
+```bash
+$ hsql "path/to/duck.db" --catalog --path duck
+ path           | name      | query_name         | type   | type_label
+----------------+-----------+--------------------+--------+------------
+ duck.analytics | analytics | "duck"."analytics" | schema | sch
+ duck.main      | main      | "duck"."main"      | schema | sch
+(2 rows)
+
+$ hsql "path/to/duck.db" --catalog --path duck.analytics
+ path                        | name         | query_name                 | type       | type_label
+-----------------------------+--------------+----------------------------+------------+------------
+ duck.analytics.customers    | customers    | "analytics"."customers"    | BASE TABLE | t
+ duck.analytics.order_totals | order_totals | "analytics"."order_totals" | VIEW       | v
+ duck.analytics.orders       | orders       | "analytics"."orders"       | BASE TABLE | t
+(3 rows)
+```
+
+Describing a table is listing it: a relation's children are its columns.
+
+```bash
+$ hsql "path/to/duck.db" --catalog --path duck.analytics.orders
+ path                              | name        | query_name    | type          | type_label
+-----------------------------------+-------------+---------------+---------------+------------
+ duck.analytics.orders.customer_id | customer_id | "customer_id" | BIGINT        | ##
+ duck.analytics.orders.id          | id          | "id"          | BIGINT        | ##
+ duck.analytics.orders.placed_at   | placed_at   | "placed_at"   | TIMESTAMP     | ts
+ duck.analytics.orders.total       | total       | "total"       | DECIMAL(18,2) | #.#
+(4 rows)
+```
+
+Every listing has the same five columns:
+
+- `path` — pass it back to `--path` to list this object's children.
+- `name` — the object's name.
+- `query_name` — the identifier to paste into a query, quoted the way this database wants it, so you never have to guess between `"Orders"` and `` `orders` ``.
+- `type` — the database's own name for what this is: `DECIMAL(18,2)`, `BASE TABLE`, `schema`. Some adapters do not report it, and leave it empty.
+- `type_label` — the short label Harlequin shows in its Data Catalog, which every adapter fills in.
+
+How many levels there are, and what they mean, is the adapter's to say: DuckDB has databases, schemas, relations and columns, and other databases differ. Start with `--catalog` and no `--path` to see the top.
+
+A path is dotted segments, and it is not SQL: a segment that contains a dot, a double quote, or a `*` is written in double quotes — `--path 'duck."my.schema".orders'` — on every adapter, whatever that database quotes its own identifiers with. A `*` in the last segment filters the listing:
+
+```bash
+$ hsql "path/to/duck.db" --catalog --path 'duck.analytics.ord*'
+ path                        | name         | query_name                 | type       | type_label
+-----------------------------+--------------+----------------------------+------------+------------
+ duck.analytics.order_totals | order_totals | "analytics"."order_totals" | VIEW       | v
+ duck.analytics.orders       | orders       | "analytics"."orders"       | BASE TABLE | t
+(2 rows)
+```
+
+A listing is rows, so every format and output option applies to it, exactly as they do to a query:
+
+```bash
+$ hsql "path/to/duck.db" --catalog --path duck.analytics -tA --csv
+duck.analytics.customers,customers,"""analytics"".""customers""",BASE TABLE,t
+duck.analytics.order_totals,order_totals,"""analytics"".""order_totals""",VIEW,v
+duck.analytics.orders,orders,"""analytics"".""orders""",BASE TABLE,t
+```
+
+`--limit` does not, and says so on stderr: it makes the database fetch fewer rows, and a listing is not a query. Cap a long listing with `--display-rows` instead, which the footer reports as `(1 of 2 rows)`.
+
+### Searching the Catalog
+
+Walking is the wrong tool for *where does `orders` live* and *which tables have a `customer_id`*. `--catalog-search TERM` searches every level of the catalog at once, for objects whose name contains TERM:
+
+```bash
+$ hsql "path/to/duck.db" --catalog-search customer_id
+ path                                    | name        | query_name    | type   | type_label
+-----------------------------------------+-------------+---------------+--------+------------
+ duck.analytics.order_totals.customer_id | customer_id | "customer_id" | BIGINT | ##
+ duck.analytics.orders.customer_id       | customer_id | "customer_id" | BIGINT | ##
+ duck.main.staging_events.customer_id    | customer_id | "customer_id" | BIGINT | ##
+(3 rows)
+```
+
+The rows are a listing's rows, so the same columns and the same formats apply, and `--path` narrows the search to one subtree:
+
+```bash
+$ hsql "path/to/duck.db" --catalog-search order --path duck.analytics -tA
+duck.analytics.order_totals|order_totals|"analytics"."order_totals"|VIEW|v
+duck.analytics.orders|orders|"analytics"."orders"|BASE TABLE|t
+```
+
+Searching is an optional adapter capability, because not every database can answer it in one query. The DuckDB and SQLite adapters can; an adapter that does not declare it says so and exits `2`, rather than quietly walking its whole catalog. `--info` reports which of yours can:
+
+```bash
+$ hsql --info -a duckdb | jq '.adapters.duckdb.capabilities'
+{
+  "implements_cancel": true,
+  "implements_catalog_search": true
+}
 ```
 
 ## Scripting with hsql
