@@ -118,9 +118,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--config"]),
             click.Option(["--spec"], is_flag=True),
             click.Option(["--info"], is_flag=True),
-            # click splits an unknown `-readonly` into a cluster of short
-            # options, one of which is this pass's own `-a`
-            click.Option(["-r", "-readonly", "--read-only"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -244,11 +241,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         type=click.Choice(installed, case_sensitive=False),
         help="The installed adapter plug-in to connect with.",
     )
-    # `-r` and `-readonly` as well as the long spelling: read-only is core's
-    # to ask for on every adapter, so every spelling of it is core's too.
     @click.option(
         "-r",
-        "-readonly",
         "--read-only",
         "read_only",
         is_flag=True,

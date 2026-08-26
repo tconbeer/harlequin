@@ -279,14 +279,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     is the right trade -- the one that got faster is the one that opens the IDE.
     """
     installed_adapter_names = adapter_names()
-    first_pass_config = first_pass(
-        argv,
-        installed_adapter_names,
-        program="harlequin",
-        # click splits an unknown `-readonly` into a cluster of short options,
-        # one of which is this pass's own `-a`
-        extra_options=[click.Option(["-r", "-readonly", "--read-only"], is_flag=True)],
-    )
+    first_pass_config = first_pass(argv, installed_adapter_names, program="harlequin")
     adapters: dict[str, type[HarlequinAdapter]] = {}
     if first_pass_config.wants_help:
         adapters = load_adapter_plugins()
@@ -396,12 +389,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             "to use to connect to the database at CONN_STR."
         ),
     )
-    # `-r` and `-readonly` as well as the long spelling: read-only is core's to
-    # ask for on every adapter, so every spelling of it is core's too.
     @click.option(
         "--read-only",
         "-r",
-        "-readonly",
         "read_only",
         is_flag=True,
         help=(

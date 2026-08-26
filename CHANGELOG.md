@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The single-dash `-readonly` spelling is gone; `--read-only` and `-r` are how both commands take it.
+
 ### Features
 
 - Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children, the correctly-quoted name to paste into a query, and the database's own name for the object's type (`DECIMAL(18,2)`, `BASE TABLE`, `schema`), and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.

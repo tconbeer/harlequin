@@ -3429,16 +3429,24 @@ def test_read_only_stops_a_write_on_every_bundled_adapter(
     assert res.stderr
 
 
-@pytest.mark.parametrize("spelling", ["-r", "-readonly", "--read-only"])
+@pytest.mark.parametrize("spelling", ["-r", "--read-only"])
 def test_read_only_means_the_same_thing_however_it_is_spelled(
     hsql: Hsql, tmp_path: Path, spelling: str
 ) -> None:
-    """The spellings an adapter gives its own read-only option are hsql's, so
-    an invocation that used one of them still connects read-only."""
     argv = one_row_db("sqlite", tmp_path / "one.db")
 
     res = hsql(*argv, spelling, "-c", "insert into t values (2)")
     assert res.exit_code == ExitCode.QUERY
+    assert res.stdout == ""
+
+
+def test_the_single_dash_long_spelling_is_not_one(hsql: Hsql, tmp_path: Path) -> None:
+    """`-readonly` is two spellings' worth of nothing: `-r` and `--read-only`
+    are what a caller has, on both commands and for every adapter."""
+    argv = one_row_db("sqlite", tmp_path / "one.db")
+
+    res = hsql(*argv, "-readonly", "-c", "insert into t values (2)")
+    assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
 
 

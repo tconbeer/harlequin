@@ -574,7 +574,7 @@ def test_sqlite_extension_not_supported(
 # --- read-only ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("harlequin_args", ["--read-only", "-r", "-readonly"])
+@pytest.mark.parametrize("harlequin_args", ["--read-only", "-r"])
 def test_read_only_reaches_the_adapter_however_it_is_spelled(
     mock_harlequin: MagicMock,
     mock_adapter: MagicMock,
