@@ -161,7 +161,8 @@ class SshTunnel:
 
     def stop(self) -> None: ...
     def __enter__(self) -> SshTunnel: ...
-    def __exit__(self, *exc: Any) -> None: self.stop()
+    def __exit__(self, *exc: Any) -> None:
+        self.stop()
 ```
 
 ```
