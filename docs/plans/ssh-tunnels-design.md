@@ -20,10 +20,11 @@ Nothing here is implemented. This is the design to argue with before the first P
    answers the four-year-old blocker on the issue — and it inherits the user's whole
    `~/.ssh/config`: `LocalForward`, `ProxyJump`, agent, certificates, hardware keys, `Match`
    blocks, 2FA. `ssh -G` tells us what it is about to forward, so nothing is guessed.
-4. **Five flags, all `--ssh-*`, none of them parsed.** `--ssh-host` and `--ssh-forward` go
+4. **Four flags, all `--ssh-*`, none of them parsed.** `--ssh-host` and `--ssh-forward` go
    to `ssh` verbatim; the one thing Harlequin parses is `ssh -G`'s *output*. No
    `--ssh-user`/`--ssh-port`/`--ssh-identity`: those are `ssh_config` spelled twice, and a
-   `Host` block is where a complicated setup belongs.
+   `Host` block is where a complicated setup belongs — and no `-o` passthrough, so nothing
+   Harlequin reads can hand `ssh` a command to run.
 5. **The tunnel comes up before Textual does**, so a passphrase or 2FA prompt can reach a
    human — and it is a child process, not `ssh -f`, so it dies with the session instead of
    outliving it.
@@ -168,16 +169,13 @@ the only thing the contract says.
 
 ### 4.2 The same cluster, with nothing in `~/.ssh/config`
 
-The §4.1 `Host` block, translated flag for flag — every line of it, so that what the five
-options can and cannot say is visible:
+The §4.1 `Host` block, translated as far as the four options go:
 
 ```bash
 harlequin -a postgres \
   --host localhost --port 15439 --dbname prod --user tco \
   --ssh-host tco@web-1 \
-  --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 \
-  --ssh-option ServerAliveInterval=60 \
-  --ssh-option ServerAliveCountMax=3
+  --ssh-forward 15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439
 ```
 
 ```toml
@@ -189,18 +187,18 @@ dbname = "prod"
 user = "tco"
 ssh_host = "tco@web-1"
 ssh_forward = ["15439:data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439"]
-ssh_option = ["ServerAliveInterval=60", "ServerAliveCountMax=3"]
 ```
 
-Line by line: `HostName web-1` and `User tco` are `--ssh-host tco@web-1`; `LocalForward`
-is `--ssh-forward`, the same text with the space turned into a colon; and the two keepalive
-settings are the **only** lines that need `--ssh-option`. Note the two unrelated users, which
-happen to share a name here: `--user` is Redshift's, `tco@` is the SSH host's.
+`HostName web-1` and `User tco` are `--ssh-host tco@web-1`; `LocalForward` is
+`--ssh-forward`, the same text with the space turned into a colon. Note the two unrelated
+users, which happen to share a name here: `--user` is Redshift's, `tco@` is the SSH host's.
 
-Compare §4.1, which is the same connection in one key. This is the shape for a CI job or an
-agent with no dotfiles, and the docs' advice is to write the `Host` block instead.
+**`ServerAliveInterval 60` and `ServerAliveCountMax 3` have no flag**, by decision (§12).
+Without them the tunnel keeps ssh's defaults, which send no keepalives — fine for an `hsql`
+invocation that lasts seconds, and the reason an all-day IDE session behind a NAT wants the
+`Host` block in §4.1. Two lines of `~/.ssh/config` buy it, and they buy it for `ssh` too.
 
-**What this example is really for** is §14.1: `--ssh-option` exists for those last two lines.
+Compare §4.1, which is this same connection in one key.
 
 ### 4.3 Postgres running on the bastion itself
 
@@ -234,9 +232,8 @@ One `ssh` child, two `-L`s.
 
 ### 4.6 A jump host in front of the bastion
 
-Nothing new. `ProxyJump jump.example.com` in the `Host` block, or
-`--ssh-option ProxyJump=jump.example.com`. Chains of three work because `ssh` does them, not
-because we do.
+Nothing new: `ProxyJump jump.example.com` in the `Host` block. Chains of three work because
+`ssh` does them, not because we do.
 
 ### 4.7 Cloud SQL and other proxies — works, but Harlequin does not run them
 
@@ -297,8 +294,8 @@ class SshTunnel:
   silently did not happen is the one failure a user cannot diagnose. Notably *not* imposed:
   `ServerAliveInterval`. A command-line `-o` beats the config file, and keepalives are exactly
   what a working `Host` block already sets (§4.1 sets them) — overriding would be Harlequin
-  quietly retuning someone else's connection. The docs say to set them in the `Host` block;
-  `--ssh-option` is there for anyone who wants to anyway.
+  quietly retuning someone else's connection. The docs say to set them in the `Host` block,
+  which is also the only place to set them (§4.2).
 - **Teardown** is `terminate()` then `kill()`, from a `contextlib.ExitStack` wrapping
   `tui.run()` and the `hsql` run, plus an `atexit` backstop.
 - **No reconnect in v1, but the IDE says when the tunnel dies.** A thread waiting on the child
@@ -376,13 +373,11 @@ most: a cron job or an agent cannot ask a human to run `ssh -fN` in another term
 |---|---|---|
 | `--ssh-host TEXT` | `ssh_host` | the destination, handed to `ssh` verbatim: a `Host` alias, `host`, `user@host`, or `ssh://user@host:port` |
 | `--ssh-forward TEXT` | `ssh_forward` | repeatable; whatever follows `ssh -L`, handed over verbatim. Omit when `ssh_config` has it |
-| `--ssh-option KEY=VALUE` | `ssh_option` | repeatable; becomes one `-o`. Some keywords are refused (§6.1) |
 | `--ssh-reuse` | `ssh_reuse` | if the forwarded ports already answer, use them instead of starting a child (§5.2) |
 | `--ssh-timeout FLOAT` | `ssh_timeout` | seconds to wait for the forwards (default 10) |
 
-**No short declarations for any of them.** In particular `-o` is *not* an alias for
-`--ssh-option`: `-o` is `--output` in both commands, and an ssh flag may not take a spelling
-the output path already has.
+**No short declarations for any of them**, and no `-o` passthrough — `-o` is `--output` in
+both commands.
 
 **Harlequin parses none of these values.** `--ssh-host` and `--ssh-forward` are handed to
 `ssh` as they were typed, so `ssh` owns their syntax and their error messages, and there is no
@@ -390,59 +385,29 @@ Harlequin-shaped subset of either to document. The only parsing anywhere in this
 `ssh -G`'s output (§5.1), which is a machine-readable thing `ssh` prints rather than a string
 a user typed.
 
-Five flags. An earlier draft had nine, including `--ssh-user`, `--ssh-port` and
-`--ssh-identity`; every one of those is `ssh_config` spelled a second time. **A setup too
-complicated for these five belongs in a `Host` block**, which `--ssh-host` can then name —
-reusable outside Harlequin, and where a user's `ProxyJump`, certificate and `Match` rules
-already live.
+Four flags. An earlier draft had nine, then five. **A setup these four cannot express belongs
+in a `Host` block**, which `--ssh-host` names — reusable outside Harlequin, and where a user's
+identity file, keepalives, `ProxyJump`, certificate and `Match` rules already live.
 
-No password flag. `--ssh-password` would be a credential in `ps` output and in shell history,
-for a case `ssh` already handles better with a key, an agent, or its own prompt. If one is
-ever added it is `secret=True`, and `redact._SECRET_NAME` grows `passphrase`, which it is
-missing today.
-
-`hsql`'s flags are the frozen part of its API, so these join the reserved spellings in
-`first_pass.attach_adapter_options()`. Worth a survey of published adapters before merging; I
-know of none that claims one.
-
-**The start-up notice**, on `hsql`'s stderr (never stdout — that belongs to query output) and
-as an IDE notification and debug-screen line:
-
-```
-ssh: 127.0.0.1:15439 -> data-analytics.<aws-acct>.us-east-1.redshift.amazonaws.com:5439 via redshift_prod
-```
-
-One line, and it is what tells a user which database they are actually looking at.
-
-### 6.1 Some `-o` keywords are refused
+### 6.1 Why there is no `-o` escape hatch
 
 Config files are discovered in the **working directory**, including `pyproject.toml`. Clone a
-repository, run `harlequin` in it, and today the worst a hostile config can do is name a
-database.
+repository, run `harlequin` in it, and the worst a hostile config can do is name a database
+and a host to connect to.
 
-Four of the five options above are a name, a forward spec, a flag and a number. `ssh_option`
-is the one that is not: several `ssh_config` keywords run a program or hand something to the
-far side, and `-o ProxyCommand=…` is arbitrary code execution from a file in the current
-directory.
+An `--ssh-option KEY=VALUE` passthrough would change that: `-o ProxyCommand=…` is arbitrary
+code execution, and so are `LocalCommand`, `KnownHostsCommand` and whatever OpenSSH adds next.
+A deny-list would mostly work — `KnownHostsCommand` arrived in 8.5, so it is a list to
+revisit on every OpenSSH release, and a keyword missed is a hole. Four flags that are a
+hostname, a forward spec, a boolean and a number have nothing to deny.
 
-So `--ssh-option` **refuses a keyword on a short deny-list**, wherever the value came from —
-command line or config file alike:
+`ProxyCommand` in the user's own `~/.ssh/config` is unaffected and always was: that is their
+file, Harlequin never writes it, and a cloned repository cannot reach it. What is closed off
+is Harlequin becoming a way to run one.
 
-| refused | because | do this instead |
-|---|---|---|
-| `ProxyCommand` | runs a program | `ProxyJump`, or a `Host` block in `~/.ssh/config` |
-| `LocalCommand`, `PermitLocalCommand` | runs a program | a `Host` block |
-| `KnownHostsCommand` | runs a program | a `Host` block |
-| `ForwardAgent` | hands your agent to the far side | a `Host` block, if you really mean it |
-
-Matched case-insensitively, because `ssh_config` keywords are. The error names the keyword and
-the alternative.
-
-A deny-list rather than a rule about which file the value came from: it is one check in one
-place, it needs no provenance plumbing, and it is the same answer however the value arrived.
-It deliberately does **not** reach into `~/.ssh/config` — a `ProxyCommand` there is the user's
-own, in a file Harlequin never writes and a cloned repository cannot reach. What it stops is
-Harlequin becoming a way to run one.
+Rejected for the same reason: **`--ssh-config PATH`** (`ssh -F`). It looks safer, being a path
+rather than a keyword, but the file it names can hold a `ProxyCommand` — the same threat with
+an extra step, and no deny-list even possible.
 
 ## 7. Ordering, cache keys, and the two commands
 
@@ -530,10 +495,8 @@ coverage.
 | `-G` reports only `dynamicforward` | usage error, distinct message |
 | `-G` exits non-zero or prints garbage | no poll, no forwards-nothing error, still starts |
 | `--ssh-host` alone, no forward anywhere | usage error naming both places |
-| `--ssh-option ProxyCommand=…`, from CLI or config | usage error naming the keyword (§6.1) |
-| `--ssh-option proxycommand=…` | same; keywords are case-insensitive |
-| `--ssh-option ProxyJump=…` | allowed, reaches argv as one `-o` |
-| `-o` still means `--output` | both commands, with `--ssh-option` also set |
+| the argv | contains no `-o` but `ExitOnForwardFailure=yes` |
+| `-o` | still means `--output`, in both commands, alongside every ssh flag |
 | child exits during the poll | `HarlequinSshError` quoting its stderr, exit 3 |
 | poll times out | ditto, naming `--ssh-timeout` |
 | profile round trip | `ssh_host`/`ssh_forward` survive the merge and reach the argv |
@@ -546,8 +509,8 @@ client where one exists.
 
 1. **`harlequin/ssh.py`** — `SshTunnel`, argv construction, the `-G` probe and parser, the
    readiness poll, `HarlequinSshError`. Unit and lifecycle tests; no CLI. Mergeable alone.
-2. **Wire it into both commands** — the five options, the `ExitStack`, the notice, the
-   cache-key change, the §6.1 provenance rule, and the end-to-end test.
+2. **Wire it into both commands** — the four options, the `ExitStack`, the notice, the
+   cache-key change, and the end-to-end test.
 3. **`--info` / debug-screen reporting**, the IDE's tunnel-died notification, regenerated
    config schema.
 4. **Docs** in `tconbeer/harlequin-web`: the "details name the local end" contract, and the
@@ -560,7 +523,8 @@ client where one exists.
 | | why not |
 |---|---|
 | **Rewriting the adapter's host/port** (the issue's original sketch, and the first draft of this doc) | Core has to know which option is the host, and there is no general answer: a new `role=` declaration no published adapter has, a name-matching backstop for `host`/`port` that is a guess, and an in-place DSN rewrite for adapters that take a positional conn_str — three mechanisms, each with a way to be quietly wrong, to reach where a local forward reaches with none. It also bakes an ephemeral port into `connection_id` (losing the catalog cache every run) and breaks TLS hostname verification without the user having asked for it. |
-| **A generic `--tunnel-command`** (`cloud-sql-proxy`, `aws ssm`, `kubectl port-forward`, Teleport) | Deferred, not refused. It is ~30 lines over `SshTunnel` and it is the natural home for the Cloud SQL request — but it is a "run this string" option, which needs the §6.1 rule to be airtight before it ships, and 4.7 already works without Harlequin managing the process. Nothing in v1 forecloses it: the flags are namespaced `--ssh-*` precisely so a `--tunnel-*` family can arrive beside them. |
+| **A generic `--tunnel-command`** (`cloud-sql-proxy`, `aws ssm`, `kubectl port-forward`, Teleport) | Deferred, not refused. It is ~30 lines over `SshTunnel` and it is the natural home for the Cloud SQL request — but it is a "run this string" option, which is the thing §6.1 declines to let a config file do, and 4.7 already works without Harlequin managing the process. Nothing in v1 forecloses it: the flags are namespaced `--ssh-*` precisely so a `--tunnel-*` family can arrive beside them. |
+| **An `--ssh-option KEY=VALUE` passthrough** | §6.1. It would be the only option needing a security check, and the only realistic thing it buys over a `Host` block is keepalives for a caller with no dotfiles (§4.2). `--ssh-keepalive SECONDS` is the narrow version if that turns out to sting; it is easier to add later than to remove a documented flag. |
 | **A `{tunnel_port}` placeholder** the user writes into their conn_str | General and explicit, and it survives any option spelling — but it is a second thing to learn for the same result, and it makes a profile unusable *without* the tunnel rather than merely wrong. |
 | **A SOCKS proxy (`ssh -D`) with `socket.socket` patched** | The one design where the driver keeps the real hostname, so TLS verification is untouched. It only works for pure-Python drivers: psycopg2, mysqlclient, ODBC and duckdb's extensions open sockets in C and never see Python's `socket` module. |
 | **Each adapter grows `--ssh-*`** | N implementations of one thing, N spellings, and the adapters that need it most are out-of-tree. |
@@ -575,29 +539,23 @@ client where one exists.
 - **`ssh -G` reports `localforward`**, verified against the config in §4.1, so the readiness
   poll and the forwards-nothing error are exact (§5.1).
 - **A bound local port fails**; `--ssh-reuse` is the opt-in (§5.2).
-- **Every option starts with `ssh`.** Five of them, no short declarations — `-o` stays
-  `--output`.
+- **Four options, every one starting with `ssh`**, no short declarations, no `-o`
+  passthrough — so there is nothing to deny-list and nothing a project-local config file can
+  make `ssh` execute (§6.1).
 - **Harlequin parses no ssh syntax.** `--ssh-host` and `--ssh-forward` are verbatim; a setup
   those cannot express goes in a `Host` block that `--ssh-host` names.
-- **The local bind address is not configurable.** Whatever the forward spec or the `Host`
-  block says, which for a bare `LOCAL:HOST:PORT` is ssh's own default.
-- **`--ssh-option` refuses `ProxyCommand` and four friends** (§6.1), which replaces the
-  provenance rule an earlier draft proposed.
-- **No `--tunnel-command` in v1**, and no `require_tunnel` profile key.
+- **The local bind address is not configurable**; whatever the forward spec or the `Host`
+  block says.
+- **Not in v1**: `--tunnel-command`, a `require_tunnel` profile key, `--ssh-config`.
 
-## 14. Open questions for review
+## 14. Deferred, and what would bring each back
 
-1. **Does `--ssh-option` earn its place?** §4.2 is the evidence: translating a real `Host`
-   block, four of its five lines land on `--ssh-host` and `--ssh-forward`, and only the
-   keepalives need `--ssh-option`. Three ways to go, and the recommendation is the second:
+| | when |
+|---|---|
+| `--ssh-keepalive SECONDS` | someone runs an all-day IDE session with no `~/.ssh/config` and gets dropped (§4.2) |
+| `--tunnel-command` | a Cloud SQL or `kubectl` user wants Harlequin to own the proxy's lifetime, and §6.1's reasoning has an answer for a "run this string" option (§4.7) |
+| a paramiko backend, `harlequin[ssh]` | a user on Windows or in a container with no `ssh` binary (§9) |
+| reconnect after a dropped tunnel | the death notification (§5) proves to be not enough |
 
-   | | |
-   |---|---|
-   | **Keep it, with the §6.1 deny-list** | The full escape hatch. Costs a deny-list against a program that keeps adding keywords — `KnownHostsCommand` arrived in OpenSSH 8.5, so the list is a standing obligation, and a keyword we miss is a hole. |
-   | **Drop it — four flags, no §6.1** ← | A setup these four cannot express goes in a `Host` block, which `--ssh-host` names. Closed by construction rather than by a list we maintain. The CI job this would strand can write four lines of ssh config beside the key it already had to write. |
-   | **Replace it with `--ssh-keepalive SECONDS`** | `-o ServerAliveInterval=N -o ServerAliveCountMax=3`, which is exactly what §4.2 needed and nothing else. One narrow option, no arbitrary keywords, no deny-list. A good follow-up if dropping `--ssh-option` turns out to sting. |
-
-   Related and rejected either way: **`--ssh-config PATH`** (point `ssh -F` at another config
-   file). It looks safer than `--ssh-option` — a path, not a keyword — but the file it names
-   can hold a `ProxyCommand`, and a repo-local Harlequin config naming a repo-local ssh config
-   is the §6.1 threat with an extra step and no deny-list possible.
+Each is additive: the four flags are namespaced, the one class has no ABC to satisfy, and no
+adapter is involved in any of it.
