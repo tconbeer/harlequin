@@ -20,11 +20,12 @@ itself and `--info` on the installation, rather than any of them running SQL, so
 the first pass skips the profile. None of them names an adapter either, and the
 command carries no connection options at all, except for `--config init`: the
 options it writes into a profile are the ones an adapter declares. `--catalog`
-is the mode that does connect, so it takes a profile and an adapter exactly as a
-run does. Modes are options rather than subcommands because `CONN_STR` is
-positional: `hsql catalog` and a DuckDB file named `catalog` would have needed a
-rule, and `--catalog` needs none. They are mutually exclusive, and each lives in
-`harlequin.hsql.modes`, imported by the callback when it is chosen.
+and `--catalog-search` are the modes that do connect, so they take a profile and an
+adapter exactly as a run does. Modes are options rather than subcommands
+because `CONN_STR` is positional: `hsql catalog` and a DuckDB file named
+`catalog` would have needed a rule, and `--catalog` needs none. They are
+mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
+callback when it is chosen.
 """
 
 from __future__ import annotations
@@ -272,11 +273,21 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--catalog-search",
+        metavar="TERM",
+        help=(
+            "Search the whole catalog, at every level, for objects whose "
+            "name contains TERM, and exit without running SQL. Not every "
+            "adapter can; see --info."
+        ),
+    )
+    @click.option(
         "--path",
         metavar="TEXT",
         help=(
-            "Where in the catalog --catalog looks. Dotted segments, named by the "
-            "adapter; the top of the catalog by default. A trailing * filters."
+            "Where in the catalog --catalog looks, and what --catalog-search "
+            "searches under. Dotted segments, named by the adapter; the top of "
+            "the catalog by default. A trailing * filters a --catalog listing."
         ),
     )
     @click.option(
@@ -346,6 +357,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         spec: bool,
         info: bool,
         catalog: bool,
+        catalog_search: str | None,
         path: str | None,
         **kwargs: Any,
     ) -> None:
@@ -414,10 +426,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         sources: list[tuple[str, tuple[str, ...]]] = ctx.meta.get(SOURCES, [])
 
         mode = _one_mode(
-            ctx, catalog=catalog, config_mode=config_mode, spec=spec, info=info
+            ctx,
+            catalog=catalog,
+            catalog_search=catalog_search,
+            config_mode=config_mode,
+            spec=spec,
+            info=info,
         )
-        if path is not None and not catalog:
-            diagnostics.error("--path must be used with --catalog.")
+        if path is not None and not catalog and catalog_search is None:
+            diagnostics.error("--path must be used with --catalog or --catalog-search.")
             ctx.exit(ExitCode.USAGE)
         if mode is not None and sources:
             # a mode does not run SQL, so `-c` or `-f` beside one is two
@@ -508,12 +525,43 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             if "limit" in explicitly_set:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
-                diagnostics.report_limit_ignored()
+                diagnostics.report_limit_ignored("--catalog")
             ctx.exit(
                 _report_catalog(
                     ctx,
                     _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
                     catalog_path,
+                    destination=destination,
+                    format_name=format_name,
+                    display_rows=raw_display_rows,
+                    tuples_only=tuples_only,
+                    no_align=no_align,
+                    no_header=no_header,
+                    no_footer=no_footer,
+                    null_string=null_string,
+                    color=_use_color(color_when, destination),
+                )
+            )
+
+        if catalog_search is not None:
+            if not catalog_search.strip():
+                # an unset shell variable, far more often than a deliberate ask
+                # for the whole catalog -- which is what --catalog is for, a
+                # level at a time.
+                diagnostics.error("--catalog-search needs a term to search for.")
+                ctx.exit(ExitCode.USAGE)
+            search_path = _search_path(ctx, path)
+            _refuse_undeclared_search(ctx, adapter=adapter, term=catalog_search)
+            if "limit" in explicitly_set:
+                # ahead of the connection, so it is said whether or not the
+                # database answers
+                diagnostics.report_limit_ignored("--catalog-search")
+            ctx.exit(
+                _report_catalog_search(
+                    ctx,
+                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    catalog_search,
+                    search_path,
                     destination=destination,
                     format_name=format_name,
                     display_rows=raw_display_rows,
@@ -662,6 +710,7 @@ def _one_mode(
     ctx: click.Context,
     *,
     catalog: bool,
+    catalog_search: str | None,
     config_mode: str | None,
     spec: bool,
     info: bool,
@@ -674,6 +723,7 @@ def _one_mode(
     """
     asked = (
         ("--catalog", catalog),
+        ("--catalog-search", catalog_search is not None),
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
         ("--info", info),
@@ -723,6 +773,45 @@ def _catalog_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
         ctx.exit(ExitCode.USAGE)
 
 
+def _search_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
+    """What `--path` scopes a search to, or exit having said why it cannot.
+
+    A trailing wildcard is refused rather than applied: `--catalog-search`
+    already matches on a term, and a second, differently-spelled filter over
+    the same names would only be a way to ask the same question twice.
+    """
+    path = _catalog_path(ctx, raw)
+    if path.glob is not None:
+        diagnostics.error(
+            "--path cannot end in a wildcard with --catalog-search, which "
+            "matches on TERM already."
+        )
+        ctx.exit(ExitCode.USAGE)
+    return path
+
+
+def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) -> None:
+    """Stop before connecting unless the adapter declares it can search.
+
+    An adapter that cannot search is one whose catalog would have to be walked,
+    and a `--catalog-search` that quietly walked it is the round-trip cliff
+    this command refuses to have. Read off the class, so it costs the
+    adapter's import and never a connection.
+    """
+    try:
+        declares_search = load_adapter(adapter).IMPLEMENTS_CATALOG_SEARCH
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    if not declares_search:
+        diagnostics.error(
+            f"{adapter} does not declare catalog search, so --catalog-search "
+            f"{term!r} cannot be answered. List one level at a time with "
+            f"{PROGRAM} --catalog, or see '{PROGRAM} --info'."
+        )
+        ctx.exit(ExitCode.USAGE)
+
+
 def _report_catalog(
     ctx: click.Context,
     connection: "HarlequinConnection",
@@ -765,6 +854,57 @@ def _report_catalog(
     except Exception as e:  # noqa: BLE001 -- adapters are third-party code
         # a path that names nothing, or whatever the adapter raised fetching a
         # level: a code rather than a traceback for both.
+        diagnostics.report_error(e)
+        ctx.exit(diagnostics.exit_code_for(e))
+    _report_hidden_rows(result, layout_options)
+    return ExitCode.OK
+
+
+def _report_catalog_search(
+    ctx: click.Context,
+    connection: "HarlequinConnection",
+    term: str,
+    path: "CatalogPath",
+    *,
+    destination: _Destination,
+    format_name: str,
+    display_rows: Any,
+    **output_options: Any,
+) -> ExitCode:
+    """Write what the search found and return its code, or exit saying why not."""
+    # here rather than at module scope, for the reason each mode lives in its
+    # own module: this one reaches the catalog search and the row machinery.
+    from harlequin.hsql.modes import catalog_search as catalog_search_mode
+
+    try:
+        display_limit = _display_limit(display_rows, format_name)
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    layout_options, file_options = _output_options(
+        format_name=format_name, display_limit=display_limit, **output_options
+    )
+
+    try:
+        filename = f"catalog-search{output.suffix(format_name)}"
+        with _sink(destination, filename=filename) as out:
+            result = catalog_search_mode.report(
+                out,
+                connection=connection,
+                term=term,
+                path=path,
+                format_name=format_name,
+                layout_options=layout_options,
+                file_options=file_options,
+            )
+            out.flush()
+    except OSError as e:
+        # a `-o PATH` it could not write, which is the caller's to fix
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    except Exception as e:  # noqa: BLE001 -- adapters are third-party code
+        # a scope that names nothing, or whatever the adapter raised searching:
+        # a code rather than a traceback for both.
         diagnostics.report_error(e)
         ctx.exit(diagnostics.exit_code_for(e))
     _report_hidden_rows(result, layout_options)
@@ -1444,7 +1584,8 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             "Catalog:\n"
             f"  {PROGRAM} --catalog                     the top of the catalog\n"
             f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
-            f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns"
+            f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns\n"
+            f"  {PROGRAM} --catalog-search orders       anything in it named that"
         ),
         (
             "Exit codes:\n"

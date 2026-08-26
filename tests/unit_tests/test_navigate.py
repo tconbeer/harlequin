@@ -19,9 +19,21 @@ from typing import Iterator, Sequence
 import pytest
 
 from harlequin.adapter import HarlequinConnection, HarlequinCursor
-from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
-from harlequin.exception import HarlequinCatalogPathError
-from harlequin.navigate import CatalogPath, list_children, resolve, spell
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+    InteractiveCatalogItem,
+)
+from harlequin.exception import HarlequinCatalogPathError, HarlequinQueryError
+from harlequin.navigate import (
+    CatalogPath,
+    list_children,
+    resolve,
+    search,
+    spell,
+)
 
 FETCHES: list[str] = []
 """Every `fetch_children()` the walk made, in order. One entry is one round trip."""
@@ -62,6 +74,23 @@ class FakeConnection(HarlequinConnection):
     def get_catalog(self) -> Catalog:
         self.catalog_calls += 1
         return Catalog(items=list(self.items))
+
+
+class SearchingConnection(FakeConnection):
+    """A connection whose catalog can be searched, and records the asks."""
+
+    def __init__(self, *items: CatalogItem) -> None:
+        super().__init__(*items)
+        self.searches: list[tuple[str, str]] = []
+
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        self.searches.append((term, kind))
+        return [
+            CatalogSearchResult(item=item("orders"), parents=("mydb", "analytics")),
+            CatalogSearchResult(item=item("orders"), parents=("otherdb", "public")),
+        ]
 
 
 @pytest.fixture(autouse=True)
@@ -317,3 +346,39 @@ def test_a_plain_catalog_item_has_no_children_to_fetch() -> None:
         )
     )
     assert list_children(connection, CatalogPath.parse("db")).items == []
+
+
+# --- the search, which is the call a walk cannot serve ------------------------
+
+
+def test_search_asks_the_adapter_once_and_walks_nothing() -> None:
+    connection = SearchingConnection()
+    found = search(connection, "orders", CatalogPath(), "columns")
+    assert connection.searches == [("orders", "columns")]
+    assert FETCHES == []
+    assert len(found) == 2
+
+
+def test_a_scope_narrows_the_answer_to_one_subtree(
+    connection: FakeConnection,
+) -> None:
+    searching = SearchingConnection(*connection.items)
+    found = search(searching, "orders", CatalogPath.parse("mydb"))
+    assert [result.parents for result in found] == [("mydb", "analytics")]
+
+
+def test_a_scope_that_names_nothing_says_so_rather_than_finding_nothing() -> None:
+    """The same error `--catalog --path` gives, since it is the same question
+    about the same path."""
+    searching = SearchingConnection()
+    with pytest.raises(HarlequinCatalogPathError, match="top of the catalog"):
+        search(searching, "orders", CatalogPath.parse("nope"))
+    assert searching.searches == []
+
+
+def test_an_adapter_that_declared_a_search_it_lacks_is_an_error() -> None:
+    """A declaration can be wrong, and the failure is a message rather than a
+    traceback."""
+    connection = FakeConnection()
+    with pytest.raises(HarlequinQueryError, match="does not implement it"):
+        search(connection, "orders", CatalogPath())

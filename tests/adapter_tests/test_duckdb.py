@@ -285,6 +285,82 @@ def test_catalog_items_carry_duckdbs_own_type_names(tmp_path: Path) -> None:
     ] == [("id", "##", "BIGINT"), ("total", "#.#", "DECIMAL(18,2)")]
 
 
+def test_search_catalog_finds_relations_and_columns(tmp_path: Path) -> None:
+    """One query answers what a walk would have paid a round trip a level for,
+    and every match carries the path that reaches it."""
+    conn = DuckDbAdapter([str(tmp_path / "search.db")], no_init=True).connect()
+    conn.execute("create schema analytics")
+    conn.execute("create table analytics.orders (id bigint, customer_id bigint)")
+    conn.execute("create view analytics.order_summary as select 1 as n")
+    conn.execute("create table main.customers (customer_id bigint)")
+
+    assert [
+        (result.parents, result.item.label, result.item.type_name)
+        for result in conn.search_catalog("ORDER")
+    ] == [
+        (("search", "analytics"), "order_summary", "VIEW"),
+        (("search", "analytics"), "orders", "BASE TABLE"),
+    ]
+    assert [
+        (result.parents, result.item.label, result.item.type_name)
+        for result in conn.search_catalog("customer_id")
+    ] == [
+        (("search", "analytics", "orders"), "customer_id", "BIGINT"),
+        (("search", "main", "customers"), "customer_id", "BIGINT"),
+    ]
+
+
+def test_search_catalog_matches_every_level(tmp_path: Path) -> None:
+    """A caller searching a catalog does not know its shape, so a database or a
+    schema named like the term is an answer too -- and each arrives before the
+    items under it."""
+    conn = DuckDbAdapter([str(tmp_path / "sales.db")], no_init=True).connect()
+    conn.execute("create schema sales_eu")
+    conn.execute("create table sales_eu.sales (sales bigint)")
+
+    assert [
+        (result.parents, result.item.label, result.item.type_label)
+        for result in conn.search_catalog("sales")
+    ] == [
+        ((), "sales", "db"),
+        (("sales",), "sales_eu", "sch"),
+        (("sales", "sales_eu"), "sales", "t"),
+        (("sales", "sales_eu", "sales"), "sales", "##"),
+    ]
+
+
+def test_search_catalog_takes_one_kind_at_a_time(tmp_path: Path) -> None:
+    conn = DuckDbAdapter([str(tmp_path / "kinds.db")], no_init=True).connect()
+    conn.execute("create table orders (orders bigint)")
+
+    assert [
+        result.item.type_label for result in conn.search_catalog("orders", "relations")
+    ] == ["t"]
+    assert [
+        result.item.type_label for result in conn.search_catalog("orders", "columns")
+    ] == ["##"]
+    assert len(conn.search_catalog("orders", "all")) == 2
+
+
+def test_search_catalog_reads_a_wildcard_as_a_character(tmp_path: Path) -> None:
+    """The term is a substring, so a LIKE metacharacter in it matches itself."""
+    conn = DuckDbAdapter([str(tmp_path / "wild.db")], no_init=True).connect()
+    conn.execute('create table "a%b" (n bigint)')
+    conn.execute("create table ab (n bigint)")
+
+    assert [result.item.label for result in conn.search_catalog("a%b")] == ["a%b"]
+    assert [result.item.label for result in conn.search_catalog("a_b")] == []
+
+
+def test_search_catalog_reports_only_paths_the_catalog_walks(tmp_path: Path) -> None:
+    """duckdb's temp catalog holds objects the catalog tree never shows, and a
+    path a listing cannot reach is not a path worth printing."""
+    conn = DuckDbAdapter([str(tmp_path / "temp.db")], no_init=True).connect()
+    conn.execute("create temp table tmp_orders (n bigint)")
+
+    assert conn.search_catalog("tmp_orders") == []
+
+
 def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     script = (
         f".bail on\nselect \n1;\n.bail off\n.open {tiny_duck}\n"

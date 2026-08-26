@@ -13,13 +13,26 @@ except ImportError:
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinQueryError,
 )
-from harlequin_duckdb.catalog import DatabaseCatalogItem
+from harlequin_duckdb.catalog import (
+    ColumnCatalogItem,
+    DatabaseCatalogItem,
+    RelationCatalogItem,
+    SchemaCatalogItem,
+    TableCatalogItem,
+    TempTableCatalogItem,
+    ViewCatalogItem,
+)
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
 
@@ -27,6 +40,83 @@ if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_LIKE_ESCAPE = "\\"
+"""What escapes a LIKE metacharacter in a term the caller typed."""
+
+_ATTACHED = """
+    in (select database_name from duckdb_databases() where not internal)
+"""
+"""The catalogs `pragma show_databases` reports, as a predicate.
+
+Every search is scoped to them so that each path it reports is one
+`--catalog --path` walks: duckdb's temp catalog holds objects the catalog tree
+never shows.
+"""
+
+_SEARCH_DATABASES = """
+select d.database_name, null, null, null, null, null
+from duckdb_databases() d
+where not d.internal and d.database_name ilike ? escape '\\'
+"""
+
+_SEARCH_SCHEMAS = f"""
+select s.catalog_name, s.schema_name, null, null, null, null
+from information_schema.schemata s
+where s.schema_name not in ('pg_catalog', 'information_schema')
+    and s.catalog_name {_ATTACHED}
+    and s.schema_name ilike ? escape '\\'
+"""
+
+_SEARCH_RELATIONS = f"""
+select t.table_catalog, t.table_schema, t.table_name, t.table_type, null, null
+from information_schema.tables t
+where t.table_schema not in ('pg_catalog', 'information_schema')
+    and t.table_catalog {_ATTACHED}
+    and t.table_name ilike ? escape '\\'
+"""
+
+_SEARCH_COLUMNS = f"""
+select
+    c.table_catalog, c.table_schema, c.table_name, t.table_type,
+    c.column_name, c.data_type
+from information_schema.columns c
+join information_schema.tables t
+    on t.table_catalog = c.table_catalog
+    and t.table_schema = c.table_schema
+    and t.table_name = c.table_name
+where c.table_schema not in ('pg_catalog', 'information_schema')
+    and c.table_catalog {_ATTACHED}
+    and c.column_name ilike ? escape '\\'
+"""
+
+_SEARCH_BRANCHES = {
+    "relations": (_SEARCH_RELATIONS,),
+    "columns": (_SEARCH_COLUMNS,),
+    "all": (_SEARCH_DATABASES, _SEARCH_SCHEMAS, _SEARCH_RELATIONS, _SEARCH_COLUMNS),
+}
+"""Which levels each kind unions, every branch in the same six columns.
+
+A row names one item by filling in the levels above it and leaving the rest
+null, so `all` is every level of the catalog rather than the two at the bottom.
+"""
+
+_SEARCH_SQL = {
+    kind: " union all ".join(branches)
+    # `nulls first` explicitly, because duckdb's default for ascending is
+    # `nulls last`: without it a schema would sort after the columns under it.
+    + " order by 1, 2 nulls first, 3 nulls first, 5 nulls first"
+    for kind, branches in _SEARCH_BRANCHES.items()
+}
+"""One query per kind, ordered so that an item arrives before its children."""
+
+
+def _contains_pattern(term: str) -> str:
+    """A term as the LIKE pattern that matches any label containing it."""
+    escaped = term
+    for character in (_LIKE_ESCAPE, "%", "_"):
+        escaped = escaped.replace(character, f"{_LIKE_ESCAPE}{character}")
+    return f"%{escaped}%"
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -151,6 +241,62 @@ class DuckDbConnection(HarlequinConnection):
             )
         return Catalog(items=catalog_items)
 
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        cur = self.conn.cursor()
+        pattern = _contains_pattern(term)
+        parameters = [pattern] * len(_SEARCH_BRANCHES[kind])
+        try:
+            found = cur.execute(_SEARCH_SQL[kind], parameters).fetchall()
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error searching the catalog:"
+            ) from e
+        databases: dict[str, DatabaseCatalogItem] = {}
+        schemas: dict[tuple[str, str], SchemaCatalogItem] = {}
+        relations: dict[tuple[str, str, str], RelationCatalogItem] = {}
+        results: list[CatalogSearchResult] = []
+        # a row names the deepest level it fills in, and carries its ancestors
+        # so that each one is built once and the match knows its own path
+        for catalog, schema, relation, relation_type, column, column_type in found:
+            database_item = databases.setdefault(
+                catalog, DatabaseCatalogItem.from_label(label=catalog, connection=self)
+            )
+            if schema is None:
+                results.append(CatalogSearchResult(item=database_item))
+                continue
+            schema_item = schemas.setdefault(
+                (catalog, schema),
+                SchemaCatalogItem.from_parent(parent=database_item, label=schema),
+            )
+            if relation is None:
+                results.append(
+                    CatalogSearchResult(item=schema_item, parents=(catalog,))
+                )
+                continue
+            relation_item = relations.setdefault(
+                (catalog, schema, relation),
+                self._relation_item(schema_item, relation, relation_type),
+            )
+            if column is None:
+                results.append(
+                    CatalogSearchResult(item=relation_item, parents=(catalog, schema))
+                )
+                continue
+            results.append(
+                CatalogSearchResult(
+                    item=ColumnCatalogItem.from_parent(
+                        parent=relation_item,
+                        label=column,
+                        type_label=self._short_column_type(column_type),
+                        type_name=column_type,
+                    ),
+                    parents=(catalog, schema, relation),
+                )
+            )
+        return results
+
     def get_completions(self) -> list[HarlequinCompletion]:
         cur = self.conn.cursor()
         return [
@@ -226,6 +372,23 @@ class DuckDbConnection(HarlequinConnection):
         ).fetchall()
         return columns
 
+    @staticmethod
+    def _relation_item(
+        parent: SchemaCatalogItem, label: str, relation_type: str
+    ) -> RelationCatalogItem:
+        """A relation of the class `fetch_children()` would have built for it."""
+        if relation_type == "VIEW":
+            return ViewCatalogItem.from_parent(
+                parent=parent, label=label, type_name=relation_type
+            )
+        if relation_type == "LOCAL TEMPORARY":
+            return TempTableCatalogItem.from_parent(
+                parent=parent, label=label, type_name=relation_type
+            )
+        return TableCatalogItem.from_parent(
+            parent=parent, label=label, type_name=relation_type
+        )
+
     @classmethod
     def _short_relation_type(cls, native_type: str) -> str:
         return cls.RELATION_TYPE_MAPPING.get(native_type, cls.UNKNOWN_TYPE)
@@ -251,6 +414,7 @@ class DuckDbAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = DUCKDB_OPTIONS
     COPY_FORMATS = None
     IMPLEMENTS_CANCEL = True
+    IMPLEMENTS_CATALOG_SEARCH = True
     ADAPTER_DETAILS = "This is a DuckDB adapter part of Harlequin core."
 
     def __init__(

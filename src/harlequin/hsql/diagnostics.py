@@ -173,8 +173,8 @@ def report_row_cap_ignored(format_name: str) -> None:
     )
 
 
-def report_limit_ignored() -> None:
-    """Say that `--limit` does not reach a listing.
+def report_limit_ignored(mode: str) -> None:
+    """Say that `--limit` does not reach the listing `mode` printed.
 
     It is the *hard* limit -- fewer rows leave the database -- and a catalog
     listing is however many objects the adapter reported. Silence would read as
@@ -183,7 +183,7 @@ def report_limit_ignored() -> None:
     """
     note(
         "--limit fetches fewer rows from the database, so it had no effect on "
-        "--catalog; use --display-rows to print fewer of them"
+        f"{mode}; use --display-rows to print fewer of them"
     )
 
 

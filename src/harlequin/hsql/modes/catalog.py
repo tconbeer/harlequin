@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, BinaryIO, Mapping
+from typing import TYPE_CHECKING, Any, BinaryIO, Mapping, Sequence
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
+    from harlequin.catalog import CatalogItem
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
     from harlequin.query import ResultSet
@@ -13,6 +14,25 @@ if TYPE_CHECKING:
 COLUMNS = ("path", "name", "query_name", "type", "type_label")
 """Both type columns: `type` is the database's own name for what this object is,
 and `type_label` is the short label, which an adapter always populates."""
+
+
+def rows(
+    items: Sequence[tuple[Sequence[str], "CatalogItem"]],
+) -> list[tuple[str | None, ...]]:
+    """Catalog items as listing rows, each under the path that reaches it."""
+    # deferred: the walk is only reachable from a mode that lists the catalog.
+    from harlequin.navigate import spell
+
+    return [
+        (
+            spell([*parents, item.label]),
+            item.label,
+            item.query_name,
+            item.type_name,
+            item.type_label,
+        )
+        for parents, item in items
+    ]
 
 
 def report(
@@ -35,22 +55,14 @@ def report(
     # deferred, both of them: the row machinery is pyarrow, and the walk is only
     # reachable from this mode.
     from harlequin.hsql import output
-    from harlequin.navigate import list_children, spell
+    from harlequin.navigate import list_children
     from harlequin.query import rows_to_result
 
     listing = list_children(connection, path)
     # not sorted, to preserve ordinal ordering for columns
-    rows = [
-        (
-            spell([*path.segments, item.label]),
-            item.label,
-            item.query_name,
-            item.type_name,
-            item.type_label,
-        )
-        for item in listing.items
-    ]
-    result = rows_to_result(COLUMNS, rows)
+    result = rows_to_result(
+        COLUMNS, rows([(path.segments, item) for item in listing.items])
+    )
     output.write(
         result,
         format_name,
