@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-08-27
+
 ### Breaking Changes
 
 - The DuckDB and SQLite adapters' single-dash `-readonly` CLI option has been removed. Use `-r` or `--read-only`.
@@ -1047,7 +1049,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.10.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.11.0...HEAD
+[2.11.0]: https://github.com/tconbeer/harlequin/compare/2.10.0...2.11.0
 [2.10.0]: https://github.com/tconbeer/harlequin/compare/2.9.0...2.10.0
 [2.9.0]: https://github.com/tconbeer/harlequin/compare/2.8.1...2.9.0
 [2.8.1]: https://github.com/tconbeer/harlequin/compare/2.8.0...2.8.1
