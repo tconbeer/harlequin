@@ -57,12 +57,23 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    adapter_cls = adapters[adapter]
+
     conn_str = questionary.text(
         message="What connection string(s) should this profile use?",
         instruction="Separate items by a space. Quote a single item containing spaces.",
         default=" ".join(selected_profile.get("conn_str", [])),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
+
+    # only prompt for read-only if the adapter supports it
+    read_only = False
+    if adapter_cls.IMPLEMENTS_READ_ONLY:
+        read_only = questionary.confirm(
+            message="Should this profile connect read-only?",
+            default=bool(selected_profile.get("read_only", False)),
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
 
     theme = questionary.select(
         message="What theme should this profile use?",
@@ -132,7 +143,6 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    adapter_cls = adapters[adapter]
     adapter_option_choices = (
         [
             questionary.Choice(
@@ -177,6 +187,9 @@ def _wizard(config_path: Path | None) -> None:
         # only when there is one: an unlimited fetch is the default, and a key
         # that says so is a line the reader has to work out the meaning of.
         new_profile["limit"] = limit
+
+    if read_only:
+        new_profile["read_only"] = read_only
 
     if show_files:
         new_profile["show_files"] = show_files

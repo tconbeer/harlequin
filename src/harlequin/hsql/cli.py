@@ -241,6 +241,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         type=click.Choice(installed, case_sensitive=False),
         help="The installed adapter plug-in to connect with.",
     )
+    @click.option(
+        "-r",
+        "--read-only",
+        "read_only",
+        is_flag=True,
+        help=(
+            "Connect read-only, and refuse to run at all if the adapter cannot. "
+            "To check an adapter's capabilities, use --info."
+        ),
+    )
     # existence is not click's to check: every mode that reads this path
     # already refuses a file that is not there, naming it, and `--config init`
     # is the one invocation whose whole job is to write a file that is not there
@@ -409,6 +419,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             diagnostics.error(f"on_error takes stop or continue, not {raw_on_error}.")
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
+        read_only: bool = bool(values.pop("read_only", False))
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
         no_align: bool = bool(values.pop("no_align", False))
@@ -505,6 +516,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                         color=_use_color(color_when, destination),
                     )
                 )
+            # only `--config init` reaches this line
+            _refuse_undeclared_read_only(
+                ctx,
+                adapter=adapter,
+                asked=read_only,
+                typed="read_only" in explicitly_set,
+            )
             ctx.exit(
                 _write_config(
                     ctx,
@@ -520,6 +538,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
+        # every mode below this connects to the database
+        _refuse_undeclared_read_only(
+            ctx,
+            adapter=adapter,
+            asked=read_only,
+            typed="read_only" in explicitly_set,
+        )
+
         if catalog:
             catalog_path = _catalog_path(ctx, path)
             if "limit" in explicitly_set:
@@ -529,7 +555,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(
                 _report_catalog(
                     ctx,
-                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    _connect(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
                     catalog_path,
                     destination=destination,
                     format_name=format_name,
@@ -559,7 +591,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(
                 _report_catalog_search(
                     ctx,
-                    _connect(ctx, adapter=adapter, conn_str=conn_str, values=values),
+                    _connect(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
                     catalog_search,
                     search_path,
                     destination=destination,
@@ -606,7 +644,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=limit is not None,
         )
 
-        connection = _connect(ctx, adapter=adapter, conn_str=conn_str, values=values)
+        connection = _connect(
+            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+        )
 
         run = _Run()
         executed = _execute_all(
@@ -742,11 +782,14 @@ def _connect(
     *,
     adapter: str,
     conn_str: Sequence[str],
+    read_only: bool,
     values: Mapping[str, Any],
 ) -> "HarlequinConnection":
     """The connection this invocation runs on, or exit having said why not."""
     try:
-        adapter_instance = load_adapter(adapter)(conn_str=conn_str, **values)
+        adapter_instance = load_adapter(adapter)(
+            conn_str=conn_str, read_only=read_only, **values
+        )
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
@@ -808,6 +851,26 @@ def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) ->
             f"{adapter} does not declare catalog search, so --catalog-search "
             f"{term!r} cannot be answered. List one level at a time with "
             f"{PROGRAM} --catalog, or see '{PROGRAM} --info'."
+        )
+        ctx.exit(ExitCode.USAGE)
+
+
+def _refuse_undeclared_read_only(
+    ctx: click.Context, *, adapter: str, asked: bool, typed: bool
+) -> None:
+    """Exit with an error if read-only was asked for and the adapter cannot."""
+    if not asked:
+        return
+    try:
+        declares_read_only = load_adapter(adapter).IMPLEMENTS_READ_ONLY
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    if not declares_read_only:
+        spelled = "--read-only" if typed else "read_only in the profile"
+        diagnostics.error(
+            f"{adapter} does not declare read-only support, so {spelled} "
+            f"cannot be honored. See '{PROGRAM} --info'."
         )
         ctx.exit(ExitCode.USAGE)
 

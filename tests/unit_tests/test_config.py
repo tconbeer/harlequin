@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 import pytest
 
+from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.config import (
     TUI_ONLY_KEYS,
     Config,
@@ -973,6 +974,28 @@ class TestProvenance:
         )
 
 
+def adapter_declaring(
+    options: Sequence[AbstractOption] | None, *, read_only: bool = True
+) -> type[HarlequinAdapter]:
+    """An adapter class for the seam `validate_config_files()` reads.
+
+    The class rather than its options, because a profile can be wrong about
+    what its adapter can do as well as about what it takes.
+    """
+
+    class FakeAdapter(HarlequinAdapter):
+        ADAPTER_OPTIONS = None if options is None else list(options)
+        IMPLEMENTS_READ_ONLY = read_only
+
+        def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+            raise NotImplementedError
+
+        def connect(self) -> HarlequinConnection:
+            raise NotImplementedError
+
+    return FakeAdapter
+
+
 class TestValidatingEveryConfigFile:
     """`validate_config_files()`: the reader a problem does not stop.
 
@@ -989,11 +1012,11 @@ class TestValidatingEveryConfigFile:
 
     def validate(
         self,
-        adapter_options: Callable[[str], Sequence[AbstractOption] | None] | None = None,
+        adapter_class: Callable[[str], type[HarlequinAdapter] | None] | None = None,
     ) -> list[ConfigProblem]:
         return validate_config_files(
             None,
-            adapter_options=adapter_options or (lambda _: self.OPTIONS),
+            adapter_class=adapter_class or (lambda _: adapter_declaring(self.OPTIONS)),
             command_options=self.COMMAND_OPTIONS,
         )
 
@@ -1005,6 +1028,30 @@ class TestValidatingEveryConfigFile:
             'default_profile = "prod"\n[profiles.prod]\nread_only = true\nlimit = 10\n'
         )
         (cwd / ".harlequin.toml").write_text("[profiles.dev]\nport = 5432\n")
+
+        assert self.validate() == []
+
+    def test_a_read_only_the_adapter_cannot_do_is_a_problem(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        """The one key a profile can be wrong about without misspelling
+        anything: every command refuses to connect under it."""
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text("[profiles.prod]\nread_only = true\n")
+
+        (problem,) = self.validate(
+            adapter_class=lambda _: adapter_declaring(self.OPTIONS, read_only=False)
+        )
+        assert problem.key == "profiles.prod.read_only"
+        assert "read-only" in problem.message
+
+    def test_a_read_only_the_adapter_can_do_is_not(
+        self, config_dirs: tuple[Path, Path]
+    ) -> None:
+        cwd, _ = config_dirs
+        (cwd / ".harlequin.toml").write_text(
+            "[profiles.prod]\nread_only = true\n[profiles.dev]\nread_only = false\n"
+        )
 
         assert self.validate() == []
 
@@ -1088,12 +1135,12 @@ class TestValidatingEveryConfigFile:
             "[profiles.fine]\nread_only = true\n"
         )
 
-        def options(name: str) -> Sequence[AbstractOption] | None:
+        def adapter_class(name: str) -> type[HarlequinAdapter] | None:
             if name == "no-such-adapter":
                 raise HarlequinConfigError("No installed plug-in provides one.")
-            return self.OPTIONS
+            return adapter_declaring(self.OPTIONS)
 
-        (problem,) = self.validate(adapter_options=options)
+        (problem,) = self.validate(adapter_class=adapter_class)
         assert problem.key == "profiles.gone.adapter"
 
     def test_a_default_that_names_no_profile_belongs_to_the_merge(
@@ -1326,10 +1373,12 @@ class TestInterpolatingEnvironmentVariables:
 
         unset, misspelled = validate_config_files(
             None,
-            adapter_options=lambda _: [
-                FlagOption(name="read_only", description="x"),
-                TextOption(name="password", description="x"),
-            ],
+            adapter_class=lambda _: adapter_declaring(
+                [
+                    FlagOption(name="read_only", description="x"),
+                    TextOption(name="password", description="x"),
+                ]
+            ),
             command_options={"adapter", *TUI_ONLY_KEYS},
         )
         assert unset.path == cwd / ".harlequin.toml"

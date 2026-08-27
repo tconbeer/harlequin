@@ -176,6 +176,9 @@ class HarlequinConnection(ABC):
         Parses text as one or more queries; returns text if parsing does not result
         in an error; otherwise returns the empty string ("").
 
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_VALIDATE_SQL to True.
+
         Args:
             text (str): The text, which may compose one or more queries and partial
                 queries.
@@ -249,17 +252,23 @@ class HarlequinAdapter(ABC):
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
     IMPLEMENTS_CANCEL = False
     IMPLEMENTS_CATALOG_SEARCH = False
-    """True if the connection's search_catalog() is real."""
+    IMPLEMENTS_READ_ONLY = False
+    IMPLEMENTS_VALIDATE_SQL = False
     ADAPTER_DETAILS: str | None = None
     ADAPTER_DRIVER_DETAILS: str | None = None
 
     @abstractmethod
-    def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+    def __init__(
+        self, conn_str: Sequence[str], read_only: bool = False, **options: Any
+    ) -> None:
         """
         Initialize an adapter.
 
         Args:
             - conn_str (Sequence[str]): One or more connection strings. May be empty.
+            - read_only (bool): True if this connection must be read-only.
+                Harlequin passes True only to an adapter that declares
+                IMPLEMENTS_READ_ONLY.
             - **options (Any): Options received from the command line, config file,
                 or env variables. Adapters should be robust to receiving both subsets
                 and supersets of their declared options. They should disregard any

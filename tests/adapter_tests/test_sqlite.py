@@ -23,7 +23,7 @@ def test_connect(tiny_sqlite: Path, small_sqlite: Path) -> None:
     assert HarlequinSqliteAdapter([":memory:"]).connect()
     assert HarlequinSqliteAdapter([tiny], read_only=False).connect()
     assert HarlequinSqliteAdapter([tiny], read_only=True).connect()
-    assert HarlequinSqliteAdapter([tiny], connection_mode="ro").connect()
+    assert HarlequinSqliteAdapter([tiny], mode="ro").connect()
     assert HarlequinSqliteAdapter([tiny, small, ":memory:"], read_only=False).connect()
     assert HarlequinSqliteAdapter(
         [],
@@ -45,7 +45,7 @@ def test_cannot_connect(tmp_path: Path, tiny_sqlite: Path) -> None:
         ).connect()
     with pytest.raises(HarlequinConnectionError):
         HarlequinSqliteAdapter(
-            (str(tiny_sqlite),), read_only=True, connection_mode="rwc"
+            (str(tiny_sqlite),), read_only=True, mode="rwc"
         ).connect()
 
 

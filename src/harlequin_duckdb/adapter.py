@@ -415,6 +415,8 @@ class DuckDbAdapter(HarlequinAdapter):
     COPY_FORMATS = None
     IMPLEMENTS_CANCEL = True
     IMPLEMENTS_CATALOG_SEARCH = True
+    IMPLEMENTS_READ_ONLY = True
+    IMPLEMENTS_VALIDATE_SQL = True
     ADAPTER_DETAILS = "This is a DuckDB adapter part of Harlequin core."
 
     def __init__(

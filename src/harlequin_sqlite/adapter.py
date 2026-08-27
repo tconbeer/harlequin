@@ -416,6 +416,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
     IMPLEMENTS_CATALOG_SEARCH = True
+    IMPLEMENTS_READ_ONLY = True
     ADAPTER_DETAILS = "This is an SQLite adapter part of Harlequin core."
 
     def __init__(
@@ -424,7 +425,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         init_path: Path | str | None = None,
         no_init: bool | str = False,
         read_only: bool = False,
-        connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
+        mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
         timeout: str | float = 5.0,
         detect_types: str | int = 0,
         isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] = "DEFERRED",
@@ -435,7 +436,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         try:
             self.conn_str = (
                 conn_str
-                if conn_str and conn_str != ("",) and connection_mode != "memory"
+                if conn_str and conn_str != ("",) and mode != "memory"
                 else IN_MEMORY_CONN_STR
             )
             self.init_path = (
@@ -445,7 +446,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             )
             self.no_init = bool(no_init)
             self.read_only = bool(read_only)
-            self.connection_mode = connection_mode
+            self.mode = mode
             self.timeout = float(timeout)
             self.detect_types = int(detect_types)
             self.isolation_level = isolation_level
@@ -479,18 +480,14 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         )
 
     def connect(self) -> HarlequinSqliteConnection:
-        if (
-            self.read_only
-            and self.connection_mode is not None
-            and self.connection_mode != "ro"
-        ):
+        if self.read_only and self.mode is not None and self.mode != "ro":
             raise HarlequinConnectionError(
                 "Cannot specify readonly flag and a connection mode."
             )
         elif self.read_only:
             mode_str = "?mode=ro"
-        elif self.connection_mode is not None:
-            mode_str = f"?mode={self.connection_mode}"
+        elif self.mode is not None:
+            mode_str = f"?mode={self.mode}"
         else:
             mode_str = ""
 

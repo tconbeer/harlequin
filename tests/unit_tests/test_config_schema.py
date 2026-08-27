@@ -44,7 +44,7 @@ FAKE_OPTIONS: list[AbstractOption] = [
         choices=["disable", ("verify-full", "Verify the certificate")],
         default="disable",
     ),
-    FlagOption(name="read-only", description="Connect read-only."),
+    FlagOption(name="no-verify", description="Skip certificate verification."),
 ]
 """One of every option type an adapter can declare, including the two shapes a
 `SelectOption`'s choices come in."""
@@ -137,7 +137,7 @@ def test_a_profile_takes_the_options_of_the_adapter_it_names(
         host="db.example.com",
         extension=["postgis"],
         sslmode="verify-full",
-        read_only=True,
+        no_verify=True,
     )
 
 
@@ -225,6 +225,17 @@ def test_a_key_a_command_reads_is_not_read_as_an_adapters(
     options = schema_for({"faux": FAKE_OPTIONS})["$defs"]["faux_options"]["properties"]
     assert "limit" not in options
     assert profile(fake, adapter="faux", limit=True)
+
+
+def test_an_option_a_command_owns_is_described_once() -> None:
+    """`read_only` is a parameter every adapter's constructor takes, so it is
+    described among the command's keys -- and stays there even for an adapter
+    that declares an option by the same name."""
+    declared = [*FAKE_OPTIONS, FlagOption(name="read-only", description="Read only.")]
+    profile_keys = schema_for(None)["$defs"]["profile"]["properties"]
+    assert profile_keys["read_only"]["type"] == "boolean"
+    options = schema_for({"faux": declared})["$defs"]["faux_options"]["properties"]
+    assert "read_only" not in options
 
 
 def test_a_profile_takes_the_keys_the_ide_reads(fake: Draft202012Validator) -> None:

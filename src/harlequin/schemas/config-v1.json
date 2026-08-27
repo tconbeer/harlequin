@@ -175,6 +175,11 @@
           "description": "The installed adapter plug-in to connect with.",
           "default": "duckdb"
         },
+        "read_only": {
+          "type": "boolean",
+          "description": "Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info.",
+          "default": false
+        },
         "config_path": {
           "type": "string",
           "description": "Use this config file instead of the ones hsql discovers."

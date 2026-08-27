@@ -78,6 +78,7 @@ else:
 if TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
+    from harlequin.adapter import HarlequinAdapter
     from harlequin.options import AbstractOption
 
 DEFAULT_ADAPTER = "duckdb"
@@ -422,7 +423,7 @@ def load_profile_and_keymaps(
 def validate_config_files(
     config_path: Path | None,
     *,
-    adapter_options: Callable[[str], Sequence[AbstractOption] | None],
+    adapter_class: Callable[[str], type[HarlequinAdapter] | None],
     command_options: Collection[str],
     provenance: Provenance | None = None,
 ) -> list[ConfigProblem]:
@@ -442,10 +443,11 @@ def validate_config_files(
     does not set, wherever it is written, rather than only in the one profile a
     run would have selected.
 
-    `adapter_options` is the second pass's price: one adapter import per
-    adapter a profile names. It may raise `HarlequinConfigError` for a name
-    nothing installed provides, which is recorded against the profile that
-    named it.
+    `adapter_class` is the second pass's price: one adapter import per adapter
+    a profile names. It may raise `HarlequinConfigError` for a name nothing
+    installed provides, which is recorded against the profile that named it.
+    The class rather than its options, because a profile can also be wrong
+    about what its adapter can do, and only the class says.
 
     Raises: HarlequinConfigError if `config_path` names a file that is not
     there -- the one problem that is not in a config file.
@@ -462,7 +464,7 @@ def validate_config_files(
                     key=f"profiles.{name}",
                     problems=problems,
                 ),
-                adapter_options=adapter_options,
+                adapter_class=adapter_class,
                 command_options=command_options,
                 problems=problems.at(path, f"profiles.{name}"),
             )
@@ -673,7 +675,7 @@ def _search_directories() -> Iterator[tuple[Path, tuple[str, ...]]]:
 def _validate_profile(
     profile: Profile,
     *,
-    adapter_options: Callable[[str], Sequence[AbstractOption] | None],
+    adapter_class: Callable[[str], type[HarlequinAdapter] | None],
     command_options: Collection[str],
     problems: Problems,
 ) -> None:
@@ -689,14 +691,24 @@ def _validate_profile(
         )
         return
     try:
-        declared = adapter_options(adapter)
+        adapter_cls = adapter_class(adapter)
     except HarlequinConfigError as e:
         problems.add(e.msg, key="adapter")
         return
+    if (
+        profile.get("read_only")
+        and adapter_cls is not None
+        and not adapter_cls.IMPLEMENTS_READ_ONLY
+    ):
+        problems.add(
+            f"Profile sets read_only, but its adapter ({adapter}) does not "
+            "support read-only connections.",
+            key="read_only",
+        )
     parse_profile_options(
         profile,
         adapter=adapter,
-        adapter_options=declared,
+        adapter_options=None if adapter_cls is None else adapter_cls.ADAPTER_OPTIONS,
         command_options=command_options,
         problems=problems,
     )

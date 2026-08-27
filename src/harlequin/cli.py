@@ -128,6 +128,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
         "options": [
             "--profile",
             "--adapter",
+            "--read-only",
             "--show-files",
             "--show-s3",
             "--theme",
@@ -389,6 +390,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--read-only",
+        "-r",
+        "read_only",
+        is_flag=True,
+        help=(
+            "Connect read-only, and refuse to start at all if the adapter "
+            "cannot. To check an adapter's capabilities, use `hsql --info`."
+        ),
+    )
+    @click.option(
         "--show-files",
         "-f",
         type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
@@ -540,12 +551,26 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
         export_path: Path | str | None = config.pop("output", None)
+        read_only: bool = bool(config.pop("read_only", False))
+        if read_only and not adapter_cls.IMPLEMENTS_READ_ONLY:
+            pretty_print_error(
+                HarlequinConfigError(
+                    msg=(
+                        f"{adapter_name} does not declare read-only support, so "
+                        "--read-only cannot be honored. See `hsql --info`."
+                    ),
+                    title="Harlequin could not start.",
+                )
+            )
+            ctx.exit(2)
 
         # instantiate the adapter, which was named and imported above -- the
         # key comes off either way, because what is left is its options
         config.pop("adapter", None)
         try:
-            adapter_instance = adapter_cls(conn_str=conn_str, **config)
+            adapter_instance = adapter_cls(
+                conn_str=conn_str, read_only=read_only, **config
+            )
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
