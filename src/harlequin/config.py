@@ -703,8 +703,8 @@ def _validate_profile(
         # the one key a profile can be wrong about without misspelling
         # anything: every command refuses to connect under it
         problems.add(
-            f"Profile sets read_only, but the {adapter} adapter does not "
-            "declare read-only support.",
+            f"Profile sets read_only, but its adapter ({adapter}) does not "
+            "support read-only connections.",
             key="read_only",
         )
     parse_profile_options(
