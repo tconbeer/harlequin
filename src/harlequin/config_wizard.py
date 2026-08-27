@@ -185,8 +185,6 @@ def _wizard(config_path: Path | None) -> None:
         new_profile["limit"] = limit
 
     if read_only:
-        # only when it is on: read-write is the default, and a profile that
-        # says so is a line a reader has to work out the meaning of
         new_profile["read_only"] = read_only
 
     if show_files:

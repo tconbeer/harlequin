@@ -551,14 +551,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 ctx.exit(2)
         show_s3: str | None = config.pop("show_s3", None)
         export_path: Path | str | None = config.pop("output", None)
-        # off the options and into an argument of its own: `read_only` is a
-        # parameter of every adapter's constructor rather than an option any of
-        # them declares, and a bool there whatever a profile wrote.
         read_only: bool = bool(config.pop("read_only", False))
         if read_only and not adapter_cls.IMPLEMENTS_READ_ONLY:
-            # before connecting, and before the app starts: an adapter that
-            # cannot enforce read-only is free to ignore the argument, and a
-            # session that believed it was read-only would write
             pretty_print_error(
                 HarlequinConfigError(
                     msg=(

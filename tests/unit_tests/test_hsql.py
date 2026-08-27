@@ -3357,23 +3357,36 @@ def test_read_only_is_refused_ahead_of_the_mode_that_would_connect(
     assert declares_nothing in res.stderr
 
 
-def test_read_only_is_refused_before_it_is_written_into_a_profile(
+def test_read_only_is_written_into_a_profile_without_being_refused(
     hsql: Hsql, declares_nothing: str, init_dirs: tuple[Path, Path]
 ) -> None:
-    """`--config init` writes a promise rather than keeping one, and a profile
-    saying `read_only = true` to an adapter that cannot is the promise this
-    flag exists to not make."""
+    """`--config init` writes a file rather than connecting with one, so it
+    writes what it was told and leaves the refusal to the run that connects."""
     cwd, _ = init_dirs
     res = hsql("--config", "init", "-P", "prod", "-a", declares_nothing, "--read-only")
-    assert res.exit_code == ExitCode.USAGE
-    assert not (cwd / ".harlequin.toml").exists()
+    assert res.exit_code == ExitCode.OK
+    profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
+    assert profile["read_only"] is True
 
 
-def test_read_only_does_not_refuse_the_mode_that_would_explain_it(
+@pytest.mark.parametrize(
+    "mode", [["--info"], ["--spec"], ["--config", "show"], ["--config", "validate"]]
+)
+def test_read_only_does_not_refuse_a_mode_that_reads_no_database(
+    hsql: Hsql, declares_nothing: str, mode: list[str], config_dirs: tuple[Path, Path]
+) -> None:
+    """None of them can write whatever they are told -- and two of them are
+    where a caller finds out which adapter they are on and where its read-only
+    came from, which is no use if the flag refuses them."""
+    res = hsql(*mode, "-a", declares_nothing, "--read-only")
+    assert res.exit_code == ExitCode.OK, res.stderr
+
+
+def test_info_reports_an_adapter_that_cannot_be_read_only(
     hsql: Hsql, declares_nothing: str
 ) -> None:
-    """`--info` connects to nothing and promises nothing, and it is where the
-    refusal points, so it answers instead of joining in."""
+    """`--info` is where the refusal points, so it answers rather than joining
+    in."""
     res = hsql("--info", "-a", declares_nothing, "--read-only")
     assert res.exit_code == ExitCode.OK
     capabilities = info_of(res)["adapters"][declares_nothing]["capabilities"]

@@ -419,9 +419,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             diagnostics.error(f"on_error takes stop or continue, not {raw_on_error}.")
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
-        # off the options and into an argument of its own: `read_only` is a
-        # parameter of every adapter's constructor rather than an option any of
-        # them declares, and a bool there whatever a profile wrote.
         read_only: bool = bool(values.pop("read_only", False))
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
@@ -496,18 +493,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
-        # everything below this connects with the adapter, or writes a profile
-        # that names it, so this is where a read-only the adapter cannot honor
-        # is refused. The modes that only report are not refused over a flag
-        # they ignore -- `--info` least of all, since it is where this points.
-        if not _reports_config(config_mode):
-            _refuse_undeclared_read_only(
-                ctx,
-                adapter=adapter,
-                asked=read_only,
-                typed="read_only" in explicitly_set,
-            )
-
         if config_mode is not None:
             # a shorthand flag and a profile's `format` key are choices too, and
             # both modes read this: the reporting ones to explain a format that
@@ -545,6 +530,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     config_path=config_path,
                 )
             )
+
+        # below every mode that reads or writes a file rather than a database:
+        # those cannot write whatever they are told, and `--info` and
+        # `--config show` are where a caller finds out where read-only came from
+        _refuse_undeclared_read_only(
+            ctx,
+            adapter=adapter,
+            asked=read_only,
+            typed="read_only" in explicitly_set,
+        )
 
         if catalog:
             catalog_path = _catalog_path(ctx, path)
