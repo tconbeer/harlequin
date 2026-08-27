@@ -136,6 +136,8 @@ $ hsql -P dev -c "select * from users"
 
 hsql can also explore the catalog without writing SQL: `hsql --catalog --path mydb.analytics` lists a schema's relations (and `--path mydb.analytics.orders` lists that table's columns), while `hsql --catalog-search customer_id` searches every level at once.
 
+To bound what an agent can do, `--read-only` connects in a mode the database refuses writes in, and `hsql --timeout 30` cancels a run that takes longer than that. Both are also profile keys, and both refuse to start if the adapter cannot enforce them. Harlequin takes `--read-only` too.
+
 For more information on hsql, see the [getting started docs](https://harlequin.sh/docs/getting-started/hsql).
 
 ## Using Harlequin with Django
