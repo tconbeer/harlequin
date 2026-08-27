@@ -426,7 +426,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         no_init: bool | str = False,
         read_only: bool = False,
         mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
-        timeout: str | float = 5.0,
+        lock_timeout: str | float = 5.0,
         detect_types: str | int = 0,
         isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] = "DEFERRED",
         cached_statements: str | int = 128,
@@ -447,7 +447,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             self.no_init = bool(no_init)
             self.read_only = bool(read_only)
             self.mode = mode
-            self.timeout = float(timeout)
+            self.lock_timeout = float(lock_timeout)
             self.detect_types = int(detect_types)
             self.isolation_level = isolation_level
             self.cached_statements = int(cached_statements)
@@ -516,7 +516,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         try:
             conn = sqlite3.connect(
                 database=primary_db,
-                timeout=self.timeout,
+                timeout=self.lock_timeout,
                 detect_types=self.detect_types,
                 isolation_level=self.isolation_level,
                 cached_statements=self.cached_statements,

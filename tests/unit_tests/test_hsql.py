@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 from unittest.mock import MagicMock
@@ -3935,3 +3936,385 @@ def test_a_secret_read_from_the_environment_is_hidden_in_an_error(
     assert res.exit_code == ExitCode.CONNECTION
     assert SECRET not in res.output
     assert "token ******** rejected" in res.stderr
+
+
+# --- `--timeout`, and the cancellation it has to attribute --------------------
+
+
+class _StuckCursor:
+    """A cursor whose fetch blocks until the connection is cancelled.
+
+    What a cancelled DuckDB cursor does when it comes back: swallows the
+    interrupt and returns no rows, which is also what a query that matched
+    nothing returns. Nothing downstream can tell the two apart, which is why
+    hsql attributes the timeout itself.
+    """
+
+    def __init__(self, released: threading.Event) -> None:
+        self.released = released
+
+    def columns(self) -> list[tuple[str, str]]:
+        return [("n", "##")]
+
+    def set_limit(self, limit: int) -> "_StuckCursor":
+        return self
+
+    def fetchall(self) -> None:
+        self.released.wait(timeout=30)
+        return None
+
+
+class _StuckConnection:
+    """A connection whose every query blocks until it is cancelled."""
+
+    def __init__(self, *, stoppable: bool = True) -> None:
+        self.stoppable = stoppable
+        self.released = threading.Event()
+        self.cancelled = False
+
+    def execute(self, query: str) -> _StuckCursor:
+        return _StuckCursor(self.released)
+
+    def get_catalog(self) -> Any:
+        self.released.wait(timeout=30)
+        from harlequin.catalog import Catalog
+
+        return Catalog(items=[])
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        if self.stoppable:
+            self.released.set()
+
+
+@pytest.fixture
+def stuck_adapter(monkeypatch: pytest.MonkeyPatch) -> list[_StuckConnection]:
+    """An installed adapter whose queries block until they are cancelled.
+
+    A fake rather than a slow query: the deadline, the cancel and the
+    attribution are what these tests are about, and a real query slow enough to
+    time out is one every machine has a different opinion about.
+
+    Yields the list the connections it opened land in, so a test can ask whether
+    the cancel it promised actually happened.
+    """
+    from harlequin.adapter import HarlequinAdapter
+
+    opened: list[_StuckConnection] = []
+
+    class StuckAdapter(HarlequinAdapter):
+        ADAPTER_OPTIONS = None
+        IMPLEMENTS_CANCEL = True
+
+        def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+            pass
+
+        def connect(self) -> Any:
+            opened.append(_StuckConnection())
+            return opened[-1]
+
+    entry_point = MagicMock()
+    entry_point.name = "stuck"
+    entry_point.load.return_value = StuckAdapter
+    monkeypatch.setattr("harlequin.plugins.entry_points", lambda group: [entry_point])
+    return opened
+
+
+def test_timeout_cancels_the_run_and_attributes_it(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection]
+) -> None:
+    """The whole flag, on the run it exists for.
+
+    Nothing on stdout is the half a naive deadline gets wrong: the result set a
+    cancel produces is empty and error-free, and printing it would report "your
+    query returned nothing" for a query that was killed.
+    """
+    res = hsql("-a", "stuck", "--timeout", "0.1", "-c", "select 1")
+    assert res.exit_code == ExitCode.TIMEOUT
+    assert res.stdout == ""
+    assert "timed out after 0.1s" in res.stderr
+    assert stuck_adapter[0].cancelled
+
+
+def test_timeout_stops_the_statements_after_the_one_it_cancelled(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection]
+) -> None:
+    """A script is stopped, not just the statement that ran too long."""
+    res = hsql("-a", "stuck", "--timeout", "0.1", "-c", "select 1; select 2; select 3")
+    assert res.exit_code == ExitCode.TIMEOUT
+    assert res.stdout == ""
+    # the one it was inside when the clock ran out, and none after it
+    assert res.stderr.count("timed out") == 1
+
+
+def test_timeout_is_what_stats_reports(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection]
+) -> None:
+    """`--stats` is the machine channel, so it says what stderr said."""
+    res = hsql("-a", "stuck", "--timeout", "0.1", "--stats", "-c", "select 1")
+    assert res.exit_code == ExitCode.TIMEOUT
+    stats = json.loads(res.stderr.strip().splitlines()[-1])
+    assert stats["status"] == "error"
+    assert stats["error"] == "timed out after 0.1s"
+
+
+def test_timeout_bounds_a_catalog_listing_too(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection]
+) -> None:
+    """`--catalog` connects and waits on the database like a run does, and a
+    safety flag that silently did nothing there would be the worse half of the
+    choice."""
+    res = hsql("-a", "stuck", "--timeout", "0.1", "--catalog")
+    assert res.exit_code == ExitCode.TIMEOUT
+    assert "timed out after 0.1s" in res.stderr
+    assert stuck_adapter[0].cancelled
+
+
+def test_a_run_inside_the_deadline_is_untouched(hsql: Hsql, duck: list[str]) -> None:
+    """The clock is the only thing the flag adds: same bytes, same code."""
+    res = hsql(*duck, "--timeout", "60", "-c", "select 1 as a")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == " a\n---\n 1\n(1 row)\n"
+    assert res.stderr == ""
+
+
+def test_timeout_refuses_an_adapter_that_cannot_cancel(
+    hsql: Hsql, declares_nothing: str
+) -> None:
+    """There is no way to stop the work, so a deadline could only lie about
+    having stopped it -- which is worse than not having the flag."""
+    res = hsql("-a", declares_nothing, "--timeout", "30", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+    assert "--timeout" in res.stderr and "--info" in res.stderr
+
+
+def test_timeout_from_a_profile_is_refused_the_same_way(
+    hsql: Hsql, declares_nothing: str, tmp_path: Path
+) -> None:
+    path = tmp_path / ".harlequin.toml"
+    path.write_text("[profiles.prod]\ntimeout = 30\n")
+    res = hsql(
+        "--config-path",
+        str(path),
+        "-P",
+        "prod",
+        "-a",
+        declares_nothing,
+        "-c",
+        "select 1",
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+    assert "profile" in res.stderr
+
+
+def test_timeout_is_refused_ahead_of_the_mode_that_would_connect(
+    hsql: Hsql, declares_nothing: str
+) -> None:
+    res = hsql("-a", declares_nothing, "--timeout", "30", "--catalog")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert declares_nothing in res.stderr
+
+
+def test_timeout_is_refused_before_it_is_written_into_a_profile(
+    hsql: Hsql, declares_nothing: str, init_dirs: tuple[Path, Path]
+) -> None:
+    """A profile pairing an adapter with a timeout it cannot honor is one no
+    run would start under."""
+    cwd, _ = init_dirs
+    res = hsql(
+        "--config", "init", "-P", "prod", "-a", declares_nothing, "--timeout", "5"
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert declares_nothing in res.stderr
+    assert not (cwd / ".harlequin.toml").exists()
+
+
+def test_config_validate_reports_a_timeout_the_adapter_cannot_do(
+    hsql: Hsql, declares_nothing: str, config_dirs: tuple[Path, Path]
+) -> None:
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f"[profiles.prod]\nadapter = '{declares_nothing}'\ntimeout = 30\n"
+    )
+
+    res = hsql("--config", "validate", "-a", declares_nothing, "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, problem, _ = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "profiles.prod.timeout"
+    assert declares_nothing in problem
+
+
+@pytest.mark.parametrize(
+    "mode", [["--info"], ["--spec"], ["--config", "show"], ["--config", "validate"]]
+)
+def test_timeout_does_not_refuse_a_mode_that_reads_no_database(
+    hsql: Hsql, declares_nothing: str, mode: list[str], config_dirs: tuple[Path, Path]
+) -> None:
+    """None of them waits on a database, and two of them are where a caller
+    finds out which adapter they are on."""
+    res = hsql(*mode, "-a", declares_nothing, "--timeout", "30")
+    assert res.exit_code == ExitCode.OK, res.stderr
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_timeout_takes_a_positive_number_of_seconds(
+    hsql: Hsql, duck: list[str], value: str
+) -> None:
+    res = hsql(*duck, "--timeout", value, "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+
+
+@pytest.mark.parametrize("value", ["0", "true", "'soon'"])
+def test_a_profile_takes_a_positive_number_of_seconds_too(
+    hsql: Hsql, tmp_path: Path, value: str
+) -> None:
+    """click vets what was typed; a config file can say anything."""
+    path = tmp_path / ".harlequin.toml"
+    path.write_text(f"[profiles.prod]\nadapter = 'duckdb'\ntimeout = {value}\n")
+    res = hsql("--config-path", str(path), "-P", "prod", ":memory:", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "--timeout" in res.stderr
+
+
+def test_every_bundled_adapter_declares_cancel(hsql: Hsql) -> None:
+    """`--info` is where a caller learns which adapters can be timed out."""
+    adapters = info_of(hsql("--info"))["adapters"]
+    assert all(
+        adapters[name]["capabilities"]["implements_cancel"]
+        for name in ("duckdb", "sqlite")
+    )
+
+
+def test_timeout_is_in_the_help(hsql: Hsql) -> None:
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--timeout" in res.output
+
+
+UNSTOPPABLE = """
+import sys, threading
+from unittest.mock import MagicMock
+
+import harlequin.plugins
+import harlequin.hsql.timeout as timeout
+from harlequin.adapter import HarlequinAdapter
+
+timeout.GRACE_SECONDS = 0.5
+
+
+class Cursor:
+    def columns(self): return [("n", "##")]
+    def set_limit(self, limit): return self
+    def fetchall(self): threading.Event().wait(60)
+
+
+class Connection:
+    def execute(self, query): return Cursor()
+    def get_catalog(self): raise NotImplementedError
+    def cancel(self): pass
+
+
+class Unstoppable(HarlequinAdapter):
+    ADAPTER_OPTIONS = None
+    IMPLEMENTS_CANCEL = True
+    def __init__(self, conn_str, **options): pass
+    def connect(self): return Connection()
+
+
+entry_point = MagicMock()
+entry_point.name = "unstoppable"
+entry_point.load.return_value = Unstoppable
+harlequin.plugins.entry_points = lambda group: [entry_point]
+
+sys.argv = ["hsql", "-a", "unstoppable", "--timeout", "0.2", "-c", "select 1"]
+from harlequin.hsql import main
+main()
+"""
+"""An adapter that declares it can cancel and then does not stop."""
+
+
+def test_a_run_that_outlasts_the_grace_period_still_exits_4(tmp_path: Path) -> None:
+    """`sys.exit()` around a thread still inside a driver aborts the interpreter
+    and exits 134, which is not a code hsql documents -- so the grace period
+    ends in `os._exit()` instead. Only a real subprocess can show the code.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c", UNSTOPPABLE],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=60,
+        cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+    )
+    assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
+    assert proc.stdout == ""
+    assert "timed out after 0.2s" in proc.stderr
+
+
+def test_timeout_is_hsqls_where_an_adapter_declares_the_spelling(hsql: Hsql) -> None:
+    """SQLite's own `timeout` is how long to wait for a locked table, and hsql's
+    own flags are the frozen part -- so `--timeout` here is the deadline, and
+    the adapter's is `--lock-timeout`."""
+    res = hsql(
+        "-a",
+        "sqlite",
+        ":memory:",
+        "--timeout",
+        "60",
+        "--lock-timeout",
+        "1",
+        "-tAc",
+        "select 1",
+    )
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout == "1\n"
+
+
+def test_a_timed_out_script_does_not_report_a_missing_result_set(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection]
+) -> None:
+    """A cancelled script produced fewer result sets than it was going to, and
+    the deadline is what a caller has to hear about rather than the count."""
+    res = hsql(
+        "-a", "stuck", "--timeout", "0.1", "--result", "2", "-c", "select 1; select 2"
+    )
+    assert res.exit_code == ExitCode.TIMEOUT
+    assert "timed out after 0.1s" in res.stderr
+    assert "result sets" not in res.stderr
+
+
+def test_a_real_duckdb_query_times_out_and_says_so(tmp_path: Path) -> None:
+    """The fakes above pin the attribution; this pins the interrupt itself.
+
+    A subprocess because it is the only place the exit code is real: an
+    aggregate over fifty billion rows is one every machine is still working on
+    a second in.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from harlequin.hsql import main; sys.argv = sys.argv[1:]; "
+            "main()",
+            "hsql",
+            *["-a", "duckdb", "--no-init", ":memory:"],
+            *["--timeout", "1", "-c", "select sum(i) from range(50000000000) t(i)"],
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=120,
+        cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+    )
+    assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
+    # the empty result set a cancelled DuckDB cursor returns, not printed
+    assert proc.stdout == ""
+    assert "timed out after 1s" in proc.stderr
