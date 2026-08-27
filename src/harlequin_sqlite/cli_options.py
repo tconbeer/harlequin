@@ -41,8 +41,8 @@ def _float_validator(s: str | None) -> tuple[bool, str]:
         return True, ""
 
 
-timeout = TextOption(
-    name="timeout",
+lock_timeout = TextOption(
+    name="lock-timeout",
     description=(
         "How many seconds the connection should wait before raising an "
         "OperationalError when a table is locked. If another connection opens a "
@@ -133,7 +133,7 @@ SQLITE_OPTIONS = [
     init,
     no_init,
     connection_mode,
-    timeout,
+    lock_timeout,
     detect_types,
     cached_statements,
 ]

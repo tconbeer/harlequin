@@ -196,8 +196,8 @@ def test_a_profile_that_names_no_adapter_takes_the_default_adapters_options(
 def test_one_adapters_options_are_not_anothers(
     installed: Draft202012Validator,
 ) -> None:
-    assert not profile(installed, adapter="sqlite", timeout=3)
-    assert profile(installed, adapter="duckdb", timeout=3)
+    assert not profile(installed, adapter="sqlite", lock_timeout=3)
+    assert profile(installed, adapter="duckdb", lock_timeout=3)
 
 
 def test_an_adapter_that_is_not_installed_is_an_error(

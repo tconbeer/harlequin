@@ -37,7 +37,16 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Iterator, Mapping, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    Callable,
+    Iterator,
+    Mapping,
+    Sequence,
+    TypeVar,
+)
 
 import click
 
@@ -48,6 +57,7 @@ from harlequin.config import (
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    parse_seconds,
 )
 from harlequin.exception import (
     HarlequinCatalogPathError,
@@ -69,10 +79,13 @@ from harlequin.redact import hide_secrets_in
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
+    from harlequin.hsql.timeout import Deadline
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
     from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
     from harlequin.statements import Statement
+
+T = TypeVar("T")
 
 PROGRAM = "hsql"
 
@@ -251,6 +264,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             "To check an adapter's capabilities, use --info."
         ),
     )
+    @click.option(
+        "--timeout",
+        metavar="SECONDS",
+        type=click.FloatRange(min=0, min_open=True),
+        help=(
+            "Cancel the run after SECONDS and exit 4. Refused if the adapter "
+            "cannot cancel a query; to check, use --info."
+        ),
+    )
     # existence is not click's to check: every mode that reads this path
     # already refuses a file that is not there, naming it, and `--config init`
     # is the one invocation whose whole job is to write a file that is not there
@@ -420,6 +442,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
         read_only: bool = bool(values.pop("read_only", False))
+        raw_timeout = values.pop("timeout", None)
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
         no_align: bool = bool(values.pop("no_align", False))
@@ -523,6 +546,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 asked=read_only,
                 typed="read_only" in explicitly_set,
             )
+            _refuse_undeclared_timeout(
+                ctx,
+                adapter=adapter,
+                seconds=_timeout_seconds(ctx, raw_timeout),
+                typed="timeout" in explicitly_set,
+            )
             ctx.exit(
                 _write_config(
                     ctx,
@@ -545,6 +574,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             asked=read_only,
             typed="read_only" in explicitly_set,
         )
+        timeout_seconds = _timeout_seconds(ctx, raw_timeout)
+        _refuse_undeclared_timeout(
+            ctx,
+            adapter=adapter,
+            seconds=timeout_seconds,
+            typed="timeout" in explicitly_set,
+        )
+        deadline = _deadline(timeout_seconds)
 
         if catalog:
             catalog_path = _catalog_path(ctx, path)
@@ -552,26 +589,32 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog")
+            connection = _connect(
+                ctx,
+                adapter=adapter,
+                conn_str=conn_str,
+                read_only=read_only,
+                values=values,
+            )
             ctx.exit(
-                _report_catalog(
+                _under_deadline(
                     ctx,
-                    _connect(
+                    lambda: _report_catalog(
                         ctx,
-                        adapter=adapter,
-                        conn_str=conn_str,
-                        read_only=read_only,
-                        values=values,
+                        connection,
+                        catalog_path,
+                        destination=destination,
+                        format_name=format_name,
+                        display_rows=raw_display_rows,
+                        tuples_only=tuples_only,
+                        no_align=no_align,
+                        no_header=no_header,
+                        no_footer=no_footer,
+                        null_string=null_string,
+                        color=_use_color(color_when, destination),
                     ),
-                    catalog_path,
-                    destination=destination,
-                    format_name=format_name,
-                    display_rows=raw_display_rows,
-                    tuples_only=tuples_only,
-                    no_align=no_align,
-                    no_header=no_header,
-                    no_footer=no_footer,
-                    null_string=null_string,
-                    color=_use_color(color_when, destination),
+                    deadline=deadline,
+                    connection=connection,
                 )
             )
 
@@ -588,27 +631,33 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog-search")
+            connection = _connect(
+                ctx,
+                adapter=adapter,
+                conn_str=conn_str,
+                read_only=read_only,
+                values=values,
+            )
             ctx.exit(
-                _report_catalog_search(
+                _under_deadline(
                     ctx,
-                    _connect(
+                    lambda: _report_catalog_search(
                         ctx,
-                        adapter=adapter,
-                        conn_str=conn_str,
-                        read_only=read_only,
-                        values=values,
+                        connection,
+                        catalog_search,
+                        search_path,
+                        destination=destination,
+                        format_name=format_name,
+                        display_rows=raw_display_rows,
+                        tuples_only=tuples_only,
+                        no_align=no_align,
+                        no_header=no_header,
+                        no_footer=no_footer,
+                        null_string=null_string,
+                        color=_use_color(color_when, destination),
                     ),
-                    catalog_search,
-                    search_path,
-                    destination=destination,
-                    format_name=format_name,
-                    display_rows=raw_display_rows,
-                    tuples_only=tuples_only,
-                    no_align=no_align,
-                    no_header=no_header,
-                    no_footer=no_footer,
-                    null_string=null_string,
-                    color=_use_color(color_when, destination),
+                    deadline=deadline,
+                    connection=connection,
                 )
             )
 
@@ -648,26 +697,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
         )
 
-        run = _Run()
-        executed = _execute_all(
-            connection, statements, limit=row_limit, on_error=on_error, run=run
-        )
-
-        selected = _select_results(executed, result_spec)
-        if selected is None:
-            ctx.exit(ExitCode.USAGE)
-        if (
-            len(selected) > 1
-            and not destination.is_directory
-            and not output.holds_many(format_name)
-        ):
-            n = len(selected)
-            diagnostics.error(
-                f"{n} result sets, but {format_name} holds one; "
-                f"use --result last, --result {n}, or -o DIR for one file each"
-            )
-            ctx.exit(ExitCode.USAGE)
-
+        run = _Run(deadline=deadline)
         layout_options, file_options = _output_options(
             tuples_only=tuples_only,
             no_align=no_align,
@@ -679,25 +709,42 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             display_limit=display_limit,
         )
 
-        try:
-            if (directory := destination.directory) is not None:
-                _emit_files(
-                    selected,
-                    directory,
-                    limit=row_limit,
-                    format_name=format_name,
-                    layout_options=layout_options,
-                    file_options=file_options,
-                    on_error=on_error,
-                    run=run,
+        def run_sql() -> None:
+            """Everything the clock covers: execute, fetch, and write.
+
+            One callable because the work `--timeout` bounds runs on a worker
+            thread -- and all of it does, since a lazy adapter does the work in
+            `fetchall()` rather than in `execute()`.
+            """
+            executed = _execute_all(
+                connection, statements, limit=row_limit, on_error=on_error, run=run
+            )
+            if run.stopped:
+                # a cancelled script produced fewer result sets than it was
+                # going to, and `--result 2` on one of them is not the caller's
+                # mistake to be told about
+                return
+
+            selected = _select_results(executed, result_spec)
+            if selected is None:
+                ctx.exit(ExitCode.USAGE)
+            if (
+                len(selected) > 1
+                and not destination.is_directory
+                and not output.holds_many(format_name)
+            ):
+                n = len(selected)
+                diagnostics.error(
+                    f"{n} result sets, but {format_name} holds one; "
+                    f"use --result last, --result {n}, or -o DIR for one file each"
                 )
-            else:
-                with _sink(
-                    destination, filename=f"results{output.suffix(format_name)}"
-                ) as out:
-                    _emit(
+                ctx.exit(ExitCode.USAGE)
+
+            try:
+                if (directory := destination.directory) is not None:
+                    _emit_files(
                         selected,
-                        out,
+                        directory,
                         limit=row_limit,
                         format_name=format_name,
                         layout_options=layout_options,
@@ -705,9 +752,37 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                         on_error=on_error,
                         run=run,
                     )
-        except OSError as e:
-            diagnostics.report_error(e)
-            ctx.exit(ExitCode.USAGE)
+                else:
+                    with _sink(
+                        destination, filename=f"results{output.suffix(format_name)}"
+                    ) as out:
+                        _emit(
+                            selected,
+                            out,
+                            limit=row_limit,
+                            format_name=format_name,
+                            layout_options=layout_options,
+                            file_options=file_options,
+                            on_error=on_error,
+                            run=run,
+                        )
+            except OSError as e:
+                diagnostics.report_error(e)
+                ctx.exit(ExitCode.USAGE)
+
+        if deadline is None:
+            run_sql()
+        else:
+            # not `_under_deadline()`, which exits: this is the one path with
+            # something left to write, since `--stats` reports the run that
+            # ran out as well as the one that finished.
+            from harlequin.hsql.timeout import TimedOut
+
+            try:
+                deadline.run(run_sql, connection=connection)
+            except TimedOut:
+                run.timed_out = deadline.seconds
+                diagnostics.report_timeout(deadline.seconds)
 
         if stats:
             diagnostics.report_stats(
@@ -718,7 +793,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 limit=row_limit.max_rows,
                 elapsed_ms=run.elapsed_ms,
                 columns=run.columns,
-                message=_message_for(run.failure),
+                message=run.message,
             )
 
         ctx.exit(run.exit_code)
@@ -873,6 +948,76 @@ def _refuse_undeclared_read_only(
             f"cannot be honored. See '{PROGRAM} --info'."
         )
         ctx.exit(ExitCode.USAGE)
+
+
+def _refuse_undeclared_timeout(
+    ctx: click.Context, *, adapter: str, seconds: float | None, typed: bool
+) -> None:
+    """Exit with an error if a deadline was set and the adapter cannot cancel.
+
+    A clock that runs out over work nothing can stop leaves the query running
+    and the caller told it stopped, which is worse than no flag at all.
+    """
+    if seconds is None:
+        return
+    try:
+        declares_cancel = load_adapter(adapter).IMPLEMENTS_CANCEL
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    if not declares_cancel:
+        spelled = "--timeout" if typed else "timeout in the profile"
+        diagnostics.error(
+            f"{adapter} does not declare query cancellation, so {spelled} "
+            f"cannot be honored. See '{PROGRAM} --info'."
+        )
+        ctx.exit(ExitCode.USAGE)
+
+
+def _timeout_seconds(ctx: click.Context, raw: Any) -> float | None:
+    """How long this invocation has, or exit having said why that is not a time.
+
+    click has already vetted a `--timeout` typed on the command line; a profile
+    can say anything.
+    """
+    try:
+        return parse_seconds(raw, key="--timeout")
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+
+
+def _deadline(seconds: float | None) -> "Deadline | None":
+    """The clock this invocation runs under, or None for as long as it takes.
+
+    Deferred, and None where nothing asked: a run with no deadline starts no
+    worker thread, and the two phases stay on the thread they have always been
+    on.
+    """
+    if seconds is None:
+        return None
+    from harlequin.hsql.timeout import Deadline
+
+    return Deadline(seconds)
+
+
+def _under_deadline(
+    ctx: click.Context,
+    work: Callable[[], T],
+    *,
+    deadline: "Deadline | None",
+    connection: "HarlequinConnection",
+) -> T:
+    """Run `work` under the clock, or exit 4 having said it ran out."""
+    if deadline is None:
+        return work()
+    from harlequin.hsql.timeout import TimedOut
+
+    try:
+        return deadline.run(work, connection=connection)
+    except TimedOut:
+        diagnostics.report_timeout(deadline.seconds)
+        ctx.exit(ExitCode.TIMEOUT)
 
 
 def _report_catalog(
@@ -1237,6 +1382,12 @@ class _Run:
     failure: BaseException | None = None
     """The last thing that went wrong, and so the code hsql exits with."""
 
+    deadline: "Deadline | None" = None
+    """The clock `--timeout` set, which the fetch loop reads between results."""
+
+    timed_out: float | None = None
+    """The deadline, in seconds, if it ran out on this run."""
+
     started: float = field(default_factory=time.monotonic)
 
     @property
@@ -1244,11 +1395,32 @@ class _Run:
         return round((time.monotonic() - self.started) * 1000)
 
     @property
+    def stopped(self) -> bool:
+        """Whether the clock has run out, so nothing more is run or written.
+
+        A cancelled query comes back empty and error-free, so a run that kept
+        going would print the empty result the cancel produced as if the
+        database had returned it.
+        """
+        return self.deadline is not None and self.deadline.expired
+
+    @property
     def status(self) -> str:
-        return "error" if self.failure is not None else "ok"
+        if self.failure is not None or self.timed_out is not None:
+            return "error"
+        return "ok"
+
+    @property
+    def message(self) -> str | None:
+        """What went wrong, for `--stats`."""
+        if self.timed_out is not None:
+            return diagnostics.timeout_message(self.timed_out)
+        return _message_for(self.failure)
 
     @property
     def exit_code(self) -> ExitCode:
+        if self.timed_out is not None:
+            return ExitCode.TIMEOUT
         if self.failure is None:
             return ExitCode.OK
         return diagnostics.exit_code_for(self.failure)
@@ -1272,6 +1444,11 @@ def _execute_all(
 
     executed: list[ExecutedStatement] = []
     for item in execute(connection, statements, limit=limit, on_error=on_error):
+        if run.stopped:
+            # not consuming the rest is what stops the script: a statement
+            # submitted after the cancel would run past the deadline, and the
+            # error the cancel itself raised is not one to report.
+            break
         run.statements += 1
         if item.error is not None:
             run.failure = item.error
@@ -1365,14 +1542,25 @@ def _fetched(
     from harlequin.query import fetch
 
     for position, item in enumerate(selected, start=1):
+        if run.stopped:
+            # the clock ran out between statements
+            return
         try:
             result = fetch(item, limit=limit)
         except Exception as e:  # noqa: BLE001 -- adapters are third-party code
+            if run.stopped:
+                # whatever the cancel raised on the way out is not this run's
+                # error to report; the deadline is
+                return
             run.failure = e
             diagnostics.report_error(e)
             if on_error == "stop":
                 return
             continue
+        if run.stopped:
+            # the cancel landed inside that fetch, so the rows it returned are
+            # the ones it had rather than the ones the query has
+            return
         yield position, result
 
 

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Breaking Changes
 
 - The DuckDB and SQLite adapters' single-dash `-readonly` CLI option has been removed. Use `-r` or `--read-only`.
+- The SQLite adapter's `timeout` option is now called `lock-timeout`, since `--timeout` is now hsql's. Rename the CLI option and the profile key; its meaning (how long to wait for a locked table) is unchanged.
 
 ### Features
 
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
 - Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. If set, Harlequin and hsql will refuse to connect to an adapter that cannot enforce a read-only mode.
 - `hsql --config validate` now reports a profile that sets `read_only` for an adapter that cannot enforce it.
+- Adds `hsql --timeout SECONDS`, which cancels the run when it has taken that long and exits `4`. hsql refuses to start if the adapter cannot cancel a query; `hsql --info` reports which of your adapters can.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Bug Fixes

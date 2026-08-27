@@ -28,7 +28,7 @@ def test_connect(tiny_sqlite: Path, small_sqlite: Path) -> None:
     assert HarlequinSqliteAdapter(
         [],
         read_only=False,
-        timeout="100",
+        lock_timeout="100",
         isolation_level="EXCLUSIVE",
         check_same_thread=False,
         cached_statements="10",

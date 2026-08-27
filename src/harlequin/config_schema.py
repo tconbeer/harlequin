@@ -95,6 +95,8 @@ CLICK_TYPES: dict[str, dict[str, Any]] = {
     "boolean": {"type": "boolean"},
     "choice": {"type": "string"},
     "file": {"type": "string"},
+    "float": {"type": "number"},
+    "float range": {"type": "number"},
     "integer": {"type": "integer"},
     "integer range": {"type": "integer"},
     "path": {"type": "string"},

@@ -777,6 +777,21 @@ DuckDB executes lazily and the work happens in `fetchall()` (§1.9):
 
 `SIGINT` takes the same path and exits 130, which it already does.
 
+**It bounds `--catalog` and `--catalog-search` as well as a run** (amended in PR 14). Both
+connect and both wait on the database, and this repo's own rule about a flag that silently
+does nothing (`report_limit_ignored`, `report_row_cap_ignored`) applies hardest to the one
+flag whose job is safety. It is the same wrapper around the mode's report call; the modes that
+report on files or on the installation connect to nothing and are left alone, as `--read-only`
+leaves them.
+
+**hsql's `--timeout` collides with the SQLite adapter's own `timeout`, and the adapter's is
+renamed** (amended in PR 14). §3.4's rule says an adapter option that collides with one of
+hsql's flags loses the spelling -- which is right for the out-of-tree tail and wrong to leave
+in place for an adapter we ship: sqlite's option is how long to wait for a *locked table*, and
+losing it would cost a real setting and silently reread a profile's `timeout` as a deadline. So
+it becomes `lock-timeout`, which is what it does, exactly as PR 13 renamed `connection_mode` to
+`mode`. Breaking, and one line of the changelog.
+
 `--single-transaction` is cut (§7): transaction modes are named by each adapter and default
 to undefined behavior, so core cannot drive them generically, and a caller who wants one
 transaction can write `begin` and `commit` in the script they are already sending.

@@ -41,6 +41,7 @@ and read on, which is the whole of `--config validate`.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import sys
@@ -604,6 +605,39 @@ def parse_row_count(
     return rows
 
 
+def parse_seconds(value: Any, *, key: str) -> float | None:
+    """A duration option's value as a number of seconds, or None for no limit.
+
+    A config file can put anything under a key, so this is where a duration is
+    made a number. Zero and below are refused rather than read as "no limit":
+    leaving the key out is what says a run may take as long as it takes, and a
+    deadline of zero seconds would stop the run it was asked to bound.
+
+    Raises: HarlequinConfigError if the value is not a positive number of
+    seconds.
+    """
+
+    def refuse() -> HarlequinConfigError:
+        return HarlequinConfigError(
+            f"{key}={value!r} is not a positive number of seconds. "
+            "Leave it out for a run that takes as long as it takes.",
+            title=CONFIG_ERROR_TITLE,
+        )
+
+    if value is None:
+        return None
+    # a bool is a float in Python, and `timeout = true` is not a second
+    if isinstance(value, bool):
+        raise refuse()
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise refuse() from None
+    if not seconds > 0 or not math.isfinite(seconds):
+        raise refuse()
+    return seconds
+
+
 def discover_config_files(config_path: Path | None) -> list[Path]:
     """Every config file that exists, highest priority first.
 
@@ -704,6 +738,16 @@ def _validate_profile(
             f"Profile sets read_only, but its adapter ({adapter}) does not "
             "support read-only connections.",
             key="read_only",
+        )
+    if (
+        profile.get("timeout") is not None
+        and adapter_cls is not None
+        and not adapter_cls.IMPLEMENTS_CANCEL
+    ):
+        problems.add(
+            f"Profile sets timeout, but its adapter ({adapter}) does not "
+            "support cancelling a query.",
+            key="timeout",
         )
     parse_profile_options(
         profile,

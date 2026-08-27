@@ -76,7 +76,7 @@ class ExitCode(IntEnum):
 
     CONNECTION = 3
     TIMEOUT = 4
-    """Unused until `--timeout` lands; the number is reserved for it."""
+    """`--timeout` ran out, and hsql stopped the run."""
 
     INTERRUPT = 130
 
@@ -134,6 +134,22 @@ def report_theme_confusion(conn_str: Sequence[str]) -> None:
         f"hsql has no themes; -t is --tuples-only, as in psql, "
         f"so {themed!r} was read as a connection string."
     )
+
+
+def timeout_message(seconds: float) -> str:
+    """What a run that ran out of time is called, on stderr and in `--stats`."""
+    return f"timed out after {seconds:g}s"
+
+
+def report_timeout(seconds: float) -> None:
+    """Say that hsql stopped the run, since the adapter cannot say it did.
+
+    A cancelled query comes back empty and error-free, which is exactly what a
+    query that matched nothing looks like, so nothing downstream of the cancel
+    knows the difference. This line and exit code 4 are the whole of the
+    difference a caller gets.
+    """
+    error(timeout_message(seconds))
 
 
 def report_truncation(max_rows: int) -> None:

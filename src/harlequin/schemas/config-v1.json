@@ -180,6 +180,10 @@
           "description": "Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info.",
           "default": false
         },
+        "timeout": {
+          "type": "number",
+          "description": "Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info."
+        },
         "config_path": {
           "type": "string",
           "description": "Use this config file instead of the ones hsql discovers."
