@@ -7,37 +7,36 @@ All notable changes to this project will be documented in this file.
 ### Breaking Changes
 
 - The DuckDB and SQLite adapters' single-dash `-readonly` CLI option has been removed. Use `-r` or `--read-only`.
-- The SQLite adapter's `timeout` option is now called `lock-timeout`, since `--timeout` is now hsql's. Rename the CLI option and the profile key; its meaning (how long to wait for a locked table) is unchanged.
+- The SQLite adapter's `--timeout` option is now called `--lock-timeout`, since `--timeout` is now an hsql option.
 
 ### Features
 
 - Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children, the correctly-quoted name to paste into a query, and the database's own name for the object's type (`DECIMAL(18,2)`, `BASE TABLE`, `schema`), and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
 - Adds `hsql --catalog-search TERM`, which searches every level of the catalog for objects whose name contains TERM instead of listing a level at a time: `hsql --catalog-search customer_id` says which tables have that column, and `--path` narrows the search. It works with the DuckDB and SQLite adapters; `hsql --info` reports which of your adapters can search, and one that cannot says so instead of walking its catalog.
-- Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
+- Harlequin now accepts an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
 - Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. If set, Harlequin and hsql will refuse to connect to an adapter that cannot enforce a read-only mode.
-- `hsql --config validate` now reports a profile that sets `read_only` for an adapter that cannot enforce it.
-- Adds `hsql --timeout SECONDS`, which cancels the run when it has taken that long and exits `4`. hsql refuses to start if the adapter cannot cancel a query; `hsql --info` reports which of your adapters can.
+- Adds `hsql --timeout SECONDS`, which cancels the run when it has taken that long and exits `4`. hsql refuses to start if the adapter cannot cancel a query.
 - `hsql --vertical` can now be spelled `-x`, as in psql.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Bug Fixes
 
-- The SQLite adapter's `--mode` (`-m`) option now has an effect: it was silently ignored, so `--mode ro` opened a database that could still be written to, and `--read-only --mode rwc` connected instead of raising.
-- The autocomplete menu no longer opens for tokens that start with a number, and fuzzy matches now have to start at the beginning of a name or just after a `_`, so typing `1` and pressing enter inserts a newline again ([#803](https://github.com/tconbeer/harlequin/issues/803)).
+- The SQLite adapter's `--mode` (`-m`) option now has an effect: previously it was silently ignored.
+- The autocomplete menu no longer opens for tokens that start with a number. Fuzzy matching is also improved: it is faster and now more likely to produce useful matches ([#803](https://github.com/tconbeer/harlequin/issues/803)).
 
 ### Adapter API Changes
 
-- Adds an optional `HarlequinConnection.search_catalog()`, which returns every catalog item whose label contains a term, paired with the labels of its ancestors. Adapters that implement it should set `IMPLEMENTS_CATALOG_SEARCH = True`, which is what `hsql --catalog-search` and `hsql --info` read.
-- `HarlequinAdapter.__init__` now takes a `read_only` argument, which both commands pass to every adapter. Adapters that can connect in a mode the database refuses writes in should honor it and set `IMPLEMENTS_READ_ONLY = True`; adapters no longer need to declare a read-only option of their own, and the DuckDB and SQLite adapters have dropped theirs.
-- Adds `IMPLEMENTS_READ_ONLY` and `IMPLEMENTS_VALIDATE_SQL` to `HarlequinAdapter`, both defaulting to `False`. `--read-only` is refused for an adapter that does not declare the first; set the second if the connection's `validate_sql()` is real. `hsql --info` reports both.
-- Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`. It defaults to `None`, and `hsql --catalog` prints it in its `type` column, beside the short `type_label`. It is a new dataclass field appended after `children`, so subclasses that add their own fields should be constructed with keyword arguments.
+- Adds an optional `HarlequinConnection.search_catalog()`, which returns every catalog item whose label contains a term. Adapters that implement it should set `IMPLEMENTS_CATALOG_SEARCH = True`.
+- `HarlequinAdapter.__init__` now takes a `read_only` argument, which both commands pass to every adapter. Adapters that can enforce read-only should set `IMPLEMENTS_READ_ONLY = True`; adapters no longer need to declare a read-only option of their own, and the DuckDB and SQLite adapters have dropped theirs.
+- Adds `IMPLEMENTS_READ_ONLY` and `IMPLEMENTS_VALIDATE_SQL` to `HarlequinAdapter`, both defaulting to `False`.
+- Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`, used by `hsql --catalog`.
 
 ## [2.10.0] - 2026-08-25
 
 ### Breaking Changes
 
-- Config files now merge profile by profile; higher-priority files that define profiles no longer clobber profiles with different names defined in lower-priority profiles ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- Config files now merge profile by profile; higher-priority files that define profiles no longer clobber profiles with different names defined in lower-priority files ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
 - A profile's adapter options are now validated against what that adapter declares; incorrect configurations may raise errors instead of being silently ignored.
 
 ### Features
