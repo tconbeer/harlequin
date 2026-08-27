@@ -322,7 +322,7 @@ hsql --limit -1 -c "select 1" --csv -o data.csv --stats 2>&1 | jq -e '.truncated
 
 ## Running Safely
 
-Two options bound what an invocation can do, and hsql refuses to run at all if the adapter cannot enforce them, rather than reporting a guarantee it did not get.
+Two options bound what an invocation can do, and hsql refuses to run at all if the adapter cannot enforce them.
 
 `--read-only` (or `-r`) connects in a mode the database itself refuses writes in:
 
@@ -331,14 +331,14 @@ $ hsql -r "path/to/duck.db" -c "insert into orders values (1)"
 hsql: error: Invalid Input Error: Cannot execute statement of type "INSERT" on database "duck" which is attached in read-only mode!
 ```
 
-`--timeout SECONDS` is a wall clock over the whole invocation — executing and fetching both — and exits `4` when it runs out:
+`--timeout SECONDS` limits the duration of executing and fetching a query, and exits `4` when it runs out:
 
 ```bash
 $ hsql --timeout 0.5 -c "select count(*) from range(100000000000) t(i)"
 hsql: error: timed out after 0.5s
 ```
 
-Both are also profile keys, so the line that makes an agent's profile safe is one you can point at:
+Both are also profile keys:
 
 ```toml
 [profiles.agent]
@@ -347,35 +347,9 @@ read_only = true
 timeout = 30
 ```
 
-Not every adapter can connect read-only, and not every adapter can cancel a running query. Where one cannot, hsql exits `2` before it opens a connection:
+hsql refuses to open a connection with an adapter that cannot enforce `--read-only` or `--timeout`.
 
-```bash
-$ hsql -a myadapter -r -c "select 1"
-hsql: error: myadapter does not declare read-only support, so --read-only cannot be honored. See 'hsql --info'.
-```
-
-`hsql --info` reports `implements_read_only` and `implements_cancel` for every installed adapter, so a script can check before it depends on either one.
-
-Harlequin takes `--read-only` too, so the same profile opens the IDE the same way.
-
-## Differences from psql
-
-`-c`, `-f`, `-t` and `-A` mean what they mean in psql, so `hsql -tAc "select count(*) from orders"` prints a bare number, exactly as it would there. These do not:
-
-| | psql | hsql |
-|---|---|---|
-| `-P` | `--pset`, an output setting | `--profile`, a config-file profile |
-| Expanded output | `-x` | `--vertical` |
-| Field separator | `-F` | `--csv`, `--tsv`, or any other `--format` |
-| Listing databases | `-l` | `--catalog` |
-| Describing an object | `\d`, `\dt` | `--catalog --path`, `--catalog-search` |
-| Stopping on the first error | `-v ON_ERROR_STOP=1` | `--on-error stop`, which is the default |
-| One transaction | `-1` | write `begin` and `commit` in your script |
-| `-o` | a file for query output | a file, or a directory that gets one file per result set |
-| Connection flags | `-h`, `-p`, `-U`, built in | the adapter's, so `hsql --help -a postgres` lists them |
-| Row limits | none | 500 rows by default; `--limit -1` removes it |
-| Suppressing chatter | `-q` | nothing to suppress: stdout is only ever results |
-| Exit codes | `1` its own error, `2` connection, `3` script error | `1` query error, `2` usage/config, `3` connection, `4` timeout |
+`hsql --info` reports `implements_read_only` and `implements_cancel` for every installed adapter.
 
 ## Describing hsql to an Agent
 
@@ -423,3 +397,22 @@ Please consider [sponsoring Harlequin's author](https://github.com/sponsors/tcon
 Thanks for your interest in Harlequin! Harlequin and hsql are primarily maintained by [Ted Conbeer](https://github.com/tconbeer), but he welcomes all contributions!
 
 Please see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for more information.
+
+## Differences from psql
+
+`-c`, `-f`, `-t` and `-A` mean what they mean in psql, so `hsql -tAc "select count(*) from orders"` prints a bare number, exactly as it would there. These do not:
+
+| | psql | hsql |
+|---|---|---|
+| `-P` | `--pset`, an output setting | `--profile`, a config-file profile |
+| Expanded output | `-x` | `--vertical` |
+| Field separator | `-F` | `--csv`, `--tsv`, or any other `--format` |
+| Listing databases | `-l` | `--catalog` |
+| Describing an object | `\d`, `\dt` | `--catalog --path`, `--catalog-search` |
+| Stopping on the first error | `-v ON_ERROR_STOP=1` | `--on-error stop`, which is the default |
+| One transaction | `-1` | write `begin` and `commit` in your script |
+| `-o` | a file for query output | a file, or a directory that gets one file per result set |
+| Connection flags | `-h`, `-p`, `-U`, built in | the adapter's, so `hsql --help -a postgres` lists them |
+| Row limits | none | 500 rows by default; `--limit -1` removes it |
+| Suppressing chatter | `-q` | nothing to suppress: stdout is only ever results |
+| Exit codes | `1` its own error, `2` connection, `3` script error | `1` query error, `2` usage/config, `3` connection, `4` timeout |
