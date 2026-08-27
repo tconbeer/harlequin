@@ -3357,16 +3357,17 @@ def test_read_only_is_refused_ahead_of_the_mode_that_would_connect(
     assert declares_nothing in res.stderr
 
 
-def test_read_only_is_written_into_a_profile_without_being_refused(
+def test_read_only_is_refused_before_it_is_written_into_a_profile(
     hsql: Hsql, declares_nothing: str, init_dirs: tuple[Path, Path]
 ) -> None:
-    """`--config init` writes a file rather than connecting with one, so it
-    writes what it was told and leaves the refusal to the run that connects."""
+    """`--config init` imports the adapter to write the options it declares, so
+    it can refuse a profile that names one and a read-only it cannot honor --
+    which is a profile no run would start under."""
     cwd, _ = init_dirs
     res = hsql("--config", "init", "-P", "prod", "-a", declares_nothing, "--read-only")
-    assert res.exit_code == ExitCode.OK
-    profile = written(cwd / ".harlequin.toml")["profiles"]["prod"]
-    assert profile["read_only"] is True
+    assert res.exit_code == ExitCode.USAGE
+    assert declares_nothing in res.stderr
+    assert not (cwd / ".harlequin.toml").exists()
 
 
 @pytest.mark.parametrize(

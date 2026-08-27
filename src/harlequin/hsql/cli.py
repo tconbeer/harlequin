@@ -516,6 +516,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                         color=_use_color(color_when, destination),
                     )
                 )
+            # `init` imports the adapter to write the options it declares, so
+            # it can read what it declares too: a profile saying read-only to
+            # an adapter that cannot is a profile no run will start under
+            _refuse_undeclared_read_only(
+                ctx,
+                adapter=adapter,
+                asked=read_only,
+                typed="read_only" in explicitly_set,
+            )
             ctx.exit(
                 _write_config(
                     ctx,
@@ -531,9 +540,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
-        # below every mode that reads or writes a file rather than a database:
-        # those cannot write whatever they are told, and `--info` and
-        # `--config show` are where a caller finds out where read-only came from
+        # below the modes that only report: those write nothing, and `--info`
+        # and `--config show` are where a caller finds out where a read-only
+        # they did not expect came from
         _refuse_undeclared_read_only(
             ctx,
             adapter=adapter,
