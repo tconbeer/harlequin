@@ -171,8 +171,8 @@ is no workflow, no directory, and no convention for that — §3.4 is where M3 p
 `{topic, slug, slugPrefix, menuOrder}` for topics. It exists to build the sidebar, and it
 shows: the top-level topic's `slugPrefix` is the string `"/src"`, because the code takes the
 second-to-last path segment of `/src/docs/getting-started/index.md`. There is no per-page
-route, no content in the payload, no CORS header, no search, and no version in the path. It is
-fine as a private endpoint and unusable as the public one D3 describes.
+route, no content in the payload, no CORS header, and no version in the path. It is fine as a
+private endpoint and unusable as the public one D3 describes.
 
 ### 1.7 There is no skill, and no place the docs put one
 
@@ -335,7 +335,6 @@ index.
 | `/docs/{topic}/{page}.md` | `text/markdown; charset=utf-8` | prerendered per page from the corpus |
 | `/api/docs/v1` | `application/json` | the index, with `title`, `topic`, `slug`, `url`, `description` |
 | `/api/docs/v1/{topic}/{page}` | `application/json` | `{ title, topic, slug, url, markdown }` |
-| `/api/docs/v1/search?q=` | `application/json` | case-insensitive term match over the corpus, ranked title-then-body |
 | `/schemas/config/v1.json` | `application/schema+json` | the artifact from this repo (§3.4) |
 
 Prerendered, not ISR: the corpus is 55 files that change only when the repo does, and a
@@ -378,28 +377,77 @@ is already overdue.
 
 ### 3.5 `hsql --skill`, and the skill
 
+**A skill is a file with a contract, and the contract is not Anthropic's alone.** Agent Skills
+is an open standard ([agentskills.io](https://agentskills.io)) that Claude Code, claude.ai
+uploads and the Skills API all read, and its portable frontmatter is six fields: `name`,
+`description`, `license`, `compatibility`, `metadata`, `allowed-tools`. Harlequin's skill uses
+**only those six**. Claude Code accepts extension keys (`disable-model-invocation`, `context`,
+`argument-hint`); the other paths reject an unknown key outright, and a skill whose whole
+argument over MCP is "it works in any harness" (product plan §9) does not get to ship a
+vendor-locked file.
+
 **Where the text lives.** `src/harlequin/hsql/skill/SKILL.md`, shipped as package data
 alongside `src/harlequin/schemas/config-v1.json` and read the way
-`components/help_screen.py` reads its markdown — `Path(__file__).parent / …`. There is one
-copy: the site publishes the vendored artifact (§3.4), and the flag guard (§3.1a) reads the
-same file the wheel ships.
+`components/help_screen.py` reads its markdown — `Path(__file__).parent / …`. One copy, three
+consumers: the wheel, the plugin (below), and the artifact the site publishes (§3.4).
 
 **How it's delivered.** `hsql --skill` — a mode option, like every other mode M2 added, in
-`hsql/modes/skill.py`. It writes the file to stdout, and honors `-o PATH` like every other
-mode, so installing it is:
+`hsql/modes/skill.py`. It writes the file to stdout and honors `-o PATH` the way `--info`
+already does, so installing it is one command with no network:
 
 ```bash
-hsql --skill -o ~/.claude/skills/hsql/SKILL.md      # or .claude/skills/ in a project
+hsql --skill -o ~/.claude/skills/hsql/SKILL.md    # personal, loads on the next session
+hsql --skill -o .claude/skills/hsql/SKILL.md      # project, and it commits with the repo
 ```
 
-Printing a packaged file imports nothing — no adapter, no click machinery beyond the command
-itself — and the import-hygiene guard says so.
+Printing a packaged file imports nothing — no adapter, no config read — and the
+import-hygiene guard says so.
 
 **Why the wheel rather than a download.** The skill an agent installs is then, necessarily,
-the skill for the `hsql` on that machine — the one place where "which version am I reading
-about" cannot be got wrong. It also means the skill works with no network, which is exactly
-the environment (CI, a locked-down container) where an agent is most likely to be driving a
-CLI in the first place.
+the skill for the `hsql` on that machine — the one place "which version am I reading about"
+cannot be got wrong. It also works with no network, which is exactly the environment (CI, a
+locked-down container) where an agent is most likely to be driving a CLI.
+
+**The one-command install, in three tiers.** All three serve the same file:
+
+1. **`hsql --skill -o …`**, above. Already one command, already version-matched, works in any
+   harness that reads a skills directory. This is what the docs lead with.
+2. **A marketplace entry in this repo.** A plugin that ships exactly one skill may put
+   `SKILL.md` at the plugin root rather than under `skills/`, and a marketplace entry's
+   `source` may be a path inside its own repository. So `.claude-plugin/marketplace.json` at
+   the repo root, with one entry whose source is `./src/harlequin/hsql/skill`, makes that
+   directory the plugin — **no second repo, no copied file, no build step**. A tiny
+   `.claude-plugin/plugin.json` inside it carries the name, description and version; it ships
+   in the wheel too, at a few hundred bytes. Then:
+
+   ```
+   /plugin marketplace add tconbeer/harlequin      # once
+   /plugin install hsql@harlequin
+   ```
+
+   `claude plugin validate ./src/harlequin/hsql/skill` is a real command, so this tier comes
+   with a CI guard rather than a promise.
+3. **The community marketplace.** `anthropics/claude-plugins-community` is public and
+   submission is a form; approved plugins are pinned to a commit SHA and the pin is bumped by
+   CI as we push. For a user who already has that marketplace — which is most of them — the
+   install collapses to a single `/plugin install hsql@claude-community`, with nothing of
+   ours installed first. Tier 2 is the prerequisite, so this is a follow-up to file rather
+   than a PR to write.
+
+**`allowed-tools` covers introspection and nothing else.** The field pre-approves tools for
+the turn that invokes the skill, which is worth having — the first thing the skill tells an
+agent to do is run `hsql --info`, and a permission prompt there is friction on the one command
+that is unambiguously safe. So the grant names the read-only modes explicitly
+(`Bash(hsql --info)`, `Bash(hsql --spec*)`, `Bash(hsql --catalog*)`,
+`Bash(hsql --catalog-search*)`) and never `Bash(hsql *)`, which would pre-approve
+`hsql -c "drop table orders"`. Deciding whether to run a query is the human's; deciding
+whether to read a catalog is not.
+
+**Its own progressive disclosure is the CLI.** A skill's third layer is normally bundled
+reference files. Harlequin's references are commands — `--info`, `--spec`, `--help -a NAME`,
+`--catalog` — which are current by construction and cost nothing until they are run. That is
+why the skill can be one file under a fifth of the 500-line ceiling, and why it does not rot
+when an adapter we have never heard of is installed beside it.
 
 **What it says**, in nine short sections, budget ≤4KB / ~1,000 tokens:
 
@@ -438,27 +486,50 @@ Section 9 is the one nobody else would write, and it is also the one M4 improves
 unexecuted." The skill gets that paragraph in M4, and the plan should not pretend the M3
 version is the finished one.
 
+**The body is written as standing guidance, not a procedure.** A skill's content enters the
+conversation once and stays for the session; the file is not re-read on later turns. So each
+section reads as a rule that holds for the rest of the work ("the limit is real; check
+`truncated` every time"), not as a step that happens once ("first, run `--info`"). Nine
+sections of standing rules is also why the skill is nine short sections rather than a
+walkthrough.
+
+**The description is the product.** It is the only part always in context, and it is what
+decides whether the skill loads at all — a skill that never triggers is worth exactly nothing,
+and the current failure mode is under-triggering, not over. So it names the contexts as well
+as the capability: running SQL, inspecting a database's tables or columns, exporting query
+results, a `.sql` file, a connection string or DSN, a `harlequin.toml` — including when the
+user never says "hsql." It gets one deliberate pass with the description-optimization loop in
+`skill-creator` (about 20 realistic trigger queries, half of them near-miss negatives, split
+train/test) before PR 3 merges. That loop needs the `claude` CLI, so it is a pre-merge
+exercise whose eval set is committed, not a CI check — and it is the closest thing this
+milestone has to the agent eval suite M1 dropped (§5).
+
 ### 3.6 The "Headless & Agents" topic
 
-D5, in `src/docs/headless/`, with `index.md` carrying `topic: "Headless & Agents"`:
+D5, in `src/docs/headless/`, with `index.md` carrying `topic: "Headless & Agents"`. **The
+topic is additive: `getting-started/hsql.md` stays exactly where it is** (Ted's call). It is
+the page a human lands on — linked from the packaged README, the homepage and
+`running.md` — and it earns that spot: it is the tutorial. The new topic is the reference
+beneath it, and it is where a page goes when it is too long or too machine-facing to belong in
+Getting Started. No moves, no stub, no redirect, and nothing in the wild breaks.
 
 | page | source |
 | --- | --- |
-| `index.md` — the `hsql` overview and tutorial | moved from `getting-started/hsql.md` |
-| `formats.md` — layouts, file formats, `-o`, the `-tAc` idiom | split out of the same page |
-| `exit-codes.md` — the six codes, `--stats`, `--on-error`, stderr | new; today only the README says this |
-| `catalog.md` — `--catalog`, `--path`, `--catalog-search` | new on the site; the packaged README has it |
-| `config.md` — the config file spec, `${VAR}`, secrets, `--config` modes | new; links to the `config-file/` topic |
-| `safety.md` — `--read-only`, `--timeout`, capability flags | M2's PR 17 content, if it has not landed |
+| `index.md` — what the topic is, and the path through it | new; links up to the tutorial |
+| `exit-codes.md` — the six codes, `--stats`, `--on-error`, what goes to stderr | new; today only the packaged README says this |
+| `catalog.md` — `--catalog`, `--path`, `--catalog-search`, and the capability | new on the site; the packaged README has it |
+| `formats.md` — every layout and file format, `-o`, the `-tAc` idiom | expands the tutorial's list into a reference |
+| `config.md` — the config spec, `${VAR}`, secrets, the `--config` modes | new; links across to the `config-file/` topic |
+| `safety.md` — `--read-only`, `--timeout`, the capability flags | M2's PR 17 content, if it has not landed |
 | `psql.md` — the differences table | M2's PR 17 content |
 | `reference.md` — the generated CLI reference | §3.1b, vendored |
-| `skill.md` — what the skill is, how to install it | §3.5 |
+| `skill.md` — what the skill is, and the three ways to install it | §3.5 |
 | `mcp.md` | **not in M3** — M6 |
 
-`getting-started/hsql.md` becomes a stub that links to the new topic, and `vercel.json` gains
-a redirect. The existing URL is in the wild — it is linked from the packaged README and from
-the homepage — so it does not get to 404, and a 308 to the new page is cheaper than
-maintaining two copies.
+The tutorial keeps its shape and gains links out: each section that currently ends by
+summarizing something ("hsql's exit codes are meaningful and stable," the format list) points
+at the reference page that now covers it in full. The rule for which side of the line a fact
+falls on is whether a human reads it once or an agent reads it every time.
 
 ### 3.7 Copy and view as markdown
 
@@ -488,51 +559,64 @@ command line that does not run.
 `docs/generated/hsql-reference.md`, and the regenerate-and-compare test, modeled on
 `test_config_schema.py`. No user-facing behavior; the artifact is what PR 5 publishes.
 
-**PR 3 — `hsql --skill`.** The skill text as package data, `hsql/modes/skill.py`, `-o`
-support, the import-hygiene assertion that it loads no adapter, and the flag guard extended to
-cover it. **Lands after M2's PR 13**, so §3.5's section 8 is true when it ships. Features
-entry.
+**PR 3 — `hsql --skill`, and the skill.** The skill text as package data,
+`hsql/modes/skill.py`, `-o` support, the import-hygiene assertion that it loads no adapter,
+the frontmatter and size guards (§5), and the flag guard extended to cover it. The
+description gets its optimization pass before merge, with the trigger eval set committed
+beside the skill (§3.5). **Lands after M2's PR 13**, so §3.5's section 8 is true when it
+ships. Features entry.
 
-**PR 4 — The publishing workflow.** The `release.yml` step that copies `config-v1.json`,
+**PR 4 — The marketplace entry.** `.claude-plugin/marketplace.json` at the repo root and
+`.claude-plugin/plugin.json` beside the skill, making `src/harlequin/hsql/skill` a
+single-skill plugin with no copied file (§3.5, tier 2), plus `claude plugin validate` in CI.
+Small, and separable from PR 3 so a problem with either lands alone. Features entry — the
+install line is the user-facing part.
+
+**PR 5 — The publishing workflow.** The `release.yml` step that copies `config-v1.json`,
 `hsql-reference.md` and `SKILL.md` plus a `manifest.json` into a PR against `harlequin-web`
 (§3.4). No changelog entry; it is release plumbing.
 
 ### Release B — the site (`harlequin-web`, continuous)
 
-**PR 5 — `/schemas/config/v1.json`, and the artifacts directory.** The vendored files and the
+**PR 6 — `/schemas/config/v1.json`, and the artifacts directory.** The vendored files and the
 routes that serve them. First, and separately from everything else, because it fixes a URL
 that has been live and broken in every generated schema since 2.10 (§1.5).
 
-**PR 6 — The corpus and the sanitizer.** `src/lib/server/docs.ts`, and the repo's first test
+**PR 7 — The corpus and the sanitizer.** `src/lib/server/docs.ts`, and the repo's first test
 runner (vitest): golden files for four representative pages — one with a script block and
 figures, one dense with `<Key>`, one with a callout and relative links, one plain — plus the
 docs lint (§3.1c). The lint fails until the two 404 links in §1.4 are fixed, so they are
 fixed here. Otherwise nothing user-visible ships in this PR; it is the foundation the next
 four stand on.
 
-**PR 7 — Raw markdown per page.** `/docs/{topic}/{page}.md`, prerendered, `text/markdown`.
+**PR 8 — Raw markdown per page.** `/docs/{topic}/{page}.md`, prerendered, `text/markdown`.
 
-**PR 8 — `llms.txt` and `llms-full.txt`.** Plus the `robots.txt` lines and, for pages that
+**PR 9 — `llms.txt` and `llms-full.txt`.** Plus the `robots.txt` lines and, for pages that
 want one, the `description` frontmatter key.
 
-**PR 9 — Docs API v1.** Index, page and search, CORS, `/api/docs` untouched.
+**PR 10 — Docs API v1.** The index and the per-page route, CORS, `/api/docs` untouched. No
+search (§6).
 
-**PR 10 — Copy and view as markdown.** The layout buttons.
+**PR 11 — Copy and view as markdown.** The layout buttons.
 
-**PR 11 — The Headless & Agents topic.** The moves and splits in §3.6, the redirect for
-`getting-started/hsql.md`, the vendored reference page, and the skill page. The largest
-content PR in the milestone, and the one that most wants a careful read rather than a fast
-one.
+**PR 12 — The Headless & Agents topic.** The nine new pages in §3.6, the links out from the
+tutorial, the vendored reference page and the skill page. `getting-started/hsql.md` stays
+where it is. The largest content PR in the milestone, and the one that most wants a careful
+read rather than a fast one.
 
-**PR 12 — The homepage correction.** `--results` in `hsql_features.svelte`, and a link from
+**PR 13 — The homepage correction.** `--results` in `hsql_features.svelte`, and a link from
 the `#hsql` section to the new topic.
 
 ### Release C — the ecosystem
 
-**PR 13 — `AGENTS.md` in `harlequin-adapter-template`.** D7's remaining half: repo layout, the
+**PR 14 — `AGENTS.md` in `harlequin-adapter-template`.** D7's remaining half: repo layout, the
 adapter contract's required members, how to run tests, and — new since the product plan was
 written — `type_name`, `search_catalog()` and the capability flags M2 added, so an adapter
 written from the template declares them rather than discovering them later.
+
+**And one follow-up to file, not to build:** the community-marketplace submission (§3.5,
+tier 3). It is a form, it depends on PR 4 being live, and it is reviewed on someone else's
+schedule, so it does not belong in a PR list.
 
 **Ordering rationale.** Same as M1 and M2: the guard lands before the thing it guards, the
 artifact lands before the page that publishes it, and nothing that needs another repo's
@@ -555,6 +639,13 @@ produces.
   one output that is not a result set.
 - **`hsql --skill` imports no adapter, no tomlkit, no questionary.** A subprocess reading
   `sys.modules`, like every other import-hygiene test, with a matching `ignore_imports` entry.
+- **The skill's frontmatter uses only the six spec fields**, parses as YAML, and carries a
+  non-empty `description`; the body stays under 200 lines and 4KB. The field check is what
+  keeps the file loadable outside Claude Code (§3.5), and the size check is what keeps a later
+  edit from quietly turning a skill into a manual.
+- **`claude plugin validate` passes** on `src/harlequin/hsql/skill`, and the marketplace entry
+  names a source directory that exists. In CI where the `claude` CLI is available; skipped,
+  not silently passed, where it is not.
 - **The generated reference regenerates identically.** `test_cli_reference.py` runs the
   generator and compares to the committed file, exactly as `test_config_schema.py` does.
 - **Sanitizer goldens.** Four pages, checked in as expected markdown. A component tag the
@@ -601,29 +692,40 @@ is the single most valuable thing that could be added to it.
   including its `"/src"` quirk; a fix there is a rendering change, not a docs-for-machines
   change, and it does not belong in this milestone.
 - **Artifacts are vendored into the site by a release workflow, not fetched at build time**
-  (§3.4) — recommended, and the one worth Ted's explicit yes before PR 4.
+  (§3.4) — recommended, and the one worth Ted's explicit yes before PR 5.
 - **Prerender, don't ISR, for everything M3 adds.** The corpus changes when the repo does.
+- **Docs API v1 ships no search.** The index plus a page fetch is what an agent actually does,
+  and a mediocre search endpoint is a support surface with no consumer asking for it.
+- **No `updated_at` in the API payload.** Nothing in the repo can supply one honestly — no
+  date in the frontmatter, no git history on a shallow Vercel checkout — and a field that
+  lies is worse than a field that is missing.
+- **`getting-started/hsql.md` stays where it is, and Headless & Agents is additive** (§3.6).
+  The tutorial is the page a human lands on and the page the README links to; the new topic is
+  the reference underneath it. No moves, no redirect.
+- **The skill's frontmatter is the six-field Agent Skills spec, and nothing else** (§3.5). A
+  skill whose argument over MCP is "it works in any harness" does not get to ship a
+  vendor-locked file.
+- **The description gets a deliberate optimization pass, with its eval set committed** (§3.5).
+  It is the only part always in context and the only thing that decides whether the skill
+  loads at all.
+- **`allowed-tools` names the introspection modes and never `Bash(hsql *)`.** Reading a
+  catalog without a prompt is a convenience; running arbitrary SQL without one is not a
+  decision this skill gets to make for a user.
 
 **Open.**
 
-- **Does Docs API v1 ship search at all?** The corpus is 116KB; a substring-and-title ranker
-  is fifty lines and no index. But `llms.txt` plus a fetch is what an agent will actually do,
-  and a mediocre search endpoint is a support surface. Cut it from v1 unless there is a
-  consumer asking.
-- **Is there a one-command install for the skill beyond `hsql --skill -o`?** A Claude Code
-  plugin marketplace repo would make it `/plugin install`, and it is an ecosystem commitment
-  (a repo, a manifest, a release cadence) for an audience we cannot size yet. Recommend
-  deferring until the skill has been in the wild for a release.
-- **`updated_at` in the API payload.** The product plan asks for it; nothing in the repo has
-  it. Frontmatter would need a hand-maintained date (which rots) or the build would need git
-  mtimes (which a shallow Vercel checkout does not have). Recommend dropping the field rather
-  than shipping one that lies.
-- **Does `getting-started/hsql.md` move or stay?** §3.6 moves it with a 308. The alternative —
-  leaving the tutorial in Getting Started and making Headless & Agents reference-only — keeps
-  a live URL canonical but splits the hsql story across two topics.
-- **Does the skill get a `description` tuned for tool-selection?** A skill's frontmatter
-  description is what decides whether an agent loads it at all. Worth one round of deliberate
-  wording, and worth measuring, which is the eval suite again.
+- **Do we submit to the community marketplace, and when?** Tier 3 in §3.5 is the only install
+  that is genuinely one command for a user who has installed nothing of ours, and it costs a
+  form rather than a repo now that the marketplace entry lives in this repo. The real cost is
+  what it commits us to: a skill in a public catalog is one more surface with a compatibility
+  expectation. Recommend filing it once PR 4 is live and the skill has survived one release.
+- **Does the release workflow open the `harlequin-web` PR, or does a human run the script?**
+  §3.4 assumes automation, which needs a token with write access to the other repo. A `make
+  publish-artifacts` that a human runs at release time is the same script without the
+  credential, at the cost of a step someone can forget.
+- **Does anything besides the skill and the reference want to be a vendored artifact?** The
+  packaged README is the obvious candidate — it duplicates a good deal of what the new topic
+  will say — and the answer is probably to shrink the README rather than publish it twice.
 
 ---
 
@@ -635,18 +737,20 @@ is the single most valuable thing that could be added to it.
   M4. Only E1 was pulled forward. §3.5's section 9 is the paragraph M4 rewrites.
 - **Streaming and pagination** — M5.
 - **An agent eval suite** — still out (§5), still the thing most worth adding back.
-- **Vector search or an embedding index for the docs.** 55 pages, 116KB. A substring match
-  over a prebuilt corpus is the right size of tool; anything more is infrastructure looking for
-  a problem.
+- **Docs search, in any form** (§6). Not the endpoint, and certainly not a vector index over
+  55 pages: `llms.txt` plus a page fetch is the search.
 - **Docs versioning.** Per-release snapshots of the docs site, so an agent can read the docs
   for the version it has installed. Real, and much bigger than this milestone: it changes every
   route. The `manifest.json` version line (§3.4) is the cheap partial answer.
 - **Auto-generating adapter pages from each adapter's `--spec`.** It would need every
   out-of-tree adapter installed at site build time, which is the hermetic-build problem again,
   multiplied by twelve.
+- **Bundled reference files, scripts or assets in the skill.** Its third layer is the CLI
+  (§3.5). The day that stops being enough is the day `references/` earns its place, and not
+  before.
 - **Fixing the site's sidebar API shape** (§1.6's `"/src"`), and the `getting-started/hsql.md`
   brace bug in the *rendered* page. Both are one-line fixes and both are rendering bugs, not
-  machine-readability ones; they ride along in PRs 5 and 11 respectively rather than earning
+  machine-readability ones; they ride along in PRs 6 and 12 respectively rather than earning
   their own scope.
 
 ---
@@ -661,6 +765,16 @@ Recorded here; applied to `harlequin-for-agents.md` in the same PR as this docum
   `--path`, plus `--catalog-search TERM`. `--depth` was cut from M2 outright (M2 §7), so
   "orient with `catalog --depth 2`" describes a flag that will not exist until
   `fetch_descendants()` does.
+- **§9 calls the skill "one markdown file" and leaves it there.** It is a file with a
+  contract: Agent Skills is an open standard, its portable frontmatter is six fields, and the
+  description is the part that decides whether the skill is ever loaded. §9's own argument for
+  skill-before-MCP — that it works in any harness — is only true if the file is written to
+  that standard rather than to one client's extensions (§3.5).
+- **§9 says the skill is "published on the site, and installable" without saying how.**
+  Installable now means three things, and they are not equivalent: `hsql --skill -o` from the
+  wheel, a marketplace entry that this repo can host without a second repo or a copied file,
+  and a community-catalog listing. The first is the one the docs lead with, because it is the
+  only one that cannot disagree with the installed CLI (§3.5).
 - **§9's "Prefer `--read-only`" is conditional on a capability.** Read-only is declared per
   adapter (M2 §3.4), so the skill has to say "where the adapter declares it, which `--info`
   will tell you," not "always."
@@ -673,6 +787,9 @@ Recorded here; applied to `harlequin-for-agents.md` in the same PR as this docum
   the primary path; `llms-full.txt` is for the caller who genuinely wants the corpus.
 - **§8's D3 asks for `updated_at`, which nothing can supply honestly.** There is no date in
   the frontmatter and no git history on the build machine. Drop the field (§6).
+- **§8's D3 search endpoint is cut.** Over 55 pages and 116KB, `llms.txt` plus a page fetch
+  *is* the search, and it is the thing an agent will reach for anyway. v1 is the index and the
+  page (§6).
 - **§8's D2 says "the real work is sanitization" and understates it by one case.** The hard
   one is not the components, it is that `<Figure src={init}>` resolves through an import in the
   `<script>` block the sanitizer is deleting — so the transform has to read the block before it
