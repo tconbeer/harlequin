@@ -400,12 +400,11 @@ Please see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for more information.
 
 ## Differences from psql
 
-`-c`, `-f`, `-t` and `-A` mean what they mean in psql, so `hsql -tAc "select count(*) from orders"` prints a bare number, exactly as it would there. These do not:
+`-c`, `-f`, `-t`, `-A` and `-x` mean what they mean in psql, so `hsql -tAc "select count(*) from orders"` prints a bare number, exactly as it would there. These do not:
 
 | | psql | hsql |
 |---|---|---|
 | `-P` | `--pset`, an output setting | `--profile`, a config-file profile |
-| Expanded output | `-x` | `--vertical` |
 | Field separator | `-F` | `--csv`, `--tsv`, or any other `--format` |
 | Listing databases | `-l` | `--catalog` |
 | Describing an object | `\d`, `\dt` | `--catalog --path`, `--catalog-search` |

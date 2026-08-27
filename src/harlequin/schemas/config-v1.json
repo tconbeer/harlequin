@@ -139,7 +139,7 @@
         },
         "vertical": {
           "type": "boolean",
-          "description": "Shorthand for --format vertical.",
+          "description": "Shorthand for --format vertical. As in psql.",
           "default": false
         },
         "tuples_only": {

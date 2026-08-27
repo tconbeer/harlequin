@@ -171,6 +171,7 @@ def test_every_format_runs(hsql: Hsql, duck: list[str], format_name: str) -> Non
         ("--jsonl", "jsonl"),
         ("--markdown", "markdown"),
         ("--vertical", "vertical"),
+        ("-x", "vertical"),
     ],
 )
 def test_format_shorthands(

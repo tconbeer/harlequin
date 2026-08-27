@@ -213,7 +213,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.option("--json", is_flag=True, help="Shorthand for --format json.")
     @click.option("--jsonl", is_flag=True, help="Shorthand for --format jsonl.")
     @click.option("--markdown", is_flag=True, help="Shorthand for --format markdown.")
-    @click.option("--vertical", is_flag=True, help="Shorthand for --format vertical.")
+    @click.option(
+        "-x",
+        "--vertical",
+        is_flag=True,
+        help="Shorthand for --format vertical. As in psql.",
+    )
     @click.option(
         "-t",
         "--tuples-only",
