@@ -700,8 +700,6 @@ def _validate_profile(
         and adapter_cls is not None
         and not adapter_cls.IMPLEMENTS_READ_ONLY
     ):
-        # the one key a profile can be wrong about without misspelling
-        # anything: every command refuses to connect under it
         problems.add(
             f"Profile sets read_only, but its adapter ({adapter}) does not "
             "support read-only connections.",

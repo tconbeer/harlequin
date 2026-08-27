@@ -66,8 +66,7 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    # not asked of an adapter that cannot enforce it: the profile that answered
-    # yes is one Harlequin would refuse to start under
+    # only prompt for read-only if the adapter supports it
     read_only = False
     if adapter_cls.IMPLEMENTS_READ_ONLY:
         read_only = questionary.confirm(

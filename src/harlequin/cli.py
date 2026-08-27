@@ -396,7 +396,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         is_flag=True,
         help=(
             "Connect read-only, and refuse to start at all if the adapter "
-            "cannot. Not every adapter can; see `hsql --info`."
+            "cannot. To check an adapter's capabilities, use `hsql --info`."
         ),
     )
     @click.option(

@@ -458,15 +458,11 @@ def _write_problems(
 def _adapter_class(
     on_error: Callable[[str], None] | None = None,
 ) -> Callable[[str], type[HarlequinAdapter] | None]:
-    """A way to ask what one adapter is, importing each of them once.
+    """Returns a callable that loads an adapter as cheaply as possible: from a
+    cache, and otherwise by loading the plug-in.
 
-    The cache is per invocation rather than per process: four profiles naming
-    duckdb is one import, and a second call in the same interpreter -- which is
-    every test, and no `hsql` -- gets to see whatever is installed then.
-
-    An adapter that will not import raises, which is what `validate` records
-    against the profile that named it. A caller that would rather carry on
-    passes `on_error`: it is called once per adapter, and the answer is None.
+    Raises if the plug-in will not import, unless `on_error` is passed, which
+    is called instead, once per adapter, and the answer is None.
     """
     from harlequin.plugins import load_adapter
 

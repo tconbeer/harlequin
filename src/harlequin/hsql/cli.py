@@ -248,7 +248,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         is_flag=True,
         help=(
             "Connect read-only, and refuse to run at all if the adapter cannot. "
-            "Not every adapter can; see --info."
+            "To check an adapter's capabilities, use --info."
         ),
     )
     # existence is not click's to check: every mode that reads this path
@@ -516,9 +516,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                         color=_use_color(color_when, destination),
                     )
                 )
-            # `init` imports the adapter to write the options it declares, so
-            # it can read what it declares too: a profile saying read-only to
-            # an adapter that cannot is a profile no run will start under
+            # only `--config init` reaches this line
             _refuse_undeclared_read_only(
                 ctx,
                 adapter=adapter,
@@ -540,9 +538,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
-        # below the modes that only report: those write nothing, and `--info`
-        # and `--config show` are where a caller finds out where a read-only
-        # they did not expect came from
+        # every mode below this connects to the database
         _refuse_undeclared_read_only(
             ctx,
             adapter=adapter,
@@ -862,13 +858,7 @@ def _refuse_undeclared_search(ctx: click.Context, *, adapter: str, term: str) ->
 def _refuse_undeclared_read_only(
     ctx: click.Context, *, adapter: str, asked: bool, typed: bool
 ) -> None:
-    """Stop before connecting unless the adapter declares it can be read-only.
-
-    `read_only` is an argument of every adapter's constructor, and one that an
-    adapter which cannot enforce it is free to ignore -- so a run that believed
-    it was read-only would write. Read off the class, so it costs the adapter's
-    import and never a connection.
-    """
+    """Exit with an error if read-only was asked for and the adapter cannot."""
     if not asked:
         return
     try:

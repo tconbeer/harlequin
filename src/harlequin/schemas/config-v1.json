@@ -177,7 +177,7 @@
         },
         "read_only": {
           "type": "boolean",
-          "description": "Connect read-only, and refuse to run at all if the adapter cannot. Not every adapter can; see --info.",
+          "description": "Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info.",
           "default": false
         },
         "config_path": {
