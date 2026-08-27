@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Harlequin now has an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
 - `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
 - Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. If set, Harlequin and hsql will refuse to connect to an adapter that cannot enforce a read-only mode.
+- `hsql --config validate` now reports a profile that sets `read_only` for an adapter that cannot enforce it.
 - Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
 
 ### Bug Fixes

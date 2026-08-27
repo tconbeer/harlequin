@@ -64,6 +64,7 @@ from harlequin.hsql.modes import CONFIG_MODES
 if TYPE_CHECKING:
     from tomlkit.items import Item, Table
 
+    from harlequin.adapter import HarlequinAdapter
     from harlequin.config import Config
     from harlequin.layout import LayoutOptions
     from harlequin.options import AbstractOption
@@ -262,12 +263,17 @@ def _redacted(config: Config) -> Config:
 
     from harlequin.redact import redact_profile
 
-    options = _adapter_options(
+    adapter_class = _adapter_class(
         on_error=lambda name: diagnostics.note(
             f"could not import {name}, so its profiles were masked by option "
             "name alone; run --config validate for the reason."
         )
     )
+
+    def options(name: str) -> Sequence[AbstractOption] | None:
+        adapter_cls = adapter_class(name)
+        return None if adapter_cls is None else adapter_cls.ADAPTER_OPTIONS
+
     return msgspec.structs.replace(
         config,
         profiles={
@@ -421,7 +427,7 @@ def _write_problems(
     provenance = Provenance()
     problems = validate_config_files(
         config_path,
-        adapter_options=_adapter_options(),
+        adapter_class=_adapter_class(),
         command_options=_command_options(),
         provenance=provenance,
     )
@@ -449,10 +455,10 @@ def _write_problems(
     return ExitCode.USAGE if problems else ExitCode.OK
 
 
-def _adapter_options(
+def _adapter_class(
     on_error: Callable[[str], None] | None = None,
-) -> Callable[[str], Sequence[AbstractOption] | None]:
-    """A way to ask what one adapter declares, importing each of them once.
+) -> Callable[[str], type[HarlequinAdapter] | None]:
+    """A way to ask what one adapter is, importing each of them once.
 
     The cache is per invocation rather than per process: four profiles naming
     duckdb is one import, and a second call in the same interpreter -- which is
@@ -464,20 +470,20 @@ def _adapter_options(
     """
     from harlequin.plugins import load_adapter
 
-    declared: dict[str, Sequence[AbstractOption] | None] = {}
+    loaded: dict[str, type[HarlequinAdapter] | None] = {}
 
-    def options(name: str) -> Sequence[AbstractOption] | None:
-        if name not in declared:
+    def adapter_class(name: str) -> type[HarlequinAdapter] | None:
+        if name not in loaded:
             try:
-                declared[name] = load_adapter(name).ADAPTER_OPTIONS
+                loaded[name] = load_adapter(name)
             except HarlequinConfigError:
                 if on_error is None:
                     raise
                 on_error(name)
-                declared[name] = None
-        return declared[name]
+                loaded[name] = None
+        return loaded[name]
 
-    return options
+    return adapter_class
 
 
 def _command_options() -> set[str]:

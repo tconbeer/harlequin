@@ -3370,6 +3370,26 @@ def test_read_only_is_refused_before_it_is_written_into_a_profile(
     assert not (cwd / ".harlequin.toml").exists()
 
 
+def test_config_validate_reports_a_read_only_the_adapter_cannot_do(
+    hsql: Hsql, declares_nothing: str, config_dirs: tuple[Path, Path]
+) -> None:
+    """`--config validate` imports an adapter per profile already, so it can
+    say that a profile pairs one with a read-only it cannot honor."""
+    cwd, _ = config_dirs
+    (cwd / ".harlequin.toml").write_text(
+        f"[profiles.prod]\nadapter = '{declares_nothing}'\nread_only = true\n"
+    )
+
+    # `-a` only to satisfy the choice of installed adapters; the mode reads the
+    # adapter each profile names
+    res = hsql("--config", "validate", "-a", declares_nothing, "-tA")
+    assert res.exit_code == ExitCode.USAGE
+    file, key, problem, _ = res.stdout.strip().split("|")
+    assert file == str(cwd / ".harlequin.toml")
+    assert key == "profiles.prod.read_only"
+    assert declares_nothing in problem
+
+
 @pytest.mark.parametrize(
     "mode", [["--info"], ["--spec"], ["--config", "show"], ["--config", "validate"]]
 )

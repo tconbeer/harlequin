@@ -57,6 +57,8 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    adapter_cls = adapters[adapter]
+
     conn_str = questionary.text(
         message="What connection string(s) should this profile use?",
         instruction="Separate items by a space. Quote a single item containing spaces.",
@@ -64,11 +66,15 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    read_only = questionary.confirm(
-        message="Should this profile connect read-only?",
-        default=bool(selected_profile.get("read_only", False)),
-        style=HARLEQUIN_QUESTIONARY_STYLE,
-    ).unsafe_ask()
+    # not asked of an adapter that cannot enforce it: the profile that answered
+    # yes is one Harlequin would refuse to start under
+    read_only = False
+    if adapter_cls.IMPLEMENTS_READ_ONLY:
+        read_only = questionary.confirm(
+            message="Should this profile connect read-only?",
+            default=bool(selected_profile.get("read_only", False)),
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
 
     theme = questionary.select(
         message="What theme should this profile use?",
@@ -138,7 +144,6 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    adapter_cls = adapters[adapter]
     adapter_option_choices = (
         [
             questionary.Choice(

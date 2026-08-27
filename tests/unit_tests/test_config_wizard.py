@@ -5,6 +5,7 @@ from typing import Any, Callable, Sequence
 
 import pytest
 
+from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.config import load_config, load_profile
 from harlequin.config_wizard import _wizard
 
@@ -237,6 +238,45 @@ class TestReadOnly:
             {
                 "Which profile would you like to update?": "one",
                 "connect read-only": False,
+            },
+        )
+
+        assert "read_only" not in load_config(config_path=path).profiles["one"]
+
+    def test_the_question_is_not_put_to_an_adapter_that_cannot_answer_it(
+        self,
+        tmp_path: Path,
+        run_wizard: Callable[..., None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A profile that said yes is one Harlequin would refuse to start under.
+
+        Answered yes here, so a question that was put would have written the
+        key -- and the profile that had it loses it, which is the same answer
+        `--config validate` gives about the file it was already in.
+        """
+
+        class Undeclared(HarlequinAdapter):
+            ADAPTER_OPTIONS = None
+
+            def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+                raise NotImplementedError
+
+            def connect(self) -> HarlequinConnection:
+                raise NotImplementedError
+
+        monkeypatch.setattr(
+            "harlequin.config_wizard.load_adapter_plugins",
+            lambda: {"undeclared": Undeclared},
+        )
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "undeclared"\nread_only = true\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "connect read-only": True,
             },
         )
 
