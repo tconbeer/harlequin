@@ -75,6 +75,9 @@ TYPES = {
     # click's, for hsql's own parameters
     "boolean": "boolean",
     "choice": "choice",
+    "file": "path",
+    "float": "number",
+    "float range": "number",
     "integer": "integer",
     "integer range": "integer",
 }
@@ -103,14 +106,32 @@ def report(
         diagnostics.report_document_format_ignored("--spec", format_name)
 
     command = _hsql_command()
-    # `get_params` rather than `params`, because click keeps `--help` out of the
-    # latter and adds it at parse time -- and a caller reading this to learn the
-    # surface should be told about the flag that would have shown it to them
-    params = command.get_params(click.Context(command, info_name="hsql"))
     document = {
         "program": "hsql",
         "version": version("harlequin"),
         "scope": SCOPE,
+        **command_document(command),
+        "adapters": _adapters(adapter, command),
+    }
+    # `default=str` for a default no JSON type covers -- a Path, most likely,
+    # from an option declared with one
+    out.write((json.dumps(document, indent=2, default=str) + "\n").encode("utf-8"))
+    return ExitCode.OK
+
+
+def command_document(command: click.Command) -> dict[str, Any]:
+    """One command's own arguments and options, in this document's vocabulary.
+
+    The half of the spec that needs no adapter, so a caller that wants the
+    command rather than an installation -- `scripts/write_cli_reference.py`,
+    which describes the CLI for readers whose machines we know nothing about --
+    gets it without importing one.
+    """
+    # `get_params` rather than `params`, because click keeps `--help` out of the
+    # latter and adds it at parse time -- and a caller reading this to learn the
+    # surface should be told about the flag that would have shown it to them
+    params = command.get_params(click.Context(command, info_name="hsql"))
+    return {
         "arguments": [
             _from_argument(param)
             for param in params
@@ -124,12 +145,7 @@ def report(
             ),
             key=lambda entry: str(entry["name"]),
         ),
-        "adapters": _adapters(adapter, command),
     }
-    # `default=str` for a default no JSON type covers -- a Path, most likely,
-    # from an option declared with one
-    out.write((json.dumps(document, indent=2, default=str) + "\n").encode("utf-8"))
-    return ExitCode.OK
 
 
 def _hsql_command() -> click.Command:

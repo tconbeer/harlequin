@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `hsql --spec` now reports `--timeout` as a `number` and `--config-path` as a `path`, instead of click's internal names for those types.
+
 ## [2.11.0] - 2026-08-27
 
 ### Breaking Changes
