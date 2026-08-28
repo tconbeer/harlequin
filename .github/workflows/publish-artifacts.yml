@@ -1,0 +1,146 @@
+name: Publish Artifacts to harlequin.sh
+
+# Three files are generated here and read on the site: the base config schema,
+# whose `$id` is a URL there; the generated CLI reference; and the skill.
+# `tconbeer/harlequin-web` vendors them under `static/artifacts/` rather than
+# fetching them at build time, so its build stays hermetic and a network blip
+# cannot fail a deploy. This opens the PR that updates them; a human merges it,
+# and until they do the site serves the previous release's copies.
+#
+# Runs after a release publishes, and by hand for any ref -- a release that
+# went out before this existed is `Run workflow` on the tag.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The harlequin ref to publish the artifacts from
+        type: string
+        required: false
+        default: main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The harlequin ref to publish the artifacts from (e.g., "v2.13.0")
+        type: string
+        required: false
+        default: main
+
+jobs:
+  publish-artifacts:
+    runs-on: ubuntu-latest
+
+    env:
+      # write access to the other repo, which the default GITHUB_TOKEN does not
+      # have. A token scoped to harlequin-web if there is one; the release token
+      # otherwise, since it is already a cross-repo PAT. Either must be a
+      # repository secret -- this job joins no environment, so an environment
+      # secret is not visible to it, and the first step below says so.
+      GH_TOKEN: ${{ secrets.HARLEQUIN_WEB_TOKEN || secrets.HARLEQUIN_RELEASE_TOKEN }}
+      SITE_REPO: tconbeer/harlequin-web
+      SITE_ARTIFACTS_DIR: static/artifacts
+      STAGED_DIR: ${{ github.workspace }}/dist/artifacts
+
+    steps:
+      - name: Check that a token for the site is configured
+        # before anything is built, and loudly: a publish that quietly does
+        # nothing leaves the site a release behind with nothing to notice it.
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::No HARLEQUIN_WEB_TOKEN or HARLEQUIN_RELEASE_TOKEN; cannot open a PR against $SITE_REPO."
+            exit 1
+          fi
+
+      - name: Check out harlequin
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.5"
+
+      - name: Get harlequin version
+        id: harlequin_version
+        run: echo "harlequin_version=$(uv version --short)" >> $GITHUB_OUTPUT
+
+      - name: Check that the generated artifacts are current
+        # this publishes the committed files, so a generator that disagrees
+        # with them would put a page on the site that is in no release.
+        run: |
+          uv run python scripts/write_config_schema.py
+          uv run python scripts/write_cli_reference.py
+          if ! git diff --exit-code; then
+            echo "::error::The committed artifacts are not what the generators write; regenerate and commit them."
+            exit 1
+          fi
+
+      - name: Stage the artifacts
+        run: uv run python scripts/publish_artifacts.py --output "$STAGED_DIR"
+
+      - name: Check out harlequin-web
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SITE_REPO }}
+          token: ${{ env.GH_TOKEN }}
+          path: site
+
+      - name: Vendor the artifacts
+        # replaced wholesale, so a file this repo stops publishing stops being
+        # served rather than lingering as the one copy nothing regenerates.
+        run: |
+          rm -rf "site/$SITE_ARTIFACTS_DIR"
+          mkdir -p "site/$SITE_ARTIFACTS_DIR"
+          cp -R "$STAGED_DIR/." "site/$SITE_ARTIFACTS_DIR/"
+
+      - name: Check whether anything changed
+        id: changed
+        working-directory: site
+        run: |
+          git add --all "$SITE_ARTIFACTS_DIR"
+          if git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "The site already has these artifacts; nothing to publish."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Open a pull request against harlequin-web
+        if: ${{ steps.changed.outputs.changed == 'true' }}
+        working-directory: site
+        env:
+          VERSION: ${{ steps.harlequin_version.outputs.harlequin_version }}
+        run: |
+          branch="artifacts/harlequin-v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -m "Vendor harlequin v$VERSION's published artifacts"
+          # the branch is this workflow's own, one per version: a re-run for
+          # the same version replaces what the last one pushed.
+          git push --force --set-upstream origin "$branch"
+          if [ -n "$(gh pr list --repo "$SITE_REPO" --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "The pull request for $branch is already open; it now has these artifacts."
+            exit 0
+          fi
+          gh pr create \
+            --repo "$SITE_REPO" \
+            --head "$branch" \
+            --base main \
+            --title "Vendor harlequin v$VERSION's published artifacts" \
+            --body "$(cat <<EOF
+          This PR was generated by \`publish-artifacts.yml\` in [tconbeer/harlequin](https://github.com/tconbeer/harlequin).
+          It vendors the artifacts harlequin v$VERSION generates into \`static/artifacts/\`:
+          the base config schema served at \`/schemas/config/v1.json\`, the generated \`hsql\`
+          CLI reference, and the Agent Skill and its references.
+
+          \`manifest.json\` records the version they came from. Nothing here is written by hand --
+          edits belong in \`tconbeer/harlequin\`, and the next release overwrites them.
+          EOF
+          )"
