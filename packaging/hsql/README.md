@@ -374,7 +374,7 @@ Neither connects to a database, both write JSON to stdout, and `-a NAME` narrows
 
 ## Installing the Agent Skill
 
-hsql ships an [Agent Skill](https://agentskills.io) that teaches an agent how to drive it: ask before you assume, keep credentials off the command line, read the catalog before writing SQL, check the row limit, branch on the exit code, and hand off to `harlequin` when a human should drive. `hsql --skill` installs it, with no network and matched to the version you have:
+hsql ships an [Agent Skill](https://agentskills.io) that teaches an agent how to drive it: ask before you assume, keep credentials off the command line, read the catalog before writing SQL, watch the 500-row limit, branch on the exit code, and hand off to `harlequin` when a human should drive. `hsql --skill` installs it, with no network and matched to the version you have:
 
 ```bash
 $ hsql --skill -o ~/.claude/skills/hsql/          # for you, in every project

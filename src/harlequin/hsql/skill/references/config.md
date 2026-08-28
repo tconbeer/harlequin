@@ -1,7 +1,7 @@
 # Config files and profiles
 
-Read this before you put a connection setting on a command line. `hsql` and `harlequin`
-read the same files, so a profile written once serves both — which is what makes "hand
+Read this before you put a credential on a command line, and whenever you need to write
+or repair a profile. `hsql` and `harlequin` read the same files, so one profile serves both — which is what makes "hand
 this off to a human" in section 9 of the skill a one-liner.
 
 ## Where the files are, and which one wins

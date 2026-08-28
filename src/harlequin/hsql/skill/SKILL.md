@@ -16,29 +16,30 @@ metadata:
 
 # hsql
 
-`hsql` runs SQL against every database Harlequin has an adapter for, with one set of
+`hsql` runs SQL against any database Harlequin has an adapter for, with one set of
 flags and one output contract. `harlequin` is the same engine as a full-screen terminal
 IDE, for when a human should drive.
 
 These are standing rules for the rest of the session, not a checklist to run once.
 
-Four references sit in `references/` beside this file. Read one when you get to its job:
-`queries.md` (running SQL and reading the catalog), `config.md` (config files and
-profiles, for hsql and for harlequin), `scripting.md` (hsql inside a shell script or
-pipeline), `troubleshooting.md` (a run that failed, by exit code).
+Four references sit in `references/` beside this file; read one when you reach its job:
+`queries.md` (running SQL, reading the catalog), `config.md` (config files and profiles,
+for hsql and harlequin), `scripting.md` (hsql in a shell script), `troubleshooting.md`
+(a failed run, by exit code).
 
 ## 1. Ask before you assume
 
 Never guess at an installation. `hsql --info` reports versions, the config files this
 machine has, the profile an invocation would use, and what each adapter declares it
-supports. `hsql --help -a NAME` lists one adapter's connection options, and `hsql --spec` is
-that same surface as JSON. None of the three opens a connection.
+supports. `hsql --help -a NAME` lists one adapter's connection options, and
+`hsql --spec` is that same surface as JSON. None of the three opens a connection.
 
-## 2. Never put a credential on a command line
+## 2. Avoid putting credentials on the command line
 
-Shell history and the process table are both readable by other people. Put connection
-settings in a profile and select it with `-P NAME`; write `${VAR}` in the config file so
-the secret itself lives in the environment. `references/config.md` has the shapes.
+Shell history and the process table are both readable by other people, so a password — or
+a connection string carrying one — belongs in a profile you select with `-P NAME`, with
+`${VAR}` in the config file for the secret itself; `references/config.md` has the shapes.
+A local database file is not a credential: pass it on the command line and move on.
 
 ## 3. Orient in the catalog before writing SQL
 
@@ -57,16 +58,16 @@ result set reaches stdout, and `--on-error stop|continue` what happens after a f
 ## 5. Pick a format on purpose
 
 `-tAc "SQL"` for a single value going into a shell variable; `--csv` for a pipe;
-`--markdown` when the output is going into your own reply to the user; `--format parquet
--o PATH` for anything large. `--format` takes the name of any format; only `csv`, `json`,
-`jsonl`, `markdown` and `vertical` also have a shorthand flag.
+`--markdown` when the output goes into your own reply; `--format parquet -o PATH` for
+anything large. `--format` takes any format's name; only `csv`, `json`, `jsonl`,
+`markdown` and `vertical` also have a shorthand flag.
 
-## 6. The row limit is real
+## 6. There is a 500-row limit by default
 
-hsql fetches 500 rows per result set by default, and the database applies the limit.
-`--limit -1` removes it; do that before counting or aggregating client-side. `--stats`
-writes a one-line JSON summary to stderr carrying `"truncated"` — read it every time, and
-never run hsql with `2>/dev/null`: truncation notices and errors both go there.
+hsql fetches 500 rows per result set unless told otherwise, and the database applies the
+limit. `--limit -1` removes it; do that before counting or aggregating client-side.
+`--stats` writes a one-line JSON summary to stderr carrying `"truncated"` — read it every
+time, and never run hsql with `2>/dev/null`: truncation notices and errors both go there.
 
 ## 7. Branch on the exit code
 
