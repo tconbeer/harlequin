@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- The `hsql` README no longer documents `--parquet` and `--tsv` flags, which do not exist and exit `2`. Both formats are written as `--format parquet` and `--format tsv`.
+
 ## [2.11.0] - 2026-08-27
 
 ### Breaking Changes

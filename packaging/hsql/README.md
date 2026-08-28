@@ -132,7 +132,7 @@ hsql supports a number of options for setting the query limit, configuring outpu
 ```bash
 $ hsql -P prod -c "select count(*) from orders" --csv
 $ hsql -P dev -c "select * from users" --vertical --limit 5
-$ hsql -P warehouse -c "..." --parquet -o invoices.pq
+$ hsql -P warehouse -c "..." --format parquet -o invoices.pq
 ```
 
 hsql reads the same config files as Harlequin, and merges them one profile at a time, nearest file first; pass `--config-path PATH` to read a single file instead, or `-P None` to skip them entirely.
@@ -286,7 +286,7 @@ Note: not all adapters support catalog search at this time.
 hsql can write data to files, either with the `-o` option or by piping output (hsql only writes data to stdout; other messages go to stderr):
 
 ```bash
-$ hsql -P prod --limit -1 -c "select * from users" --parquet -o "users.pq"
+$ hsql -P prod --limit -1 -c "select * from users" --format parquet -o "users.pq"
 $ hsql -P prod --limit -1 -c "select * from users" --csv > users.csv
 ```
 
@@ -405,7 +405,7 @@ Please see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for more information.
 | | psql | hsql |
 |---|---|---|
 | `-P` | `--pset`, an output setting | `--profile`, a config-file profile |
-| Field separator | `-F` | `--csv`, `--tsv`, or any other `--format` |
+| Field separator | `-F` | `--csv`, `--format tsv`, or any other `--format` |
 | Listing databases | `-l` | `--catalog` |
 | Describing an object | `\d`, `\dt` | `--catalog --path`, `--catalog-search` |
 | Stopping on the first error | `-v ON_ERROR_STOP=1` | `--on-error stop`, which is the default |
