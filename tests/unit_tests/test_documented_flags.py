@@ -87,12 +87,6 @@ def test_the_allowlist_names_only_flags_the_readme_still_types() -> None:
 
 
 def test_the_extractor_reads_flags_out_of_prose_and_out_of_fences() -> None:
-    """A guard whose extractor finds nothing passes everything.
-
-    So the cases it has to get right are pinned here: a flag in prose and one
-    in a code block, backticks and trailing punctuation off, a value not read
-    as a flag, and the single-dash spellings left alone.
-    """
     assert documented_flags(
         "Pass `--read-only`, or `--limit -1`.\n"
         "```bash\n"
