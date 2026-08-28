@@ -19,12 +19,14 @@ Four habits, in order of how often they matter:
 2. `-P prod` rather than a connection string, so no credential is in the file, the shell
    history or the process table.
 3. `--read-only` unless the script is meant to write.
-4. `--limit -1` whenever the script computes something from the rows. The default 500
-   would give a wrong answer silently as far as the script is concerned.
+4. `--limit -1` whenever the script computes something from the rows, or writes them
+   anywhere. The default 500 gives a wrong answer, or a short file, and as far as the
+   script can tell it succeeded.
 
 Never write `2>/dev/null`. hsql puts truncation notices, warnings and errors on stderr
 and *only* data on stdout, so suppressing stderr is exactly the thing that turns a
-detected problem into a wrong number. Redirect it to a log if it is noisy.
+detected problem into a wrong number. Redirect it to a log if it is noisy — and then
+have something read the log; a log nobody reads is `2>/dev/null` with extra steps.
 
 ## One value into a variable
 
