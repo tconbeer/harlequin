@@ -172,9 +172,7 @@ def test_the_workflow_runs_this_script() -> None:
     assert SCRIPT_NAME in WORKFLOW_PATH.read_text(encoding="utf-8")
 
 
-def test_the_generators_the_workflow_checks_are_the_ones_that_write_artifacts(
-    publisher: ModuleType,
-) -> None:
+def test_the_generators_the_workflow_checks_are_the_ones_that_write_artifacts() -> None:
     """It refuses to publish a committed artifact its generator disagrees with,
     which only works while it names both generators."""
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -182,7 +180,7 @@ def test_the_generators_the_workflow_checks_are_the_ones_that_write_artifacts(
         assert f"scripts/{generator}" in workflow
 
 
-def test_a_release_publishes_the_artifacts(publisher: ModuleType) -> None:
+def test_a_release_publishes_the_artifacts() -> None:
     """The manifest names a version, so it goes out when that version does."""
     publish = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "./.github/workflows/publish-artifacts.yml" in publish
