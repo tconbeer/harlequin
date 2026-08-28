@@ -32,11 +32,12 @@ jobs:
 
     env:
       # write access to the other repo, which the default GITHUB_TOKEN does not
-      # have. A token scoped to harlequin-web if there is one; the release token
-      # otherwise, since it is already a cross-repo PAT. Either must be a
-      # repository secret -- this job joins no environment, so an environment
-      # secret is not visible to it, and the first step below says so.
-      GH_TOKEN: ${{ secrets.HARLEQUIN_WEB_TOKEN || secrets.HARLEQUIN_RELEASE_TOKEN }}
+      # have. A fine-grained PAT scoped to harlequin-web alone, with Contents
+      # read and write (the branch this pushes) and Pull requests read and
+      # write (the PR it opens); nothing here touches that repo's workflows.
+      # It must be a repository secret -- this job joins no environment, so an
+      # environment secret is not visible to it, and the first step says so.
+      GH_TOKEN: ${{ secrets.HARLEQUIN_WEB_TOKEN }}
       SITE_REPO: tconbeer/harlequin-web
       SITE_ARTIFACTS_DIR: static/artifacts
       STAGED_DIR: ${{ github.workspace }}/dist/artifacts
@@ -47,7 +48,7 @@ jobs:
         # nothing leaves the site a release behind with nothing to notice it.
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error::No HARLEQUIN_WEB_TOKEN or HARLEQUIN_RELEASE_TOKEN; cannot open a PR against $SITE_REPO."
+            echo "::error::HARLEQUIN_WEB_TOKEN is not set (or has expired); cannot open a PR against $SITE_REPO."
             exit 1
           fi
 
