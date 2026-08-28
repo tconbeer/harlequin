@@ -86,6 +86,24 @@ def body() -> str:
 # --- the file, as a skill ----------------------------------------------------
 
 
+def test_the_shipped_skill_has_lf_line_endings() -> None:
+    """`--skill` copies these bytes out verbatim, so their line endings are part
+    of what it promises, and a CRLF checkout is what takes them away: the same
+    hsql would print different bytes on Windows, and the frontmatter would stop
+    parsing. `.gitattributes` pins the directory to LF, and this is what fails,
+    naming the cause, if that pin goes missing.
+    """
+    shipped = [
+        skill_mode.SKILL_DIR / skill_mode.FILENAME,
+        *skill_mode.reference_paths(),
+    ]
+    for path in shipped:
+        assert b"\r" not in path.read_bytes(), (
+            f"{path.name} has CRLF line endings; check the .gitattributes pin on "
+            "src/harlequin/hsql/skill/"
+        )
+
+
 def test_the_frontmatter_uses_only_the_portable_fields(
     frontmatter: dict[str, Any],
 ) -> None:
