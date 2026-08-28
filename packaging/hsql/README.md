@@ -372,6 +372,20 @@ $ hsql --info -a sqlite | jq '.adapters.sqlite'
 
 Neither connects to a database, both write JSON to stdout, and `-a NAME` narrows either one to a single adapter, which is much faster than importing them all.
 
+## Installing the Agent Skill
+
+hsql ships an [Agent Skill](https://agentskills.io) that teaches an agent how to drive it: ask before you assume, keep credentials off the command line, read the catalog before writing SQL, watch the 500-row limit, branch on the exit code, and hand off to `harlequin` when a human should drive. `hsql --skill` installs it, with no network and matched to the version you have:
+
+```bash
+$ hsql --skill -o ~/.claude/skills/hsql/          # for you, in every project
+$ hsql --skill -o .claude/skills/hsql/            # for this repo, committed with it
+note: wrote 5 files to .claude/skills/hsql: SKILL.md, references/config.md, references/queries.md, references/scripting.md, references/troubleshooting.md
+```
+
+`SKILL.md` is the standing guidance; the four references beside it cover running queries and reading the catalog, config files and profiles, hsql inside a shell script, and what to do about each exit code. An agent reads one when the work reaches it.
+
+With no `-o`, `hsql --skill` writes `SKILL.md` to stdout, so you can read it before you install it.
+
 ## Keep Reading at [harlequin.sh](https://harlequin.sh/docs/getting-started/hsql)
 
 Visit [harlequin.sh](https://harlequin.sh/docs/getting-started/hsql) for an overview of features and full documentation.

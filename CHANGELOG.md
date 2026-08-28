@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Adds `hsql --skill`, which writes the Agent Skill for driving hsql. `hsql --skill -o ~/.claude/skills/hsql/` installs it — the standing guidance plus four references, on running queries and reading the catalog, config files and profiles, hsql inside a shell script, and what to do about each exit code. It matches the version of hsql you have, and needs no network.
+
 ### Bug Fixes
 
 - `hsql --spec` now reports `--timeout` as a `number` and `--config-path` as a `path`, instead of click's internal names for those types.

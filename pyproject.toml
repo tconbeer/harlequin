@@ -103,6 +103,8 @@ static = [
     "import-linter>=2.5",
     # jsonschema ships no py.typed, and the config-schema tests call it
     "types-jsonschema>=4.26.0.20260518",
+    # nor does pyyaml, which the skill's frontmatter tests call
+    "types-pyyaml>=6",
 ]
 test = [
     "pytest>=9.1.1,<9.2.0",
@@ -117,6 +119,9 @@ test = [
     # files, so a schema that is not a schema fails here rather than in an
     # editor. Not a runtime dependency: nothing in the package reads one.
     "jsonschema>=4.20",
+    # parses the skill's frontmatter the way a harness loading it would. Not a
+    # runtime dependency either: `--skill` prints the file and reads nothing.
+    "pyyaml>=6",
 ]
 
 

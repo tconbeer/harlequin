@@ -222,6 +222,11 @@
           "description": "Versions, config files, the active profile, and what each installed adapter declares it supports, as JSON. Connects to nothing. -a narrows it to one adapter.",
           "default": false
         },
+        "skill": {
+          "type": "boolean",
+          "description": "Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'.",
+          "default": false
+        },
         "limit": {
           "type": "integer",
           "description": "Maximum rows fetched per result set. -1 for no limit.",

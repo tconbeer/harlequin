@@ -19,6 +19,7 @@ Nothing written here carries a secret, either: every line goes through
 from __future__ import annotations
 
 import json
+import os
 import sys
 from enum import IntEnum
 from pathlib import Path
@@ -217,6 +218,15 @@ def report_document_format_ignored(mode: str, format_name: str) -> None:
     )
 
 
+def report_fixed_format_ignored(mode: str, format_name: str, *, written: str) -> None:
+    """Say that `--format` does not reach a mode whose output is one fixed file.
+
+    `--skill` prints a file that ships in the wheel, so there is nothing for a
+    format to select. Silence would read as a format that was applied.
+    """
+    note(f"{mode} writes {written}, so --format {format_name} had no effect")
+
+
 def report_written(paths: Sequence[Path]) -> None:
     """Name the files a directory `-o` wrote, since the caller did not name them.
 
@@ -228,8 +238,12 @@ def report_written(paths: Sequence[Path]) -> None:
     if len(paths) == 1:
         note(f"wrote {paths[0]}")
     else:
-        listed = ", ".join(path.name for path in paths)
-        note(f"wrote {len(paths)} files to {paths[0].parent}: {listed}")
+        # named relative to the folder they share, so that a caller writing into
+        # subdirectories -- `--skill`, whose references sit one level down --
+        # gets paths that resolve rather than bare file names that collide
+        base = Path(os.path.commonpath([str(path.parent) for path in paths]))
+        listed = ", ".join(path.relative_to(base).as_posix() for path in paths)
+        note(f"wrote {len(paths)} files to {base}: {listed}")
 
 
 def report_stats(
