@@ -6,10 +6,9 @@ Execute SQL and exit.
 
 CONN_STR: one or more connection strings, or paths to local db files.
 
-Generated from the command itself, with no adapter loaded, so this describes
-`hsql` rather than one installation of it. An adapter contributes its own
-connection options on top of these: `hsql --help -a NAME` shows one adapter's,
-and `hsql --spec` reports every installed adapter's as JSON.
+Generated from the bare `hsql` command, with no adapters loaded. An adapter
+contributes its own options on top of these: `hsql --help -a NAME` shows one
+adapter's, and `hsql --spec` reports every installed adapter's as JSON.
 
 ## Usage
 
@@ -25,8 +24,7 @@ hsql [OPTIONS] [CONN_STR]...
 
 ## Options
 
-Alphabetical by name. A flag is off unless you pass it, so only the options
-that take a value carry a default here.
+Alphabetical by name. Flags are off by default.
 
 | Option | Type | Values | Default | Env var | Description |
 | --- | --- | --- | --- | --- | --- |
@@ -64,16 +62,15 @@ that take a value carry a default here.
 | `--version` | boolean |  |  |  | Show the version and exit. |
 | `-x`, `--vertical` | boolean |  |  |  | Shorthand for --format vertical. As in psql. |
 
-`-a`/`--adapter` names an installed adapter plug-in. Which names those are
-depends on the machine, so they are not listed here; `hsql --info` reports the
-ones you have.
+`-a`/`--adapter` names an installed adapter plug-in. `hsql --info` reports
+adapters installed in your environment.
 
 ## Formats
 
-`--format` takes one of these names. A text layout is arranged by hsql, and
-takes the psql switches and `--display-rows`; a file format is serialized by
-the database, and takes neither. `none` runs the SQL and writes no rows at all.
-The suffix is what `-o DIRECTORY` names a file with.
+`--format` takes one of these names, which affect the layout of data in stdout.
+Modify output further with options above (e.g., `-t`, `-A`, `--display-rows`).
+`none` runs the SQL but generates no output. The suffix is what `-o DIRECTORY`
+names a file with.
 
 | Format | Kind | Suffix | Holds several result sets |
 | --- | --- | --- | --- |
