@@ -2,3 +2,6 @@
 # every one of them. Newlines are part of what they assert.
 *.svg text eol=lf
 tests/**/__snapshots__/** text eol=lf
+
+# Generated artifacts, compared to what the generator writes on every platform.
+docs/generated/** text eol=lf

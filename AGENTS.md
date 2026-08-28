@@ -186,7 +186,7 @@ That last sentence is `config.merge_profile_with_cli()`, and it belongs to every
 - `stubs/` holds type stubs for untyped dependencies (`mypy_path = "stubs,src"`).
 - Styles are Textual CSS: `global.tcss`, `app.tcss`, `keys_app.tcss`.
 - `packaging/hsql/` is a metapackage reserving the `hsql` name on PyPI; `docs/plans/` holds the design docs behind the headless CLI.
-- `scripts/` has the screenshot exporter used for marketing SVGs, pyinstrument profiling entrypoints (`make profiles`), and `write_config_schema.py`, which regenerates the packaged base JSON Schema at `src/harlequin/schemas/config-v1.json`.
+- `scripts/` has the screenshot exporter used for marketing SVGs, pyinstrument profiling entrypoints (`make profiles`), and two generators: `write_config_schema.py`, which regenerates the packaged base JSON Schema at `src/harlequin/schemas/config-v1.json`, and `write_cli_reference.py`, which regenerates hsql's CLI reference at `docs/generated/hsql-reference.md` from `--spec`'s own vocabulary, for no adapters. Both artifacts are committed and pinned by a test that regenerates and compares.
 
 ## Conventions
 

@@ -2007,6 +2007,31 @@ def test_spec_names_the_values_a_choice_takes(hsql: Hsql) -> None:
     assert fmt["default"] == "table"
 
 
+def test_spec_reports_every_option_in_one_vocabulary(hsql: Hsql) -> None:
+    """Which is the point of the document: `float range` and `file` are click's
+    own words for a number and a path, and a caller reading a spec should not
+    have to learn click to know which is which."""
+    from harlequin.hsql.modes.spec import TYPES
+
+    spec = spec_of(hsql("--spec"))
+    reported = {option["type"] for option in spec["options"]}
+    reported |= {argument["type"] for argument in spec["arguments"]}
+    reported |= {
+        option["type"]
+        for adapter in spec["adapters"].values()
+        for option in adapter["options"]
+    }
+    assert reported <= set(TYPES.values())
+
+
+def test_spec_reports_the_types_behind_seconds_and_a_config_path(
+    hsql: Hsql,
+) -> None:
+    spec = spec_of(hsql("--spec"))
+    assert option_named(spec, "timeout")["type"] == "number"
+    assert option_named(spec, "config_path")["type"] == "path"
+
+
 def test_spec_reports_no_default_as_null(hsql: Hsql) -> None:
     """An option with no default has none, spelled the way JSON spells nothing.
 
