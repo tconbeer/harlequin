@@ -166,6 +166,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 
+# The plugin manifest that makes the skill directory a plugin. hatchling skips
+# dot-directories, and `.claude-plugin/` is where the plugin tooling looks.
+force-include = { "src/harlequin/hsql/skill/.claude-plugin/plugin.json" = "harlequin/hsql/skill/.claude-plugin/plugin.json" }
+
 packages = [
     "src/harlequin",
     "src/harlequin_duckdb",
@@ -174,6 +178,8 @@ packages = [
 ]
 
 [tool.hatch.build.targets.sdist]
+
+force-include = { "src/harlequin/hsql/skill/.claude-plugin/plugin.json" = "src/harlequin/hsql/skill/.claude-plugin/plugin.json" }
 
 only-include = [
     "src",

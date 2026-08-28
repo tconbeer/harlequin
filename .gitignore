@@ -10,6 +10,9 @@
 !tests/data/**/*.json
 # the packaged base JSON Schema, written by scripts/write_config_schema.py
 !src/harlequin/schemas/*.json
+# the marketplace entry, and the manifest that makes the skill a plugin
+!.claude-plugin/*.json
+!src/harlequin/hsql/skill/.claude-plugin/*.json
 !tests/data/**/*.parquet
 !tests/data/**/*.sql
 # Snapshots are named after the format they hold, so several of them collide
