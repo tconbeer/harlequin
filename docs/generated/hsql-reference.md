@@ -55,6 +55,7 @@ Alphabetical by name. Flags are off by default.
 | `-P`, `--profile` | text |  |  |  | Load a profile from an available config file. Options passed here take precedence over the profile's. Use the profile named None for Harlequin's defaults instead of the config file's default profile. |
 | `-r`, `--read-only` | boolean |  |  |  | Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info. |
 | `--result` | text | `all\|last\|N` | `all` |  | Which result set(s) to emit. |
+| `--skill` | boolean |  |  |  | Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'. |
 | `--spec` | boolean |  |  |  | Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter. |
 | `--stats` | boolean |  |  |  | Write a one-line JSON summary to stderr. |
 | `--timeout` | number | `SECONDS` |  |  | Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info. |

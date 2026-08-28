@@ -16,9 +16,10 @@ one is the default.
 
 A **mode** is the third shape. `--config MODE` reports on the config files --
 or, under `init`, writes a profile into one -- `--spec` reports on the command
-itself and `--info` on the installation, rather than any of them running SQL, so
-the first pass skips the profile. None of them names an adapter either, and the
-command carries no connection options at all, except for `--config init`: the
+itself, `--info` on the installation, and `--skill` writes the Agent Skill that
+ships in the wheel, rather than any of them running SQL, so the first pass skips
+the profile. None of them names an adapter either, and the command carries no
+connection options at all, except for `--config init`: the
 options it writes into a profile are the ones an adapter declares. `--catalog`
 and `--catalog-search` are the modes that do connect, so they take a profile and an
 adapter exactly as a run does. Modes are options rather than subcommands
@@ -131,6 +132,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--config"]),
             click.Option(["--spec"], is_flag=True),
             click.Option(["--info"], is_flag=True),
+            click.Option(["--skill"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -144,6 +146,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 params.get("config") is not None
                 or params.get("spec")
                 or params.get("info")
+                or params.get("skill")
             )
         ),
         # `--config init` is the mode that needs an adapter without a profile:
@@ -155,6 +158,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 _reports_config(params.get("config"))
                 or params.get("spec")
                 or params.get("info")
+                or params.get("skill")
             )
         ),
         # bare `hsql` renders help, so it names no adapter either
@@ -345,6 +349,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--skill",
+        is_flag=True,
+        help=(
+            "Write the Agent Skill for driving hsql, as markdown. -o installs "
+            "it: 'hsql --skill -o ~/.claude/skills/hsql/'."
+        ),
+    )
+    @click.option(
         "--limit",
         default=DEFAULT_LIMIT,
         show_default=True,
@@ -393,6 +405,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         config_mode: str | None,
         spec: bool,
         info: bool,
+        skill: bool,
         catalog: bool,
         catalog_search: str | None,
         path: str | None,
@@ -471,6 +484,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             config_mode=config_mode,
             spec=spec,
             info=info,
+            skill=skill,
         )
         if path is not None and not catalog and catalog_search is None:
             diagnostics.error("--path must be used with --catalog or --catalog-search.")
@@ -490,6 +504,17 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             # ahead of the modes as well as the connection: `-t nord` does not
             # reliably fail, so there may be no error for this to explain.
             diagnostics.report_theme_confusion(conn_str)
+
+        if skill:
+            ctx.exit(
+                _report_skill(
+                    ctx,
+                    destination=destination,
+                    format_name=format_name,
+                    format_chosen=format_name != DEFAULT_FORMAT
+                    or "format" in explicitly_set,
+                )
+            )
 
         if info:
             ctx.exit(
@@ -834,6 +859,7 @@ def _one_mode(
     config_mode: str | None,
     spec: bool,
     info: bool,
+    skill: bool,
 ) -> str | None:
     """The one mode this invocation chose, or exit having named the two it did.
 
@@ -847,6 +873,7 @@ def _one_mode(
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
         ("--info", info),
+        ("--skill", skill),
     )
     chosen = [name for name, was_asked in asked if was_asked]
     if len(chosen) > 1:
@@ -1159,6 +1186,43 @@ def _report_info(
     except (HarlequinConfigError, OSError) as e:
         # a `--config-path` naming no file, or a `-o PATH` it could not write.
         # Both are the caller's to fix, and both are usage errors.
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    return code
+
+
+def _report_skill(
+    ctx: click.Context,
+    *,
+    destination: _Destination,
+    format_name: str,
+    format_chosen: bool,
+) -> ExitCode:
+    """Answer `--skill` and return its code, or exit having said why not.
+
+    stdout gets `SKILL.md` alone; a `-o` installs the skill, so the references
+    go beside wherever the file landed. Both spellings of `-o` reach the same
+    place -- `-o DIR/` names the directory and `-o DIR/SKILL.md` names the file
+    in it -- because either is how a caller says "put the skill here".
+    """
+    # here rather than at module scope, for the reason the mode exists in its
+    # own module -- though this is the one mode that would have cost nothing,
+    # since it imports no adapter and reads no config
+    from harlequin.hsql.modes import skill as skill_mode
+
+    try:
+        with _sink(destination, filename=skill_mode.FILENAME, announce=False) as out:
+            code = skill_mode.report(
+                out, format_name=format_name, format_chosen=format_chosen
+            )
+            out.flush()
+        written = destination.file(skill_mode.FILENAME)
+        if written is not None and format_name != skill_mode.NONE:
+            diagnostics.report_written(
+                [written, *skill_mode.install_references(written.parent)]
+            )
+    except OSError as e:
+        # a `-o PATH` it could not write, which is the caller's to fix
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
     return code
@@ -1778,7 +1842,9 @@ def _use_color(when: str, destination: _Destination) -> bool:
 
 
 @contextlib.contextmanager
-def _sink(destination: _Destination, *, filename: str) -> Iterator[BinaryIO]:
+def _sink(
+    destination: _Destination, *, filename: str, announce: bool = True
+) -> Iterator[BinaryIO]:
     """Where one document or one run of result sets goes: a path, or stdout.
 
     Binary in both cases. duckdb writes `\\n` and the layouts write `\\n`, and
@@ -1787,6 +1853,9 @@ def _sink(destination: _Destination, *, filename: str) -> Iterator[BinaryIO]:
 
     The directory the file is in is created if it is not there, so that a path
     a caller has not made yet is a path they can write to.
+
+    `announce=False` is for a caller that writes more than this one file, and
+    so has to name them all in one line rather than this one on its own.
     """
     path = destination.file(filename)
     if path is None:
@@ -1795,7 +1864,7 @@ def _sink(destination: _Destination, *, filename: str) -> Iterator[BinaryIO]:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
         yield f
-    if destination.is_directory:
+    if destination.is_directory and announce:
         diagnostics.report_written([path])
 
 
