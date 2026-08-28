@@ -1,0 +1,21 @@
+{
+  "name": "hsql",
+  "description": "The Agent Skill for hsql, the best SQL client for automations and agents.",
+  "version": "2.11.0",
+  "author": {
+    "name": "Ted Conbeer",
+    "url": "https://github.com/tconbeer"
+  },
+  "homepage": "https://harlequin.sh/docs/getting-started/hsql",
+  "repository": "https://github.com/tconbeer/harlequin",
+  "license": "MIT",
+  "keywords": [
+    "sql",
+    "database",
+    "duckdb",
+    "sqlite",
+    "postgres",
+    "mysql",
+    "cli"
+  ]
+}

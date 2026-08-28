@@ -382,9 +382,14 @@ $ hsql --skill -o .claude/skills/hsql/            # for this repo, committed wit
 note: wrote 5 files to .claude/skills/hsql: SKILL.md, references/config.md, references/queries.md, references/scripting.md, references/troubleshooting.md
 ```
 
-`SKILL.md` is the standing guidance; the four references beside it cover running queries and reading the catalog, config files and profiles, hsql inside a shell script, and what to do about each exit code. An agent reads one when the work reaches it.
-
 With no `-o`, `hsql --skill` writes `SKILL.md` to stdout, so you can read it before you install it.
+
+In Claude Code, the same skill is a plugin in Harlequin's repository:
+
+```
+/plugin marketplace add tconbeer/harlequin
+/plugin install hsql@harlequin
+```
 
 ## Keep Reading at [harlequin.sh](https://harlequin.sh/docs/getting-started/hsql)
 

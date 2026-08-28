@@ -50,3 +50,33 @@ jobs:
             uv run --no-sync python scripts/cold_start.py
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  plugin:
+    name: Validate Plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Repo
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.5"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        id: setup-python
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install python dependencies
+        run: uv sync --locked --group test
+
+      # `claude plugin validate` is what reads the marketplace entry and the
+      # plugin manifest; the tests that call it skip where it is not installed,
+      # which is everywhere but here.
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.251
+
+      - name: Validate the marketplace entry and the plugin it names
+        run: uv run --no-sync pytest tests/unit_tests/test_plugin.py -n0
