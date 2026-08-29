@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-08-29
+
 ### Features
 
 - Adds `hsql --skill`, which writes the Agent Skill for driving hsql. `hsql --skill -o ~/.claude/skills/hsql/` installs it — the standing guidance plus four references, on running queries and reading the catalog, config files and profiles, hsql inside a shell script, and what to do about each exit code. It matches the version of hsql you have, and needs no network.
@@ -1058,7 +1060,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.11.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.0...HEAD
+[2.12.0]: https://github.com/tconbeer/harlequin/compare/2.11.0...2.12.0
 [2.11.0]: https://github.com/tconbeer/harlequin/compare/2.10.0...2.11.0
 [2.10.0]: https://github.com/tconbeer/harlequin/compare/2.9.0...2.10.0
 [2.9.0]: https://github.com/tconbeer/harlequin/compare/2.8.1...2.9.0
