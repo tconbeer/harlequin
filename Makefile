@@ -26,6 +26,13 @@ cold-start:
 	uv sync --group test --group static
 	uv run python scripts/cold_start.py
 
+# what the release publishes to harlequin.sh, staged into dist/artifacts so
+# you can read it before a workflow opens the PR that vendors it.
+.PHONY: artifacts
+artifacts:
+	uv sync --group static
+	uv run python scripts/publish_artifacts.py
+
 .PHONY: serve
 serve:
 	uv sync --group dev

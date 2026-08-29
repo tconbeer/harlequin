@@ -72,3 +72,11 @@ jobs:
             dist/*harlequin*.tar.gz
             dist/*hsql*.whl
             dist/*hsql*.tar.gz
+
+  # the site vendors this release's generated artifacts -- the config schema,
+  # the CLI reference and the skill -- so it publishes after PyPI does, when
+  # the version the manifest names is one a reader can install.
+  publish-artifacts:
+    needs: publish-package
+    uses: ./.github/workflows/publish-artifacts.yml
+    secrets: inherit
