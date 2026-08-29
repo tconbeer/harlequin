@@ -1,7 +1,7 @@
 {
   "name": "hsql",
   "description": "The Agent Skill for hsql, the best SQL client for automations and agents.",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "author": {
     "name": "Ted Conbeer",
     "url": "https://github.com/tconbeer"
