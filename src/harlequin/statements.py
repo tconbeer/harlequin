@@ -1,9 +1,11 @@
 """Locating statement boundaries in SQL text.
 
 Both front ends split a script here, through the same tree-sitter grammar and
-the same one-line query the Query Editor has always used, so a script run with
-`-f` and the same script in the editor cannot disagree about where a statement
-ends.
+the same query the Query Editor has always used, so a script run with `-f` and
+the same script in the editor cannot disagree about where a statement ends. A
+semicolon inside a dollar-quoted body is body content, not a separator: the
+query also captures the body's `$tag$` delimiters, and `_separator_offsets()`
+drops semicolons between a matching pair.
 
 This module also owns the grammar itself: `captures()` runs a tree-sitter query
 over parsed SQL, so the grammar is loaded and each query compiled exactly once,
@@ -25,11 +27,16 @@ from dataclasses import dataclass
 import tree_sitter_sql
 from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-SEMICOLON_QUERY = '(";" @semicolon)'
-"""Capture every semicolon the grammar considers a statement separator.
+SPLITTER_QUERY = """
+(";" @semicolon)
+(dollar_quote) @dollar_quote
+"""
+"""Capture semicolons, and the `$tag$` delimiters of dollar-quoted bodies.
 
 Semicolons inside string literals, comments and quoted identifiers are part of
-those nodes, so they are not captured.
+those nodes, so they are not captured. A semicolon inside a dollar-quoted body
+is captured -- the grammar parses the body's SQL -- so `_separator_offsets()`
+drops it by pairing the delimiters it also captures here.
 """
 
 Point = tuple[int, int]
@@ -78,14 +85,43 @@ def captures(text: str, pattern: str) -> dict[str, list[Node]]:
     return QueryCursor(query).captures(tree.root_node)
 
 
+def _dollar_quoted_regions(tags: list[Node]) -> list[tuple[int, int]]:
+    """Return byte spans between matching dollar-quote delimiters.
+
+    Differently named delimiters are content while a body is open.
+    """
+    regions: list[tuple[int, int]] = []
+    opening_tag: Node | None = None
+    for tag in sorted(tags, key=lambda node: node.start_byte):
+        if opening_tag is None:
+            opening_tag = tag
+        elif tag.text == opening_tag.text:
+            regions.append((opening_tag.end_byte, tag.start_byte))
+            opening_tag = None
+    return regions
+
+
 def _separator_offsets(text: str) -> list[int]:
     """Character offsets in `text` just past each statement separator."""
     if ";" not in text:
         # cheap, and the common case for a single statement.
         return []
 
-    matched = captures(text, SEMICOLON_QUERY)
-    byte_offsets = sorted(node.end_byte for node in matched.get("semicolon", []))
+    matched = captures(text, SPLITTER_QUERY)
+    semicolons = sorted(
+        (node.start_byte, node.end_byte) for node in matched.get("semicolon", [])
+    )
+    regions = _dollar_quoted_regions(matched.get("dollar_quote", []))
+    byte_offsets: list[int] = []
+    region_index = 0
+    for semi_start, semi_end in semicolons:
+        while region_index < len(regions) and regions[region_index][1] <= semi_start:
+            region_index += 1
+        if region_index < len(regions):
+            region_start, region_end = regions[region_index]
+            if region_start <= semi_start and semi_end <= region_end:
+                continue  # inside a dollar-quoted body
+        byte_offsets.append(semi_end)
 
     if text.isascii():
         return byte_offsets

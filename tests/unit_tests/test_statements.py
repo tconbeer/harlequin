@@ -1,8 +1,8 @@
 """The tricky-SQL corpus.
 
-`tests/functional_tests/test_query_editor.py` runs the same fixtures through
-the Query Editor, so a divergence between the two front ends fails here or
-there rather than in a user's buffer.
+`tests/functional_tests/test_query_editor.py` exercises the same splitter
+through the Query Editor, so a divergence between the two front ends fails
+here or there rather than in a user's buffer.
 """
 
 from __future__ import annotations
@@ -97,6 +97,75 @@ CORPUS: list[tuple[str, str, list[str]]] = [
         "select 1;select 2;select 3",
         ["select 1;", "select 2;", "select 3"],
     ),
+    # a semicolon inside a dollar-quoted body is body content, not a
+    # separator. The grammar exposes the body's `$tag$` delimiters either way:
+    # as function_body tags when it parses, and as bare tokens during error
+    # recovery when it cannot (a missing `returns` clause). See #1019.
+    (
+        "dollar-quoted body with returns",
+        "create function f() returns int as $$ select 1; $$; select 2",
+        ["create function f() returns int as $$ select 1; $$;", "select 2"],
+    ),
+    (
+        "dollar-quoted body, semicolon flush with delimiters",
+        "create function f() as $$;$$; select 2",
+        ["create function f() as $$;$$;", "select 2"],
+    ),
+    (
+        "labeled dollar-quoted body",
+        "create function f() returns int as $body$ select 1; $body$; select 2",
+        ["create function f() returns int as $body$ select 1; $body$;", "select 2"],
+    ),
+    (
+        "differently labeled delimiter inside a body",
+        "create function f() as $a$ select 1; $b$ 2; $a$; select 3",
+        ["create function f() as $a$ select 1; $b$ 2; $a$;", "select 3"],
+    ),
+    (
+        "two dollar-quoted bodies",
+        "create function f() as $$ a; $$; create function g() as $$ b; $$;",
+        ["create function f() as $$ a; $$;", "create function g() as $$ b; $$;"],
+    ),
+    (
+        "unmatched dollar-quote delimiter",
+        "select $tag$; select 2",
+        ["select $tag$;", "select 2"],
+    ),
+    (
+        "dollar-quote tag in a string literal",
+        "select '$$'; select 2",
+        ["select '$$';", "select 2"],
+    ),
+    (
+        "dollar-quote tag in a comment",
+        "select 1 -- $$ ; select 2",
+        ["select 1 -- $$ ; select 2"],
+    ),
+    (
+        "dollar-quoted literal in an expression",
+        "select $$a;b$$; select 2",
+        ["select $$a;b$$;", "select 2"],
+    ),
+    (
+        "transaction",
+        "begin; select 1; commit;",
+        ["begin;", "select 1;", "commit;"],
+    ),
+    (
+        "multiline dollar-quoted body",
+        "create function f() as $$\n select 1;\n$$;\nselect 2",
+        ["create function f() as $$\n select 1;\n$$;", "select 2"],
+    ),
+    (
+        "non-ascii inside a dollar-quoted body",
+        "create function f() as $$ select 'café'; $$; select 2",
+        ["create function f() as $$ select 'café'; $$;", "select 2"],
+    ),
+    (
+        "multiline dollar-quoted body with non-ascii",
+        "create function f() as $$\n select 'café';\n$$;\nselect 2",
+        ["create function f() as $$\n select 'café';\n$$;", "select 2"],
+    ),
 ]
 
 
@@ -167,17 +236,22 @@ def test_statements_are_indexed_in_order() -> None:
     assert [s.index for s in statements] == [0, 1, 2]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "https://github.com/tconbeer/harlequin/issues/1019 -- the grammar "
-        "splits inside a dollar-quoted body. The Query Editor has the same bug, "
-        "for the same reason: it is the grammar's, not ours."
-    ),
-    strict=True,
-)
 def test_dollar_quoted_body_is_not_split() -> None:
+    """Regression test for #1019: a semicolon inside `$$ ... $$` is body content."""
     script = "create function f() as $$ select 1; $$; select 2"
     assert split(script) == [
         Statement(sql="create function f() as $$ select 1; $$;", index=0),
         Statement(sql="select 2", index=1),
     ]
+
+
+def test_find_separators_after_dollar_quoted_body() -> None:
+    """The separator after a dollar-quoted body is still a character column.
+
+    The fix pairs the body's delimiters on byte offsets, and a multiline body
+    puts non-ASCII before the separator that ends the statement -- so the
+    (row, col) point must come out of the same character conversion as any
+    other separator, not off by one per extra byte.
+    """
+    script = "create function f() as $$\n select 'café';\n$$;\nselect 2"
+    assert find_separators(script) == [(2, 3)]
