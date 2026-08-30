@@ -440,6 +440,30 @@ async def test_selected_queries_split_on_character_columns(
 
 
 @pytest.mark.asyncio
+async def test_selected_queries_do_not_split_dollar_quoted_bodies(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Regression test for #1019: the editor and `harlequin.statements` agree,
+    and neither treats a semicolon inside `$$ ... $$` as a separator."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+
+        while app.editor is None:
+            await pilot.pause()
+
+        script = "create function f() as $$ select 1; $$; select 2"
+        app.editor.text = script
+        await pilot.pause()
+        app.editor.selection = Selection((0, 0), (0, len(script)))
+        assert app.editor.selected_queries() == [
+            "create function f() as $$ select 1; $$;",
+            "select 2",
+        ]
+        assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]
+
+
+@pytest.mark.asyncio
 async def test_buffer_symbols_reach_the_completers(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],

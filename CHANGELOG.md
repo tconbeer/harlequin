@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- A semicolon inside a dollar-quoted function body (e.g. `create function f() as $$ select 1; $$`) is no longer treated as a statement separator, in the Query Editor or in scripts ([#1019](https://github.com/tconbeer/harlequin/issues/1019)).
+
 ## [2.12.0] - 2026-08-29
 
 ### Features
