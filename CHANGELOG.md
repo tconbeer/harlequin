@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.12.1] - 2026-08-30
+
 ### Bug Fixes
 
 - A semicolon inside a dollar-quoted function body (e.g. `create function f() as $$ select 1; $$`) is no longer treated as a statement separator, in the Query Editor or in scripts ([#1019](https://github.com/tconbeer/harlequin/issues/1019)).
@@ -1064,7 +1066,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.1...HEAD
+[2.12.1]: https://github.com/tconbeer/harlequin/compare/2.12.0...2.12.1
 [2.12.0]: https://github.com/tconbeer/harlequin/compare/2.11.0...2.12.0
 [2.11.0]: https://github.com/tconbeer/harlequin/compare/2.10.0...2.11.0
 [2.10.0]: https://github.com/tconbeer/harlequin/compare/2.9.0...2.10.0
