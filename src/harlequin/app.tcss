@@ -375,14 +375,20 @@ ResultsTable > .datatable--hover {
     background: $boost;
 }
 
-/* TEXT MODALS (CELL VIEW, ERROR) */
-TextModal {
+/* TEXT MODALS (CELL VIEW, CELL EDIT, ERROR) */
+TextModal,
+CellEditModal {
     align: center middle;
     padding: 0;
 }
 
-TextModal #modal_outer {
+TextModal #modal_outer,
+CellEditModal #modal_outer {
     margin: 5 10;
+}
+
+CellEditModal #modal_outer {
+    height: auto;
 }
 
 ErrorModal #modal_outer {

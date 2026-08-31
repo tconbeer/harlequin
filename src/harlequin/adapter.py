@@ -63,6 +63,20 @@ class HarlequinCursor(ABC):
         """
         pass
 
+    def editable_columns(self) -> dict[int, tuple[str, str, bool]]:
+        """
+        Reports which result columns are read straight from a table, so that
+        Harlequin can write an edited cell back to it.
+
+        Returns: dict[int, tuple[str, str, bool]], mapping the index of a result
+            column (in the order columns() returns them) to the qualified name of
+            the table it comes from, its name in that table, and whether it is
+            part of that table's primary key -- the names quoted as they would
+            be written in a query. Computed columns, and columns of views, are
+            left out. Adapters that cannot report this return an empty dict.
+        """
+        return {}
+
 
 class HarlequinConnection(ABC):
     """

@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     Optional,
@@ -19,6 +20,7 @@ from typing import (
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.css.query import DOMQuery
 from textual.dom import DOMNode
 from textual.driver import Driver
@@ -32,6 +34,7 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
+from textual_fastdatatable.backend import create_backend
 
 from harlequin import HarlequinConnection
 from harlequin.actions import HARLEQUIN_ACTIONS
@@ -64,10 +67,12 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.components.cell_edit_modal import CellEditModal
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
@@ -488,6 +493,131 @@ class Harlequin(AppBase):
             self.set_timer(delay=0.1, callback=callback)
             return
         await self.editor_collection.insert_buffer_with_text(query_text=message.text)
+
+    @on(ResultsTable.CellEditRequested)
+    def edit_cell(self, message: ResultsTable.CellEditRequested) -> None:
+        message.stop()
+        table = message.table
+        row, column = message.coordinate
+        source = table.editable_columns.get(column)
+        if source is None:
+            self.notify(
+                "Only a column read straight from a table can be edited.",
+                title="Cell edit",
+                severity="warning",
+            )
+            return
+        source_table, source_column, _ = source
+        # the row is found by the primary key of the cell's table; nothing else
+        # in a result set identifies it safely
+        key_cells = [
+            (key_column, table.get_cell_at(Coordinate(row, index)))
+            for index, (key_table, key_column, is_primary_key) in (
+                table.editable_columns.items()
+            )
+            if key_table == source_table and is_primary_key
+        ]
+        if not key_cells:
+            self.notify(
+                f"Select the primary key of {source_table} too; without it the "
+                "row can't be identified.",
+                title="Cell edit",
+                severity="warning",
+            )
+            return
+        where_clause = " and ".join(
+            f"{key_column} = {self._sql_literal(key_value)}"
+            for key_column, key_value in key_cells
+        )
+        current_value = table.get_cell_at(message.coordinate)
+
+        def update_statement(new_value_sql: str) -> str:
+            return (
+                f"update {source_table}\nset {source_column} = {new_value_sql}\n"
+                f"where {where_clause}"
+            )
+
+        def run_update(new_value: str | None) -> None:
+            unchanged = new_value == (
+                "" if current_value is None else str(current_value)
+            )
+            if new_value is None or unchanged:
+                return
+            self._update_cell(
+                update_statement(self._sql_literal(new_value)),
+                f"select {source_column} from {source_table} where {where_clause}",
+                table,
+                message.coordinate,
+            )
+
+        self.push_screen(
+            CellEditModal(
+                value=current_value,
+                column_label=message.column_label,
+                statement=update_statement("…"),
+            ),
+            run_update,
+        )
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="query_runners",
+        description="updating a cell.",
+    )
+    def _update_cell(
+        self,
+        update: str,
+        reselect: str,
+        table: ResultsTable,
+        coordinate: Coordinate,
+    ) -> None:
+        """Runs the update, then shows the value the database stored."""
+        if self.connection is None:
+            return
+        started_at = time.monotonic()
+        try:
+            self.connection.execute(update)
+            cursor = self.connection.execute(reselect)
+            stored = cursor.fetchall() if cursor is not None else None
+        except Exception as e:
+            self.post_message(QueryError(query_text=update, error=e))
+            return
+        elapsed = time.monotonic() - started_at
+        stored_rows = create_backend(stored, column_names=["value"])
+        self.call_from_thread(
+            self.append_to_history,
+            query_text=update,
+            result_row_count=0,
+            elapsed=elapsed,
+        )
+        if stored_rows.row_count == 0:
+            self.call_from_thread(
+                self.notify,
+                "The update matched no row; the result may be out of date.",
+                title="Cell edit",
+                severity="warning",
+            )
+            return
+        self.call_from_thread(
+            table.update_cell,
+            coordinate.row,
+            coordinate.column,
+            stored_rows.get_cell_at(0, 0),
+        )
+        self.call_from_thread(self.notify, "Cell updated.", title="Cell edit")
+
+    @staticmethod
+    def _sql_literal(value: Any) -> str:
+        """Spells a cell's value as a SQL literal: numbers bare, the rest quoted."""
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
 
     @on(HarlequinDriver.ConfirmAndExecute)
     def driver_confirm_and_execute(
@@ -1185,6 +1315,8 @@ class Harlequin(AppBase):
                 results[id_] = fetch(
                     executed, limit=limit, display_limit=self.viewer_max_rows
                 )
+                if executed.cursor is not None:
+                    results[id_].editable_columns = executed.cursor.editable_columns()
             except BaseException as e:
                 errors.append((e, executed.statement.sql))
         # each ResultSet times its own fetch; the app reports the batch,
