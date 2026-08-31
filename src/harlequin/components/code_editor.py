@@ -5,7 +5,7 @@ from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual import on, work
+from textual import events, on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.geometry import Offset
@@ -231,6 +231,27 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             self.app.action_focus_data_catalog()
 
 
+class BufferTab(Tab):
+    """A tab for one buffer, with a close button after its label."""
+
+    CLOSE_BUTTON = "\N{MODIFIER LETTER SMALL X}"
+
+    class CloseRequested(Tab.TabMessage):
+        """The tab's close button was clicked."""
+
+    def __init__(self, label: str, *, id: str | None = None) -> None:  # noqa: A002
+        super().__init__(f"{label}  [@click=close]{self.CLOSE_BUTTON}[/]", id=id)
+
+    async def on_click(self, event: events.Click) -> None:
+        """A click on the close button runs its action instead of activating the tab."""
+        if "@click" in event.style.meta:
+            event.prevent_default()
+            await self.broker_event("click", event)
+
+    def action_close(self) -> None:
+        self.post_message(self.CloseRequested(self))
+
+
 class EditorCollection(Vertical):
     """
     A row of tabs over a single editor. Switching tabs swaps the loaded buffer's
@@ -368,6 +389,10 @@ class EditorCollection(Vertical):
         self.post_message(self.EditorSwitched(active_editor=self.editor))
         self.editor.focus()
 
+    def on_buffer_tab_close_requested(self, message: BufferTab.CloseRequested) -> None:
+        message.stop()
+        self.close_buffer(message.tab.id)
+
     def watch_theme(self, theme: str) -> None:
         if self.editor.is_mounted:
             self.editor.theme = theme
@@ -386,7 +411,7 @@ class EditorCollection(Vertical):
             if state is not None
             else EditorState()
         )
-        await self.tabs.add_tab(Tab(f"Tab {self.counter}", id=new_buffer_id))
+        await self.tabs.add_tab(BufferTab(f"Tab {self.counter}", id=new_buffer_id))
         if activate:
             # adding the first tab activates it; any later tab has to be
             # activated here to swap its state into the editor.
@@ -397,16 +422,20 @@ class EditorCollection(Vertical):
         return self.editor
 
     def action_close_buffer(self) -> None:
+        self.close_buffer(self.active)
+
+    def close_buffer(self, buffer_id: str | None) -> None:
+        """Closes a buffer; the last one is emptied instead."""
         if self.tab_count > 1:
             if self.tab_count == 2:
                 self.add_class("hide-tabs")
-            closed_buffer_id = self.active
-            # the editor's contents belong to the buffer being closed, so they
-            # are dropped rather than saved when the next tab is activated.
-            self.loaded_buffer_id = None
-            if closed_buffer_id is not None:
-                self.buffer_states.pop(closed_buffer_id, None)
-                self.tabs.remove_tab(closed_buffer_id)
+            if buffer_id == self.loaded_buffer_id:
+                # the editor's contents belong to the buffer being closed, so they
+                # are dropped rather than saved when the next tab is activated.
+                self.loaded_buffer_id = None
+            if buffer_id is not None:
+                self.buffer_states.pop(buffer_id, None)
+                self.tabs.remove_tab(buffer_id)
         else:
             self.editor.load_state(EditorState())
         self.editor.focus()

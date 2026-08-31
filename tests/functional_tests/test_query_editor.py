@@ -4,10 +4,13 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
+from textual.pilot import Pilot
+from textual.widgets import Tab
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
+from harlequin.components.code_editor import EditorCollection
 from harlequin.statements import find_separators, split
 
 
@@ -169,6 +172,65 @@ async def test_buffers_keep_their_state(
         await pilot.pause()
         assert app.editor_collection.active == "tab-2"
         assert app.editor.text_input.scroll_offset == scrolled_to
+
+
+def buffer_tab(editor_collection: EditorCollection, buffer_id: str) -> Tab:
+    return editor_collection.tabs.query_one(f"#{buffer_id}", Tab)
+
+
+async def click_close_button(
+    pilot: Pilot[None], editor_collection: EditorCollection, buffer_id: str
+) -> None:
+    tab = buffer_tab(editor_collection, buffer_id)
+    # the close button is the last cell of the label, inside the tab's padding
+    await pilot.click(tab, offset=(tab.region.width - 2, 0))
+    await pilot.pause()
+    await pilot.wait_for_scheduled_animations()
+
+
+@pytest.mark.asyncio
+async def test_tab_close_button(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Clicking a tab's close button closes that buffer, and only that buffer."""
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        editor_collection = app.editor_collection
+
+        app.editor.text = "tab 1"
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        app.editor.text = "tab 2"
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        app.editor.text = "tab 3"
+        await pilot.press("ctrl+k", "ctrl+k")
+        await pilot.pause()
+        assert editor_collection.tab_count == 3
+        assert editor_collection.active == "tab-2"
+
+        # closing an inactive tab leaves the active buffer as it was
+        await click_close_button(pilot, editor_collection, "tab-3")
+        assert editor_collection.tab_count == 2
+        assert list(editor_collection.buffer_states) == ["tab-1", "tab-2"]
+        assert editor_collection.active == "tab-2"
+        assert app.editor.text == "tab 2"
+
+        # a click on the label still activates the tab
+        await pilot.click(buffer_tab(editor_collection, "tab-1"), offset=(2, 0))
+        await pilot.pause()
+        assert editor_collection.active == "tab-1"
+        assert app.editor.text == "tab 1"
+
+        # closing the active tab moves to its neighbour and hides the tab row
+        await click_close_button(pilot, editor_collection, "tab-1")
+        assert editor_collection.tab_count == 1
+        assert editor_collection.active == "tab-2"
+        assert app.editor.text == "tab 2"
+        assert editor_collection.has_class("hide-tabs")
 
 
 @pytest.mark.flaky
