@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Each Query Editor tab has a clickable ˣ that closes it, alongside <kbd>ctrl+w</kbd>.
+
 ## [2.12.1] - 2026-08-30
 
 ### Bug Fixes

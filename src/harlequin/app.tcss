@@ -147,6 +147,15 @@ EditorCollection.premount {
     border: none;
 }
 
+/* the close button on each tab is an action link */
+EditorCollection Tab {
+    link-color: $foreground 50%;
+    link-style: none;
+    link-background-hover: transparent;
+    link-color-hover: $secondary;
+    link-style-hover: none;
+}
+
 CodeEditor {
     height: 1fr;
     width: 100%;
