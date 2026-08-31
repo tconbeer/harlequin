@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.12.2] - 2026-08-31
+
 ### Bug Fixes
 
 - Harlequin no longer crashes when a query returns a UUID column (or another Arrow extension type), like a Postgres `uuid` ([tconbeer/textual-fastdatatable#176](https://github.com/tconbeer/textual-fastdatatable/issues/176)).
@@ -1070,7 +1072,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.2...HEAD
+[2.12.2]: https://github.com/tconbeer/harlequin/compare/2.12.1...2.12.2
 [2.12.1]: https://github.com/tconbeer/harlequin/compare/2.12.0...2.12.1
 [2.12.0]: https://github.com/tconbeer/harlequin/compare/2.11.0...2.12.0
 [2.11.0]: https://github.com/tconbeer/harlequin/compare/2.10.0...2.11.0
