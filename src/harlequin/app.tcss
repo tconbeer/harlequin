@@ -375,6 +375,10 @@ ResultsTable > .datatable--hover {
     background: $boost;
 }
 
+ResultsTable > .results-table--foreign-key {
+    color: $secondary;
+}
+
 /* TEXT MODALS (CELL VIEW, ERROR) */
 TextModal {
     align: center middle;

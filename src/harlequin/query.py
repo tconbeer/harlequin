@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterator, Literal, Sequence
 
 import pyarrow as pa
@@ -111,6 +111,11 @@ class ResultSet:
 
     elapsed: float
     """Seconds spent fetching, not including execution."""
+
+    foreign_keys: dict[int, tuple[str, str]] = field(default_factory=dict)
+    """Result-column index -> (referenced table, referenced column), for the
+    columns the cursor reports as foreign keys; see
+    `HarlequinCursor.foreign_key_columns()`."""
 
     @property
     def row_count(self) -> int:
