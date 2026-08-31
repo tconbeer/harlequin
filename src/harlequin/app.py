@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     Optional,
@@ -68,6 +69,7 @@ from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
@@ -488,6 +490,34 @@ class Harlequin(AppBase):
             self.set_timer(delay=0.1, callback=callback)
             return
         await self.editor_collection.insert_buffer_with_text(query_text=message.text)
+
+    @on(ResultsTable.ForeignKeyFollowed)
+    async def follow_foreign_key(
+        self, message: ResultsTable.ForeignKeyFollowed
+    ) -> None:
+        message.stop()
+        if self.editor is None:
+            self._recycle_message(message)
+            return
+        query = (
+            f"select *\nfrom {message.ref_table}\n"
+            f"where {message.ref_col} = {self._sql_literal(message.value)}"
+        )
+        await self.editor_collection.insert_buffer_with_text(query_text=query)
+        self.post_message(
+            QuerySubmitted(queries=[query], limit=self.run_query_bar.limit_value)
+        )
+
+    @staticmethod
+    def _sql_literal(value: Any) -> str:
+        """Spells a cell's value as a SQL literal: numbers bare, the rest quoted."""
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
 
     @on(HarlequinDriver.ConfirmAndExecute)
     def driver_confirm_and_execute(
@@ -1185,6 +1215,8 @@ class Harlequin(AppBase):
                 results[id_] = fetch(
                     executed, limit=limit, display_limit=self.viewer_max_rows
                 )
+                if executed.cursor is not None:
+                    results[id_].foreign_keys = executed.cursor.foreign_key_columns()
             except BaseException as e:
                 errors.append((e, executed.statement.sql))
         # each ResultSet times its own fetch; the app reports the batch,

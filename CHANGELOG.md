@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Cells in foreign-key columns of the Results Viewer carry a `↗`; clicking it opens the referenced row (`select * from <table> where <column> = <value>`) in a new buffer. An adapter reports its foreign keys through `HarlequinCursor.foreign_key_columns()`; harlequin-postgres does, and it works across joins.
+
 ## [2.12.1] - 2026-08-30
 
 ### Bug Fixes

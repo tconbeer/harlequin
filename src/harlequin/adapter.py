@@ -63,6 +63,19 @@ class HarlequinCursor(ABC):
         """
         pass
 
+    def foreign_key_columns(self) -> dict[int, tuple[str, str]]:
+        """
+        Reports which result columns are single-column foreign keys, so that
+        Harlequin can open the row a cell references.
+
+        Returns: dict[int, tuple[str, str]], mapping the index of a result column
+            (in the order columns() returns them) to the qualified name of the
+            referenced table and the name of the referenced column, both quoted
+            as they would be written in a query. Adapters that cannot report
+            foreign keys return an empty dict.
+        """
+        return {}
+
 
 class HarlequinConnection(ABC):
     """
