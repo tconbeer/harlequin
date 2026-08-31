@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Click a column header in the Results Viewer to sort by that column: the statement is rewritten in the editor with an `order by` and re-run, ascending, then descending, then as written, so under a limit the result is the true top rows.
+
 ## [2.12.1] - 2026-08-30
 
 ### Bug Fixes

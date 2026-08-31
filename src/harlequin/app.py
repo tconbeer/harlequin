@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 import time
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import (
@@ -68,6 +69,7 @@ from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
@@ -87,6 +89,7 @@ from harlequin.exception import (
 )
 from harlequin.history import History
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
+from harlequin.order_by import with_order_by
 from harlequin.plugins import load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
 from harlequin.statements import Statement
@@ -108,6 +111,16 @@ class DatabaseConnected(Message):
     def __init__(self, connection: HarlequinConnection) -> None:
         super().__init__()
         self.connection = connection
+
+
+@dataclass
+class PendingSort:
+    """A sorted re-run in flight: the statement submitted, and what it was for."""
+
+    sql: str
+    source_query: str
+    column_index: int | None
+    descending: bool
 
 
 class QueryError(Message):
@@ -215,6 +228,7 @@ class Harlequin(AppBase):
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
+        self._pending_sort: PendingSort | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
         # kept as text: it is what the Data Exporter's path input starts with
@@ -437,6 +451,45 @@ class Harlequin(AppBase):
             return
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
+
+    @on(ResultsTable.SortRequested)
+    def sort_results_by_column(self, message: ResultsTable.SortRequested) -> None:
+        """Rewrites the statement behind a result to order by a column, and re-runs it.
+
+        The clause is written into the editor in place of the statement that
+        produced the result, so it stays visible and editable; a third click
+        puts the statement back as it was written. Only that statement is
+        re-run, so other statements sharing the buffer are left where they are.
+        """
+        message.stop()
+        if self.editor is None:
+            self._recycle_message(message)
+            return
+        sql = (
+            message.source_query
+            if message.column_index is None
+            else with_order_by(
+                message.source_query,
+                None if message.by_position else message.column_name,
+                message.descending,
+                position=message.column_index + 1,
+            )
+        )
+        buffer_text = self.editor.text
+        if message.query_text in buffer_text:
+            self.editor.text = buffer_text.replace(message.query_text, sql, 1)
+        else:
+            # the buffer moved on since this result was produced; don't clobber it
+            self.editor.text = sql
+        self._pending_sort = PendingSort(
+            sql=sql,
+            source_query=message.source_query,
+            column_index=message.column_index,
+            descending=message.descending,
+        )
+        self.post_message(
+            QuerySubmitted(queries=[sql], limit=self.run_query_bar.limit_value)
+        )
 
     def _recycle_message(self, message: Message) -> None:
         """Re-post a message we can't handle yet, while we wait for the editor."""
@@ -686,8 +739,20 @@ class Harlequin(AppBase):
 
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
+        pending, self._pending_sort = self._pending_sort, None
         for id_, result in message.results.items():
-            await self.results_viewer.push_table(table_id=id_, result=result)
+            sort = (
+                pending
+                if pending is not None and pending.sql == result.statement.sql
+                else None
+            )
+            await self.results_viewer.push_table(
+                table_id=id_,
+                result=result,
+                source_query=sort.source_query if sort else None,
+                sort_column=sort.column_index if sort else None,
+                sort_descending=sort.descending if sort else False,
+            )
             self.append_to_history(
                 query_text=result.statement.sql,
                 # the rows the database returned, not the rows the viewer kept
