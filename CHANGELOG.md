@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin no longer crashes when a query returns a UUID column (or another Arrow extension type), like a Postgres `uuid` ([tconbeer/textual-fastdatatable#176](https://github.com/tconbeer/textual-fastdatatable/issues/176)).
+
 ## [2.12.1] - 2026-08-30
 
 ### Bug Fixes
