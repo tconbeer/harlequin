@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rich.style import Style
 from rich.text import Text
+from textual import on
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -23,6 +24,10 @@ if TYPE_CHECKING:
     from harlequin.query import ResultSet
 
 
+SORT_ASC_GLYPH = "▲"
+SORT_DESC_GLYPH = "▼"
+
+
 class ResultsTable(DataTable, inherit_bindings=False):
     DEFAULT_CSS = """
         ResultsTable {
@@ -33,6 +38,20 @@ class ResultsTable(DataTable, inherit_bindings=False):
 
     def on_mount(self) -> None:
         self.post_message(WidgetMounted(widget=self))
+
+    @on(DataTable.HeaderSelected)
+    def sort_by_header(self, event: DataTable.HeaderSelected) -> None:
+        """Clicking a header cycles that column ascending, descending, unsorted."""
+        event.stop()
+        index = event.column_index
+        if not self.is_valid_column_index(index):
+            return
+        if self.sort_column != index:
+            self.sort_rows(index, descending=False)
+        elif not self.sort_descending:
+            self.sort_rows(index, descending=True)
+        else:
+            self.sort_rows(None)
 
     def __init__(
         self,
@@ -73,6 +92,14 @@ class ResultsTable(DataTable, inherit_bindings=False):
         # there were more rows behind it that nobody fetched.
         self.fetched_row_count = fetched_row_count
         self.fetch_truncated = fetch_truncated
+        self.sort_column: int | None = None
+        """Index of the column the rows are sorted by; None for the database's order."""
+        self.sort_descending = False
+        self._unsorted_data: Any = None
+        """The rows in the order the database returned them, kept while sorted."""
+        self._header_labels: dict[int, Text] = {}
+        self._header_widths: dict[int, int] = {}
+        self._warned_partial_sort = False
         super().__init__(
             backend=backend,
             data=data,
@@ -96,6 +123,58 @@ class ResultsTable(DataTable, inherit_bindings=False):
             disabled=disabled,
             null_rep=null_rep,
             render_markup=render_markup,
+        )
+
+    def sort_rows(self, column_index: int | None, descending: bool = False) -> None:
+        """Sorts the rows the table holds by one column, or restores their order."""
+        if self.backend is None:
+            return
+        if self._unsorted_data is None:
+            self._unsorted_data = self.backend.data
+        if column_index is None:
+            self.backend.data = self._unsorted_data
+        else:
+            name = self._unsorted_data.column_names[column_index]
+            order = "descending" if descending else "ascending"
+            self.backend.data = self._unsorted_data.sort_by([(name, order)])
+        self.sort_column = column_index
+        self.sort_descending = descending
+        self._show_sort_indicator()
+        self._update_count += 1
+        self.refresh()
+        if column_index is not None and self._holds_part_of_the_result():
+            self._warn_partial_sort()
+
+    def _show_sort_indicator(self) -> None:
+        """Marks the sorted column's header, and gives it room for the mark."""
+        for index, column in enumerate(self.ordered_columns):
+            label = self._header_labels.setdefault(index, column.label)
+            width = self._header_widths.setdefault(index, column.content_width)
+            if index == self.sort_column:
+                glyph = SORT_DESC_GLYPH if self.sort_descending else SORT_ASC_GLYPH
+                column.label = Text.assemble(label, " ", glyph)
+                column.content_width = max(width, self._measure(column.label))
+            else:
+                column.label = label
+                column.content_width = width
+        self._require_update_dimensions = True
+
+    def _holds_part_of_the_result(self) -> bool:
+        total = (
+            self.fetched_row_count
+            if self.fetched_row_count is not None
+            else self.source_row_count
+        )
+        return self.fetch_truncated or self.row_count < total
+
+    def _warn_partial_sort(self) -> None:
+        if self._warned_partial_sort:
+            return
+        self._warned_partial_sort = True
+        self.notify(
+            f"Sorted the {self.row_count:,} rows fetched, not the whole result.",
+            title="Sort",
+            severity="warning",
         )
 
     def action_view_cell(self) -> None:
