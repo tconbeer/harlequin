@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rich.style import Style
 from rich.text import Text
+from textual import events
+from textual.coordinate import Coordinate
 from textual.css.query import NoMatches
+from textual.message import Message
 from textual.widgets import (
     ContentSwitcher,
     TabbedContent,
@@ -30,6 +33,17 @@ class ResultsTable(DataTable, inherit_bindings=False):
             width: 100%;
         }
     """
+
+    class CellEditRequested(Message):
+        """The user asked to edit the cell under the cursor."""
+
+        def __init__(
+            self, table: ResultsTable, coordinate: Coordinate, column_label: str
+        ) -> None:
+            super().__init__()
+            self.table = table
+            self.coordinate = coordinate
+            self.column_label = column_label
 
     def on_mount(self) -> None:
         self.post_message(WidgetMounted(widget=self))
@@ -62,7 +76,9 @@ class ResultsTable(DataTable, inherit_bindings=False):
         render_markup: bool = True,
         fetched_row_count: int | None = None,
         fetch_truncated: bool = False,
+        editable_columns: dict[int, tuple[str, str, bool]] | None = None,
     ):
+        self.editable_columns = editable_columns or {}
         self.plain_column_labels: list[str] = (
             [str(label) for label in plain_column_labels]
             if plain_column_labels is not None
@@ -111,6 +127,26 @@ class ResultsTable(DataTable, inherit_bindings=False):
         except IndexError:
             column_label = ""
         self.app.push_screen(CellViewModal(value=value, column_label=column_label))
+
+    def on_click(self, event: events.Click) -> None:
+        """Double-click edits the cell; its mouse-down already moved the cursor."""
+        if event.chain == 2 and event.style.meta.get("row", -1) >= 0:
+            event.stop()
+            event.prevent_default()
+            self.action_edit_cell()
+
+    def action_edit_cell(self) -> None:
+        """Ask the app to edit the cell under the cursor; it owns the connection."""
+        if self.backend is None or self.row_count == 0:
+            return
+        coord = self.cursor_coordinate
+        if not self.is_valid_coordinate(coord):
+            return
+        try:
+            column_label = self.plain_column_labels[coord.column]
+        except IndexError:
+            column_label = ""
+        self.post_message(self.CellEditRequested(self, coord, column_label))
 
 
 class ResultsViewer(TabbedContent, can_focus=True):
@@ -162,6 +198,7 @@ class ResultsViewer(TabbedContent, can_focus=True):
             backend=result.backend,
             fetched_row_count=result.fetched_row_count,
             fetch_truncated=result.truncated,
+            editable_columns=result.editable_columns,
             cursor_type="range",
             max_column_content_width=self.max_col_width,
             null_rep="[dim]∅ null[/]",
