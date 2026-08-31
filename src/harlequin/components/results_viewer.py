@@ -6,6 +6,7 @@ from rich.style import Style
 from rich.text import Text
 from textual import on
 from textual.css.query import NoMatches
+from textual.message import Message
 from textual.widgets import (
     ContentSwitcher,
     TabbedContent,
@@ -36,22 +37,62 @@ class ResultsTable(DataTable, inherit_bindings=False):
         }
     """
 
+    class SortRequested(Message):
+        """A header was clicked: rewrite the statement to order by that column.
+
+        `column_index` is None when the click asks for the statement as written.
+        """
+
+        def __init__(
+            self,
+            source_query: str,
+            query_text: str,
+            column_index: int | None,
+            column_name: str,
+            descending: bool,
+            by_position: bool = False,
+        ) -> None:
+            super().__init__()
+            self.source_query = source_query
+            self.query_text = query_text
+            self.column_index = column_index
+            self.column_name = column_name
+            self.descending = descending
+            self.by_position = by_position
+            """Order by the column's position: its name is computed or duplicated."""
+
     def on_mount(self) -> None:
+        if self.sort_column is not None:
+            self._show_sort_indicator()
         self.post_message(WidgetMounted(widget=self))
 
     @on(DataTable.HeaderSelected)
     def sort_by_header(self, event: DataTable.HeaderSelected) -> None:
-        """Clicking a header cycles that column ascending, descending, unsorted."""
+        """Clicking a header cycles that column ascending, descending, as written."""
         event.stop()
         index = event.column_index
-        if not self.is_valid_column_index(index):
+        if not self.is_valid_column_index(index) or not self.source_query:
+            return
+        if index >= len(self.plain_column_labels):
             return
         if self.sort_column != index:
-            self.sort_rows(index, descending=False)
+            requested: tuple[int | None, bool] = (index, False)
         elif not self.sort_descending:
-            self.sort_rows(index, descending=True)
+            requested = (index, True)
         else:
-            self.sort_rows(None)
+            requested = (None, False)
+        name = self.plain_column_labels[index]
+        self.post_message(
+            self.SortRequested(
+                source_query=self.source_query,
+                query_text=self.query_text,
+                column_index=requested[0],
+                column_name=name,
+                descending=requested[1],
+                by_position=not name.isidentifier()
+                or self.plain_column_labels.count(name) > 1,
+            )
+        )
 
     def __init__(
         self,
@@ -81,6 +122,10 @@ class ResultsTable(DataTable, inherit_bindings=False):
         render_markup: bool = True,
         fetched_row_count: int | None = None,
         fetch_truncated: bool = False,
+        source_query: str = "",
+        query_text: str = "",
+        sort_column: int | None = None,
+        sort_descending: bool = False,
     ):
         self.plain_column_labels: list[str] = (
             [str(label) for label in plain_column_labels]
@@ -92,14 +137,15 @@ class ResultsTable(DataTable, inherit_bindings=False):
         # there were more rows behind it that nobody fetched.
         self.fetched_row_count = fetched_row_count
         self.fetch_truncated = fetch_truncated
-        self.sort_column: int | None = None
-        """Index of the column the rows are sorted by; None for the database's order."""
-        self.sort_descending = False
-        self._unsorted_data: Any = None
-        """The rows in the order the database returned them, kept while sorted."""
+        self.source_query = source_query
+        """The statement as the user wrote it, before any ordering was added."""
+        self.query_text = query_text
+        """The statement that produced these rows, as it stands in the editor."""
+        self.sort_column = sort_column
+        """Index of the column the rows are ordered by; None when unsorted."""
+        self.sort_descending = sort_descending
         self._header_labels: dict[int, Text] = {}
         self._header_widths: dict[int, int] = {}
-        self._warned_partial_sort = False
         super().__init__(
             backend=backend,
             data=data,
@@ -125,26 +171,6 @@ class ResultsTable(DataTable, inherit_bindings=False):
             render_markup=render_markup,
         )
 
-    def sort_rows(self, column_index: int | None, descending: bool = False) -> None:
-        """Sorts the rows the table holds by one column, or restores their order."""
-        if self.backend is None:
-            return
-        if self._unsorted_data is None:
-            self._unsorted_data = self.backend.data
-        if column_index is None:
-            self.backend.data = self._unsorted_data
-        else:
-            name = self._unsorted_data.column_names[column_index]
-            order = "descending" if descending else "ascending"
-            self.backend.data = self._unsorted_data.sort_by([(name, order)])
-        self.sort_column = column_index
-        self.sort_descending = descending
-        self._show_sort_indicator()
-        self._update_count += 1
-        self.refresh()
-        if column_index is not None and self._holds_part_of_the_result():
-            self._warn_partial_sort()
-
     def _show_sort_indicator(self) -> None:
         """Marks the sorted column's header, and gives it room for the mark."""
         for index, column in enumerate(self.ordered_columns):
@@ -158,24 +184,6 @@ class ResultsTable(DataTable, inherit_bindings=False):
                 column.label = label
                 column.content_width = width
         self._require_update_dimensions = True
-
-    def _holds_part_of_the_result(self) -> bool:
-        total = (
-            self.fetched_row_count
-            if self.fetched_row_count is not None
-            else self.source_row_count
-        )
-        return self.fetch_truncated or self.row_count < total
-
-    def _warn_partial_sort(self) -> None:
-        if self._warned_partial_sort:
-            return
-        self._warned_partial_sort = True
-        self.notify(
-            f"Sorted the {self.row_count:,} rows fetched, not the whole result.",
-            title="Sort",
-            severity="warning",
-        )
 
     def action_view_cell(self) -> None:
         """Open a modal showing the full value of the cell under the cursor."""
@@ -227,7 +235,14 @@ class ResultsViewer(TabbedContent, can_focus=True):
             except NoMatches:
                 return None
 
-    async def push_table(self, table_id: str, result: ResultSet) -> ResultsTable:
+    async def push_table(
+        self,
+        table_id: str,
+        result: ResultSet,
+        source_query: str | None = None,
+        sort_column: int | None = None,
+        sort_descending: bool = False,
+    ) -> ResultsTable:
         formatted_labels = [
             self._format_column_label(col_name, col_type)
             for col_name, col_type in result.columns
@@ -241,6 +256,11 @@ class ResultsViewer(TabbedContent, can_focus=True):
             backend=result.backend,
             fetched_row_count=result.fetched_row_count,
             fetch_truncated=result.truncated,
+            # a sorted re-run keeps the statement the user wrote as its source
+            source_query=source_query or result.statement.sql,
+            query_text=result.statement.sql,
+            sort_column=sort_column,
+            sort_descending=sort_descending,
             cursor_type="range",
             max_column_content_width=self.max_col_width,
             null_rep="[dim]∅ null[/]",
