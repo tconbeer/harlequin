@@ -49,9 +49,16 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
 
 
 @pytest.fixture
-def dropping_tunnel(monkeypatch: pytest.MonkeyPatch) -> SshTunnel:
-    """A tunnel whose child holds its forward for a moment and then dies."""
-    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.4")
+def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Touch the path this returns, and the fake client drops its forwards."""
+    path = tmp_path / "drop"
+    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
+    return path
+
+
+@pytest.fixture
+def dropping_tunnel(drop_trigger: Path) -> SshTunnel:
+    """A tunnel whose child holds its forward until `drop_trigger` is touched."""
     port = free_port()
     tunnel = SshTunnel(
         [
@@ -73,6 +80,7 @@ def dropping_tunnel(monkeypatch: pytest.MonkeyPatch) -> SshTunnel:
 async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
     app: Harlequin,
     dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,9 +91,10 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
             first_connection = app.connection
             assert first_connection is not None
 
+            drop_trigger.touch()
             assert wait_until(lambda: dropping_tunnel.needs_restart)
             # the child that comes back stays up
-            monkeypatch.delenv("FAKE_SSH_LIFETIME")
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
 
             app.action_refresh_catalog()
             await wait_for_workers(app)
@@ -104,6 +113,7 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
 async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
     app: Harlequin,
     dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -112,6 +122,7 @@ async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
     try:
         async with app.run_test() as pilot:
             await wait_for_workers(app)
+            drop_trigger.touch()
             assert wait_until(lambda: dropping_tunnel.needs_restart)
             monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
             monkeypatch.setenv("FAKE_SSH_EXIT", "255")
