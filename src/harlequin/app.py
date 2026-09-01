@@ -171,6 +171,22 @@ class TunnelClosed(Message):
         self.notice = notice
 
 
+class TunnelReconnected(Message):
+    """The dropped tunnel is back, and what runs through it is a new session."""
+
+    def __init__(self, connection: HarlequinConnection) -> None:
+        super().__init__()
+        self.connection = connection
+
+
+class TunnelUnrecoverable(Message):
+    """The tunnel dropped and would not come back, in ssh's own words."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
+
+
 class TransactionModeChanged(Message):
     def __init__(self, new_mode: HarlequinTransactionMode | None) -> None:
         super().__init__()
@@ -827,6 +843,29 @@ class Harlequin(AppBase):
         message.stop()
         self.notify(message.notice, title="SSH tunnel", severity="error")
 
+    @on(TunnelReconnected)
+    def report_tunnel_reconnected(self, message: TunnelReconnected) -> None:
+        message.stop()
+        self.post_message(
+            TransactionModeChanged(new_mode=message.connection.transaction_mode)
+        )
+        self.notify(
+            "The tunnel dropped and has been reopened, so this is a new "
+            "session: an open transaction, a temp table, and anything set with "
+            "SET went with the old one.",
+            title="SSH tunnel",
+            severity="warning",
+        )
+
+    @on(TunnelUnrecoverable)
+    def report_tunnel_unrecoverable(self, message: TunnelUnrecoverable) -> None:
+        message.stop()
+        self._push_error_modal(
+            title="SSH Tunnel Error",
+            header="Harlequin could not reopen the SSH tunnel.",
+            error=message.error,
+        )
+
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
         message.stop()
@@ -1127,6 +1166,8 @@ class Harlequin(AppBase):
         description="Executing queries.",
     )
     def _execute_query(self, message: QuerySubmitted) -> None:
+        # ahead of reading the connection: a tunnel that dropped took it too
+        self._recover_tunnel()
         if self.connection is None:
             return
         cursors: Dict[str, ExecutedStatement] = {}
@@ -1183,6 +1224,28 @@ class Harlequin(AppBase):
                 error=e,
             )
         self.post_message(QueriesCanceled())
+
+    def _recover_tunnel(self) -> None:
+        """Reopen a tunnel that dropped, and the connection that died with it.
+
+        Called on a worker's thread, ahead of the database work it was about to
+        do: restarting `ssh` is not enough on its own, because the adapter's TCP
+        connection ran *through* the old forward. One attempt, and none at all
+        once one has failed -- the user retries by running their query again.
+        """
+        tunnel = self.ssh_tunnel
+        if tunnel is None or not tunnel.needs_restart or self.connection is None:
+            return
+        try:
+            tunnel.restart()
+            connection = self.adapter.connect()
+        except BaseException as e:  # adapters are third-party code
+            self.post_message(TunnelUnrecoverable(e))
+            return
+        # assigned here rather than by the handler: the worker that called this
+        # is about to run a query on it, and cannot wait for a message to land.
+        self.connection = connection
+        self.post_message(TunnelReconnected(connection=connection))
 
     def _get_selected_queries(self) -> list[str]:
         if self.editor is None:
@@ -1316,6 +1379,7 @@ class Harlequin(AppBase):
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:
+        self._recover_tunnel()
         if self.connection is None:
             return
         catalog = self.connection.get_catalog()

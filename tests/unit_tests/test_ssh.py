@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Iterator, Sequence
+from typing import Callable, Iterator, Sequence
 from unittest.mock import MagicMock
 
 import click
@@ -402,23 +402,30 @@ def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
     assert bare is not None and bare.server_alive_interval is None
 
 
+def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
+    """Poll until something a thread does becomes true, or give up."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
 def test_a_child_that_dies_says_so_in_ssh_s_last_words(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FAKE_SSH_STDERR", "Timeout, server web-1 not responding.")
+    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
     said: list[str] = []
     tunnel = child_tunnel(free_port())
     tunnel.watch(said.append)
     tunnel.start()
     try:
-        assert tunnel._process is not None
-        tunnel._process.kill()
-        deadline = time.monotonic() + 5
-        while not said and time.monotonic() < deadline:
-            time.sleep(0.02)
+        assert wait_until(lambda: bool(said))
     finally:
         tunnel.stop()
     assert said == ["tunnel closed: Timeout, server web-1 not responding."]
+    assert tunnel.dropped
 
 
 def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
@@ -688,3 +695,54 @@ def test_a_profile_may_write_one_forward_as_a_string() -> None:
         {"ssh_host": "web-1", "ssh_forward": "15439:db:5432"}
     )
     assert options.forwards == ("15439:db:5432",)
+
+
+# reopening one that dropped
+
+
+def test_a_tunnel_that_dropped_asks_to_be_reopened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
+    port = free_port()
+    tunnel = child_tunnel(port)
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    assert not tunnel.needs_restart
+    try:
+        assert wait_until(lambda: tunnel.needs_restart)
+        assert not accepts(port)
+        monkeypatch.delenv("FAKE_SSH_LIFETIME")
+        tunnel.restart()
+        assert accepts(port)
+        assert not tunnel.needs_restart
+    finally:
+        tunnel.stop()
+
+
+def test_a_restart_never_asks_for_a_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Something owns the terminal by now, so a prompt has nowhere to go."""
+    tunnel = child_tunnel(free_port())
+    tunnel.start()
+    try:
+        assert "BatchMode=yes" not in tunnel.argv
+        tunnel.restart()
+        assert "BatchMode=yes" in tunnel.argv
+    finally:
+        tunnel.stop()
+
+
+def test_a_restart_that_fails_is_not_tried_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    assert wait_until(lambda: tunnel.needs_restart)
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
+    monkeypatch.setenv("FAKE_SSH_EXIT", "255")
+    with pytest.raises(HarlequinSshError, match="Permission denied"):
+        tunnel.restart()
+    assert tunnel.dropped
+    assert not tunnel.needs_restart

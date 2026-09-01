@@ -334,6 +334,10 @@ class SshTunnel:
         self.timeout = timeout
         self.reused = False
         """Whether a listener that was already there is what answers now."""
+        self.dropped = False
+        """Whether the child exited on its own, taking the forward with it."""
+        self.restart_failed = False
+        """Whether a restart already failed, and so must not be tried again."""
         self._process: subprocess.Popen[bytes] | None = None
         self._stderr: _Stderr | None = None
         self._on_close: Callable[[str], None] | None = None
@@ -347,6 +351,17 @@ class SshTunnel:
             for forward in self.forwards
             if (endpoint := forward.endpoint) is not None
         )
+
+    @property
+    def needs_restart(self) -> bool:
+        """Whether the next thing that needs the database should reopen this first.
+
+        False once a restart has failed: a background retry storm against a
+        bastion that is down is how an account gets locked, so it fails once
+        with ssh's message and the user restarts Harlequin, having been told
+        why.
+        """
+        return self.dropped and not self.restart_failed
 
     @property
     def running(self) -> bool:
@@ -402,6 +417,7 @@ class SshTunnel:
         if self.running:
             return
         self.reused = False
+        self.dropped = False
         self._stopping = False
         already_bound = any(_accepts(endpoint) for endpoint in self.endpoints)
         try:
@@ -427,6 +443,29 @@ class SshTunnel:
             self.stop()
             raise
         self._arm_watcher()
+
+    def restart(self) -> None:
+        """Open it again, without ever asking for a credential.
+
+        Whatever `--ssh-batch-mode` said at start-up, a restart runs under
+        `BatchMode=yes`: by now something owns the terminal, so a passphrase
+        prompt has nowhere to go, and failing with the credential ssh wanted is
+        the only outcome a user can act on.
+
+        Raises: HarlequinSshError, having marked this tunnel as not to be tried
+        again.
+        """
+        if "BatchMode=yes" not in self.argv and len(self.argv) > 1:
+            # ahead of the destination, which ssh takes last
+            self.argv = [*self.argv[:-1], "-o", "BatchMode=yes", self.argv[-1]]
+        self.stop()
+        try:
+            self.start()
+        except HarlequinSshError:
+            # still down, and now not to be tried again
+            self.dropped = True
+            self.restart_failed = True
+            raise
 
     def stop(self) -> None:
         """Kill the child, if there is one. Safe to call more than once."""
@@ -468,6 +507,7 @@ class SshTunnel:
         if self._stopping or self._process is not process:
             # taken down deliberately, or replaced by a restart
             return
+        self.dropped = True
         last_line = self._stderr.last_line() if self._stderr is not None else ""
         on_close(f"tunnel closed: {last_line}" if last_line else "tunnel closed")
 

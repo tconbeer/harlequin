@@ -14,6 +14,7 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_EXIT       exit with this code instead of binding anything
     FAKE_SSH_HANG       bind nothing and sleep, as ssh does waiting on a passphrase
     FAKE_SSH_DELAY      seconds to wait before binding
+    FAKE_SSH_LIFETIME   seconds to hold the forwards before dropping them
     FAKE_SSH_PROBE_EXIT exit `-G` with this code
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
     FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval
@@ -125,6 +126,13 @@ def main() -> int:
                 return 255
             sock.listen(8)
             listeners.append(sock)
+    lifetime = os.environ.get("FAKE_SSH_LIFETIME")
+    if lifetime:
+        time.sleep(float(lifetime))
+        for sock in listeners:
+            sock.close()
+        print("Timeout, server web-1 not responding.", file=sys.stderr)
+        return 255
     while True:
         time.sleep(3600)
 
