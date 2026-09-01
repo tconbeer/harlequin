@@ -360,7 +360,7 @@ side.
 
 The response is three things: **stdout bytes, stderr bytes, exit code.** The server runs
 `harlequin.query` and `hsql.output` exactly as the cold path does, writing into a buffer
-instead of `click.get_binary_stream("stdout")`, and the client copies that buffer to its own
+instead of `click.open_file("-", mode="wb")`, and the client copies that buffer to its own
 stdout and exits with the code.
 
 This is the decision that makes the feature safe. It means:

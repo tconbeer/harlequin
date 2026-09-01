@@ -130,7 +130,9 @@ def command_document(command: click.Command) -> dict[str, Any]:
     # `get_params` rather than `params`, because click keeps `--help` out of the
     # latter and adds it at parse time -- and a caller reading this to learn the
     # surface should be told about the flag that would have shown it to them
-    params = command.get_params(click.Context(command, info_name="hsql"))
+    ctx = click.Context(command, info_name="hsql")
+    params = command.get_params(ctx)
+    help_option = command.get_help_option(ctx)
     return {
         "arguments": [
             _from_argument(param)
@@ -139,13 +141,24 @@ def command_document(command: click.Command) -> dict[str, Any]:
         ],
         "options": sorted(
             (
-                _from_parameter(param)
+                _from_parameter(param, name=_name_of(param, help_option))
                 for param in params
                 if not isinstance(param, click.Argument)
             ),
             key=lambda entry: str(entry["name"]),
         ),
     }
+
+
+def _name_of(param: click.Parameter, help_option: click.Option | None) -> str:
+    """What a caller calls a parameter, which for `--help` is `help`.
+
+    click stores the help flag's value under a reserved name of its own, so that
+    a command may declare a parameter called `help`. hsql does not, and a
+    document that named the flag anything but `help` would be reporting click's
+    bookkeeping rather than the CLI.
+    """
+    return "help" if param is help_option else str(param.name)
 
 
 def _hsql_command() -> click.Command:
@@ -255,10 +268,10 @@ def _from_option(
     }
 
 
-def _from_parameter(param: click.Parameter) -> dict[str, Any]:
+def _from_parameter(param: click.Parameter, *, name: str) -> dict[str, Any]:
     """One of hsql's own options, as click holds it."""
     return {
-        "name": param.name,
+        "name": name,
         "decls": [*param.opts, *param.secondary_opts],
         "type": TYPES.get(param.type.name, param.type.name),
         "metavar": param.metavar,
@@ -300,8 +313,12 @@ def _default(param: click.Parameter) -> Any:
     declared without a default, a callable default (calling it here could read
     the environment, and a spec that varied with it is one nobody could cache),
     and anything else JSON has no room for.
+
+    Through `to_info_dict()` because click derives a flag's default rather than
+    storing one, and that is the method that resolves it -- to the `false` a
+    flag reads here.
     """
-    default = param.default
+    default = param.to_info_dict()["default"]
     if default is None or isinstance(default, (str, int, float, bool)):
         return default
     if isinstance(default, (list, tuple)):

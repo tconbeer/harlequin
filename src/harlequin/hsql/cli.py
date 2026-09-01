@@ -47,6 +47,7 @@ from typing import (
     Mapping,
     Sequence,
     TypeVar,
+    cast,
 )
 
 import click
@@ -1703,7 +1704,9 @@ def _read_statements(
             if kind == "command":
                 text = value
             elif value == "-":
-                text = click.get_text_stream("stdin").read()
+                # `-` is stdin, decoded the way click decodes it, so a stream
+                # the environment has misconfigured still reads as text
+                text = click.open_file("-", mode="r").read()
             else:
                 text = Path(value).expanduser().read_text(encoding="utf-8")
             for statement in split(text):
@@ -1859,7 +1862,8 @@ def _sink(
     """
     path = destination.file(filename)
     if path is None:
-        yield click.get_binary_stream("stdout")
+        # `-` is stdout, wrapped so that closing the stream is not on the table
+        yield cast(BinaryIO, click.open_file("-", mode="wb"))
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
