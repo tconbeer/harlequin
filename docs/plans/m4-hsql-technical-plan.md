@@ -27,7 +27,7 @@ already trusts, with the user's own credentials, and embeds no model (§8).
    interpreter, against a whole `hsql --version` of 118ms — and it is rewritten *whole* at
    `action_quit`, so a second writer would race a running IDE for the file that holds every
    open buffer (§1.1). `--open` execs a documented flag on the other command instead, and the
-   argv it builds is the same module the TUI's "Copy CLI command" reads backwards (§3.1, §3.4).
+   argv it builds is the same module the TUI's "Copy CLI command" reads backwards (§3.1, §3.5).
 2. **The query history both commands should share cannot be either of the things that hold it
    today.** The IDE's history is a pickle inside the catalog cache, written once, at quit — so
    a crash, a `kill`, or a container that goes away loses the session — and it lives in
@@ -157,7 +157,7 @@ papercut into the failure mode of a new feature.
 There is no `subprocess`, `os.system` or `$EDITOR` anywhere in `src/`. Textual's
 `App.suspend()` is a synchronous context manager that publishes a suspend signal, drops out of
 application mode, redirects `stdout`/`stderr` back to the real ones for the duration, and
-resumes with `refresh(layout=True)`. Two things about it shape §3.5:
+resumes with `refresh(layout=True)`. Two things about it shape §3.6:
 
 - It is **main-thread only**, by construction: it redirects the process's streams and drives
   the driver. Nothing in a `@work(thread=True)` worker may call it.
@@ -183,7 +183,7 @@ That is already a real trust surface, and it is bounded: arbitrary SQL against a
 user chose to open. A `[commands]` table would make it arbitrary code as the user, from a file
 they may never have read — and, as Ted put it, a git-synced dotfiles repo makes the same true
 of a file in the user's *own* config dir. `$EDITOR`, by contrast, is the user's own shell
-session. That asymmetry is the whole design of §3.7.
+session. That asymmetry is the whole design of §3.8.
 
 ### 1.8 What the skill can say about handing off, and what it cannot
 
@@ -218,17 +218,19 @@ rewrites.
 
 ## 3. Target architecture
 
-Five deliverables, three new modules, all of the new modules below rich:
+Six deliverables, three new modules and one new mode, all of the new modules below rich:
 
 ```
 harlequin/
-  invocation.py   # what a command line said; renders back to either command's argv
-  query_log.py    # the append-only JSONL log, and its reader
-  external.py     # running someone else's program: the two shapes, and the trust gate
+  invocation.py        # what a command line said; renders back to either command's argv
+  query_log.py         # the append-only JSONL log, and its reader
+  external.py          # running someone else's program: the two shapes, and the trust gate
+  hsql/modes/history.py  # the log, as a result set, like every other mode
 ```
 
 `invocation.py` and `query_log.py` are importable by `hsql` (stdlib plus `platformdirs` and
-`harlequin.redact`). `external.py` is the IDE's, and imports Textual only under
+`harlequin.redact`), and `modes/history.py` is imported by the callback only when the mode is
+chosen, as every mode is. `external.py` is the IDE's, and imports Textual only under
 `TYPE_CHECKING`; the app owns the widgets, this module owns the process.
 
 ### 3.1 `hsql --open`, and the flag on the other side
@@ -328,11 +330,53 @@ output"), the IDE notifies once. **Rotation** is size-based and checked once per
 first write: over 32 MiB, rename to `queries.jsonl.1`, replacing any existing one. Two
 processes rotating at once lose nothing — both then append to a new file.
 
-**Opt-out** is a profile key, `history = false`, read by both commands. `hsql --info` grows a
-`paths` object naming the log (and §3.7's trust store), because a log nobody can find is not
-the "ordinary tools" affordance the product plan asked for.
+**Opt-out** is a profile key, `history = false`, read by both commands. Nothing else reports
+the log's path: `--info` describes the installation, not the user's data, and the mode below
+is how a caller reads the records without ever needing to know where they are.
 
-### 3.3 The History screen reads the log
+### 3.3 `hsql --history`, the mode that reads the log
+
+A mode option, beside `--catalog` and `--catalog-search`, and it costs almost nothing to build
+because of what M2 settled: **a listing is a result set**, so the whole output layer is already
+written. `--history` builds an Arrow table from the log's records and hands it to the emitters
+every other mode uses — which means `--format json`, `--jsonl`, `--csv`, `-x`, `-o PATH`,
+`--stats` and the layout flags all work on it the day it lands, and none of them is a line of
+new code.
+
+```bash
+hsql --history --limit 20                 # the last 20, as a table
+hsql --history -P prod --json             # this profile's, for an agent
+hsql --history -x --limit 1               # the last one, vertically
+```
+
+- **It connects to nothing.** It is the only mode that reads a profile, builds an adapter, and
+  never opens a connection: the adapter is constructed solely to ask it for `connection_id`,
+  which is what filters the log to one database. A history mode that woke a warehouse to list
+  queries would be its own kind of joke.
+- **Scope follows the invocation.** `-P`, `-a` or a `CONN_STR` narrows to that connection;
+  with none of them, the mode reports every connection, because "I typed `hsql --history` and
+  got someone else's idea of the default database" is the surprising answer. The `profile` and
+  `adapter` columns are what tell them apart.
+- **Newest first**, which is what every shell means by history, and what makes `--limit` mean
+  "the most recent N" rather than "the oldest N". `--limit` is honored here rather than refused
+  as it is under `--catalog`: the store has a row count, so a hard limit on it is exact.
+  Default 500 — the size of the deque the History screen has always kept — and `-1` for all.
+- **Columns:** `at`, `program`, `profile`, `adapter`, `status`, `rows`, `elapsed_ms`, `sql`.
+- **`sql` is folded to one line, in every format.** Two invariants force it and one fact
+  makes it harmless: `layout.py` pads by terminal cells and has no concept of a cell that
+  spans rows, and `--format table` and `--format csv` agree cell for cell, pinned by the
+  golden-format snapshots (M1 §5) — so a column that is verbatim in JSON and folded in a
+  table is not on offer. Folding loses formatting, not meaning: `" ".join(sql.split())` is
+  still the query, and still runnable.
+- **The read is a bounded tail**, not a parse of the file: seek to the end, read backwards in
+  chunks until N matching records or the head of the file, skipping any line that will not
+  parse (§3.2). `hsql --history --limit 20` costs the same on a 30 MB log as on a 30 KB one.
+
+This is the mode the skill teaches for B7 — an agent joining a task mid-stream reads what the
+human has been running, in the format it wants, on Windows as well as anywhere else, with no
+`jq` and no path to know.
+
+### 3.4 The History screen reads the log
 
 `History` stops being a pickled deque and becomes a bounded tail of the log:
 `History.tail(connection=…, n=500)` reads the last ~1 MiB, splits, parses newest-first, skips
@@ -350,7 +394,7 @@ Three things follow, and they are the point of the milestone:
   pickled records are appended with their own timestamps and `"program":"harlequin"`. Fifteen
   lines, and it is also the test that proves the writer accepts historical timestamps.
 
-### 3.4 "Copy CLI command", and the module both directions share
+### 3.5 "Copy CLI command", and the module both directions share
 
 `harlequin.invocation` holds what a command line said:
 
@@ -392,7 +436,7 @@ Shipped **unbound**: every obvious key is taken, and `harlequin --keys` plus the
 a user picks one. The action is in the registry, so it is bindable and listed the day it
 lands.
 
-### 3.5 The external editor (#1102)
+### 3.6 The external editor (#1102)
 
 The small one, and it can ship first because it needs nothing else in this milestone.
 
@@ -406,7 +450,7 @@ read the file back  ->  one undoable edit  ->  delete the temp file
   outcome nobody asked for. The refusal names both spellings.
 - **`$EDITOR` and `$VISUAL` need no confirmation.** The environment is the user's own shell
   session (Ted's call, and the reason). A config-defined `editor` is a config-defined shell
-  command and goes through §3.7 like any other.
+  command and goes through §3.8 like any other.
 - **The exchange is a file, because editors do not read stdin.** A
   `NamedTemporaryFile(suffix=".sql")` written from the active buffer, handed to the editor as
   its last argument — the `git rebase -i` shape that #767 identified and that Posting
@@ -426,7 +470,7 @@ The action is `code_editor.edit_externally`, on `CodeEditor`, and #1102's third 
 "post-external-editor action", e.g. format or run on return — is **not** in M4 (§7): the
 buffer is back in the editor and the existing keys already do those things.
 
-### 3.6 The command hook (#952)
+### 3.7 The command hook (#952)
 
 The other shape: a **filter**, not a takeover.
 
@@ -468,7 +512,7 @@ timeout = 120
   config file it found in `$CWD` is a supply-chain hazard in CI. `hsql` reads the table for
   `--config validate` and ignores it otherwise.
 
-### 3.7 Trust: what a config file may make Harlequin execute
+### 3.8 Trust: what a config file may make Harlequin execute
 
 Two rules, and neither is a preference the config file can set for itself.
 
@@ -476,7 +520,7 @@ Two rules, and neither is a preference the config file can set for itself.
 file the user named or keeps: an explicit `--config-path`, the user config dir, or home. A
 definition found in `./.harlequin.toml` or `./pyproject.toml` is **ignored**, with one
 notification naming the file and the key. Merging already tracks which file supplied each key
-(`Provenance`, M2 §3.5), so this is a check at the point of use, not a second pass.
+(`Provenance`, M2 §3.6), so this is a check at the point of use, not a second pass.
 
 **Rule 2 — consent, per definition.** Before a command runs for the first time, a modal shows
 the exact argv, the config file it came from, and three choices — Run once / Always allow /
@@ -494,14 +538,14 @@ that could carry its own approval would defeat the gate it is supposed to pass. 
 command sits beside the hash so the file can be audited by the person it protects, and revoking
 is deleting a line.
 
-**What is not gated:** `$EDITOR`/`$VISUAL` (§3.5), and `hsql --open` launching `harlequin`
+**What is not gated:** `$EDITOR`/`$VISUAL` (§3.6), and `hsql --open` launching `harlequin`
 (a known entry point in the same interpreter, not a user string).
 
 **What is never automatic:** a hook runs only from a key the user pressed. No hook on start-up,
 on connect, on error, or on quit — that is how a config-defined command becomes a startup
 payload, and there is no version of it M4 wants.
 
-### 3.8 Actions can come from config, so the registry becomes a function
+### 3.9 Actions can come from config, so the registry becomes a function
 
 `HARLEQUIN_ACTIONS` stays as the static base; `build_actions(command_names)` returns it plus
 one `command.<name>` entry per configured hook, targeting `CodeEditor` with
@@ -537,42 +581,47 @@ pruning, the exec/subprocess split, and the `/dev/tty` reattach. Rewrites the sk
 
 **PR 3 — `harlequin.query_log`.** The record, the writer, the tolerant reader, rotation,
 `get_connection_hash()`'s move out of `catalog_cache`, `history = false`, and both commands
-writing. `hsql --info` grows `paths`. Guard: `hsql`'s import set still contains no rich, and
-`hsql --version` is still ~120ms.
+writing. Guard: `hsql`'s import set still contains no rich, and `hsql --version` is still
+~120ms.
 
-**PR 4 — The History screen reads the log.** `History.tail()`, `CatalogCache.history` removed,
+**PR 4 — `hsql --history`.** The mode, the bounded tail, the connection filter, the folded
+`sql` column, and `--limit` as "the most recent N". Nothing new in the output layer — the
+listing goes through the emitters `--catalog` already uses. Adds the mode to the skill, beside
+the hand-off paragraph PR 2 rewrote. Closes B7's headless half.
+
+**PR 5 — The History screen reads the log.** `History.tail()`, `CatalogCache.history` removed,
 `CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's queries
-first show up in a human's History screen. Closes B7.
+first show up in a human's History screen, and where the human's show up under `--history`.
 
-**PR 5 — Copy CLI command.** The action, the quoting, the masking, the registry entry. Closes
+**PR 6 — Copy CLI command.** The action, the quoting, the masking, the registry entry. Closes
 F2.
 
-**PR 6 — Docs** (`harlequin-web`): the handoff section in "Headless & Agents", `--open` on both
-command pages, and the query log — its path, its shape, and the two `jq` one-liners that are
-the reason it is JSONL.
+**PR 7 — Docs** (`harlequin-web`): the handoff section in "Headless & Agents", `--open` on both
+command pages, and the query log — the mode that reads it, its shape, and the path, for the
+reader who wants to back it up or delete it.
 
 ### Release B — the hooks (2.14)
 
-**PR 7 — The external editor.** `$EDITOR`/`$VISUAL` only, `harlequin.external.run_in_terminal()`,
+**PR 8 — The external editor.** `$EDITOR`/`$VISUAL` only, `harlequin.external.run_in_terminal()`,
 the suspend wrapper and its unsupported-environment path, temp-file exchange, non-zero-exit
 discard, and the `code_editor.edit_externally` action. Closes
 [#1102](https://github.com/tconbeer/harlequin/issues/1102) for the request as filed.
 
-**PR 8 — The trust gate.** Provenance rule, consent modal, trust store, and the config
+**PR 9 — The trust gate.** Provenance rule, consent modal, trust store, and the config
 `editor` key as its first consumer. No hooks yet — the gate ships with something small enough
 to review it against.
 
-**PR 9 — `[commands]` in config, and actions from config.** The `Config` member, the schema
+**PR 10 — `[commands]` in config, and actions from config.** The `Config` member, the schema
 regeneration (`scripts/write_config_schema.py`, and the pinned artifact), `build_actions()`,
 the keymap-validation fix from §1.5, and `--config validate`'s coverage of the new table.
 Nothing executes yet; the keys bind to an action that reports "not implemented" in exactly one
-commit, or PR 9 and PR 10 land together if that reads badly in review.
+commit, or PR 10 and PR 11 land together if that reads badly in review.
 
-**PR 10 — Running a hook.** The worker, stdin/stdout, the four `output` modes, the empty-output
+**PR 11 — Running a hook.** The worker, stdin/stdout, the four `output` modes, the empty-output
 rule, timeout and cancel, error surfacing. Answers
 [#952](https://github.com/tconbeer/harlequin/issues/952).
 
-**PR 11 — Docs** (`harlequin-web`): "External editor" and "Bring your own AI" pages, the trust
+**PR 12 — Docs** (`harlequin-web`): "External editor" and "Bring your own AI" pages, the trust
 model stated plainly, and a worked `claude -p` config with the prompt that keeps code fences
 out of the buffer.
 
@@ -596,6 +645,12 @@ ones that execute a user's string.
 - The **concurrent append** measurement becomes a real test — 4 processes × 100 records at
   8 KB, asserting every line parses — marked so it can be deselected on a slow runner.
 - The pickle migration, including timestamps that predate the log.
+- `--history`: the connection filter with two connections interleaved in one file; `--limit`
+  taking from the newest end; the folded `sql` column matching between `--format table` and
+  `--format csv`, asserted the way the golden-format snapshots assert it rather than against a
+  copy of the folding rule; and an empty log printing a header and no rows rather than nothing.
+- A guard that `--history` opens no connection: the mode runs against a profile whose adapter
+  would raise on `connect()`, and still prints rows.
 - Trust: fingerprint stability across a whitespace change (it should change — the argv is what
   runs), and the provenance rule (a `[commands]` table in `./pyproject.toml` is ignored; the
   same table under `--config-path` is not).
@@ -674,18 +729,24 @@ connection hash to find the file, and `tail -f` on "what is happening" would hav
 One file with a `connection` field is `grep`-able, `jq`-able, and orderable by time across
 databases, which is what "readable with ordinary tools" means.
 
-### 6.5 No `--history` mode in M4
+### 6.5 `--history` is a mode, and the log's path is not in `--info`
 
-The product plan proposes `hsql history --json -n 20`. The log makes it a one-liner that needs
-no flag, no mode, and no import:
+The tempting cut is to ship the log and let `tail` and `jq` be the reader: the format is
+already the most readable one there is. It is a mode (Ted's call), and three things say so.
 
-```bash
-tail -n 20 "$(hsql --info | jq -r .paths.query_log)" | jq -r .sql
-```
+**A mode is nearly free, because a listing is a result set.** M2 §3.3 built that road for
+`--catalog`: hand the emitters an Arrow table and every format, every layout flag and `-o`
+follow. `--history` is a reader plus a table; it is not a second output stack.
 
-A mode would be a second, narrower way to read a file that is already in the world's most
-readable format, on a command whose §1 problem is start-up cost. If the log lands and people
-still ask for it, it is a small M5 addition against a format that already exists.
+**The pipeline is not portable and not self-describing.** It needs `jq`, a path, a filter by
+connection, and a shell that has `tail` — which Windows does not. "Read the human's recent
+queries" is a thing the skill should be able to teach in one line that works everywhere.
+
+**And `--info` is the wrong place for the path.** `--info` reports on the installation —
+versions, platform, config files, adapter capabilities. A pointer into the user's own query
+history is a different kind of fact, and putting it there invites a reader to go parse the file
+by hand when a mode can hand them rows. The path stays in the docs, where a person who wants to
+back the file up or delete it will look.
 
 ### 6.6 The hook's context is a profile name, not a catalog
 
@@ -704,7 +765,7 @@ the hash so the person it protects can audit it.
 
 Ted's call, and the line generalizes: the environment is the user's own session, and a config
 file is a document that arrives from a directory (`$CWD`) or a sync (dotfiles) that the user
-may not have read. That is also why the provenance rule (§3.7) is separate from the consent
+may not have read. That is also why the provenance rule (§3.8) is separate from the consent
 prompt — one keeps a stranger's file from ever asking, the other keeps the user's own file
 honest.
 
@@ -728,13 +789,16 @@ the connection and the SQL are not.
   policy, and an answer for where the output goes.
 - **Code-fence stripping on hook output.** The prompt is the config author's, and the docs give
   one that works. A heuristic here would be Harlequin guessing at model output.
-- **`shell = true`, and placeholders beyond none.** §3.6.
+- **`shell = true`, and placeholders beyond none.** §3.7.
 - **Action-name validation in `hsql --config validate`.** It would be genuinely useful — an
   agent editing a keymap would learn about a typo without starting a TUI — but the registry
   lives in `harlequin.actions`, which imports `harlequin.components` and therefore Textual.
   Doing it properly means splitting the *names* into a leaf module and leaving the widget
   targets behind, which is a refactor to make on purpose, with the second consumer in hand.
 - **A `--open` that starts a query running.** It would collapse the review step F1 exists for.
+- **`--history --since 2h`, and searching history.** Both are obvious the moment the mode
+  exists, and both are additions to a mode and a format that already work — `--limit` and the
+  reader's newest-first order cover the case the milestone is for. Worth doing next, not now.
 - **Per-hook cancel keys, hook chaining, and hooks that write config.** Each is a feature
   request that will read as obvious once one hook works, and none of them is M4's.
 
@@ -757,9 +821,13 @@ Recorded here; applied to `harlequin-for-agents.md` in the same PR as this docum
   exists as its own issue with its own reference implementation (§6.1).
 - **§10 does not mention consent, and a config-defined shell command needs it.** Config files
   merge from `$CWD`, so a cloned repository can define one; a synced dotfiles repo can do the
-  same in the user's own config dir. §3.7 is the missing paragraph.
-- **§6's `hsql history --json -n 20` proposes to "expose" a pickle that is written once, at
-  quit.** The exposure is the log; there is no history mode in M4 (§1.2, §6.5).
+  same in the user's own config dir. §3.8 is the missing paragraph.
+- **§6's `hsql history --json -n 20` is the right feature under two wrong assumptions.** The
+  spelling is `hsql --history --json --limit 20` — a mode option, and `--limit` rather than a
+  new `-n`, because both commands already mean "the rows that leave the store" by it. And what
+  it reads is not the pickle §6 proposes to "expose": that one is written once, at quit, behind
+  a module headless code may not import (§1.2, §1.3). The log is the store; the mode is the
+  reader (§3.3).
 - **§12's risk list says query history "sits outside that mechanism" and needs its own
   handling.** It needs one line of handling: `redact_text()` on the way into the log, plus the
   `hide_secrets_in()` call the IDE has never made (§1.4, §3.2).
