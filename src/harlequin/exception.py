@@ -43,6 +43,12 @@ class HarlequinQueryError(HarlequinError):
     pass
 
 
+class HarlequinSshError(HarlequinError):
+    """An `ssh` child that would not start, or would not open its forwards."""
+
+    pass
+
+
 class HarlequinThemeError(HarlequinError):
     pass
 
