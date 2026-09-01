@@ -657,6 +657,12 @@ class Harlequin(AppBase):
             callback = partial(self.post_message, message)
             self.set_timer(delay=0.5, callback=callback)
 
+    @on(CodeEditor.SymbolsFound)
+    def load_catalog_items_named_by_buffer(
+        self, message: CodeEditor.SymbolsFound
+    ) -> None:
+        self.data_catalog.database_tree.load_items_named(message.symbols.names)
+
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
         if message.cursors:  # select query
