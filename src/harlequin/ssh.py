@@ -339,7 +339,12 @@ class SshTunnel:
 
     def _child_failed(self) -> HarlequinSshError:
         assert self._process is not None
-        detail = self._stderr.text() if self._stderr is not None else ""
+        detail = ""
+        if self._stderr is not None:
+            # the child has exited, but what it wrote on the way out may still
+            # be in the pipe; an error that quotes ssh has to wait for it
+            self._stderr.settle()
+            detail = self._stderr.text()
         return HarlequinSshError(
             f"ssh exited with code {self._process.returncode} without opening "
             f"the forward.\n\n{detail}".rstrip(),
@@ -369,6 +374,16 @@ class _Stderr:
 
     def text(self) -> str:
         return b"".join(self._chunks).decode("utf-8", errors="replace").strip()
+
+    def settle(self) -> None:
+        """Wait for the drain to reach the end of what the child wrote.
+
+        `Popen.wait()` returns when the child exits, which is before the pipe it
+        wrote to has been read to the end -- so a caller that quotes ssh calls
+        this first, or quotes nothing. Only useful once the child is gone;
+        while it runs there is no end to wait for.
+        """
+        self._thread.join(timeout=_TERMINATE_SECONDS)
 
     def close(self) -> None:
         self._thread.join(timeout=_TERMINATE_SECONDS)
