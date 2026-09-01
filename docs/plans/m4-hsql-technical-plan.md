@@ -18,6 +18,12 @@ implementation from Posting. [#952](https://github.com/tconbeer/harlequin/issues
 natural language to SQL, is closed `not planned` — "I won't be adding this to Harlequin" — and
 the command hook is the answer that stays true to that: Harlequin runs the tool the user
 already trusts, with the user's own credentials, and embeds no model (§8).
+[#850](https://github.com/tconbeer/harlequin/issues/850), the History screen's UI, rides along
+with the release that changes what that screen reads (§3.4).
+
+**Three releases, and the editor and the hooks go first** (Ted's call). Nothing in this
+milestone depends on anything else in it, so the order is a product decision: A is the editor
+and the hooks, B is the query log and history, C is the handoff (§4).
 
 **Bottom line up front.** Three claims, each measured below.
 
@@ -97,6 +103,14 @@ Three consequences, all of which M4 has to deal with:
 - **A pickle is not a thing "both agents and humans can read with ordinary tools"** — the
   product plan's own criterion. Reading it requires importing `harlequin.history` to unpickle
   the dataclass, which imports rich.
+
+And the screen that shows it has its own problems, filed as
+[#850](https://github.com/tconbeer/harlequin/issues/850). `HistoryScreen` subclasses `Screen`,
+not `ModalScreen` — and `ModalScreen` is the one whose "bindings take precedence over the
+App's", so every app-level key is live behind a screen whose job is to pick one query. Its
+preview pane is a `TextEditor` with `read_only=True`, which stops edits but not focus: Tab or a
+click puts a cursor in a query the user cannot change. Ted's reading of the issue is that the
+interactivity of the preview is the problem, not the missing key list.
 
 ### 1.3 `harlequin.history` is a rendering, and headless code may not import it
 
@@ -394,6 +408,13 @@ Three things follow, and they are the point of the milestone:
   pickled records are appended with their own timestamps and `"program":"harlequin"`. Fifteen
   lines, and it is also the test that proves the writer accepts historical timestamps.
 
+The screen itself is reworked in the same release (#850, §1.2): a `ModalScreen`, so the app's
+bindings stop reaching through it; a preview that is a highlighted, **non-focusable** surface
+rather than a read-only editor with a cursor in it; and the screen's own bindings shown the way
+every other screen shows them. Textual 8.2.8 has no `textual.highlights`, so the preview stays
+a `TextEditor` that cannot take focus rather than becoming a `Static` — a swap to make when the
+version that offers it is pinned, not before.
+
 ### 3.5 "Copy CLI command", and the module both directions share
 
 `harlequin.invocation` holds what a command line said:
@@ -562,72 +583,95 @@ user that line, not the application.
 
 ## 4. Sequencing
 
-Two releases. **The handoff first**: it is additive, needs no new trust machinery, and every
-piece of it is a pure function plus a file. **The hooks second**, in dependency order, with
-the trust gate landing with its first consumer rather than after it.
+Three releases, and **the editor and the hooks go first** (Ted's call). Nothing in this
+milestone depends on anything else in it — that is what makes the order a choice rather than a
+constraint — so the order is by what users are waiting for and by how much design risk each
+group carries. [#1102](https://github.com/tconbeer/harlequin/issues/1102) is open, has a
+reference implementation, and needs nothing else here; the trust model under it is the most
+consequential decision in M4 and benefits from being in the world early rather than shipping
+last with two other features on top of it. The query log follows, because it changes a stored
+format and a screen, and because it is what makes an agent's queries visible to a human at
+all. The handoff is last: it is the largest new public surface — two flags across two commands
+— and it lands better after the log, since a draft handed to a human and the queries they run
+against it are then one story rather than two.
+
+Each release maps to a run of §3: A is §3.6–§3.9, B is §3.2–§3.4, C is §3.1 and §3.5.
 
 Numbering assumes M3's remaining work releases as 2.13.
 
-### Release A — the handoff (2.13)
+### Release A — the editor and the hooks (2.13)
 
-**PR 1 — `harlequin.invocation`, and `harlequin --open`.** The dataclass, both argv renderers,
-and the IDE flag that loads files into buffers without executing them. `cli.py` builds an
-`Invocation` and hands it to the app; the IDE starts calling `hide_secrets_in()`. Closes the
-half of F1 the IDE owns, and is useful on its own (`harlequin --open report.sql`).
-
-**PR 2 — `hsql --open`.** The mode option, the secret refusal, the scratch file and its
-pruning, the exec/subprocess split, and the `/dev/tty` reattach. Rewrites the skill's section
-9 (`hsql --skill` ships from the wheel, so this is the same PR). Closes F1.
-
-**PR 3 — `harlequin.query_log`.** The record, the writer, the tolerant reader, rotation,
-`get_connection_hash()`'s move out of `catalog_cache`, `history = false`, and both commands
-writing. Guard: `hsql`'s import set still contains no rich, and `hsql --version` is still
-~120ms.
-
-**PR 4 — `hsql --history`.** The mode, the bounded tail, the connection filter, the folded
-`sql` column, and `--limit` as "the most recent N". Nothing new in the output layer — the
-listing goes through the emitters `--catalog` already uses. Adds the mode to the skill, beside
-the hand-off paragraph PR 2 rewrote. Closes B7's headless half.
-
-**PR 5 — The History screen reads the log.** `History.tail()`, `CatalogCache.history` removed,
-`CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's queries
-first show up in a human's History screen, and where the human's show up under `--history`.
-
-**PR 6 — Copy CLI command.** The action, the quoting, the masking, the registry entry. Closes
-F2.
-
-**PR 7 — Docs** (`harlequin-web`): the handoff section in "Headless & Agents", `--open` on both
-command pages, and the query log — the mode that reads it, its shape, and the path, for the
-reader who wants to back it up or delete it.
-
-### Release B — the hooks (2.14)
-
-**PR 8 — The external editor.** `$EDITOR`/`$VISUAL` only, `harlequin.external.run_in_terminal()`,
+**PR 1 — The external editor.** `$EDITOR`/`$VISUAL` only, `harlequin.external.run_in_terminal()`,
 the suspend wrapper and its unsupported-environment path, temp-file exchange, non-zero-exit
-discard, and the `code_editor.edit_externally` action. Closes
+discard, and the `code_editor.edit_externally` action. No config key and no trust store yet, so
+it is reviewable on its own. Closes
 [#1102](https://github.com/tconbeer/harlequin/issues/1102) for the request as filed.
 
-**PR 9 — The trust gate.** Provenance rule, consent modal, trust store, and the config
-`editor` key as its first consumer. No hooks yet — the gate ships with something small enough
-to review it against.
+**PR 2 — The trust gate.** Provenance rule, consent modal, trust store, and the config
+`editor` key as its first consumer. The gate ships with something small enough to review it
+against, and a release before anything larger runs through it.
 
-**PR 10 — `[commands]` in config, and actions from config.** The `Config` member, the schema
+**PR 3 — `[commands]` in config, and actions from config.** The `Config` member, the schema
 regeneration (`scripts/write_config_schema.py`, and the pinned artifact), `build_actions()`,
 the keymap-validation fix from §1.5, and `--config validate`'s coverage of the new table.
 Nothing executes yet; the keys bind to an action that reports "not implemented" in exactly one
-commit, or PR 10 and PR 11 land together if that reads badly in review.
+commit, or PR 3 and PR 4 land together if that reads badly in review.
 
-**PR 11 — Running a hook.** The worker, stdin/stdout, the four `output` modes, the empty-output
+**PR 4 — Running a hook.** The worker, stdin/stdout, the four `output` modes, the empty-output
 rule, timeout and cancel, error surfacing. Answers
 [#952](https://github.com/tconbeer/harlequin/issues/952).
 
-**PR 12 — Docs** (`harlequin-web`): "External editor" and "Bring your own AI" pages, the trust
+**PR 5 — Docs** (`harlequin-web`): "External editor" and "Bring your own AI" pages, the trust
 model stated plainly, and a worked `claude -p` config with the prompt that keeps code fences
 out of the buffer.
 
-**Ordering rationale.** Same as M1 and M2: a contract or a gate lands with the first consumer
-that needs it. Across releases, the features that only add a file or an argument go before the
-ones that execute a user's string.
+### Release B — the query log and history (2.14)
+
+**PR 6 — `harlequin.query_log`.** The record, the writer, the tolerant reader, rotation,
+`get_connection_hash()`'s move out of `catalog_cache`, `history = false`, and both commands
+writing. The IDE starts calling `hide_secrets_in()` here — the log is the first thing it
+persists that could carry a value from a profile (§1.4). Guard: `hsql`'s import set still
+contains no rich, and `hsql --version` is still ~120ms.
+
+**PR 7 — `hsql --history`.** The mode, the bounded tail, the connection filter, the folded
+`sql` column, and `--limit` as "the most recent N". Nothing new in the output layer — the
+listing goes through the emitters `--catalog` already uses. Adds the mode to the skill. Closes
+B7's headless half.
+
+**PR 8 — The History screen reads the log.** `History.tail()`, `CatalogCache.history` removed,
+`CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's queries
+first show up in a human's History screen, and where the human's show up under `--history`.
+
+**PR 9 — The History screen, reconsidered.** Modal, a non-focusable preview, and the screen's
+own bindings shown as every other screen shows them (§1.2, §3.4). It rides here because PR 8
+already rewrites what that screen reads, and a screen worth re-reading is worth fixing while it
+is open. Closes [#850](https://github.com/tconbeer/harlequin/issues/850).
+
+**PR 10 — Docs** (`harlequin-web`): the query log — the mode that reads it, its shape, and the
+path, for the reader who wants to back it up or delete it — and `--history` in "Headless &
+Agents".
+
+### Release C — the handoff (2.15)
+
+**PR 11 — `harlequin.invocation`, and `harlequin --open`.** The dataclass, both argv renderers,
+and the IDE flag that loads files into buffers without executing them. `cli.py` builds an
+`Invocation` and hands it to the app. Closes the half of F1 the IDE owns, and is useful on its
+own (`harlequin --open report.sql`).
+
+**PR 12 — `hsql --open`.** The mode option, the secret refusal, the scratch file and its
+pruning, the exec/subprocess split, and the `/dev/tty` reattach. Rewrites the skill's section
+9 (`hsql --skill` ships from the wheel, so this is the same PR). Closes F1.
+
+**PR 13 — Copy CLI command.** The action, the quoting, the masking, the registry entry. Closes
+F2.
+
+**PR 14 — Docs** (`harlequin-web`): the handoff section in "Headless & Agents", and `--open` on
+both command pages.
+
+**Ordering rationale.** Within a release, unchanged from M1 and M2: a contract or a gate lands
+with the first consumer that needs it, and nothing declares a thing nothing reads. Across
+releases, the three groups are independent, so the order is a product decision rather than a
+technical one — which also means it can change again without rewriting §3.
 
 ---
 
@@ -667,6 +711,9 @@ ones that execute a user's string.
   a child that ignores `terminate()`.
 - The consent modal: cancel leaves the buffer alone and runs nothing; "always allow" writes one
   record and the second invocation does not prompt.
+- The History screen after #850: an app-level binding pressed on the screen does nothing, and
+  Tab does not land focus in the preview — both asserted on behavior, not on the snapshot,
+  since the snapshot changes for reasons neither of them cares about.
 - The editor round trip with `run_in_terminal` patched, plus the `SuspendNotSupported` path
   asserted as a notification — §1.6 measured that the real suspend cannot be reached in
   `run_test()`, so the seam is the test surface.
@@ -704,8 +751,8 @@ What they share is four lines: build an argv, start a process, read a result, ap
 undoable edit. Unifying them means a single config table with an `interactive` switch, a
 `{file}` placeholder whose presence silently changes the exchange, and a validity table where
 most combinations are refused — a worse config than two tables, to save four lines. They also
-close two different issues, for two different users, and the editor can ship a release
-earlier because it needs no trust store.
+close two different issues, for two different users, and the editor ships first because it
+needs no trust store at all — `$EDITOR` is the user's own environment (§6.8).
 
 ### 6.2 `hsql --open`, not `hsql open`
 
