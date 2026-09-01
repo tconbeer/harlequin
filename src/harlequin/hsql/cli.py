@@ -55,18 +55,21 @@ import click
 
 from harlequin.config import (
     DEFAULT_ADAPTER,
+    DEFAULT_SSH_TIMEOUT,
     TUI_ONLY_KEYS,
     UNLIMITED,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
     parse_seconds,
+    take_ssh_keys,
 )
 from harlequin.exception import (
     HarlequinCatalogPathError,
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
+    HarlequinSshError,
 )
 from harlequin.export import names_a_directory
 from harlequin.first_pass import (
@@ -86,6 +89,7 @@ if TYPE_CHECKING:
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
     from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
+    from harlequin.ssh import SshTunnel
     from harlequin.statements import Statement
 
 T = TypeVar("T")
@@ -284,6 +288,49 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             "cannot cancel a query; to check, use --info."
         ),
     )
+    @click.option(
+        "--ssh-host",
+        metavar="TEXT",
+        help=(
+            "Open an SSH tunnel to this destination first, and connect through "
+            "it. A Host alias, host, user@host or ssh://user@host:port, passed "
+            "to ssh verbatim."
+        ),
+    )
+    @click.option(
+        "--ssh-forward",
+        metavar="TEXT",
+        multiple=True,
+        help=(
+            "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. "
+            "Repeatable. Omit it when your ssh config has the LocalForward."
+        ),
+    )
+    @click.option(
+        "--ssh-batch-mode",
+        is_flag=True,
+        help=(
+            "Fail rather than prompt for a passphrase, a password or a host "
+            "key. ssh's own BatchMode; set it in scripts, CI and cron."
+        ),
+    )
+    @click.option(
+        "--ssh-allow-reuse",
+        is_flag=True,
+        help=(
+            "When the local port is already bound, warn and connect through "
+            "the listener that has it instead of failing."
+        ),
+    )
+    @click.option(
+        "--ssh-timeout",
+        metavar="SECONDS",
+        type=click.FloatRange(min=0, min_open=True),
+        help=(
+            "Seconds to wait for the tunnel's forwards. "
+            f"[default: {DEFAULT_SSH_TIMEOUT:g}]"
+        ),
+    )
     # existence is not click's to check: every mode that reads this path
     # already refuses a file that is not there, naming it, and `--config init`
     # is the one invocation whose whole job is to write a file that is not there
@@ -462,6 +509,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
         read_only: bool = bool(values.pop("read_only", False))
+        try:
+            # off the config either way: an adapter is never told a tunnel
+            # exists, so these keys are never part of what it is handed
+            ssh_config = take_ssh_keys(values)
+        except HarlequinConfigError as e:
+            diagnostics.report_error(e)
+            ctx.exit(ExitCode.USAGE)
         raw_timeout = values.pop("timeout", None)
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
@@ -614,6 +668,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             typed="timeout" in explicitly_set,
         )
         deadline = _deadline(timeout_seconds)
+
+        tunnel = _open_tunnel(ctx, ssh_config)
+        if tunnel is not None:
+            # the run's, not the process's: click closes the context however
+            # this ends, and `harlequin.ssh` keeps an atexit backstop under that
+            ctx.call_on_close(tunnel.stop)
+            diagnostics.report_tunnel(tunnel.notice())
 
         if catalog:
             catalog_path = _catalog_path(ctx, path)
@@ -887,6 +948,30 @@ def _one_mode(
         )
         ctx.exit(ExitCode.USAGE)
     return chosen[0] if chosen else None
+
+
+def _open_tunnel(
+    ctx: click.Context, ssh_config: Mapping[str, Any]
+) -> "SshTunnel | None":
+    """The tunnel this run connects through, or exit having said why there is none.
+
+    Ahead of the connection and of anything that writes to stdout, because this
+    is where `ssh` may still ask a human for a passphrase. An unattended caller
+    passes `--ssh-batch-mode` and gets the refusal immediately instead.
+    """
+    if not ssh_config.get("ssh_host"):
+        # nothing to open, and so nothing to import
+        return None
+    from harlequin.ssh import open_tunnel
+
+    try:
+        return open_tunnel(ssh_config)
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    except HarlequinSshError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.CONNECTION)
 
 
 def _connect(

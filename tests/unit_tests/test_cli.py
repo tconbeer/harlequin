@@ -140,6 +140,7 @@ def test_default(
         show_files=None,
         show_s3=None,
         export_path=None,
+        ssh_tunnel=None,
     )
 
 

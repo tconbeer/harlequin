@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 import warnings
 from functools import lru_cache
 from importlib.metadata import entry_points, version
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 import rich_click as click
 from rich_click.utils import OptionGroupDict
@@ -16,16 +17,19 @@ from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
+    DEFAULT_SSH_TIMEOUT,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    take_ssh_keys,
 )
 from harlequin.config_wizard import wizard
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinLocaleError,
+    HarlequinSshError,
     HarlequinTzDataError,
     pretty_print_error,
 )
@@ -35,6 +39,9 @@ from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
 from harlequin.windows_timezone import check_and_install_tzdata
+
+if TYPE_CHECKING:
+    from harlequin.ssh import SshTunnel
 
 # configure defaults
 DEFAULT_VIEWER_MAX_ROWS = 100_000
@@ -139,6 +146,16 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
             "--config-path",
             "--locale",
             "--no-download-tzdata",
+        ],
+    },
+    {
+        "name": "SSH Tunnel Options",
+        "options": [
+            "--ssh-host",
+            "--ssh-forward",
+            "--ssh-batch-mode",
+            "--ssh-allow-reuse",
+            "--ssh-timeout",
         ],
     },
     {
@@ -262,6 +279,27 @@ def _adapter_option_group(
         "name": f"{name} Adapter Options",
         "options": [f"--{option.name}" for option in adapter_cls.ADAPTER_OPTIONS or []],
     }
+
+
+def _open_tunnel(ctx: click.Context, ssh_config: dict[str, Any]) -> "SshTunnel | None":
+    """The tunnel the IDE runs through, or exit having said why there is none.
+
+    Here rather than in the app: once Textual owns the terminal, `ssh` cannot
+    ask for a passphrase and a 2FA push has nowhere to print "check your phone".
+    """
+    if not ssh_config.get("ssh_host"):
+        # nothing to open, and so nothing to import
+        return None
+    from harlequin.ssh import open_tunnel
+
+    try:
+        return open_tunnel(ssh_config)
+    except HarlequinConfigError as e:
+        pretty_print_error(e)
+        ctx.exit(2)
+    except HarlequinSshError as e:
+        pretty_print_error(e)
+        ctx.exit(3)
 
 
 def build_cli(argv: Sequence[str]) -> click.Command:
@@ -427,6 +465,47 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         default=DEFAULT_KEYMAP_NAMES,
     )
     @click.option(
+        "--ssh-host",
+        help=(
+            "Open an SSH tunnel to this destination first, and connect through "
+            "it. A Host alias, host, user@host or ssh://user@host:port, passed "
+            "to ssh verbatim."
+        ),
+    )
+    @click.option(
+        "--ssh-forward",
+        multiple=True,
+        help=(
+            "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. "
+            "Repeat this option for more than one. Omit it when your ssh config "
+            "already has the LocalForward."
+        ),
+    )
+    @click.option(
+        "--ssh-batch-mode",
+        is_flag=True,
+        help=(
+            "Fail rather than prompt for a passphrase, a password or a host "
+            "key. ssh's own BatchMode."
+        ),
+    )
+    @click.option(
+        "--ssh-allow-reuse",
+        is_flag=True,
+        help=(
+            "When the local port is already bound, warn and connect through "
+            "the listener that has it instead of failing."
+        ),
+    )
+    @click.option(
+        "--ssh-timeout",
+        type=click.FloatRange(min=0, min_open=True),
+        help=(
+            "Seconds to wait for the tunnel's forwards. Default is "
+            f"{DEFAULT_SSH_TIMEOUT:g}"
+        ),
+    )
+    @click.option(
         "--config",
         help=(
             "Run the configuration wizard to create or update a Harlequin config file."
@@ -564,6 +643,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
             ctx.exit(2)
 
+        # off the config before the adapter is handed the rest of it: the
+        # connection details already name the local end of the forward, so an
+        # adapter is never told a tunnel exists
+        try:
+            ssh_config = take_ssh_keys(config)
+        except HarlequinConfigError as e:
+            pretty_print_error(e)
+            ctx.exit(2)
+
         # instantiate the adapter, which was named and imported above -- the
         # key comes off either way, because what is left is its options
         config.pop("adapter", None)
@@ -575,11 +663,19 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
+        # before Textual owns the terminal, which is the only place a
+        # passphrase prompt or a 2FA push has anywhere to go
+        tunnel = _open_tunnel(ctx, ssh_config)
+
         connection_id = (
             adapter_instance.connection_id
             if adapter_instance.connection_id is not None
             else get_connection_hash(conn_str, config)
         )
+        if tunnel is not None:
+            connection_id = get_connection_hash(
+                (connection_id,), {}, through=tunnel.cache_material()
+            )
 
         tui = Harlequin(
             adapter=adapter_instance,
@@ -593,8 +689,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             show_files=show_files,
             show_s3=show_s3,
             export_path=export_path,
+            ssh_tunnel=tunnel,
         )
-        tui.run()
+        with contextlib.ExitStack() as stack:
+            if tunnel is not None:
+                stack.callback(tunnel.stop)
+            tui.run()
 
     # this command's own options, before any adapter's are added to it
     harlequin_options = {param.name for param in inner_cli.params}

@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     from textual.await_complete import AwaitComplete
 
     from harlequin.keymap import HarlequinKeyMap
+    from harlequin.ssh import SshTunnel
 
 
 class CatalogCacheLoaded(Message):
@@ -201,6 +202,7 @@ class Harlequin(AppBase):
         export_path: Path | str | None = None,
         viewer_max_rows: int | str | None = 100_000,
         query_limit: int | str | None = None,
+        ssh_tunnel: SshTunnel | None = None,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -217,6 +219,9 @@ class Harlequin(AppBase):
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
+        # already started, by the command that built this app: `ssh` prompts for
+        # a passphrase on the terminal Textual is about to take.
+        self.ssh_tunnel = ssh_tunnel
         # kept as text: it is what the Data Exporter's path input starts with
         self.export_path = str(export_path) if export_path is not None else None
         # None is no cap: the viewer holds every row that was fetched. So are 0
@@ -346,6 +351,15 @@ class Harlequin(AppBase):
 
     async def on_mount(self) -> None:
         self.run_query_bar.apply_configured_limit()
+
+        if self.ssh_tunnel is not None:
+            # which database this session is actually looking at, which the
+            # connection details alone no longer say
+            self.notify(
+                self.ssh_tunnel.notice(),
+                title="SSH tunnel",
+                severity="warning" if self.ssh_tunnel.reused else "information",
+            )
 
         self._connect()
         self._load_catalog_cache()

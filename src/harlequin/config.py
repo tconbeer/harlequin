@@ -95,6 +95,22 @@ caller asks a database what a query's columns are, and an option that spent
 that spelling on "unlimited" would take the idiom away.
 """
 
+DEFAULT_SSH_TIMEOUT = 10.0
+"""Seconds both commands wait for an SSH tunnel's forwards, by default."""
+
+SSH_KEYS = (
+    "ssh_host",
+    "ssh_forward",
+    "ssh_batch_mode",
+    "ssh_allow_reuse",
+    "ssh_timeout",
+)
+"""The profile keys that describe an SSH tunnel, which both commands read.
+
+Named here rather than in `harlequin.ssh` so that an invocation with no tunnel
+can take them off a config without importing the module that opens one.
+"""
+
 TUI_ONLY_KEYS = (
     "theme",
     "keymap_name",
@@ -636,6 +652,26 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
     if not seconds > 0 or not math.isfinite(seconds):
         raise refuse()
     return seconds
+
+
+def take_ssh_keys(config: MutableMapping[str, Any]) -> dict[str, Any]:
+    """Remove the tunnel's keys from a merged config and return them.
+
+    They come off whether or not any is set: what is left of the config is the
+    adapter's, and an adapter is never told a tunnel exists.
+
+    Raises: HarlequinConfigError if a tunnel is described with no destination to
+    open it through, which would otherwise connect straight past the forward.
+    """
+    taken = {key: config.pop(key) for key in SSH_KEYS if key in config}
+    if not taken.get("ssh_host") and any(taken.values()):
+        named = ", ".join(key for key in SSH_KEYS if taken.get(key))
+        raise HarlequinConfigError(
+            f"{named} describes an SSH tunnel, but ssh_host says nothing to "
+            "open one to.",
+            title=CONFIG_ERROR_TITLE,
+        )
+    return taken
 
 
 def discover_config_files(config_path: Path | None) -> list[Path]:
