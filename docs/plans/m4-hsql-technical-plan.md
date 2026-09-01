@@ -422,12 +422,12 @@ version that offers it is pinned, not before.
 ```python
 @dataclass(frozen=True)
 class Invocation:
-    adapter: str | None          # only when it was typed
+    adapter: str | None  # only when it was typed
     conn_str: tuple[str, ...]
     profile: str | None
     config_path: Path | None
     read_only: bool
-    adapter_options: Mapping[str, Any]   # typed, not defaulted, not from the profile
+    adapter_options: Mapping[str, Any]  # typed, not defaulted, not from the profile
 
     def to_hsql_argv(self, sql: str, *, limit: int | None) -> list[str]: ...
     def to_harlequin_argv(self, open_paths: Sequence[Path]) -> list[str]: ...
