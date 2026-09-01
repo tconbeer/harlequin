@@ -8,6 +8,7 @@ import pytest
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.config import load_config, load_profile
 from harlequin.config_wizard import _wizard
+from harlequin.options import FlagOption
 
 
 class FakePrompt:
@@ -30,13 +31,18 @@ def run_wizard(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     Answers are keyed by a substring of the prompt's message; a prompt no test
     answers takes what the wizard offered it -- the value already in the
     profile, or the first choice -- so a test names only the prompts it is about.
+    An optional `record` list collects every prompt's (message, kwargs).
     """
     import questionary
 
     def fake(
-        answers: dict[str, Any], fallback: Callable[..., Any]
+        answers: dict[str, Any],
+        fallback: Callable[..., Any],
+        record: list[tuple[str, dict[str, Any]]] | None,
     ) -> Callable[..., Any]:
         def prompt(message: str = "", **kwargs: Any) -> FakePrompt:
+            if record is not None:
+                record.append((message, kwargs))
             for substring, answer in answers.items():
                 if substring in message:
                     return FakePrompt(answer)
@@ -58,7 +64,11 @@ def run_wizard(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
         # confirm that offers none means yes, as questionary's does
         return bool(default)
 
-    def run(config_path: Path, answers: dict[str, Any]) -> None:
+    def run(
+        config_path: Path,
+        answers: dict[str, Any],
+        record: list[tuple[str, dict[str, Any]]] | None = None,
+    ) -> None:
         fallbacks: tuple[tuple[str, Callable[..., Any]], ...] = (
             ("select", first_choice),
             ("text", the_default),
@@ -69,7 +79,7 @@ def run_wizard(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
             ("confirm", yes),
         )
         for name, fallback in fallbacks:
-            monkeypatch.setattr(questionary, name, fake(answers, fallback))
+            monkeypatch.setattr(questionary, name, fake(answers, fallback, record))
         _wizard(config_path=config_path)
 
     return run
@@ -329,3 +339,216 @@ class TestProfileWrite:
         }
         assert "two" in config.profiles
         assert config.default_profile == "one"
+
+
+class TestDefaults:
+    """Prompts that offered a value the user did not ask for (#1105).
+
+    The wizard's job is to write what a user typed, not to guess: a fresh
+    profile gets no `limit`, and an adapter option that stays blank (or gets
+    cleared) is not written at all.
+    """
+
+    def test_a_fresh_profile_is_not_given_a_limit(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(path, {"Which profile would you like to update?": "one"})
+
+        assert "limit" not in load_config(config_path=path).profiles["one"]
+
+    def test_an_existing_limit_is_offered_and_kept(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\nlimit = 500\n')
+
+        run_wizard(path, {"Which profile would you like to update?": "one"})
+
+        assert load_config(config_path=path).profiles["one"]["limit"] == 500
+
+    def test_blank_removes_an_existing_limit(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\nlimit = 500\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "How many rows should each query fetch": "",
+            },
+        )
+
+        assert "limit" not in load_config(config_path=path).profiles["one"]
+
+    def test_a_typed_limit_is_written(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "How many rows should each query fetch": "1000",
+            },
+        )
+
+        assert load_config(config_path=path).profiles["one"]["limit"] == 1000
+
+    def test_minus_one_is_accepted_and_omitted(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """`-1` still means no limit, which is the app default: no key."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "How many rows should each query fetch": "-1",
+            },
+        )
+
+        assert "limit" not in load_config(config_path=path).profiles["one"]
+
+    def test_the_limit_prompt_offers_blank_and_says_so(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+        record: list[tuple[str, dict[str, Any]]] = []
+
+        run_wizard(
+            path, {"Which profile would you like to update?": "one"}, record=record
+        )
+
+        limit_prompt = next(
+            kwargs
+            for message, kwargs in record
+            if "How many rows should each query fetch" in message
+        )
+        assert limit_prompt["default"] == ""
+        assert (
+            limit_prompt["instruction"]
+            == "Leave blank for app defaults; enter -1 for no limit."
+        )
+        validate = limit_prompt["validate"]
+        assert validate("") is True
+        assert validate("1000") is True
+        assert validate("abc") is False
+
+    def test_a_blank_secret_option_is_not_written(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """The `****` a secret's `None` used to be shown as never reaches the file."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "adapter options": ["md_token"],
+                "md_token": "",
+            },
+        )
+
+        assert "md_token" not in load_config(config_path=path).profiles["one"]
+
+    def test_a_blank_text_option_is_not_written(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "adapter options": ["custom-extension-repo"],
+                "custom-extension-repo": "",
+            },
+        )
+
+        assert (
+            "custom_extension_repo" not in load_config(config_path=path).profiles["one"]
+        )
+
+    def test_a_blank_list_option_is_not_written(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """Blank must not become a list that holds one empty item."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "adapter options": ["extension"],
+                "extension": "",
+            },
+        )
+
+        assert "extension" not in load_config(config_path=path).profiles["one"]
+
+    def test_blank_clears_an_existing_adapter_option(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "duckdb"\nmd_token = "hunter2"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "adapter options": ["md_token"],
+                "md_token": "",
+            },
+        )
+
+        assert "md_token" not in load_config(config_path=path).profiles["one"]
+
+    def test_an_explicit_false_on_a_flag_is_written(
+        self,
+        tmp_path: Path,
+        run_wizard: Callable[..., None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A flag whose declared default is true needs `false` stored to override it."""
+
+        class FakeAdapter(HarlequinAdapter):
+            ADAPTER_OPTIONS = [
+                FlagOption(name="legacy-mode", description="x", default=True)
+            ]
+
+            def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+                raise NotImplementedError
+
+            def connect(self) -> HarlequinConnection:
+                raise NotImplementedError
+
+        monkeypatch.setattr(
+            "harlequin.config_wizard.load_adapter_plugins",
+            lambda: {"fake": FakeAdapter},
+        )
+        path = tmp_path / ".harlequin.toml"
+        path.write_text('[profiles.one]\nadapter = "fake"\n')
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "adapter options": ["legacy-mode"],
+                "legacy-mode": False,
+            },
+        )
+
+        assert load_config(config_path=path).profiles["one"]["legacy_mode"] is False

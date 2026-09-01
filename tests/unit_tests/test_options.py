@@ -307,6 +307,28 @@ def _no_terminal() -> Iterator[None]:
             yield
 
 
+@contextmanager
+def _capture_prompt(
+    monkeypatch: pytest.MonkeyPatch, kind: str
+) -> Iterator[dict[str, Any]]:
+    """Capture the kwargs of one questionary prompt kind, without a terminal.
+
+    `to_questionary()` imports questionary when it is called, which resolves to
+    the same module object -- so patching the attribute on the real module is
+    enough, and no prompt session is ever built.
+    """
+    import questionary
+
+    captured: dict[str, Any] = {}
+
+    def fake_prompt(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(questionary, kind, fake_prompt)
+    yield captured
+
+
 def _masks_input(question: Any) -> bool:
     """Whether this prompt would show what is typed into it.
 
@@ -323,3 +345,72 @@ def _masks_input(question: Any) -> bool:
         and processor.filter()
         for processor in control.input_processors
     )
+
+
+# --- `to_questionary()`: what the wizard's prompts offer ---------------------
+
+
+@pytest.mark.parametrize(
+    ("option", "prompt_kind"),
+    [
+        (TextOption(name="host", description="The host."), "text"),
+        (PathOption(name="init-path", description="A file."), "path"),
+    ],
+    ids=["text", "path"],
+)
+def test_an_unset_option_prompts_blank(
+    monkeypatch: pytest.MonkeyPatch,
+    option: AbstractOption,
+    prompt_kind: str,
+) -> None:
+    """A profile that never set the option is not offered the string "None".
+
+    The wizard passes `None` for an option the profile does not set, and
+    `str(None)` would pre-fill "None" -- a value the user would save as text.
+    """
+    with _capture_prompt(monkeypatch, prompt_kind) as captured:
+        option.to_questionary(None)
+    assert captured["default"] == ""
+
+
+def test_an_unset_secret_option_prompts_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The secret's default must be blank too: "None" renders as `****`."""
+    with _capture_prompt(monkeypatch, "password") as captured:
+        TextOption(name="token", description="A token.", secret=True).to_questionary(
+            None
+        )
+    assert captured["default"] == ""
+
+
+def test_an_unset_option_with_a_declared_default_offers_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset is not the same as blank for an option that declares a default."""
+    with _capture_prompt(monkeypatch, "text") as captured:
+        TextOption(
+            name="host", description="The host.", default="localhost"
+        ).to_questionary(None)
+    assert captured["default"] == "localhost"
+
+
+def test_an_unset_select_option_offers_its_declared_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _capture_prompt(monkeypatch, "select") as captured:
+        SelectOption(
+            name="mode", description="How.", choices=["ro", "rw"], default="ro"
+        ).to_questionary(None)
+    assert captured["default"] == "ro"
+
+
+def test_an_existing_value_is_still_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What the profile already says is what the prompt offers."""
+    with _capture_prompt(monkeypatch, "text") as captured:
+        TextOption(name="host", description="The host.").to_questionary(
+            "db.example.com"
+        )
+    assert captured["default"] == "db.example.com"

@@ -98,15 +98,14 @@ def _wizard(config_path: Path | None) -> None:
 
     # two questions, because they are two limits: what leaves the database,
     # and what the Results Viewer holds of it.
-    limit = int(
-        questionary.text(
-            message="How many rows should each query fetch from the database?",
-            instruction="Enter -1 for no limit.",
-            validate=_validate_int,
-            default=str(selected_profile.get("limit", -1)),
-            style=HARLEQUIN_QUESTIONARY_STYLE,
-        ).unsafe_ask()
-    )
+    raw_limit = questionary.text(
+        message="How many rows should each query fetch from the database?",
+        instruction="Leave blank for app defaults; enter -1 for no limit.",
+        validate=_validate_int_or_blank,
+        default=str(selected_profile.get("limit", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+    limit = None if raw_limit == "" else int(raw_limit)
 
     viewer_max_rows = int(
         questionary.text(
@@ -183,7 +182,7 @@ def _wizard(config_path: Path | None) -> None:
         "keymap_name": keymap_name,
     }
 
-    if limit >= 0:
+    if limit is not None and limit >= 0:
         # only when there is one: an unlimited fetch is the default, and a key
         # that says so is a line the reader has to work out the meaning of.
         new_profile["limit"] = limit
@@ -272,11 +271,14 @@ def _prompt_to_set_adapter_options(
             if option.name not in which:
                 continue
             value = option.to_questionary(
-                selected_profile.get(sluggify_option_name(option.name), None)
+                selected_profile.get(sluggify_option_name(option.name))
             ).unsafe_ask()
+            # A blank answer is not a value; False can be an explicit flag value.
+            if value == "":
+                continue
             if isinstance(option, ListOption):
                 value = value.split(" ")
-            adapter_options.update({sluggify_option_name(option.name): value})
+            adapter_options[sluggify_option_name(option.name)] = value
 
 
 def _prompt_to_set_default_profile(
@@ -350,6 +352,11 @@ def _validate_int(raw: str) -> bool:
         return False
     else:
         return True
+
+
+def _validate_int_or_blank(raw: str) -> bool:
+    """The limit prompt accepts blank, which means the app's default."""
+    return not raw or _validate_int(raw)
 
 
 def _validate_dir_or_blank(raw: str) -> bool:
