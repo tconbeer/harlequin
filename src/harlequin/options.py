@@ -31,6 +31,16 @@ def concatenate(first: str, second: str) -> str:
     return f"{first}\n----or----\n{second}"
 
 
+def _stringify_or_none(existing_value: Any) -> str | None:
+    """Stringify an existing prompt value without turning `None` into text."""
+    if existing_value is None:
+        return None
+    try:
+        return str(existing_value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _derived_type_name(cls: type) -> str:
     """A type name for an option class that never declared one.
 
@@ -278,10 +288,7 @@ class TextOption(AbstractOption):
             else:
                 return True
 
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        safe_existing_value = _stringify_or_none(existing_value)
 
         # do not echo secrets in questionary prompt
         ask = questionary.password if self.secret else questionary.text
@@ -517,10 +524,7 @@ class PathOption(AbstractOption):
 
             return True
 
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        safe_existing_value = _stringify_or_none(existing_value)
 
         if self.secret:
             # do not echo secrets in questionary prompt
@@ -643,10 +647,7 @@ class SelectOption(AbstractOption):
 
         from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
 
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        safe_existing_value = _stringify_or_none(existing_value)
 
         if safe_existing_value not in self._flat_choices():
             safe_existing_value = None

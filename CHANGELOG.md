@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- The config wizard no longer pre-fills the unset query limit with `-1` or unset adapter options with `None` (`****` for secrets). Leave the limit blank for app defaults, or enter `-1` for no limit ([#1105](https://github.com/tconbeer/harlequin/issues/1105)).
+
 ## [2.12.2] - 2026-08-31
 
 ### Bug Fixes
