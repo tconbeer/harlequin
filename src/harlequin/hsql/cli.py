@@ -37,6 +37,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -703,6 +704,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             statements = _read_statements(sources)
         except OSError as e:
             diagnostics.error(f"could not read {e.filename}: {e.strerror}")
+            ctx.exit(ExitCode.USAGE)
+        except HarlequinConfigError as e:
+            diagnostics.report_error(e)
             ctx.exit(ExitCode.USAGE)
 
         # after the usage checks above, so that a run with nothing to run says
@@ -1688,6 +1692,33 @@ def _record_source(
     return value
 
 
+def _read_source_text(value: str) -> str:
+    """The text of one `-f` source: a path, or `-` for stdin.
+
+    A source that isn't text decodes as far as its first bad byte and then
+    raises, which is a crash rather than a diagnostic unless it is caught here.
+
+    Raises: HarlequinConfigError if the source is not UTF-8 text, OSError if
+    the file cannot be read at all.
+    """
+    source: str
+    read: Callable[[], str]
+    if value == "-":
+        # `-` is stdin, decoded the way click decodes it, so a stream
+        # the environment has misconfigured still reads as text
+        source, read = "standard input", click.open_file("-", mode="r").read
+    else:
+        path = Path(value).expanduser()
+        source, read = str(path), partial(path.read_text, encoding="utf-8")
+    try:
+        return read()
+    except UnicodeDecodeError as e:
+        raise HarlequinConfigError(
+            f"could not read {source}: not UTF-8 text ({e.reason} at byte {e.start}).",
+            title="Harlequin could not read a SQL file.",
+        ) from e
+
+
 def _read_statements(
     sources: Sequence[tuple[str, tuple[str, ...]]],
 ) -> list[Statement]:
@@ -1695,20 +1726,16 @@ def _read_statements(
 
     Each source is split on its own, so two `-c` values are two statements
     whether or not either ends in a semicolon.
+
+    Raises: HarlequinConfigError if a file is not text, OSError if it cannot
+    be read at all.
     """
     from harlequin.statements import Statement, split
 
     statements: list[Statement] = []
     for kind, values in sources:
         for value in values:
-            if kind == "command":
-                text = value
-            elif value == "-":
-                # `-` is stdin, decoded the way click decodes it, so a stream
-                # the environment has misconfigured still reads as text
-                text = click.open_file("-", mode="r").read()
-            else:
-                text = Path(value).expanduser().read_text(encoding="utf-8")
+            text = value if kind == "command" else _read_source_text(value)
             for statement in split(text):
                 statements.append(Statement(sql=statement.sql, index=len(statements)))
     return statements

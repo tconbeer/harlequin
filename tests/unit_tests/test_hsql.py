@@ -536,6 +536,24 @@ def test_a_missing_file_is_a_usage_error(hsql: Hsql, duck: list[str]) -> None:
     assert "could not read" in res.stderr
 
 
+def test_a_binary_file_is_a_usage_error(
+    hsql: Hsql, duck: list[str], tmp_path: Path
+) -> None:
+    """A file that isn't text says so, instead of raising a decode error."""
+    script = tmp_path / "database.db"
+    script.write_bytes(b"\xcd\xe3k.4,9\x97DUCK")
+    res = hsql(*duck, "-f", str(script))
+    assert res.exit_code == ExitCode.USAGE
+    assert "could not read" in res.stderr
+    assert "not UTF-8 text" in res.stderr
+
+
+def test_binary_stdin_is_a_usage_error(hsql: Hsql, duck: list[str]) -> None:
+    res = hsql(*duck, "-f", "-", input=b"\xcd\xe3k.4,9\x97DUCK")
+    assert res.exit_code == ExitCode.USAGE
+    assert "could not read standard input" in res.stderr
+
+
 # --- writing to a file -------------------------------------------------------
 
 
