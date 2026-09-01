@@ -284,7 +284,9 @@ def _from_parameter(param: click.Parameter) -> dict[str, Any]:
     description = getattr(param, "help", None) or DESCRIPTIONS.get(str(param.name))
     if description is not None:
         schema["description"] = description
-    default = param.default
+    # `to_info_dict()` rather than `default`, because click derives a flag's
+    # default rather than storing one, and that is the method that resolves it
+    default = param.to_info_dict()["default"]
     if isinstance(default, (str, int, float, bool)):
         # anything else is click's sentinel for a parameter declared without a
         # default, or a callable one that would read the environment
