@@ -11,12 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - The config wizard no longer pre-fills the unset query limit with `-1` or unset adapter options with `None` (`****` for secrets). Leave the limit blank for app defaults, or enter `-1` for no limit ([#1105](https://github.com/tconbeer/harlequin/issues/1105)).
-- Harlequin no longer crashes when you open a file that isn't text (a database file, say) with <kbd>ctrl+o</kbd>; it shows an error instead ([#1108](https://github.com/tconbeer/harlequin/issues/1108)).
-- `hsql -f` now reports an error when handed a file that isn't UTF-8 text (a database file, say), instead of crashing ([#1108](https://github.com/tconbeer/harlequin/issues/1108)).
-
-### Dependencies
-
-- Bumps textual-textarea to 0.18.2.
+- Harlequin and hsql no longer crash when trying to open a file that isn't text ([#1108](https://github.com/tconbeer/harlequin/issues/1108)).
 
 ## [2.12.2] - 2026-08-31
 
