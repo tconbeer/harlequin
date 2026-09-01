@@ -70,6 +70,19 @@ def listener() -> Iterator[int]:
         yield int(sock.getsockname()[1])
 
 
+@pytest.fixture
+def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Touch the path this returns, and the fake client drops its forwards.
+
+    A file rather than a clock: a child that dropped on a timer could beat the
+    readiness poll on a loaded machine, and the test would fail as a start-up
+    error rather than exercising the drop.
+    """
+    path = tmp_path / "drop"
+    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
+    return path
+
+
 def child_tunnel(*ports: int, **kwargs: object) -> SshTunnel:
     """A tunnel whose `ssh` is the fake one, run through this interpreter."""
     specs = [f"{port}:remote:5439" for port in ports]
@@ -418,15 +431,13 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
     return predicate()
 
 
-def test_a_child_that_dies_says_so_in_ssh_s_last_words(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
+def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> None:
     said: list[str] = []
     tunnel = child_tunnel(free_port())
     tunnel.watch(said.append)
     tunnel.start()
     try:
+        drop_trigger.touch()
         assert wait_until(lambda: bool(said))
     finally:
         tunnel.stop()
@@ -707,18 +718,19 @@ def test_a_profile_may_write_one_forward_as_a_string() -> None:
 
 
 def test_a_tunnel_that_dropped_asks_to_be_reopened(
-    monkeypatch: pytest.MonkeyPatch,
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
     port = free_port()
     tunnel = child_tunnel(port)
     tunnel.watch(lambda notice: None)
     tunnel.start()
     assert not tunnel.needs_restart
     try:
+        drop_trigger.touch()
         assert wait_until(lambda: tunnel.needs_restart)
         assert not accepts(port)
-        monkeypatch.delenv("FAKE_SSH_LIFETIME")
+        # the child that comes back stays up
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
         tunnel.restart()
         assert accepts(port)
         assert not tunnel.needs_restart
@@ -739,12 +751,12 @@ def test_a_restart_never_asks_for_a_credential(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_a_restart_that_fails_is_not_tried_again(
-    monkeypatch: pytest.MonkeyPatch,
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FAKE_SSH_LIFETIME", "0.3")
     tunnel = child_tunnel(free_port())
     tunnel.watch(lambda notice: None)
     tunnel.start()
+    drop_trigger.touch()
     assert wait_until(lambda: tunnel.needs_restart)
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
