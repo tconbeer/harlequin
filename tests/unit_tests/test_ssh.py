@@ -263,7 +263,13 @@ def test_a_child_that_exits_is_reported_in_its_own_words(
 
 
 def test_a_port_that_is_already_bound_fails(listener: int) -> None:
-    with pytest.raises(HarlequinSshError, match="[Aa]ddress already in use"):
+    """Quoting the client, whose wording for a failed bind is its own.
+
+    Windows says "an attempt was made to access a socket in a way forbidden by
+    its access permissions" where Unix says "address already in use", so what
+    is asserted is that the client's own line reached the error.
+    """
+    with pytest.raises(HarlequinSshError, match=f"bind .*{listener}"):
         child_tunnel(listener).start()
 
 
