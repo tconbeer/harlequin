@@ -12,9 +12,10 @@ from typing import (
 )
 from unittest.mock import MagicMock
 
+import duckdb
 import pytest
 from textual.geometry import Offset
-from textual.widgets import Input
+from textual.widgets import Input, Tooltip
 
 from harlequin import Harlequin
 from harlequin.catalog import CatalogItem, InteractiveCatalogItem
@@ -481,3 +482,47 @@ async def test_reload_while_loader_is_fetching(
             w for w in app.workers if w.name == "_database_tree_background_loader"
         ]
         assert not [w.error for w in loaders if w.error is not None]
+
+
+@pytest.mark.asyncio
+async def test_tooltip_shows_the_full_label_of_a_truncated_item(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    expand_catalog_node: Callable[..., Awaitable[None]],
+) -> None:
+    """A catalog item too wide for the catalog gets a tooltip on hover.
+
+    ([#1104](https://github.com/tconbeer/harlequin/issues/1104))
+    """
+    db_path = tmp_path / "tooltip.db"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("create table a_table_with_a_name_too_long_to_fit (a int)")
+    conn.close()
+
+    app = Harlequin(duckdb_adapter([str(db_path)], no_init=True), connection_hash="tt")
+    async with app.run_test(size=(120, 36), tooltips=True) as pilot:
+        await wait_for_workers(app)
+        tree = app.data_catalog.database_tree
+        while tree.loading or not tree.root.children:
+            await pilot.pause()
+        db_node = tree.root.children[0]
+        await expand_catalog_node(pilot, db_node)
+        await expand_catalog_node(pilot, db_node.children[0])
+        await pilot.pause()
+
+        # the db's own label fits in the catalog, so it gets no tooltip
+        await pilot.hover(app.data_catalog.__class__, offset=Offset(x=6, y=1))
+        await pilot.pause()
+        assert tree.hover_line == 0
+        assert tree.tooltip is None
+
+        # the table's does not, so hovering it shows the label and type label
+        await pilot.hover(app.data_catalog.__class__, offset=Offset(x=6, y=3))
+        await pilot.pause()
+        assert tree.hover_line == 2
+        assert tree.tooltip == "a_table_with_a_name_too_long_to_fit t"
+
+        tooltip = app.screen.get_child_by_type(Tooltip)
+        await pilot.pause(app.TOOLTIP_DELAY + 0.1)
+        assert tooltip.display

@@ -70,6 +70,28 @@ class HarlequinTree(Tree[TTreeNode], inherit_bindings=False):
         if self.cursor_line < 0:
             self.cursor_line = 0
 
+    def watch_hover_line(self, previous_hover_line: int, hover_line: int) -> None:
+        super().watch_hover_line(previous_hover_line, hover_line)
+        self.tooltip = self._tooltip_for_line(hover_line)
+
+    def _tooltip_for_line(self, line_index: int) -> str | None:
+        """The full label of the node on that line, if it doesn't fit in the tree.
+
+        A label that fits gets no tooltip, since the tooltip would only cover
+        the item it repeats.
+        """
+        tree_lines = self._tree_lines
+        if not 0 <= line_index < len(tree_lines):
+            return None
+        line = tree_lines[line_index]
+        rendered_width = self.get_label_width(line.node) + line._get_guide_width(
+            self.guide_depth, self.show_root
+        )
+        if rendered_width <= self.size.width:
+            return None
+        label = line.node.label
+        return label if isinstance(label, str) else label.plain
+
     async def on_click(self, event: Click) -> None:
         meta = event.style.meta
         click_line: Union[int, None] = meta.get("line", None)
