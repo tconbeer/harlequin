@@ -10,7 +10,8 @@ happens when the agent and the human need to hand work to each other.
 and the external-command hook. **The skill (E1) shipped in M3** — it is in the wheel, prints
 from `hsql --skill`, and installs as a plugin — so what is left is the four handoff features.
 Two of those turn out to be three: the external-command hook covers two requests that share
-almost nothing, and this plan splits them (§6.1).
+almost nothing, and this plan splits them (§6.1). And "JSONL history" turns out to name a
+storage format that the History screen's missing search rules out (§6.4).
 
 **The issues M4 closes.** [#1102](https://github.com/tconbeer/harlequin/issues/1102), external
 editor support, was opened while this plan was being written and carries a reference
@@ -18,12 +19,14 @@ implementation from Posting. [#952](https://github.com/tconbeer/harlequin/issues
 natural language to SQL, is closed `not planned` — "I won't be adding this to Harlequin" — and
 the command hook is the answer that stays true to that: Harlequin runs the tool the user
 already trusts, with the user's own credentials, and embeds no model (§8).
-[#850](https://github.com/tconbeer/harlequin/issues/850), the History screen's UI, rides along
-with the release that changes what that screen reads (§3.4).
+[#850](https://github.com/tconbeer/harlequin/issues/850), the History screen's UI, and
+[#429](https://github.com/tconbeer/harlequin/issues/429), search in that screen, ride along
+with the release that changes what it reads — and #429 is what decides how the history is
+stored at all (§3.2, §3.4).
 
 **Three releases, and the editor and the hooks go first** (Ted's call). Nothing in this
 milestone depends on anything else in it, so the order is a product decision: A is the editor
-and the hooks, B is the query log and history, C is the handoff (§4).
+and the hooks, B is query history and search, C is the handoff (§4).
 
 **Bottom line up front.** Three claims, each measured below.
 
@@ -35,13 +38,15 @@ and the hooks, B is the query log and history, C is the handoff (§4).
    open buffer (§1.1). `--open` execs a documented flag on the other command instead, and the
    argv it builds is the same module the TUI's "Copy CLI command" reads backwards (§3.1, §3.5).
 2. **The query history both commands should share cannot be either of the things that hold it
-   today.** The IDE's history is a pickle inside the catalog cache, written once, at quit — so
-   a crash, a `kill`, or a container that goes away loses the session — and it lives in
-   `harlequin.history`, which imports rich, which is on the headless FORBIDDEN list and costs
-   +46ms on a 118ms command (§1.2, §1.3). A JSONL log in a rich-free module is what both can
-   write, and one measurement settles its concurrency: 8 processes appending 200 records each,
-   at 200 B, 8 KB and 200 KB per record, produced 1,600 well-formed lines every time with no
-   lock at all (§3.2).
+   today, and search is what settles what replaces them.** The IDE's history is a pickle
+   inside the catalog cache, written once, at quit — so a crash, a `kill`, or a container that
+   goes away loses the session — and it lives in `harlequin.history`, which imports rich,
+   which is on the headless FORBIDDEN list and costs +46ms on a 118ms command (§1.2, §1.3).
+   The store both commands can write is a SQLite database, not the JSONL file the roadmap
+   names: with [#429](https://github.com/tconbeer/harlequin/issues/429) in scope, searching
+   100,000 records costs **396ms** as a file scan and **35ms** as a `like`, and 400ms per
+   keystroke is not a filter anyone can type into. `sqlite3` is stdlib, imports *cheaper* than
+   `json` (+4.0ms against +7.6ms), and costs 0.020ms a row to write (§3.2).
 3. **The external editor and the AI hook are two features, and the terminal is why.** One
    needs the terminal and must suspend the app; the other must not have it and must not block
    the app. They differ in thread, in exchange medium, in failure mode, in what cancels them,
@@ -104,7 +109,13 @@ Three consequences, all of which M4 has to deal with:
   product plan's own criterion. Reading it requires importing `harlequin.history` to unpickle
   the dataclass, which imports rich.
 
-And the screen that shows it has its own problems, filed as
+It also cannot be searched. The History screen is an `OptionList` of at most 500 records with
+no filter input, so "what was that query I ran last week" is answered by scrolling —
+[#429](https://github.com/tconbeer/harlequin/issues/429), open since January 2024. Search is
+the requirement that decides the storage (§3.2), which is why it belongs in this milestone
+rather than after it.
+
+And the screen that shows it has other problems, filed as
 [#850](https://github.com/tconbeer/harlequin/issues/850). `HistoryScreen` subclasses `Screen`,
 not `ModalScreen` — and `ModalScreen` is the one whose "bindings take precedence over the
 App's", so every app-level key is live behind a screen whose job is to pick one query. Its
@@ -217,8 +228,9 @@ rewrites.
    log — never an import.
 2. **The store that both commands write has to be below rich.** Not `harlequin.history`, not
    `catalog_cache`, and not a pickle of a dataclass whose `__repr__` is a Rich renderable.
-3. **A shared, append-only log has more than one writer, and no way to lock cheaply on every
-   platform.** The design has to be atomic per record, or tolerant of a record that isn't.
+3. **The shared store has more than one writer and now has to be searched.** Concurrency
+   alone an append-only file survives; search over all of it — not a bounded tail — is what it
+   cannot serve at an interactive latency.
 4. **The app does not remember how it was started**, and half of what it would need to
    remember is secret.
 5. **Running someone else's program from inside a Textual app has two incompatible shapes,**
@@ -237,9 +249,9 @@ Six deliverables, three new modules and one new mode, all of the new modules bel
 ```
 harlequin/
   invocation.py        # what a command line said; renders back to either command's argv
-  query_log.py         # the append-only JSONL log, and its reader
+  query_log.py         # the query history: one SQLite store, written by both commands
   external.py          # running someone else's program: the two shapes, and the trust gate
-  hsql/modes/history.py  # the log, as a result set, like every other mode
+  hsql/modes/history.py  # the store, as a result set, like every other mode
 ```
 
 `invocation.py` and `query_log.py` are importable by `hsql` (stdlib plus `platformdirs` and
@@ -297,18 +309,60 @@ seven days on each invocation. State, not cache: an unsaved draft is not disposa
 that came from `-f` is passed by its own path — the IDE copies text into a buffer and never
 writes back, so the human's file is not touched either way.
 
-### 3.2 `harlequin.query_log` — one log, two writers
+### 3.2 `harlequin.query_log` — one store, two writers, and why it is SQLite
 
-One file, JSON Lines, at `<user_state_dir>/harlequin/queries.jsonl`, one object per statement:
+One database, at `<user_state_dir>/harlequin/history.db`, one row per statement:
 
-```json
-{"v":1,"at":"2026-08-31T22:41:07.123456+00:00","program":"hsql","connection":"9f86d0…",
- "profile":"prod","adapter":"postgres","sql":"select count(*) from orders","status":"ok",
- "rows":1,"truncated":false,"elapsed_ms":34.1,"error":null}
+```sql
+create table queries (
+  id          integer primary key,   -- insertion order, which is also newest-last
+  at          text    not null,      -- UTC, ISO-8601
+  program     text    not null,      -- 'hsql' or 'harlequin'
+  connection  text,                  -- the id the caches key on
+  profile     text,
+  adapter     text,
+  sql         text    not null,
+  status      text    not null,      -- 'ok' | 'error' | 'canceled'
+  rows        integer,
+  truncated   integer,
+  elapsed_ms  real,
+  error       text
+);
+create index queries_connection_at on queries (connection, id desc);
 ```
 
-- **`at` is UTC, ISO-8601.** The History screen renders local; a log two machines may read
-  does not store a naive timestamp.
+**Search is what decides the format** — §1.2 and
+[#429](https://github.com/tconbeer/harlequin/issues/429). A tail read is bounded by
+construction — the newest 500 — so an append-only file serves it well. Search is the
+opposite: its whole value is that it reaches queries you ran weeks ago, which means reading
+everything. Measured over 100,000 records (52 MB of JSONL, 45 MB of
+SQLite, both warm in page cache):
+
+| | JSON Lines | SQLite |
+| --- | --- | --- |
+| newest 500 for one connection | 8.2ms (hand-written reverse scan) | 16.7ms (`order by id desc limit 500`) |
+| **search all of it, newest 500 matches** | **396.4ms** (full scan + parse) | **34.9ms** (`sql like ?`) |
+| one record written | 0.006ms (`os.write`, `O_APPEND`) | 0.020ms (WAL, `synchronous=normal`) |
+| import cost | +7.6ms (`json`) | +4.0ms (`sqlite3`) |
+
+The tail row is a wash and the write row is 14µs on a query that cannot take less than a
+millisecond. The search row is the milestone: 400ms per keystroke is not a filter anyone can
+type into, and it is 400ms only because the file was in cache. `sqlite3` is *cheaper* to
+import than `json`, is stdlib, and is already the module `harlequin_sqlite` drives.
+
+**Pragmas are part of the design, not tuning.** `journal_mode=wal` and `synchronous=normal`
+are what make a write 0.020ms; the defaults measure 0.678ms, a 34× difference that would show
+up on a script of a thousand statements. `busy_timeout=5000` is what makes concurrent writers
+a non-event: 8 processes × 200 inserts produced 1,600 rows, 0 errors, in 0.15s wall. WAL needs
+shared memory, which a network home directory does not have, so a failure to enter WAL falls
+back to the default journal — still 0.678ms, still correct.
+
+**A schema change is an `alter table`, not a new file.** `pragma user_version` plus an ordered
+list of migrations, which is the thing the pickle caches cannot do: `CACHE_VERSION` throws the
+old data away, and history is the one store where that is a loss rather than a re-fetch.
+
+Everything else about the record is unchanged by the format:
+
 - **`sql` goes through `redact.redact_text()`** before it is written. A query can carry a
   credential — `attach 'postgres://user:pw@host'`, `create user … password '…'` — and the
   product plan's §12 lists query history as a leak surface that sits outside the declaration
@@ -317,42 +371,35 @@ One file, JSON Lines, at `<user_state_dir>/harlequin/queries.jsonl`, one object 
   `hide_secrets_in()` (§1.4) — one line in `cli.py`, and the debug screen gets more honest for
   free.
 - **`connection` is the same id the caches key on**, so the History screen can show this
-  database's queries and an agent can `grep` for them. `get_connection_hash()` moves out of
+  database's queries and `--history` can filter to them. `get_connection_hash()` moves out of
   `catalog_cache` into `query_log` (it is a hash of a dict; it never needed rich), and
   `catalog_cache` imports it from there.
 - **`status`** is `ok`, `error` or `canceled` — the third because M2 established that a
   cancelled cursor is indistinguishable from an empty result unless the caller attributes it.
 
-**Concurrency: one `os.write()` per record, on an `O_APPEND` descriptor, and no lock.**
-Measured on this container, 8 concurrent processes × 200 records:
-
-| record size | lines written | expected | malformed |
-| --- | --- | --- | --- |
-| ~200 B | 1600 | 1600 | 0 |
-| ~8 KB | 1600 | 1600 | 0 |
-| ~200 KB | 1600 | 1600 | 0 |
-
-An `O_APPEND` write on Linux holds the inode lock for the whole write; the PIPE_BUF limit
-people remember is about pipes. This is not guaranteed by POSIX for every filesystem, and
-Windows' CRT implements `O_APPEND` as seek-then-write, so the **reader tolerates a bad line**:
-a record that will not parse is skipped, not raised. That is one `try/except` and it makes the
-format robust on an NFS home directory as well.
-
-**Failure never fails a query.** An unwritable log disables logging for the process; `hsql`
-says so once on stderr through `diagnostics` (never stdout — §"stdout belongs to query
-output"), the IDE notifies once. **Rotation** is size-based and checked once per process, on
-first write: over 32 MiB, rename to `queries.jsonl.1`, replacing any existing one. Two
-processes rotating at once lose nothing — both then append to a new file.
+**Failure never fails a query.** A store that cannot be opened, migrated or written disables
+logging for the process — `sqlite3.Error` in one place, not at each call site. `hsql` says so
+once on stderr through `diagnostics` (never stdout — §"stdout belongs to query output"), the
+IDE notifies once. **Retention** replaces file rotation and is a `delete` rather than a
+`rename`: once per process, rows beyond the newest 100,000 go, so nothing is ever lost from
+the end that the beginning did not push out.
 
 **Opt-out** is a profile key, `history = false`, read by both commands. Nothing else reports
-the log's path: `--info` describes the installation, not the user's data, and the mode below
-is how a caller reads the records without ever needing to know where they are.
+the store's path: `--info` describes the installation, not the user's data, and the mode below
+is how a caller reads the rows without needing to know where they are.
 
-### 3.3 `hsql --history`, the mode that reads the log
+**JSON Lines does not go away; it stops being the storage.** `hsql --history --jsonl` emits
+exactly the record above, one object per line, because the mode is a result set and every
+format already works on it (§3.3) — so the "readable with ordinary tools" property the product
+plan asked for now works on Windows and needs no `jq`. And the store is a SQLite file, so the
+other ordinary tool is Harlequin: `harlequin -a sqlite ~/.local/state/harlequin/history.db`
+opens your own query history in the IDE, with a catalog and a results viewer around it.
+
+### 3.3 `hsql --history`, the mode that reads the store
 
 A mode option, beside `--catalog` and `--catalog-search`, and it costs almost nothing to build
 because of what M2 settled: **a listing is a result set**, so the whole output layer is already
-written. `--history` builds an Arrow table from the log's records and hands it to the emitters
+written. `--history` builds an Arrow table from the store's rows and hands it to the emitters
 every other mode uses — which means `--format json`, `--jsonl`, `--csv`, `-x`, `-o PATH`,
 `--stats` and the layout flags all work on it the day it lands, and none of them is a line of
 new code.
@@ -360,13 +407,14 @@ new code.
 ```bash
 hsql --history --limit 20                 # the last 20, as a table
 hsql --history -P prod --json             # this profile's, for an agent
+hsql --history --find "line_items"        # every query that mentions it, newest first
 hsql --history -x --limit 1               # the last one, vertically
 ```
 
 - **It connects to nothing.** It is the only mode that reads a profile, builds an adapter, and
   never opens a connection: the adapter is constructed solely to ask it for `connection_id`,
-  which is what filters the log to one database. A history mode that woke a warehouse to list
-  queries would be its own kind of joke.
+  which is what filters the store to one database. A history mode that woke a warehouse to
+  list queries would be its own kind of joke.
 - **Scope follows the invocation.** `-P`, `-a` or a `CONN_STR` narrows to that connection;
   with none of them, the mode reports every connection, because "I typed `hsql --history` and
   got someone else's idea of the default database" is the surprising answer. The `profile` and
@@ -382,38 +430,54 @@ hsql --history -x --limit 1               # the last one, vertically
   golden-format snapshots (M1 §5) — so a column that is verbatim in JSON and folded in a
   table is not on offer. Folding loses formatting, not meaning: `" ".join(sql.split())` is
   still the query, and still runnable.
-- **The read is a bounded tail**, not a parse of the file: seek to the end, read backwards in
-  chunks until N matching records or the head of the file, skipping any line that will not
-  parse (§3.2). `hsql --history --limit 20` costs the same on a 30 MB log as on a 30 KB one.
+- **`--find TERM` searches every row**, not the tail: `sql like '%TERM%'`, newest first, under
+  the same `--limit`. It is [#429](https://github.com/tconbeer/harlequin/issues/429)'s
+  headless half, it is one clause rather than a reader, and it is the flag that would have
+  been unaffordable over a file (§3.2). The spelling is `--find` rather than `--search`
+  because `--catalog-search` already means "ask the *database* to search", and this one asks
+  nothing of the database at all.
+- **The read is one indexed query**, `where connection = ? [and sql like ?] order by id desc
+  limit ?`. `hsql --history --limit 20` costs the same on a 100,000-row store as on a 20-row
+  one, and the reverse-scan reader an append-only file would have needed — with its truncated
+  last line, its malformed record, and its "how far back do I read for 500 matches" — does not
+  have to exist.
 
 This is the mode the skill teaches for B7 — an agent joining a task mid-stream reads what the
-human has been running, in the format it wants, on Windows as well as anywhere else, with no
-`jq` and no path to know.
+human has been running, or searches it for the table it cares about, in the format it wants,
+on Windows as well as anywhere else, with no `jq` and no path to know.
 
-### 3.4 The History screen reads the log
+### 3.4 The History screen reads the store, and gains a filter
 
-`History` stops being a pickled deque and becomes a bounded tail of the log:
-`History.tail(connection=…, n=500)` reads the last ~1 MiB, splits, parses newest-first, skips
-what will not parse, and stops at 500 records for this connection. `QueryExecution` keeps its
-`__rich__`; it just gets its rows from a file rather than from `CatalogCache`.
+`History` stops being a pickled deque and becomes a query: `History.recent(connection=…,
+n=500, find=None)`, the same `order by id desc limit ?` the mode runs. `QueryExecution` keeps
+its `__rich__`; it just gets its rows from the store rather than from `CatalogCache`.
 
 Three things follow, and they are the point of the milestone:
 
-- **A crashed session keeps its history**, because the record was written when the query ran.
+- **A crashed session keeps its history**, because the row was written when the query ran.
 - **`hsql`'s queries appear in the human's History screen**, which is B7 — "as an agent
   joining a task mid-stream, I read the human's recent query history" — working in both
-  directions from one file.
+  directions from one store.
 - `CatalogCache.history` is removed and `CACHE_VERSION` goes to 3. A **one-time migration**
-  runs when the old cache is present and the log holds nothing for that connection: the
-  pickled records are appended with their own timestamps and `"program":"harlequin"`. Fifteen
+  runs when the old cache is present and the store holds nothing for that connection: the
+  pickled records are inserted with their own timestamps and `program = 'harlequin'`. Fifteen
   lines, and it is also the test that proves the writer accepts historical timestamps.
 
-The screen itself is reworked in the same release (#850, §1.2): a `ModalScreen`, so the app's
+**The filter is #429, and it is an `Input` over the same query.** Typing narrows the list to
+rows whose `sql` matches, over the whole store rather than the 500 the screen holds — which is
+the point, since the query you are hunting for is usually not in the last 500. The query runs
+on a worker thread, debounced the way the editor debounces its symbol scan, and 35ms over
+100,000 rows (§3.2) is what makes that feel like typing rather than waiting. Escape clears the
+filter; Enter still inserts the highlighted query into a new buffer, as it does today.
+
+The screen is reworked in the same release (#850, §1.2): a `ModalScreen`, so the app's
 bindings stop reaching through it; a preview that is a highlighted, **non-focusable** surface
 rather than a read-only editor with a cursor in it; and the screen's own bindings shown the way
-every other screen shows them. Textual 8.2.8 has no `textual.highlights`, so the preview stays
-a `TextEditor` that cannot take focus rather than becoming a `Static` — a swap to make when the
-version that offers it is pinned, not before.
+every other screen shows them — which the filter makes more pressing rather than less, since a
+screen with a text input in it is a screen where every stray binding is a surprise. Textual
+8.2.8 has no `textual.highlights`, so the preview stays a `TextEditor` that cannot take focus
+rather than becoming a `Static` — a swap to make when the version that offers it is pinned, not
+before.
 
 ### 3.5 "Copy CLI command", and the module both directions share
 
@@ -589,11 +653,12 @@ constraint — so the order is by what users are waiting for and by how much des
 group carries. [#1102](https://github.com/tconbeer/harlequin/issues/1102) is open, has a
 reference implementation, and needs nothing else here; the trust model under it is the most
 consequential decision in M4 and benefits from being in the world early rather than shipping
-last with two other features on top of it. The query log follows, because it changes a stored
-format and a screen, and because it is what makes an agent's queries visible to a human at
-all. The handoff is last: it is the largest new public surface — two flags across two commands
-— and it lands better after the log, since a draft handed to a human and the queries they run
-against it are then one story rather than two.
+last with two other features on top of it. The query history follows, because it changes a
+stored format and a screen, because it is what makes an agent's queries visible to a human at
+all, and because search ([#429](https://github.com/tconbeer/harlequin/issues/429)) is what
+decides the format it changes to. The handoff is last: it is the largest new public surface —
+two flags across two commands — and it lands better after the history, since a draft handed to
+a human and the queries they run against it are then one story rather than two.
 
 Each release maps to a run of §3: A is §3.6–§3.9, B is §3.2–§3.4, C is §3.1 and §3.5.
 
@@ -625,31 +690,35 @@ rule, timeout and cancel, error surfacing. Answers
 model stated plainly, and a worked `claude -p` config with the prompt that keeps code fences
 out of the buffer.
 
-### Release B — the query log and history (2.14)
+### Release B — query history, and search (2.14)
 
-**PR 6 — `harlequin.query_log`.** The record, the writer, the tolerant reader, rotation,
-`get_connection_hash()`'s move out of `catalog_cache`, `history = false`, and both commands
-writing. The IDE starts calling `hide_secrets_in()` here — the log is the first thing it
-persists that could carry a value from a profile (§1.4). Guard: `hsql`'s import set still
-contains no rich, and `hsql --version` is still ~120ms.
+**PR 6 — `harlequin.query_log`.** The schema, the pragmas, `user_version` and its migration
+step, the writer, retention, `get_connection_hash()`'s move out of `catalog_cache`,
+`history = false`, and both commands writing. The IDE starts calling `hide_secrets_in()`
+here — the store is the first thing it persists that could carry a value from a profile
+(§1.4). Guards: `hsql`'s import set still contains no rich, and `hsql --version` is still
+~120ms.
 
-**PR 7 — `hsql --history`.** The mode, the bounded tail, the connection filter, the folded
-`sql` column, and `--limit` as "the most recent N". Nothing new in the output layer — the
-listing goes through the emitters `--catalog` already uses. Adds the mode to the skill. Closes
-B7's headless half.
+**PR 7 — `hsql --history`, with `--find`.** The mode, the connection filter, the folded `sql`
+column, `--limit` as "the most recent N", and the search clause. Nothing new in the output
+layer — the listing goes through the emitters `--catalog` already uses. Adds the mode to the
+skill. Closes B7's headless half and #429's.
 
-**PR 8 — The History screen reads the log.** `History.tail()`, `CatalogCache.history` removed,
-`CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's queries
-first show up in a human's History screen, and where the human's show up under `--history`.
+**PR 8 — The History screen reads the store.** `History.recent()`, `CatalogCache.history`
+removed, `CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's
+queries first show up in a human's History screen, and where the human's show up under
+`--history`.
 
-**PR 9 — The History screen, reconsidered.** Modal, a non-focusable preview, and the screen's
-own bindings shown as every other screen shows them (§1.2, §3.4). It rides here because PR 8
-already rewrites what that screen reads, and a screen worth re-reading is worth fixing while it
-is open. Closes [#850](https://github.com/tconbeer/harlequin/issues/850).
+**PR 9 — The History screen, reconsidered.** The filter input over the whole store, plus
+modal, a non-focusable preview, and the screen's own bindings shown as every other screen
+shows them (§1.2, §3.4). Search and the rework land together because they are the same
+screen and the same reading of it: the pane is for choosing a query, not for editing one.
+Closes [#429](https://github.com/tconbeer/harlequin/issues/429) and
+[#850](https://github.com/tconbeer/harlequin/issues/850).
 
-**PR 10 — Docs** (`harlequin-web`): the query log — the mode that reads it, its shape, and the
-path, for the reader who wants to back it up or delete it — and `--history` in "Headless &
-Agents".
+**PR 10 — Docs** (`harlequin-web`): the query history — where it lives, what it holds, how to
+search it from either front end, and that it is a SQLite file the reader can open in Harlequin
+itself — and `--history` in "Headless & Agents".
 
 ### Release C — the handoff (2.15)
 
@@ -682,17 +751,22 @@ technical one — which also means it can change again without rewriting §3.
 - `Invocation.to_hsql_argv()` / `to_harlequin_argv()`: profile vs conn_str, typed vs defaulted
   options, the secret refusal, and quoting on both platforms (parametrized over
   `shlex.quote`/`list2cmdline` rather than skipped on one).
-- `query_log`: record round trip; a malformed line between two good ones; a truncated last
-  line (the crash case); the tail reader's connection filter and its 500-record bound;
-  rotation; `redact_text()` applied to `sql`; an unwritable directory disabling logging without
-  raising.
-- The **concurrent append** measurement becomes a real test — 4 processes × 100 records at
-  8 KB, asserting every line parses — marked so it can be deselected on a slow runner.
-- The pickle migration, including timestamps that predate the log.
-- `--history`: the connection filter with two connections interleaved in one file; `--limit`
-  taking from the newest end; the folded `sql` column matching between `--format table` and
+- `query_log`: row round trip; the schema migration, from `user_version = 0` forward and on a
+  store already at the current version; retention trimming to the newest N; `redact_text()`
+  applied to `sql`; an unwritable directory and an unreadable store each disabling logging
+  without raising; and the WAL fallback, exercised by a store where `journal_mode=wal` does
+  not stick.
+- The **concurrent write** measurement becomes a real test — 4 processes × 100 inserts,
+  asserting every row lands and no `sqlite3.Error` escapes — marked so it can be deselected on
+  a slow runner.
+- The pickle migration, including timestamps that predate the store, and a second run that
+  does not double-insert.
+- `--history`: the connection filter with two connections interleaved; `--limit` taking from
+  the newest end; `--find` matching mid-string and not matching case-sensitively where SQLite
+  would surprise us; the folded `sql` column matching between `--format table` and
   `--format csv`, asserted the way the golden-format snapshots assert it rather than against a
-  copy of the folding rule; and an empty log printing a header and no rows rather than nothing.
+  copy of the folding rule; and an empty store printing a header and no rows rather than
+  nothing.
 - A guard that `--history` opens no connection: the mode runs against a profile whose adapter
   would raise on `connect()`, and still prints rows.
 - Trust: fingerprint stability across a whitespace change (it should change — the argv is what
@@ -711,9 +785,10 @@ technical one — which also means it can change again without rewriting §3.
   a child that ignores `terminate()`.
 - The consent modal: cancel leaves the buffer alone and runs nothing; "always allow" writes one
   record and the second invocation does not prompt.
-- The History screen after #850: an app-level binding pressed on the screen does nothing, and
-  Tab does not land focus in the preview — both asserted on behavior, not on the snapshot,
-  since the snapshot changes for reasons neither of them cares about.
+- The History screen after #850 and #429: an app-level binding pressed on the screen does
+  nothing, Tab does not land focus in the preview, and typing in the filter narrows the list
+  to rows the 500-record window would not have held — all asserted on behavior, not on the
+  snapshot, since the snapshot changes for reasons none of them cares about.
 - The editor round trip with `run_in_terminal` patched, plus the `SuspendNotSupported` path
   asserted as a notification — §1.6 measured that the real suspend cannot be reached in
   `run_test()`, so the seam is the test surface.
@@ -768,26 +843,42 @@ the one contract `hsql` is defined by. `python -m harlequin` in the same interpr
 only option that is both correct and cheap, and it is cheap only relative to what it launches
 — a 620ms `harlequin --version` is the floor for anything that opens the IDE.
 
-### 6.4 One log file, not one per connection
+### 6.4 One SQLite store, not JSONL, and not one file per connection
 
-A per-connection file would make the History screen's read trivial and everything else worse:
-an agent asking "what has been run against this warehouse today" would have to know the
-connection hash to find the file, and `tail -f` on "what is happening" would have no target.
-One file with a `connection` field is `grep`-able, `jq`-able, and orderable by time across
-databases, which is what "readable with ordinary tools" means.
+The roadmap says "JSONL history," and this plan said so too until #429 came into scope. The
+reversal is in §3.2 and rests on one number: searching 100,000 records is 396ms as a file scan
+and 35ms as a `like`. Everything else was close enough to be a preference — writes 14µs apart,
+`sqlite3` importing cheaper than `json`, files within 15% in size, tail reads a wash — and
+search is not close.
 
-### 6.5 `--history` is a mode, and the log's path is not in `--info`
+Three second-order effects, all in the same direction. **The reader stops existing**: no
+reverse-scan-by-chunks, no truncated last line, no "read further back until 500 match" — one
+indexed query instead, and a whole class of §5 tests with it. **A schema change becomes an
+`alter table`**, where the pickle caches bump a version and discard, which is the wrong
+behavior for the one store whose contents cannot be re-fetched. And **the file is a database
+Harlequin can open**: `harlequin -a sqlite ~/.local/state/harlequin/history.db` is a better
+answer to "readable with ordinary tools" than `jq` was, on every platform.
 
-The tempting cut is to ship the log and let `tail` and `jq` be the reader: the format is
-already the most readable one there is. It is a mode (Ted's call), and three things say so.
+What is given up is `tail -f`, and `hsql --history --jsonl` gives back the format if not the
+follow. Still one store rather than one per connection, for the reason it always was: an agent
+asking what has been run against a warehouse should not have to know a connection hash to find
+a file, and ordering across databases is a `order by`, not a merge.
+
+### 6.5 `--history` is a mode, and the store's path is not in `--info`
+
+When the store was a JSONL file, the tempting cut was to ship it and let `tail` and `jq` be
+the reader. It is a mode (Ted's call), and three things say so — the first two of which
+outlived the format, and the third of which is why a SQLite store needs one even more.
 
 **A mode is nearly free, because a listing is a result set.** M2 §3.3 built that road for
 `--catalog`: hand the emitters an Arrow table and every format, every layout flag and `-o`
 follow. `--history` is a reader plus a table; it is not a second output stack.
 
-**The pipeline is not portable and not self-describing.** It needs `jq`, a path, a filter by
+**The pipeline is not portable and not self-describing.** It needed `jq`, a path, a filter by
 connection, and a shell that has `tail` — which Windows does not. "Read the human's recent
-queries" is a thing the skill should be able to teach in one line that works everywhere.
+queries" is a thing the skill should be able to teach in one line that works everywhere. With
+a SQLite store the pipeline would need `sqlite3` and a schema besides, so the mode carries
+more weight now, not less.
 
 **And `--info` is the wrong place for the path.** `--info` reports on the installation —
 versions, platform, config files, adapter capabilities. A pointer into the user's own query
@@ -843,9 +934,16 @@ the connection and the SQL are not.
   Doing it properly means splitting the *names* into a leaf module and leaving the widget
   targets behind, which is a refactor to make on purpose, with the second consumer in hand.
 - **A `--open` that starts a query running.** It would collapse the review step F1 exists for.
-- **`--history --since 2h`, and searching history.** Both are obvious the moment the mode
-  exists, and both are additions to a mode and a format that already work — `--limit` and the
-  reader's newest-first order cover the case the milestone is for. Worth doing next, not now.
+- **`--history --since 2h`.** Obvious the moment the mode exists, and one more `where` clause
+  once the store is a database — but `--limit` and newest-first cover the case this milestone
+  is for. Worth doing next, not now.
+- **FTS5 over the history.** `like` is 35ms over 100,000 rows (§3.2), an FTS table is a second
+  thing to keep in step with the first, tokenizing SQL is a poor fit for a tokenizer built for
+  prose, and FTS5 is a compile-time option that is *usually* present. Revisit at a million
+  rows, with a measurement rather than an instinct.
+- **Anything else in the history store.** The catalog and buffer caches are still pickles, and
+  the database that now exists is an obvious home for them. It is also a separate change, with
+  a separate migration and a separate failure mode, and this milestone has enough of both.
 - **Per-hook cancel keys, hook chaining, and hooks that write config.** Each is a feature
   request that will read as obvious once one hook works, and none of them is M4's.
 
@@ -869,6 +967,9 @@ Recorded here; applied to `harlequin-for-agents.md` in the same PR as this docum
 - **§10 does not mention consent, and a config-defined shell command needs it.** Config files
   merge from `$CWD`, so a cloned repository can define one; a synced dotfiles repo can do the
   same in the user's own config dir. §3.8 is the missing paragraph.
+- **The roadmap's "JSONL history" names a format that search rules out.** M4 stores query
+  history in SQLite and *emits* JSON Lines: `hsql --history --jsonl` is the record the roadmap
+  described, and the store behind it is what makes #429 affordable (§3.2, §6.4).
 - **§6's `hsql history --json -n 20` is the right feature under two wrong assumptions.** The
   spelling is `hsql --history --json --limit 20` — a mode option, and `--limit` rather than a
   new `-n`, because both commands already mean "the rows that leave the store" by it. And what
