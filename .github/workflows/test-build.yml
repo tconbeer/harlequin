@@ -46,7 +46,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.12.5"
+          version: "0.12.8"
           python-version: ${{ matrix.py }}
 
       - name: Ensure package can be built
