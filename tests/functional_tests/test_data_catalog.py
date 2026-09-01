@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 
 import duckdb
 import pytest
+from rich.style import Style
+from rich.text import Text
 from textual.geometry import Offset
 from textual.widgets import Input, Tooltip
 
@@ -497,7 +499,9 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
     """
     db_path = tmp_path / "tooltip.db"
     conn = duckdb.connect(str(db_path))
-    conn.execute("create table a_table_with_a_name_too_long_to_fit (a int)")
+    # the brackets are a type label's shape ("[s]" is a list of strings), so this
+    # name also pins that a label never reaches the tooltip as console markup
+    conn.execute('create table "a_table_[s]_with_a_name_too_long_to_fit" (a int)')
     conn.close()
 
     app = Harlequin(duckdb_adapter([str(db_path)], no_init=True), connection_hash="tt")
@@ -521,7 +525,14 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
         await pilot.hover(app.data_catalog.__class__, offset=Offset(x=6, y=3))
         await pilot.pause()
         assert tree.hover_line == 2
-        assert tree.tooltip == "a_table_with_a_name_too_long_to_fit t"
+        assert isinstance(tree.tooltip, Text)
+        assert tree.tooltip.plain == "a_table_[s]_with_a_name_too_long_to_fit t"
+
+        # and the type label keeps the muted color it has in the tree
+        type_label_span = tree.tooltip.spans[-1]
+        assert tree.tooltip.plain[type_label_span.start : type_label_span.end] == "t"
+        assert isinstance(type_label_span.style, Style)
+        assert type_label_span.style.color is not None
 
         tooltip = app.screen.get_child_by_type(Tooltip)
         await pilot.pause(app.TOOLTIP_DELAY + 0.1)
