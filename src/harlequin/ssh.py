@@ -26,7 +26,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from harlequin.config import CONFIG_ERROR_TITLE, DEFAULT_SSH_TIMEOUT, parse_seconds
 from harlequin.exception import HarlequinConfigError, HarlequinSshError
@@ -38,6 +38,16 @@ DEFAULT_TIMEOUT = DEFAULT_SSH_TIMEOUT
 """Seconds to wait for the forwards, when nothing says otherwise."""
 
 ERROR_TITLE = "Harlequin could not open the SSH tunnel."
+
+KEEPALIVE_SECONDS = 30
+"""What Harlequin sets `ServerAliveInterval` to when the user's config sets none.
+
+`ssh` sends no keepalives by default, so an idle forward behind a NAT or a
+corporate firewall is reaped silently -- and a tunnel that drops after lunch is
+the difference between a feature people trust and one they work around. Not
+configurable: an interval is not a thing anyone should have to tune, and the one
+person who wants to has a `Host` block, which is left alone.
+"""
 
 _POLL_INTERVAL = 0.05
 _CONNECT_TIMEOUT = 0.5
@@ -98,6 +108,9 @@ class SshConfig:
     """
 
     forwards: tuple[Forward, ...]
+
+    server_alive_interval: int | None = None
+    """What the resolved config sets, or None where `-G` did not say."""
 
 
 @dataclass(frozen=True)
@@ -172,13 +185,16 @@ def build_argv(
     forwards: Sequence[str] = (),
     *,
     batch_mode: bool = False,
+    keepalive: int | None = None,
 ) -> list[str]:
     """The `ssh` command that holds `forwards` open, and runs nothing.
 
-    `ExitOnForwardFailure` is the only option Harlequin imposes on its own: a
-    forward that silently did not happen is the one failure a user cannot
-    diagnose. Notably not imposed is `ServerAliveInterval`, which a command-line
-    `-o` would take away from a `Host` block that already sets it.
+    `ExitOnForwardFailure` is the only option Harlequin imposes unconditionally:
+    a forward that silently did not happen is the one failure a user cannot
+    diagnose. `keepalive` is the other, and is only ever passed where the
+    resolved config asked for none -- a command-line `-o` beats the config file,
+    and overriding a `Host` block's own interval would be Harlequin retuning
+    someone else's connection.
 
     Raises: HarlequinSshError if a value would reach `ssh` as a flag.
     """
@@ -188,6 +204,8 @@ def build_argv(
     argv = [SSH, "-N", "-o", "ExitOnForwardFailure=yes"]
     if batch_mode:
         argv += ["-o", "BatchMode=yes"]
+    if keepalive is not None:
+        argv += ["-o", f"ServerAliveInterval={keepalive}"]
     for forward in forwards:
         argv += ["-L", forward]
     argv.append(host)
@@ -210,6 +228,13 @@ def build_tunnel(
     """
     argv = build_argv(host, forwards, batch_mode=batch_mode)
     config = resolve_config(argv, timeout=timeout)
+    if config is not None and config.server_alive_interval == 0:
+        # the probe answered, and what it said is that nothing is keeping this
+        # connection alive. Built again rather than probed again: the keepalive
+        # changes nothing else `-G` would report.
+        argv = build_argv(
+            host, forwards, batch_mode=batch_mode, keepalive=KEEPALIVE_SECONDS
+        )
     if config is not None and not config.forwards:
         # a usage error rather than a failure to connect: nothing has been run
         # yet, and what is wrong is what was asked for
@@ -254,12 +279,14 @@ def resolve_config(argv: Sequence[str], *, timeout: float) -> SshConfig | None:
 def parse_config(text: str) -> SshConfig | None:
     """`ssh -G`'s output, or None if this is not `ssh -G`'s output.
 
-    Each line is a lowercase keyword and its resolved value, and the only one
-    read is `localforward`. A `hostname` line is what tells the two apart: every
+    Each line is a lowercase keyword and its resolved value; the two read are
+    `localforward` and `serveraliveinterval`. A `hostname` line is what tells
+    `-G`'s output from anything else that reached this: every
     `-G` prints one, so text without it is something else, and the caller
     degrades rather than concluding there is nothing to forward.
     """
     forwards: list[Forward] = []
+    server_alive_interval: int | None = None
     is_ssh_output = False
     for line in text.splitlines():
         match = _KEYWORD.match(line.strip())
@@ -272,9 +299,14 @@ def parse_config(text: str) -> SshConfig | None:
             fields = value.split()
             if len(fields) == 2:
                 forwards.append(Forward(listen=fields[0], destination=fields[1]))
+        elif keyword == "serveraliveinterval":
+            with contextlib.suppress(ValueError):
+                server_alive_interval = int(value)
     if not is_ssh_output:
         return None
-    return SshConfig(forwards=tuple(forwards))
+    return SshConfig(
+        forwards=tuple(forwards), server_alive_interval=server_alive_interval
+    )
 
 
 class SshTunnel:
@@ -304,6 +336,8 @@ class SshTunnel:
         """Whether a listener that was already there is what answers now."""
         self._process: subprocess.Popen[bytes] | None = None
         self._stderr: _Stderr | None = None
+        self._on_close: Callable[[str], None] | None = None
+        self._stopping = False
 
     @property
     def endpoints(self) -> tuple[tuple[str, int], ...]:
@@ -349,6 +383,17 @@ class SshTunnel:
         """
         return (self.host, *(f"{f.listen} {f.destination}" for f in self.forwards))
 
+    def watch(self, on_close: Callable[[str], None]) -> None:
+        """Call `on_close` from a thread when the child exits on its own.
+
+        A dropped forward is otherwise an unexplained wall of query errors, and
+        the front end is the only thing that can say so. Not called for a tunnel
+        `stop()` took down, which is not news. Set once; every `start()` after
+        this re-arms it.
+        """
+        self._on_close = on_close
+        self._arm_watcher()
+
     def start(self) -> None:
         """Start it and block until the forwarded ports accept connections.
 
@@ -357,6 +402,7 @@ class SshTunnel:
         if self.running:
             return
         self.reused = False
+        self._stopping = False
         already_bound = any(_accepts(endpoint) for endpoint in self.endpoints)
         try:
             process = subprocess.Popen(
@@ -380,11 +426,13 @@ class SshTunnel:
         except BaseException:
             self.stop()
             raise
+        self._arm_watcher()
 
     def stop(self) -> None:
         """Kill the child, if there is one. Safe to call more than once."""
         atexit.unregister(self.stop)
         _LIVE.discard(self)
+        self._stopping = True
         process, self._process = self._process, None
         if process is None:
             return
@@ -405,6 +453,23 @@ class SshTunnel:
 
     def __exit__(self, *exc: Any) -> None:
         self.stop()
+
+    def _arm_watcher(self) -> None:
+        """Start the thread that waits on the child, if anything is listening."""
+        if self._on_close is None or not self.running:
+            return
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def _watch(self) -> None:
+        process, on_close = self._process, self._on_close
+        if process is None or on_close is None:
+            return
+        process.wait()
+        if self._stopping or self._process is not process:
+            # taken down deliberately, or replaced by a restart
+            return
+        last_line = self._stderr.last_line() if self._stderr is not None else ""
+        on_close(f"tunnel closed: {last_line}" if last_line else "tunnel closed")
 
     def _wait_until_ready(self, *, already_bound: bool) -> None:
         """Block until every forwarded port answers, or say why it never did."""
@@ -469,6 +534,11 @@ class _Stderr:
 
     def text(self) -> str:
         return b"".join(self._chunks).decode("utf-8", errors="replace").strip()
+
+    def last_line(self) -> str:
+        """ssh's own last word, which is what a reader wants out of a paragraph."""
+        lines = [line for line in self.text().splitlines() if line.strip()]
+        return lines[-1].strip() if lines else ""
 
     def close(self) -> None:
         self._thread.join(timeout=_TERMINATE_SECONDS)

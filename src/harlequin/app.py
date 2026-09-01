@@ -163,6 +163,14 @@ class ResultsFetched(Message):
         self.elapsed = elapsed
 
 
+class TunnelClosed(Message):
+    """The SSH tunnel's child exited on its own, and took the forward with it."""
+
+    def __init__(self, notice: str) -> None:
+        super().__init__()
+        self.notice = notice
+
+
 class TransactionModeChanged(Message):
     def __init__(self, new_mode: HarlequinTransactionMode | None) -> None:
         super().__init__()
@@ -360,6 +368,8 @@ class Harlequin(AppBase):
                 title="SSH tunnel",
                 severity="warning" if self.ssh_tunnel.reused else "information",
             )
+            # posted from the watcher's thread, which is why it is a message
+            self.ssh_tunnel.watch(self._report_tunnel_closed)
 
         self._connect()
         self._load_catalog_cache()
@@ -807,6 +817,16 @@ class Harlequin(AppBase):
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
 
+    def _report_tunnel_closed(self, notice: str) -> None:
+        """Called on the tunnel's watcher thread, so it only posts a message."""
+        self.post_message(TunnelClosed(notice))
+
+    @on(TunnelClosed)
+    def report_tunnel_closed(self, message: TunnelClosed) -> None:
+        """Say the forward is gone, rather than let queries fail unexplained."""
+        message.stop()
+        self.notify(message.notice, title="SSH tunnel", severity="error")
+
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
         message.stop()
@@ -1018,6 +1038,9 @@ class Harlequin(AppBase):
             config_path=config_path,
             keymap_names=self.keymap_names,
             theme=self.theme,
+            ssh_tunnel=(
+                self.ssh_tunnel.describe() if self.ssh_tunnel is not None else None
+            ),
         )
         adapter_info = AdapterDebugInfo(
             adapter_options=adapter_options,

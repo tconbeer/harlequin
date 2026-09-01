@@ -50,6 +50,7 @@ class HarlequinDebugInfo:
         active_profile_name: str | None = None,
         active_profile_config: Profile | None = None,
         adapter_options: Sequence[AbstractOption] | None = None,
+        ssh_tunnel: str | None = None,
     ) -> None:
         self.all_keymaps = all_keymaps
         self.config = config
@@ -61,6 +62,8 @@ class HarlequinDebugInfo:
         self.adapter_options = adapter_options
         """What the connected adapter declares, so that this screen knows
         which of the profile's values it must not print."""
+        self.ssh_tunnel = ssh_tunnel
+        """The forwards this session is reached through, where it is tunneled."""
 
     def parse_info(self) -> List[DebugWidget]:
         redacted_config = {
@@ -96,6 +99,17 @@ class HarlequinDebugInfo:
                 widget_type=WidgetType.MARKDOWN,
                 title="Theme",
                 content=f"`{self.theme}`",
+            ),
+            *(
+                [
+                    DebugWidget(
+                        widget_type=WidgetType.MARKDOWN,
+                        title="SSH Tunnel",
+                        content=f"`{self.ssh_tunnel}`",
+                    )
+                ]
+                if self.ssh_tunnel
+                else []
             ),
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,

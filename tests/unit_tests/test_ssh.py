@@ -14,6 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Iterator, Sequence
 from unittest.mock import MagicMock
@@ -28,6 +29,7 @@ from harlequin.exception import HarlequinConfigError, HarlequinSshError
 from harlequin.hsql.cli import build_cli as hsql_cli
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.ssh import (
+    KEEPALIVE_SECONDS,
     Forward,
     SshOptions,
     SshTunnel,
@@ -363,6 +365,72 @@ def test_the_lifecycle_helpers_agree_about_ports(
         assert all(accepts(port) for port in ports)
 
 
+# keeping it open, and saying when it is not
+
+
+@posix_only
+def test_a_config_with_no_keepalive_gets_one(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idle forward behind a NAT is reaped silently, and ssh sends none."""
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "0")
+    assert f"ServerAliveInterval={KEEPALIVE_SECONDS}" in build_tunnel("web-1").argv
+
+
+@posix_only
+def test_a_config_that_sets_its_own_keepalive_is_left_alone(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "60")
+    assert not [arg for arg in build_tunnel("web-1").argv if "ServerAlive" in arg]
+
+
+@posix_only
+def test_a_probe_that_says_nothing_imposes_no_keepalive(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_PROBE_TEXT", "who knows\n")
+    assert not [arg for arg in build_tunnel("web-1").argv if "ServerAlive" in arg]
+
+
+def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
+    config = parse_config("hostname web-1\nserveraliveinterval 60\n")
+    assert config is not None and config.server_alive_interval == 60
+    bare = parse_config("hostname web-1\n")
+    assert bare is not None and bare.server_alive_interval is None
+
+
+def test_a_child_that_dies_says_so_in_ssh_s_last_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Timeout, server web-1 not responding.")
+    said: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(said.append)
+    tunnel.start()
+    try:
+        assert tunnel._process is not None
+        tunnel._process.kill()
+        deadline = time.monotonic() + 5
+        while not said and time.monotonic() < deadline:
+            time.sleep(0.02)
+    finally:
+        tunnel.stop()
+    assert said == ["tunnel closed: Timeout, server web-1 not responding."]
+
+
+def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
+    said: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(said.append)
+    tunnel.start()
+    tunnel.stop()
+    time.sleep(0.3)
+    assert said == []
+
+
 # both commands, end to end, against a fake client on PATH
 
 
@@ -464,7 +532,9 @@ def test_the_tunnel_is_not_opened_for_a_mode_that_never_connects(
 ) -> None:
     result = run_hsql("-a", "duckdb", *TUNNELED, "15439:db.internal:5432", "--info")
     assert result.exit_code == 0
-    assert calls(ssh_on_path) == []
+    # --info runs `ssh -V` to report the client; nothing opens a forward
+    assert all("-L" not in argv for argv in calls(ssh_on_path))
+    assert json.loads(result.stdout)["ssh"]["version"].startswith("FakeSSH")
 
 
 @posix_only

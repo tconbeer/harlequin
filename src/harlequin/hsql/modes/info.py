@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
+import subprocess
 import sys
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -93,6 +95,7 @@ def report(
             "release": platform.release(),
             "machine": platform.machine(),
         },
+        "ssh": _ssh(),
         "config": _config_files(config_path),
         "profile": profile,
         "adapter": adapter_in_use,
@@ -100,6 +103,28 @@ def report(
     }
     out.write((json.dumps(document, indent=2, default=str) + "\n").encode("utf-8"))
     return ExitCode.OK
+
+
+def _ssh() -> dict[str, Any]:
+    """The client `--ssh-host` would run, if there is one on this machine.
+
+    The tunnel options are the one part of hsql that depends on a program
+    outside the wheel, so "is there an ssh here, and which" is a fact about the
+    installation exactly like the adapters below. It runs `ssh -V`, which
+    connects to nothing.
+    """
+    path = shutil.which("ssh")
+    if path is None:
+        return {"client": None, "version": None}
+    try:
+        completed = subprocess.run([path, "-V"], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return {"client": path, "version": None}
+    # OpenSSH writes its version to stderr
+    reported = (
+        (completed.stderr or completed.stdout).decode("utf-8", errors="replace").strip()
+    )
+    return {"client": path, "version": reported or None}
 
 
 def _config_files(config_path: Path | None) -> dict[str, Any]:
