@@ -468,7 +468,12 @@ class SshTunnel:
         if self._stopping or self._process is not process:
             # taken down deliberately, or replaced by a restart
             return
-        last_line = self._stderr.last_line() if self._stderr is not None else ""
+        last_line = ""
+        if self._stderr is not None:
+            # what the child wrote on its way out is still in the pipe when
+            # `wait()` returns, and it is the whole of what this notice says
+            self._stderr.settle()
+            last_line = self._stderr.last_line()
         on_close(f"tunnel closed: {last_line}" if last_line else "tunnel closed")
 
     def _wait_until_ready(self, *, already_bound: bool) -> None:
@@ -504,7 +509,12 @@ class SshTunnel:
 
     def _child_failed(self) -> HarlequinSshError:
         assert self._process is not None
-        detail = self._stderr.text() if self._stderr is not None else ""
+        detail = ""
+        if self._stderr is not None:
+            # the child has exited, but what it wrote on the way out may still
+            # be in the pipe; an error that quotes ssh has to wait for it
+            self._stderr.settle()
+            detail = self._stderr.text()
         return HarlequinSshError(
             f"ssh exited with code {self._process.returncode} without opening "
             f"the forward.\n\n{detail}".rstrip(),
@@ -539,6 +549,16 @@ class _Stderr:
         """ssh's own last word, which is what a reader wants out of a paragraph."""
         lines = [line for line in self.text().splitlines() if line.strip()]
         return lines[-1].strip() if lines else ""
+
+    def settle(self) -> None:
+        """Wait for the drain to reach the end of what the child wrote.
+
+        `Popen.wait()` returns when the child exits, which is before the pipe it
+        wrote to has been read to the end -- so a caller that quotes ssh calls
+        this first, or quotes nothing. Only useful once the child is gone;
+        while it runs there is no end to wait for.
+        """
+        self._thread.join(timeout=_TERMINATE_SECONDS)
 
     def close(self) -> None:
         self._thread.join(timeout=_TERMINATE_SECONDS)
