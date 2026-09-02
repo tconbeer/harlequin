@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import time
@@ -361,15 +362,17 @@ class Harlequin(AppBase):
         self.run_query_bar.apply_configured_limit()
 
         if self.ssh_tunnel is not None:
-            # which database this session is actually looking at, which the
-            # connection details alone no longer say
+            # which database this session is actually looking at
+            warnings = self.ssh_tunnel.warnings()
             self.notify(
-                self.ssh_tunnel.notice(),
+                "\n\n".join((self.ssh_tunnel.notice(), *warnings)),
                 title="SSH tunnel",
-                severity="warning" if self.ssh_tunnel.reused else "information",
+                severity=(
+                    "warning" if self.ssh_tunnel.reused or warnings else "information"
+                ),
+                markup=False,
             )
-            # posted from the watcher's thread, which is why it is a message
-            self.ssh_tunnel.watch(self._report_tunnel_closed)
+            self.ssh_tunnel.watch(self._post_tunnel_closed)
 
         self._connect()
         self._load_catalog_cache()
@@ -823,15 +826,21 @@ class Harlequin(AppBase):
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
 
-    def _report_tunnel_closed(self, notice: str) -> None:
-        """Called on the tunnel's watcher thread, so it only posts a message."""
-        self.post_message(TunnelClosed(notice))
+    def _post_tunnel_closed(self, notice: str) -> None:
+        """Called on the tunnel's watcher thread, so it only posts a message.
+
+        A child that dies during shutdown reaches a loop that is already
+        closing, which raises rather than delivering.
+        """
+        with contextlib.suppress(RuntimeError):
+            self.post_message(TunnelClosed(notice))
 
     @on(TunnelClosed)
-    def report_tunnel_closed(self, message: TunnelClosed) -> None:
-        """Say the forward is gone, rather than let queries fail unexplained."""
+    def notify_tunnel_closed(self, message: TunnelClosed) -> None:
         message.stop()
-        self.notify(message.notice, title="SSH tunnel", severity="error")
+        # ssh quotes a server's own disconnect message and a helper's output,
+        # so the notice is text rather than markup
+        self.notify(message.notice, title="SSH tunnel", severity="error", markup=False)
 
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:

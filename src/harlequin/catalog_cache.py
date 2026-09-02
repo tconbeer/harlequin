@@ -64,7 +64,7 @@ def get_connection_hash(
     `through` is how it was reached, where that is not part of the details
     themselves: two SSH tunnels front two databases that both look like
     `localhost:15439`. Absent from the hashed material when there is none, so
-    an untunneled connection keys the same as it always has.
+    an untunneled connection keys on its details alone.
     """
     material: dict[str, Any] = {"conn_str": tuple(conn_str), **config}
     if through:

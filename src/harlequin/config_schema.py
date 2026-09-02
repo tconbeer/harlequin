@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Container, Mapping, Sequence
 import msgspec
 
 from harlequin.config import (
+    CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
     TUI_ONLY_KEYS,
     Config,
@@ -199,6 +200,10 @@ def _profile(
     }
     for key in TUI_ONLY_KEYS:
         properties.setdefault(key, {"description": IDE_ONLY})
+    for key in CLI_ONLY_SSH_KEYS:
+        # refused from a profile at run time, so a file that sets one is wrong
+        # however the editor validating it was told to read this document
+        properties.pop(key, None)
 
     schema: dict[str, Any] = {
         "type": "object",

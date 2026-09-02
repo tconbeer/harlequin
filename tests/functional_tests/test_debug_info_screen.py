@@ -90,6 +90,23 @@ def test_the_debug_screen_prints_no_secret() -> None:
     assert "fruity" in printed
 
 
+def test_the_debug_screen_names_the_tunnel_without_its_credential() -> None:
+    """`--ssh-host` takes an `ssh://user:pw@host`, and nothing else strips it."""
+    from harlequin.components.debug_info import HarlequinDebugInfo
+    from harlequin.config import Config
+
+    widgets = HarlequinDebugInfo(
+        all_keymaps=[],
+        config=Config(),
+        config_path=None,
+        ssh_tunnel="localhost:15439 -> db:5439 via ssh://tco:hunter2@bastion",
+    ).parse_info()
+
+    printed = _every_string(widgets)
+    assert "localhost:15439 -> db:5439" in printed
+    assert "hunter2" not in printed
+
+
 def test_the_debug_screen_prints_no_secret_default() -> None:
     """An adapter that ships a default for a secret has shipped the secret."""
     from harlequin.components.debug_info import AdapterDebugInfo

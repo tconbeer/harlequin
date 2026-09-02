@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import platform
-import shutil
 import subprocess
 import sys
 from importlib.metadata import version
@@ -56,6 +55,10 @@ NONE = "none"
 
 UNKNOWN = "unknown"
 """What an adapter that would not import declares, in place of a capability map."""
+
+
+_VERSION_SECONDS = 5.0
+"""How long `ssh -V` has to answer. It reads no config and opens no socket."""
 
 
 def report(
@@ -95,7 +98,7 @@ def report(
             "release": platform.release(),
             "machine": platform.machine(),
         },
-        "ssh": _ssh(),
+        "ssh": _ssh_client(),
         "config": _config_files(config_path),
         "profile": profile,
         "adapter": adapter_in_use,
@@ -105,26 +108,36 @@ def report(
     return ExitCode.OK
 
 
-def _ssh() -> dict[str, Any]:
+def _ssh_client() -> dict[str, Any]:
     """The client `--ssh-host` would run, if there is one on this machine.
 
-    The tunnel options are the one part of hsql that depends on a program
-    outside the wheel, so "is there an ssh here, and which" is a fact about the
-    installation exactly like the adapters below. It runs `ssh -V`, which
-    connects to nothing.
+    `ssh -V` connects to nothing.
     """
-    path = shutil.which("ssh")
+    from harlequin.ssh import find_client
+
+    # the same resolution `start()` uses, so this reports the client that would
+    # actually run rather than one the working directory shadowed
+    path = find_client()
     if path is None:
         return {"client": None, "version": None}
     try:
-        completed = subprocess.run([path, "-V"], capture_output=True, timeout=10)
+        completed = subprocess.run(
+            [path, "-V"],
+            capture_output=True,
+            timeout=_VERSION_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
     except (OSError, subprocess.SubprocessError):
         return {"client": path, "version": None}
+    if completed.returncode != 0:
+        # not a client that answers `-V`: whatever it printed is not a version
+        return {"client": path, "version": None}
     # OpenSSH writes its version to stderr
-    reported = (
-        (completed.stderr or completed.stdout).decode("utf-8", errors="replace").strip()
+    version_text = (completed.stderr or completed.stdout).decode(
+        "utf-8", errors="replace"
     )
-    return {"client": path, "version": reported or None}
+    first_line = version_text.strip().splitlines()
+    return {"client": path, "version": first_line[0].strip() if first_line else None}
 
 
 def _config_files(config_path: Path | None) -> dict[str, Any]:

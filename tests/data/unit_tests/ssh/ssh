@@ -18,7 +18,10 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_DELAY      seconds to wait before binding
     FAKE_SSH_PROBE_EXIT exit `-G` with this code
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
-    FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval
+    FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval (default 0,
+                        so every tunnel built here is given a keepalive)
+    FAKE_SSH_DIE_AFTER  seconds to hold the forwards before exiting, as a
+                        connection reaped by a NAT does
 """
 
 from __future__ import annotations
@@ -92,10 +95,17 @@ def main() -> int:
         forwards.append(from_config)
 
     if dump_config:
+        probe_exit = int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        if probe_exit:
+            # a real client says why it would not take the argv
+            message = os.environ.get("FAKE_SSH_STDERR")
+            if message:
+                print(message, file=sys.stderr, flush=True)
+            return probe_exit
         text = os.environ.get("FAKE_SSH_PROBE_TEXT")
         if text is not None:
             sys.stdout.write(text)
-            return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+            return 0
         print(f"host {destination}")
         print(f"hostname {destination}")
         print("port 22")
@@ -103,7 +113,7 @@ def main() -> int:
         for spec in forwards:
             listen, connect = format_forward(spec)
             print(f"localforward {listen} {connect}")
-        return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        return 0
 
     message = os.environ.get("FAKE_SSH_STDERR")
     if message:
@@ -135,6 +145,10 @@ def main() -> int:
                 return 255
             sock.listen(8)
             listeners.append(sock)
+    die_after = os.environ.get("FAKE_SSH_DIE_AFTER")
+    if die_after:
+        time.sleep(float(die_after))
+        return 255
     while True:
         time.sleep(3600)
 
