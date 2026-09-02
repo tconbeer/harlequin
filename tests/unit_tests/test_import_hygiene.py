@@ -33,6 +33,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.plugins",
     "import harlequin.redact",
     "import harlequin.query",
+    "import harlequin.ssh",
     "import harlequin.statements",
     "import harlequin.transaction_mode",
     "import harlequin_duckdb",
