@@ -449,7 +449,7 @@ def test_a_real_client_accepts_the_argv_and_says_what_it_would_forward() -> None
     )
     config = resolve_config(argv, timeout=30)
     assert config is not None
-    assert [forward.endpoint for forward in config.forwards] == [("127.0.0.1", 15439)]
+    assert [forward.endpoint for forward in config.forwards] == [("localhost", 15439)]
 
 
 def test_the_lifecycle_helpers_agree_about_ports(
