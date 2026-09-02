@@ -19,7 +19,8 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_DROP_WHEN  hold the forwards until this path exists, then drop them
     FAKE_SSH_PROBE_EXIT exit `-G` with this code
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
-    FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval
+    FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval (default 0,
+                        so every tunnel built here is given a keepalive)
 """
 
 from __future__ import annotations
@@ -93,10 +94,17 @@ def main() -> int:
         forwards.append(from_config)
 
     if dump_config:
+        probe_exit = int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        if probe_exit:
+            # a real client says why it would not take the argv
+            message = os.environ.get("FAKE_SSH_STDERR")
+            if message:
+                print(message, file=sys.stderr, flush=True)
+            return probe_exit
         text = os.environ.get("FAKE_SSH_PROBE_TEXT")
         if text is not None:
             sys.stdout.write(text)
-            return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+            return 0
         print(f"host {destination}")
         print(f"hostname {destination}")
         print("port 22")
@@ -104,7 +112,7 @@ def main() -> int:
         for spec in forwards:
             listen, connect = format_forward(spec)
             print(f"localforward {listen} {connect}")
-        return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        return 0
 
     message = os.environ.get("FAKE_SSH_STDERR")
     if message:
@@ -138,8 +146,8 @@ def main() -> int:
             listeners.append(sock)
     drop_when = os.environ.get("FAKE_SSH_DROP_WHEN")
     if drop_when:
-        # a file rather than a clock: the test says when the forward drops, so
-        # nothing races the readiness poll on a loaded machine
+        # the test controls when the forward drops, so nothing races the
+        # readiness poll on a loaded machine
         while not os.path.exists(drop_when):
             time.sleep(0.02)
         for sock in listeners:

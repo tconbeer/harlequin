@@ -368,6 +368,7 @@ contract, and the `Host` block as the recommended setup — plus a `CHANGELOG.md
 | `--tunnel-command` for non-SSH proxies | a Cloud SQL or `kubectl` user wants Harlequin to own the proxy's lifetime, with an answer to the code-execution problem above |
 | a paramiko backend, `harlequin[ssh]` | a user on Windows or in a container with no `ssh` binary |
 | reconnecting a database connection that dropped with the tunnel up | a server restart or idle timeout should recover the same way §5.4 does; v1 only detects the tunnel case |
+| recovering the Data Catalog's lazy loader | `InteractiveCatalogItem.fetch_children()` runs on the connection the adapter captured when the tree was built, which §5.4's recovery cannot reach. Expanding an unloaded node after a drop fails with a Catalog Error and stays broken until the next full refresh replaces the tree. Bring it back when catalog items can be handed a new connection, rather than by reaching into each adapter's items |
 | `--ssh-batch-mode` on by default in `hsql` | interactive `hsql` users turn out to be rarer than scripted ones. Default-off is the same behavior in both commands today, which is easier to explain |
 
 Each is additive: the flags are namespaced, one class has no ABC to satisfy, and no adapter is

@@ -681,7 +681,8 @@ def take_ssh_keys(
 
     Raises: HarlequinConfigError if a tunnel is described with no destination to
     open it through, which would otherwise connect straight past the forward,
-    or if a config file answered a key only a caller may.
+    if a config file answered a key only a caller may, or if `ssh_timeout` is
+    not a number of seconds.
     """
     taken = {key: config.pop(key) for key in SSH_KEYS if key in config}
     for key in CLI_ONLY_SSH_KEYS:
@@ -693,8 +694,15 @@ def take_ssh_keys(
                 f"and not from a config file. Pass --{spelled}.",
                 title=CONFIG_ERROR_TITLE,
             )
-    if not taken.get("ssh_host") and any(taken.values()):
-        named = ", ".join(key for key in SSH_KEYS if taken.get(key))
+    if "ssh_timeout" in taken:
+        # typed before the destination check below, so that a value that is not
+        # a number is named as one rather than as a tunnel with nowhere to go
+        parse_seconds(taken["ssh_timeout"], key="ssh_timeout")
+    describe_the_tunnel = [
+        key for key in SSH_KEYS if key in taken and key != "ssh_host"
+    ]
+    if not taken.get("ssh_host") and describe_the_tunnel:
+        named = ", ".join(describe_the_tunnel)
         raise HarlequinConfigError(
             f"{named} describes an SSH tunnel, but ssh_host says nothing to "
             "open one to.",

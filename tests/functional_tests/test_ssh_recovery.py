@@ -16,6 +16,7 @@ from typing import Awaitable, Callable
 import pytest
 
 from harlequin import Harlequin
+from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
 
 FAKE_SSH = Path(__file__).parent.parent / "data" / "unit_tests" / "ssh" / "ssh"
@@ -48,12 +49,11 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
     return predicate()
 
 
-@pytest.fixture
-def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Touch the path this returns, and the fake client drops its forwards."""
-    path = tmp_path / "drop"
-    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
-    return path
+def _modal_text(app: Harlequin) -> str:
+    """What the error modal on top of the stack is showing."""
+    modal = app.screen_stack[-1]
+    assert isinstance(modal, ErrorModal)
+    return modal.text
 
 
 @pytest.fixture
@@ -117,7 +117,6 @@ async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A retry storm against a bastion that is down is how an account gets locked."""
     app.ssh_tunnel = dropping_tunnel
     try:
         async with app.run_test() as pilot:
@@ -131,10 +130,15 @@ async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
             await wait_for_workers(app)
             await pilot.pause()
             assert not dropping_tunnel.needs_restart
-            # said once, in ssh's own words
+            # the error modal, once, quoting ssh
             assert len(app.screen_stack) == 2
+            assert "Permission denied (publickey)." in _modal_text(app)
             await pilot.press("escape")
             await pilot.pause()
+
+            # and the worker aborts rather than running on the connection that
+            # died with the forward, which would raise a second modal
+            assert app._connection_for_worker() is None
 
             app.action_refresh_catalog()
             await wait_for_workers(app)

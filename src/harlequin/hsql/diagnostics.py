@@ -140,7 +140,7 @@ def report_theme_confusion(conn_str: Sequence[str]) -> None:
     )
 
 
-def report_tunnel(notice: str) -> None:
+def report_tunnel(notice: str, warnings: Sequence[str] = ()) -> None:
     """Say which local port the run is about to use, and where it goes.
 
     On stderr, like every other diagnostic, because it is the one thing about
@@ -148,6 +148,8 @@ def report_tunnel(notice: str) -> None:
     carrying them.
     """
     note(f"ssh: {notice}")
+    for warning in warnings:
+        note(f"ssh: {warning}")
 
 
 def timeout_message(seconds: float) -> str:
