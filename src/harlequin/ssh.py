@@ -252,7 +252,8 @@ class SshTunnel:
         "to authenticate, visit ..." has to appear to be worth anything.
         """
         self._process: subprocess.Popen[bytes] | None = None
-        self._stderr: _Stderr | None = None
+        self._stderr: _Output | None = None
+        self._stdout: _Output | None = None
 
     @property
     def endpoints(self) -> tuple[tuple[str, int], ...]:
@@ -291,7 +292,9 @@ class SshTunnel:
                 argv,
                 # ssh's prompts go to the terminal it inherits, not to this
                 # pipe, so capturing stderr does not swallow them
-                stdout=subprocess.DEVNULL,
+                # both, because ssh is not the only program writing here: a
+                # `ProxyCommand` helper inherits these and picks its own
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
         except OSError as e:
@@ -299,7 +302,8 @@ class SshTunnel:
                 f"Harlequin could not run {argv[0]}: {e}", title=ERROR_TITLE
             ) from e
         self._process = process
-        self._stderr = _Stderr(process.stderr, echo=self.echo_stderr)
+        self._stderr = _Output(process.stderr, echo=self.echo_stderr)
+        self._stdout = _Output(process.stdout, echo=self.echo_stderr)
         atexit.register(self.stop)
         try:
             self._wait_until_ready(already_bound=already_bound)
@@ -321,8 +325,9 @@ class SshTunnel:
                 process.kill()
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=_TERMINATE_SECONDS)
-        if self._stderr is not None:
-            self._stderr.close()
+        for stream in (self._stderr, self._stdout):
+            if stream is not None:
+                stream.close()
 
     def __enter__(self) -> SshTunnel:
         self.start()
@@ -373,8 +378,9 @@ class SshTunnel:
         assert self._process is not None
         # the child has exited, but what it wrote on the way out may still be
         # in the pipe -- and it is the whole of why this failed
-        if self._stderr is not None:
-            self._stderr.settle()
+        for stream in (self._stderr, self._stdout):
+            if stream is not None:
+                stream.settle()
         return HarlequinSshError(
             f"ssh exited with code {self._process.returncode} without opening "
             f"the forward.\n\n{self._unseen()}".rstrip(),
@@ -384,9 +390,10 @@ class SshTunnel:
     def _timed_out(
         self, *, already_bound: Collection[tuple[str, int]] = ()
     ) -> HarlequinSshError:
-        if self._stderr is not None:
-            # a helper's last line may have no newline of its own
-            self._stderr.flush()
+        for stream in (self._stderr, self._stdout):
+            if stream is not None:
+                # a helper's last line may have no newline of its own
+                stream.flush()
         if already_bound:
             listed = ", ".join(f"{host}:{port}" for host, port in sorted(already_bound))
             reason = (
@@ -413,19 +420,28 @@ class SshTunnel:
         Nothing, where it was echoed as it arrived: an error that repeated it
         would print a helper's instructions twice.
         """
-        if self._stderr is None or self.echo_stderr:
+        if self.echo_stderr:
             return ""
-        return self._stderr.text()
+        said = [
+            stream.text()
+            for stream in (self._stderr, self._stdout)
+            if stream is not None and stream.text()
+        ]
+        return "\n".join(said)
 
 
-class _Stderr:
-    """What ssh wrote to stderr: passed through as it arrives, and kept.
+class _Output:
+    """One of ssh's streams: passed through to *our stderr* as it arrives, and kept.
 
     Passed through because the thing a user most needs to see arrives while the
     tunnel is still opening and nothing has failed yet -- Tailscale's "to
-    authenticate, visit ..." is written here, and a helper's instructions are
+    authenticate, visit ..." among them -- and a helper's instructions are
     worthless after the timeout they caused. `echo=False` is for a caller that
     no longer owns the screen; it keeps the text for an error to quote instead.
+
+    Always onto stderr, whichever of ssh's streams this is: `hsql`'s stdout
+    carries result sets and nothing else, and a helper that writes to ssh's
+    stdout must not be able to corrupt a caller's csv.
 
     A line at a time, so `redact_text()` sees whole lines: ssh is third-party
     output, and a driver's DSN can reach it.
