@@ -7,12 +7,18 @@ from typing import TYPE_CHECKING, Generator, Iterable, TypeVar
 
 from rich.style import Style
 from rich.text import Text, TextType
-from textual import events, work
+from textual import events, on, work
 from textual.await_complete import AwaitComplete
 from textual.reactive import var
 from textual.timer import Timer
 from textual.widgets._tree import NodeID, Tree, TreeNode
-from textual.worker import WorkerCancelled, WorkerFailed, get_current_worker
+from textual.worker import (
+    Worker,
+    WorkerCancelled,
+    WorkerFailed,
+    WorkerState,
+    get_current_worker,
+)
 
 from harlequin.catalog import (
     Catalog,
@@ -498,6 +504,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
     @work(
         name="_database_tree_background_loader",
         exclusive=True,
+        exit_on_error=False,
         group="database_tree_loaders",
     )
     async def _loader(self) -> None:
@@ -563,6 +570,16 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             finally:
                 # Mark this iteration as done, on the queue this item came from.
                 queue.task_done()
+
+    @on(Worker.StateChanged)
+    def handle_worker_error(self, message: Worker.StateChanged) -> None:
+        # _load_children already reports its own failures, so an ERROR from
+        # either of this tree's workers is unexpected. Surfaced here rather
+        # than through exit_on_error=True, which would crash the whole app.
+        if message.state == WorkerState.ERROR and message.worker.error is not None:
+            self.post_message(
+                self.CatalogError(catalog_type="database", error=message.worker.error)
+            )
 
     async def _on_tree_node_expanded(
         self, event: Tree.NodeExpanded[CatalogItem]

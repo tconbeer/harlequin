@@ -14,6 +14,7 @@ from textual.reactive import reactive
 from textual.timer import Timer
 from textual.widgets import Tab, Tabs, TextArea
 from textual.widgets.text_area import EditHistory, Location, Selection
+from textual.worker import Worker, WorkerState
 from textual_textarea import TextAreaSaved, TextEditor
 
 from harlequin.autocomplete import (
@@ -72,6 +73,8 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             self.symbols = symbols
 
     _symbol_scan_timer: Union[Timer, None] = None
+    _symbol_scan_failed: bool = False
+    """Whether the last symbol scan failed; one toast per failure streak."""
 
     @on(TextArea.Changed)
     def schedule_symbol_scan(self, message: TextArea.Changed) -> None:
@@ -85,9 +88,35 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self._symbol_scan_timer = None
         self.read_symbols(self.text)
 
-    @work(thread=True, exclusive=True, group="symbol_scanners")
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="symbol_scanners",
+    )
     def read_symbols(self, text: str) -> None:
         self.post_message(self.SymbolsFound(symbols=find_symbols(text)))
+
+    @on(Worker.StateChanged)
+    def handle_symbol_scan_error(self, message: Worker.StateChanged) -> None:
+        if (
+            message.state == WorkerState.ERROR
+            and message.worker.name == "read_symbols"
+            and message.worker.error is not None
+            and not self._symbol_scan_failed
+        ):
+            # a scan failure is a degraded buffer, not a reason to die; typing
+            # in the same broken buffer would toast on every debounced scan.
+            self._symbol_scan_failed = True
+            self.app.notify(
+                "Harlequin could not read this buffer's identifiers.",
+                severity="warning",
+            )
+
+    @on(SymbolsFound)
+    def reset_symbol_scan_failure(self, message: SymbolsFound) -> None:
+        # not stopped: SymbolsFound must keep bubbling to the app.
+        self._symbol_scan_failed = False
 
     def selected_queries(self) -> list[str]:
         """
