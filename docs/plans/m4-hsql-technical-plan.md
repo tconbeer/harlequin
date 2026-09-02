@@ -316,7 +316,7 @@ One database, at `<user_state_dir>/harlequin/history.db`, one row per statement:
 ```sql
 create table queries (
   id          integer primary key,   -- insertion order, which is also newest-last
-  at          text    not null,      -- UTC, ISO-8601
+  run_at      text    not null,      -- UTC, ISO-8601
   program     text    not null,      -- 'hsql' or 'harlequin'
   connection  text,                  -- the id the caches key on
   profile     text,
@@ -395,26 +395,28 @@ plan asked for now works on Windows and needs no `jq`. And the store is a SQLite
 other ordinary tool is Harlequin: `harlequin -a sqlite ~/.local/state/harlequin/history.db`
 opens your own query history in the IDE, with a catalog and a results viewer around it.
 
-### 3.3 `hsql --history`, the mode that reads the store
+### 3.3 `hsql --history` and `--history-search`, the modes that read the store
 
-A mode option, beside `--catalog` and `--catalog-search`, and it costs almost nothing to build
-because of what M2 settled: **a listing is a result set**, so the whole output layer is already
-written. `--history` builds an Arrow table from the store's rows and hands it to the emitters
-every other mode uses — which means `--format json`, `--jsonl`, `--csv`, `-x`, `-o PATH`,
-`--stats` and the layout flags all work on it the day it lands, and none of them is a line of
-new code.
+Two mode options, shaped like the two M2 built — `--catalog` lists, `--catalog-search` finds —
+and they cost almost nothing to build because of what M2 also settled: **a listing is a result
+set**, so the whole output layer is already written. Each hands its rows to
+`query.rows_to_result()` — the same helper `--catalog` and `--config list-profiles` hand
+theirs to, which takes a column list and tuples, not an Arrow table the mode had to build.
+What comes back is the `ResultSet` the query path builds, so `--format json`, `--jsonl`,
+`--csv`, `-x`, `-o PATH`, `--stats` and the layout flags all work on it the day it lands, and
+none of them is a line of new code.
 
 ```bash
 hsql --history --limit 20                 # the last 20, as a table
 hsql --history -P prod --json             # this profile's, for an agent
-hsql --history --find "line_items"        # every query that mentions it, newest first
+hsql --history-search "line_items"        # every query that mentions it, newest first
 hsql --history -x --limit 1               # the last one, vertically
 ```
 
-- **It connects to nothing.** It is the only mode that reads a profile, builds an adapter, and
-  never opens a connection: the adapter is constructed solely to ask it for `connection_id`,
-  which is what filters the store to one database. A history mode that woke a warehouse to
-  list queries would be its own kind of joke.
+- **They connect to nothing.** They are the only modes that read a profile, build an adapter,
+  and never open a connection: the adapter is constructed solely to ask it for
+  `connection_id`, which is what filters the store to one database. A history mode that woke a
+  warehouse to list queries would be its own kind of joke.
 - **Scope follows the invocation.** `-P`, `-a` or a `CONN_STR` narrows to that connection;
   with none of them, the mode reports every connection, because "I typed `hsql --history` and
   got someone else's idea of the default database" is the surprising answer. The `profile` and
@@ -423,33 +425,39 @@ hsql --history -x --limit 1               # the last one, vertically
   "the most recent N" rather than "the oldest N". `--limit` is honored here rather than refused
   as it is under `--catalog`: the store has a row count, so a hard limit on it is exact.
   Default 500 — the size of the deque the History screen has always kept — and `-1` for all.
-- **Columns:** `at`, `program`, `profile`, `adapter`, `status`, `rows`, `elapsed_ms`, `sql`.
+- **Columns:** `run_at`, `program`, `profile`, `adapter`, `status`, `rows`, `elapsed_ms`,
+  `sql`.
 - **`sql` is folded to one line, in every format.** Two invariants force it and one fact
   makes it harmless: `layout.py` pads by terminal cells and has no concept of a cell that
   spans rows, and `--format table` and `--format csv` agree cell for cell, pinned by the
   golden-format snapshots (M1 §5) — so a column that is verbatim in JSON and folded in a
   table is not on offer. Folding loses formatting, not meaning: `" ".join(sql.split())` is
   still the query, and still runnable.
-- **`--find TERM` searches every row**, not the tail: `sql like '%TERM%'`, newest first, under
-  the same `--limit`. It is [#429](https://github.com/tconbeer/harlequin/issues/429)'s
-  headless half, it is one clause rather than a reader, and it is the flag that would have
-  been unaffordable over a file (§3.2). The spelling is `--find` rather than `--search`
-  because `--catalog-search` already means "ask the *database* to search", and this one asks
-  nothing of the database at all.
+- **`--history-search TERM` is its own mode**, exactly as `--catalog-search` is its own mode
+  beside `--catalog`: same store, same columns, same `--limit`, one added `sql like '%TERM%'`.
+  M2 cut `--find` and settled on `--catalog-search`, so a caller who learned that spelling
+  guesses this one, and `_one_mode()` already refuses two modes in one invocation. It is
+  [#429](https://github.com/tconbeer/harlequin/issues/429)'s headless half, it is one clause
+  rather than a reader, and it is the flag that would have been unaffordable over a file
+  (§3.2). Unlike `--catalog-search` it declares nothing and refuses nobody: no adapter
+  capability is involved, because nothing is asked of the database.
 - **The read is one indexed query**, `where connection = ? [and sql like ?] order by id desc
-  limit ?`. `hsql --history --limit 20` costs the same on a 100,000-row store as on a 20-row
-  one, and the reverse-scan reader an append-only file would have needed — with its truncated
-  last line, its malformed record, and its "how far back do I read for 500 matches" — does not
-  have to exist.
+  limit ?`, and **every value it returns is text**, as every other listing's is. That is what
+  keeps `text_columns()` from casting a mode that never opened a database through duckdb —
+  the cost being that `rows` and `elapsed_ms` are quoted under `--json`, which is what
+  `--catalog` does with every column it has. `hsql --history --limit 20` costs the same on a
+  100,000-row store as on a 20-row one, and the reverse-scan reader an append-only file would
+  have needed — with its truncated last line, its malformed record, and its "how far back do I
+  read for 500 matches" — does not have to exist.
 
-This is the mode the skill teaches for B7 — an agent joining a task mid-stream reads what the
-human has been running, or searches it for the table it cares about, in the format it wants,
-on Windows as well as anywhere else, with no `jq` and no path to know.
+These are the modes the skill teaches for B7 — an agent joining a task mid-stream reads what
+the human has been running, or searches it for the table it cares about, in the format it
+wants, on Windows as well as anywhere else, with no `jq` and no path to know.
 
 ### 3.4 The History screen reads the store, and gains a filter
 
 `History` stops being a pickled deque and becomes a query: `History.recent(connection=…,
-n=500, find=None)`, the same `order by id desc limit ?` the mode runs. `QueryExecution` keeps
+n=500, search=None)`, the same `order by id desc limit ?` the two modes run. `QueryExecution` keeps
 its `__rich__`; it just gets its rows from the store rather than from `CatalogCache`.
 
 Three things follow, and they are the point of the milestone:
@@ -699,10 +707,10 @@ here — the store is the first thing it persists that could carry a value from 
 (§1.4). Guards: `hsql`'s import set still contains no rich, and `hsql --version` is still
 ~120ms.
 
-**PR 7 — `hsql --history`, with `--find`.** The mode, the connection filter, the folded `sql`
-column, `--limit` as "the most recent N", and the search clause. Nothing new in the output
-layer — the listing goes through the emitters `--catalog` already uses. Adds the mode to the
-skill. Closes B7's headless half and #429's.
+**PR 7 — `hsql --history` and `--history-search`.** Both modes, the connection filter, the
+folded `sql` column, `--limit` as "the most recent N", and the search clause. Nothing new in
+the output layer — the listing goes through the emitters `--catalog` already uses. Adds both
+modes to the skill. Closes B7's headless half and #429's.
 
 **PR 8 — The History screen reads the store.** `History.recent()`, `CatalogCache.history`
 removed, `CACHE_VERSION` to 3, and the one-time migration. This is the PR where an agent's
@@ -762,11 +770,11 @@ technical one — which also means it can change again without rewriting §3.
 - The pickle migration, including timestamps that predate the store, and a second run that
   does not double-insert.
 - `--history`: the connection filter with two connections interleaved; `--limit` taking from
-  the newest end; `--find` matching mid-string and not matching case-sensitively where SQLite
-  would surprise us; the folded `sql` column matching between `--format table` and
-  `--format csv`, asserted the way the golden-format snapshots assert it rather than against a
-  copy of the folding rule; and an empty store printing a header and no rows rather than
-  nothing.
+  the newest end; `--history-search` matching mid-string, and its case behavior pinned where
+  SQLite's `like` would otherwise surprise us; the folded `sql` column matching between
+  `--format table` and `--format csv`, asserted the way the golden-format snapshots assert it
+  rather than against a copy of the folding rule; and an empty store printing a header and no
+  rows rather than nothing.
 - A guard that `--history` opens no connection: the mode runs against a profile whose adapter
   would raise on `connect()`, and still prints rows.
 - Trust: fingerprint stability across a whitespace change (it should change — the argv is what
@@ -871,8 +879,8 @@ the reader. It is a mode (Ted's call), and three things say so — the first two
 outlived the format, and the third of which is why a SQLite store needs one even more.
 
 **A mode is nearly free, because a listing is a result set.** M2 §3.3 built that road for
-`--catalog`: hand the emitters an Arrow table and every format, every layout flag and `-o`
-follow. `--history` is a reader plus a table; it is not a second output stack.
+`--catalog`: hand `rows_to_result()` a column list and tuples, and every format, every layout
+flag and `-o` follow. `--history` is a reader plus a table; it is not a second output stack.
 
 **The pipeline is not portable and not self-describing.** It needed `jq`, a path, a filter by
 connection, and a shell that has `tail` — which Windows does not. "Read the human's recent
