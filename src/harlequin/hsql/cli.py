@@ -512,7 +512,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         try:
             # off the config either way: an adapter is never told a tunnel
             # exists, so these keys are never part of what it is handed
-            ssh_config = take_ssh_keys(values)
+            ssh_config = take_ssh_keys(values, typed=explicitly_set)
         except HarlequinConfigError as e:
             diagnostics.report_error(e)
             ctx.exit(ExitCode.USAGE)
@@ -673,6 +673,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         if tunnel is not None:
             # the run's, not the process's: click closes the context however
             # this ends, and `harlequin.ssh` keeps an atexit backstop under that
+            from harlequin.ssh import stopping_on_signal
+
+            ctx.with_resource(stopping_on_signal())
             ctx.call_on_close(tunnel.stop)
             diagnostics.report_tunnel(tunnel.notice())
 

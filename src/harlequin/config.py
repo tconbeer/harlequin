@@ -111,6 +111,15 @@ Named here rather than in `harlequin.ssh` so that an invocation with no tunnel
 can take them off a config without importing the module that opens one.
 """
 
+CLI_ONLY_SSH_KEYS = ("ssh_allow_reuse",)
+"""SSH keys a config file may not answer.
+
+Config files are discovered in the working directory, so a cloned repository
+supplies one. This key turns off the check that the local port is not already
+someone else's listener, and a default that fails closed has to stay the
+caller's to turn off.
+"""
+
 TUI_ONLY_KEYS = (
     "theme",
     "keymap_name",
@@ -654,16 +663,30 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
     return seconds
 
 
-def take_ssh_keys(config: MutableMapping[str, Any]) -> dict[str, Any]:
+def take_ssh_keys(
+    config: MutableMapping[str, Any], *, typed: Collection[str] = ()
+) -> dict[str, Any]:
     """Remove the tunnel's keys from a merged config and return them.
 
     They come off whether or not any is set: what is left of the config is the
-    adapter's, and an adapter is never told a tunnel exists.
+    adapter's, and an adapter is never told a tunnel exists. `typed` is the
+    names the caller actually passed on the command line, which is the whole of
+    what tells a `CLI_ONLY_SSH_KEYS` value from a config file's.
 
     Raises: HarlequinConfigError if a tunnel is described with no destination to
-    open it through, which would otherwise connect straight past the forward.
+    open it through, which would otherwise connect straight past the forward,
+    or if a config file answered a key only a caller may.
     """
     taken = {key: config.pop(key) for key in SSH_KEYS if key in config}
+    for key in CLI_ONLY_SSH_KEYS:
+        if taken.get(key) and key not in typed:
+            spelled = key.replace("_", "-")
+            raise HarlequinConfigError(
+                f"{key} turns off the check that the local port is not already "
+                "in use by something else, so it is read from the command line "
+                f"and not from a config file. Pass --{spelled}.",
+                title=CONFIG_ERROR_TITLE,
+            )
     if not taken.get("ssh_host") and any(taken.values()):
         named = ", ".join(key for key in SSH_KEYS if taken.get(key))
         raise HarlequinConfigError(
