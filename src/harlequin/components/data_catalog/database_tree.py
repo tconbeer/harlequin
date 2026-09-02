@@ -11,7 +11,7 @@ from textual import events, work
 from textual.await_complete import AwaitComplete
 from textual.reactive import var
 from textual.timer import Timer
-from textual.widgets._tree import Tree, TreeNode
+from textual.widgets._tree import NodeID, Tree, TreeNode
 from textual.worker import WorkerCancelled, WorkerFailed, get_current_worker
 
 from harlequin.catalog import (
@@ -92,6 +92,12 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """ids of items whose fetch_children() call is in flight."""
         self._symbol_names: frozenset[str] = frozenset()
         """The casefolded identifiers in the loaded buffer, from the query editor."""
+        self._node_ids: dict[int, NodeID] = {}
+        """The id of the node _populate_node() built for each item, keyed by id(item).
+
+        The alternative is a scan of the tree's nodes per load, which grows with
+        the part of the catalog the user has expanded.
+        """
         self._prefetch_timer: Timer | None = None
         super().__init__(
             label="Root",
@@ -163,12 +169,15 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """The TreeNode showing the given item, if the tree has built one.
 
         A collapsed node keeps its children on its data, so most of the catalog
-        is loaded without a node to show it.
+        is loaded without a node to show it. Removing a node drops it from the
+        tree's own index and node ids are never reused, so a stale id resolves
+        to nothing rather than to the wrong node.
         """
-        for node in self._tree_nodes.values():
-            if node.data is item:
-                return node
-        return None
+        node_id = self._node_ids.get(id(item))
+        if node_id is None:
+            return None
+        node = self._tree_nodes.get(node_id)
+        return node if node is not None and node.data is item else None
 
     def _prefetch_window(self) -> tuple[int, int]:
         """The inclusive range of tree lines worth loading speculatively."""
@@ -181,6 +190,11 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             return False
         first, last = self._prefetch_window()
         return first <= line <= last
+
+    def _is_in_view(self, item: CatalogItem) -> bool:
+        """Whether the tree is showing the given item, near enough to prefetch it."""
+        node = self._node_for_item(item)
+        return node is not None and self._in_prefetch_window(node)
 
     def _schedule_prefetch_scan(self) -> None:
         """Queue a viewport scan, coalescing the bursts that scrolling produces."""
@@ -260,6 +274,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self._load_queue = PriorityQueue()
         self._queued_priority.clear()
         self._loading.clear()
+        self._node_ids.clear()
         # ... reset the root node ...
         processed = self.reload_node(self.root)
         # ... and replace the old loader with a new one.
@@ -424,12 +439,13 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         for offset in range(0, len(items), POPULATE_CHUNK_SIZE):
             async with self.lock:
                 for item in items[offset : offset + POPULATE_CHUNK_SIZE]:
-                    node.add(
+                    child = node.add(
                         self._build_item_label(item.label, item.type_label),
                         data=item,
                         allow_expand=bool(item.children)
                         or not getattr(item, "loaded", True),
                     )
+                    self._node_ids[id(item)] = child.id
             await asyncio.sleep(0)
 
     def _show_loading_placeholder(self, node: TreeNode[CatalogItem]) -> None:
@@ -507,10 +523,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                     # (or has since been loaded), so it is handled elsewhere.
                     continue
                 del self._queued_priority[key]
-                node = self._node_for_item(item)
-                if priority == PREFETCH_PRIORITY and (
-                    node is None or not self._in_prefetch_window(node)
-                ):
+                if priority == PREFETCH_PRIORITY and not self._is_in_view(item):
                     # scrolled or collapsed out of view before we got to it, so
                     # the speculation no longer pays for itself.
                     continue
