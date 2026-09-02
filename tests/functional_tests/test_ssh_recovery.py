@@ -19,8 +19,6 @@ from harlequin import Harlequin
 from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
 
-FAKE_SSH = Path(__file__).parent.parent / "data" / "unit_tests" / "ssh" / "ssh"
-
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="the fake client binds on a POSIX loopback"
 )
@@ -57,13 +55,13 @@ def _modal_text(app: Harlequin) -> str:
 
 
 @pytest.fixture
-def dropping_tunnel(drop_trigger: Path) -> SshTunnel:
+def dropping_tunnel(drop_trigger: Path, fake_ssh_client: Path) -> SshTunnel:
     """A tunnel whose child holds its forward until `drop_trigger` is touched."""
     port = free_port()
     tunnel = SshTunnel(
         [
             sys.executable,
-            str(FAKE_SSH),
+            str(fake_ssh_client),
             "-N",
             "-L",
             f"{port}:db.internal:5432",
