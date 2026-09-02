@@ -203,31 +203,52 @@ rendering code, rich stays lazily imported, and it looks like every other Harleq
 Two hooks with working base implementations, so `keys_app.py` gets crash reports too:
 
 ```python
-def _save_work_on_crash(self) -> bool: return False
-def _crash_context(self) -> dict[str, Any]: return {}
+def _save_work_on_crash(self) -> bool:
+    """Persist anything the user would lose. False if there was nothing to save."""
+    return False
+
+
+def _crash_context(self) -> dict[str, Any]:
+    """What this app was doing, for the crash report."""
+    return {}
+
 
 def _handle_exception(self, error: Exception) -> None:
     if self._exit or self._crash_handled:
         return
     self._crash_handled = True
-    saved = report_path = None
-    try: saved = self._save_work_on_crash()
-    except BaseException: pass
-    try: report_path = write_crash_report(build_crash_report(error, self._crash_context()))
-    except BaseException: pass
+
+    saved = False
+    try:
+        saved = self._save_work_on_crash()
+    except BaseException:
+        pass
+
+    report_path = None
+    try:
+        report = build_crash_report(error, self._crash_context())
+        report_path = write_crash_report(report)
+    except BaseException:
+        pass
+
     try:
         self.bell()
         self._return_code = 1
-        if self._exception is None:                  # run_test re-raises from these
+        # run_test re-raises from these
+        if self._exception is None:
             self._exception = error
             self._exception_event.set()
-        self.panic(pretty_error_message(HarlequinCrashError(
-            crash_message(report_path, error, bool(saved)), title="Harlequin crashed.")))
+        message = crash_message(report_path, error, saved)
+        panel = HarlequinCrashError(message, title="Harlequin crashed.")
+        self.panic(pretty_error_message(panel))
     except BaseException:
-        super()._handle_exception(error)             # last resort: the user gets *something*
+        # last resort: the user gets *something*
+        super()._handle_exception(error)
         return
-    if "debug" in self.features:                     # textual run --dev, i.e. `make serve`
-        super()._handle_exception(error)             # appends the full traceback at index 1
+
+    # textual run --dev, i.e. `make serve`: append the full traceback at index 1
+    if "debug" in self.features:
+        super()._handle_exception(error)
 ```
 
 `self._crash_handled = False` is set at the **top** of `AppBase.__init__`, before the theme
