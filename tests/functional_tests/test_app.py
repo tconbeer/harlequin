@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from types import SimpleNamespace
+from typing import Awaitable, Callable, cast
 
 import pytest
 from textual.message import Message
+from textual.worker import Worker, WorkerState
 
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
@@ -376,3 +378,253 @@ async def test_adapter_raises_unexpected_error(
         assert len(app.screen_stack) == 1
         assert "non-responsive" not in app.run_query_bar.classes
         assert "non-responsive" not in app.results_viewer.classes
+
+
+def worker_error_message(
+    worker_name: str, error: BaseException | None
+) -> Worker.StateChanged:
+    """A StateChanged ERROR the handler sees from a real failed worker.
+
+    The message only carries the worker object; the handler reads its name and
+    error, so a namespace stands in for the Worker.
+    """
+    return Worker.StateChanged(
+        cast(
+            "Worker",
+            SimpleNamespace(name=worker_name, error=error),
+        ),
+        WorkerState.ERROR,
+    )
+
+
+def _modal_errors_on_screen(app: Harlequin) -> list[ErrorModal]:
+    return [screen for screen in app.screen_stack if isinstance(screen, ErrorModal)]
+
+
+@pytest.mark.asyncio
+async def test_update_schema_data_worker_error_shows_catalog_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        app.data_catalog.database_tree.loading = True
+        await app.handle_worker_error(
+            worker_error_message("update_schema_data", RuntimeError("boom"))
+        )
+        await pilot.pause()
+        assert isinstance(app.screen, ErrorModal)
+        assert app.screen.header == "Could not update data catalog"
+        assert "boom" in str(app.screen.error)
+        assert app.data_catalog.database_tree.loading is False
+
+
+@pytest.mark.asyncio
+async def test_connect_worker_error_exits_with_code_two(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await app.handle_worker_error(
+            worker_error_message("_connect", RuntimeError("connection refused"))
+        )
+        await pilot.pause()
+    assert app.return_code == 2
+
+
+@pytest.mark.asyncio
+async def test_worker_error_from_unrecognized_worker_shows_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A worker the handler doesn't name is loud by default, not silent.
+
+    Regression test for #1117: errors from every unrecognized worker used to
+    vanish without a trace.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await app.handle_worker_error(
+            worker_error_message("some_future_worker", RuntimeError("boom"))
+        )
+        await pilot.pause()
+        assert app.is_running
+        assert isinstance(app.screen, ErrorModal)
+        assert "boom" in str(app.screen.error)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker_name", ["_execute_query", "_fetch_data"])
+async def test_query_worker_error_shows_modal_and_restores_ui(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    worker_name: str,
+) -> None:
+    """A query worker that dies without posting its result message must not
+    leave the run bar stuck in the non-responsive state."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        app.run_query_bar.set_not_responsive()
+        app.results_viewer.show_loading()
+        await app.handle_worker_error(
+            worker_error_message(worker_name, RuntimeError("boom"))
+        )
+        await pilot.pause()
+        assert app.is_running
+        assert isinstance(app.screen, ErrorModal)
+        assert "boom" in str(app.screen.error)
+        assert "non-responsive" not in app.run_query_bar.classes
+        assert "non-responsive" not in app.results_viewer.classes
+
+
+@pytest.mark.asyncio
+async def test_execute_query_worker_error_is_not_silent_and_app_survives(
+    app: Harlequin,
+    monkeypatch: pytest.MonkeyPatch,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """An error in the code around _execute_query's per-statement handling
+    shows a modal and restores the UI, instead of silently sticking it.
+
+    Regression test for #1117, against the real worker machinery.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        assert app.connection is not None
+
+        def broken_execute(
+            connection: object,
+            statements: object,
+            limit: object = None,
+            on_error: object = "stop",
+        ) -> object:
+            raise RuntimeError("boom inside execute core")
+
+        monkeypatch.setattr("harlequin.app.execute", broken_execute)
+
+        app.editor.text = "select 1"
+        await pilot.press("ctrl+a")
+        await pilot.press("ctrl+j")
+        for _ in range(100):
+            if isinstance(app.screen, ErrorModal):
+                break
+            await pilot.pause(0.05)
+        assert app.is_running
+        assert isinstance(app.screen, ErrorModal)
+        assert "boom inside execute core" in str(app.screen.error)
+        assert "non-responsive" not in app.run_query_bar.classes
+
+        await pilot.press("space")
+        assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_toggle_transaction_mode_worker_error_shows_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await app.handle_worker_error(
+            worker_error_message("toggle_transaction_mode", RuntimeError("boom"))
+        )
+        await pilot.pause()
+        assert app.is_running
+        assert isinstance(app.screen, ErrorModal)
+        assert app.screen.title == "Transaction Error"
+        assert "boom" in str(app.screen.error)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("worker_name", "expected_message"),
+    [
+        (
+            "_load_catalog_cache",
+            "Harlequin could not load its cache; your query history may be missing.",
+        ),
+        ("_extend_and_merge_completers", "Harlequin could not update completions."),
+        ("_build_completers", "Harlequin could not build completions."),
+    ],
+)
+async def test_partial_failure_workers_notify_without_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    worker_name: str,
+    expected_message: str,
+) -> None:
+    """A worker whose failure leaves the app usable warns instead of modaling."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await app.handle_worker_error(
+            worker_error_message(worker_name, RuntimeError("boom"))
+        )
+        await pilot.pause()
+        assert app.is_running
+        assert not _modal_errors_on_screen(app)
+        warnings = [
+            notification
+            for notification in list(app._notifications)
+            if notification.severity == "warning"
+        ]
+        assert [n.message for n in warnings] == [expected_message]
+
+
+@pytest.mark.asyncio
+async def test_worker_errors_are_ignored_while_app_is_exiting(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """An error that lands during the exit drain is noise, not a modal."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        app._exit = True
+        try:
+            await app.handle_worker_error(
+                worker_error_message("some_future_worker", RuntimeError("boom"))
+            )
+        finally:
+            app._exit = False
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_worker_state_change_without_error_is_ignored(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await app.handle_worker_error(worker_error_message("some_future_worker", None))
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+        assert app.is_running

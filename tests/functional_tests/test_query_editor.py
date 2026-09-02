@@ -4,10 +4,14 @@ import sys
 from typing import Awaitable, Callable, List
 
 import pytest
+from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
+from textual.worker import WorkerFailed
 
 from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
+from harlequin.autocomplete import find_symbols as real_find_symbols
+from harlequin.components.code_editor import CodeEditor
 from harlequin.statements import find_separators, split
 
 
@@ -411,6 +415,83 @@ async def test_selected_queries(
         await pilot.pause()
         app.editor.selection = Selection((0, 0), (0, 0))
         assert app.editor.selected_queries() == ["select 'a;b'"]
+
+
+@pytest.mark.asyncio
+async def test_symbol_scan_failure_warns_once_per_failure_streak(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed symbol scan warns instead of crashing the app.
+
+    Regression test for #1117: read_symbols used Textual's default
+    exit_on_error=True, so a buffer the scanner couldn't parse (or any bug in
+    the scanner) took the whole app down with it. The failure warns once per
+    streak -- repeated failures on the same buffer stay quiet until a scan
+    succeeds again.
+    """
+    WARNING = "Harlequin could not read this buffer's identifiers."
+    outcomes: list[str] = ["fail", "fail", "ok", "fail"]
+    # the editor schedules a scan of the buffer shortly after mounting; it
+    # would cancel (exclusive group) whichever direct scan below it landed on,
+    # so drop that handler from the registry before the app mounts.
+    monkeypatch.setitem(CodeEditor._decorated_handlers, TextArea.Changed, [])
+
+    def flaky_scan(text: str) -> BufferSymbols:
+        outcome = outcomes.pop(0)
+        if outcome == "fail":
+            raise RuntimeError("symbol scan boom")
+        return real_find_symbols(text)
+
+    def warning_count() -> int:
+        return len(
+            [
+                notification
+                for notification in list(app._notifications)
+                if notification.severity == "warning"
+                and notification.message == WARNING
+            ]
+        )
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        editor = app.editor
+        assert editor is not None
+        monkeypatch.setattr("harlequin.components.code_editor.find_symbols", flaky_scan)
+
+        # the first failure of a streak warns ...
+        with pytest.raises(WorkerFailed):
+            await editor.read_symbols("select 1").wait()
+        await pilot.pause()
+        assert warning_count() == 1
+
+        # ... a repeated failure on the same buffer does not
+        with pytest.raises(WorkerFailed):
+            await editor.read_symbols("select 1").wait()
+        await pilot.pause()
+        assert warning_count() == 1
+
+        # a successful scan resets the streak
+        await editor.read_symbols("select 1").wait()
+        for _ in range(20):
+            if not editor._symbol_scan_failed:
+                break
+            await pilot.pause(0.05)
+        assert not editor._symbol_scan_failed
+        assert warning_count() == 1
+
+        # so the next failure warns again
+        with pytest.raises(WorkerFailed):
+            await editor.read_symbols("select 1").wait()
+        await pilot.pause()
+        assert warning_count() == 2
+
+        # and the app never saw an unhandled exception
+        assert app._exception is None
+        assert app.is_running
 
 
 @pytest.mark.asyncio
