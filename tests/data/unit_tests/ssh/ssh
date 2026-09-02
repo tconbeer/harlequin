@@ -11,6 +11,7 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_ARGV       append each invocation's argv, as a JSON line, to this path
     FAKE_SSH_FORWARD    a `LocalForward` the destination's Host block supplies
     FAKE_SSH_STDERR     write this to stderr, as ssh writes its diagnostics
+    FAKE_SSH_STDERR_PARTIAL  write this to stderr with no trailing newline
     FAKE_SSH_EXIT       exit with this code instead of binding anything
     FAKE_SSH_HANG       bind nothing and sleep, as ssh does waiting on a passphrase
     FAKE_SSH_DELAY      seconds to wait before binding
@@ -106,6 +107,11 @@ def main() -> int:
     message = os.environ.get("FAKE_SSH_STDERR")
     if message:
         print(message, file=sys.stderr, flush=True)
+    partial = os.environ.get("FAKE_SSH_STDERR_PARTIAL")
+    if partial:
+        # no trailing newline, as a prompt has none
+        sys.stderr.write(partial)
+        sys.stderr.flush()
     code = os.environ.get("FAKE_SSH_EXIT")
     if code:
         return int(code)

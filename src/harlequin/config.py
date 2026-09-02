@@ -95,8 +95,14 @@ caller asks a database what a query's columns are, and an option that spent
 that spelling on "unlimited" would take the idiom away.
 """
 
-DEFAULT_SSH_TIMEOUT = 10.0
-"""Seconds both commands wait for an SSH tunnel's forwards, by default."""
+DEFAULT_SSH_TIMEOUT = 60.0
+"""Seconds both commands wait for an SSH tunnel's forwards, by default.
+
+Long because the wait is on a person as often as on a network: an ssh that
+opens a browser for an identity provider, or asks for a hardware key, is a
+minute of someone reading a screen. `--ssh-batch-mode` is what an unattended
+caller passes to fail at the first prompt instead of waiting this out.
+"""
 
 SSH_KEYS = (
     "ssh_host",
