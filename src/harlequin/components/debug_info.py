@@ -14,7 +14,7 @@ from textual.widgets import Collapsible, Markdown, Static
 from harlequin.components.text_modal import VerticalSuppressClicks
 from harlequin.config import Config, Profile
 from harlequin.options import AbstractOption
-from harlequin.redact import REDACTED, redact_profile
+from harlequin.redact import REDACTED, redact_conn_str, redact_profile
 
 
 class WidgetType(Enum):
@@ -63,7 +63,7 @@ class HarlequinDebugInfo:
         """What the connected adapter declares, so that this screen knows
         which of the profile's values it must not print."""
         self.ssh_tunnel = ssh_tunnel
-        """The forwards this session is reached through, where it is tunneled."""
+        """The tunnel this session's connection is reached through."""
 
     def parse_info(self) -> List[DebugWidget]:
         redacted_config = {
@@ -84,6 +84,19 @@ class HarlequinDebugInfo:
             profile_toml = tomlkit.dumps(redacted_profile).rstrip()
         except Exception:
             profile_toml = str(redacted_profile)
+        # `--ssh-host` takes an `ssh://user:pw@host` nothing else strips, and
+        # this screen's text is written to be pasted into a bug report
+        tunnel_details = (
+            [
+                DebugWidget(
+                    widget_type=WidgetType.MARKDOWN,
+                    title="SSH Tunnel",
+                    content=f"`{redact_conn_str([self.ssh_tunnel])[0]}`",
+                )
+            ]
+            if self.ssh_tunnel
+            else []
+        )
         details = [
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,
@@ -100,17 +113,7 @@ class HarlequinDebugInfo:
                 title="Theme",
                 content=f"`{self.theme}`",
             ),
-            *(
-                [
-                    DebugWidget(
-                        widget_type=WidgetType.MARKDOWN,
-                        title="SSH Tunnel",
-                        content=f"`{self.ssh_tunnel}`",
-                    )
-                ]
-                if self.ssh_tunnel
-                else []
-            ),
+            *tunnel_details,
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,
                 title="Active Keymaps",

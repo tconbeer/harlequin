@@ -13,6 +13,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
@@ -29,6 +30,7 @@ from harlequin.hsql.cli import build_cli as hsql_cli
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.ssh import (
     DEFAULT_TIMEOUT,
+    KEEPALIVE_COUNT,
     KEEPALIVE_SECONDS,
     Forward,
     SshOptions,
@@ -69,19 +71,6 @@ def listener() -> Iterator[int]:
         sock.bind(("127.0.0.1", 0))
         sock.listen(8)
         yield int(sock.getsockname()[1])
-
-
-@pytest.fixture
-def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Touch the path this returns, and the fake client drops its forwards.
-
-    A file rather than a clock: a child that dropped on a timer could beat the
-    readiness poll on a loaded machine, and the test would fail as a start-up
-    error rather than exercising the drop.
-    """
-    path = tmp_path / "drop"
-    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
-    return path
 
 
 def child_tunnel(*ports: int, **kwargs: object) -> SshTunnel:
@@ -241,14 +230,35 @@ def test_output_that_is_not_a_resolved_config_degrades(text: str) -> None:
 
 
 @posix_only
-def test_a_probe_that_fails_degrades(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_probe_that_ssh_rejects_is_reported_in_its_own_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same argv `start()` would run, so the run ends here either way."""
     monkeypatch.setenv("FAKE_SSH_PROBE_EXIT", "255")
-    assert resolve_config([str(FAKE_SSH), "web-1"], timeout=10) is None
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Bad local forwarding specification ''")
+    with pytest.raises(HarlequinSshError) as excinfo:
+        resolve_config([str(FAKE_SSH), "web-1"])
+    assert "Bad local forwarding specification" in str(excinfo.value)
 
 
 @posix_only
 def test_a_missing_client_degrades() -> None:
-    assert resolve_config(["harlequin-no-such-ssh", "web-1"], timeout=10) is None
+    assert resolve_config(["harlequin-no-such-ssh", "web-1"]) is None
+
+
+@posix_only
+def test_the_probe_does_not_spend_the_wait_configured_for_the_tunnel(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ssh -G` connects to nothing, so a short --ssh-timeout must not skip it.
+
+    A probe that timed out would leave the tunnel with no forwards to poll, and
+    so nothing to check the local port against.
+    """
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5439")
+    tunnel = build_tunnel("redshift_prod", timeout=0.001)
+    assert tunnel.resolved
+    assert tunnel.endpoints == (("localhost", 15439),)
 
 
 # building a tunnel, which is the probe plus the argv
@@ -429,9 +439,8 @@ def test_a_caller_that_lost_the_screen_gets_the_words_in_the_error(
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
     tunnel = child_tunnel(free_port())
-    tunnel.echo_stderr = False
     with pytest.raises(HarlequinSshError, match="Permission denied"):
-        tunnel.start()
+        tunnel.start(echo_stderr=False)
     assert "Permission denied" not in capsys.readouterr().err
 
 
@@ -571,7 +580,7 @@ def test_a_config_that_sets_its_own_keepalive_is_left_alone(
 ) -> None:
     monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
     monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "60")
-    assert not [arg for arg in build_tunnel("web-1").argv if "ServerAlive" in arg]
+    assert not any("ServerAlive" in arg for arg in build_tunnel("web-1").argv)
 
 
 @posix_only
@@ -579,12 +588,24 @@ def test_a_probe_that_says_nothing_imposes_no_keepalive(
     fake_ssh: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FAKE_SSH_PROBE_TEXT", "who knows\n")
-    assert not [arg for arg in build_tunnel("web-1").argv if "ServerAlive" in arg]
+    assert not any("ServerAlive" in arg for arg in build_tunnel("web-1").argv)
+
+
+@posix_only
+def test_a_keepalive_carries_its_own_budget(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ServerAliveCountMax 0` is inert at interval 0 and lethal at 30."""
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "0")
+    argv = build_tunnel("web-1").argv
+    assert f"ServerAliveCountMax={KEEPALIVE_COUNT}" in argv
 
 
 def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
     config = parse_config("hostname web-1\nserveraliveinterval 60\n")
     assert config is not None and config.server_alive_interval == 60
+    # real `ssh -G` always prints the keyword; text that does not is not it
     bare = parse_config("hostname web-1\n")
     assert bare is not None and bare.server_alive_interval is None
 
@@ -600,27 +621,82 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
 
 
 def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> None:
-    said: list[str] = []
+    notices: list[str] = []
     tunnel = child_tunnel(free_port())
-    tunnel.watch(said.append)
+    tunnel.watch(notices.append)
     tunnel.start()
     try:
         drop_trigger.touch()
-        assert wait_until(lambda: bool(said))
+        assert wait_until(lambda: bool(notices))
     finally:
         tunnel.stop()
-    assert said == ["tunnel closed: Timeout, server web-1 not responding."]
+    assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
     assert tunnel.dropped
 
 
-def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
-    said: list[str] = []
+def test_a_tunnel_watched_after_it_started_is_still_reported(
+    drop_trigger: Path,
+) -> None:
+    """The IDE's own order: `cli.py` starts the tunnel, `on_mount` watches it.
+
+    Everything in between -- building the app, mounting the widget tree -- is
+    time the child can die in.
+    """
+    notices: list[str] = []
     tunnel = child_tunnel(free_port())
-    tunnel.watch(said.append)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert tunnel._process is not None
+        tunnel._process.wait()
+        tunnel.watch(notices.append)
+        assert wait_until(lambda: bool(notices))
+    finally:
+        tunnel.stop()
+    assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
+
+
+def test_a_reused_listener_is_never_called_closed(
+    listener: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its child exited by design, and the listener is not Harlequin's to bury."""
+    monkeypatch.setenv("FAKE_SSH_EXIT", "255")
+    notices: list[str] = []
+    tunnel = child_tunnel(listener, allow_reuse=True)
+    tunnel.start()
+    try:
+        assert tunnel.reused
+        tunnel.watch(notices.append)
+        time.sleep(0.3)
+    finally:
+        tunnel.stop()
+    assert notices == []
+
+
+def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
+    tunnel.watch(notices.append)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: bool(notices))
+        time.sleep(0.3)
+    finally:
+        tunnel.stop()
+    assert len(notices) == 1
+
+
+def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
+    """The control is the test above: the same harness does fire, on a death."""
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
     tunnel.start()
     tunnel.stop()
-    time.sleep(0.3)
-    assert said == []
+    time.sleep(0.5)
+    assert notices == []
 
 
 # both commands, end to end, against a fake client on PATH
@@ -724,9 +800,19 @@ def test_the_tunnel_is_not_opened_for_a_mode_that_never_connects(
 ) -> None:
     result = run_hsql("-a", "duckdb", *TUNNELED, "15439:db.internal:5432", "--info")
     assert result.exit_code == 0
-    # --info runs `ssh -V` to report the client; nothing opens a forward
-    assert all("-L" not in argv for argv in calls(ssh_on_path))
+    # `ssh -V` to report the client, and nothing else
+    assert calls(ssh_on_path) == [["-V"]]
     assert json.loads(result.stdout)["ssh"]["version"].startswith("FakeSSH")
+
+
+@posix_only
+def test_info_reports_no_client_where_the_machine_has_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_discovered_config: None
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    result = run_hsql("-a", "duckdb", "--info")
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["ssh"] == {"client": None, "version": None}
 
 
 @posix_only
@@ -894,6 +980,67 @@ def test_a_profile_may_write_one_forward_as_a_string() -> None:
     assert options.forwards == ("15439:db:5432",)
 
 
+@pytest.mark.parametrize("value", [5432, True, 1.5, {"15439:db:5432": 1}, [42]])
+def test_a_forward_that_is_not_a_spec_or_a_list_of_them_is_refused(
+    value: object,
+) -> None:
+    with pytest.raises(HarlequinConfigError, match="ssh_forward"):
+        SshOptions.from_config({"ssh_host": "web-1", "ssh_forward": value})
+
+
+def test_a_forward_with_nothing_in_it_is_refused() -> None:
+    """`ssh` answers `-L ""` by refusing the whole run, naming nothing useful."""
+    with pytest.raises(HarlequinConfigError, match="ssh_forward"):
+        SshOptions.from_config(
+            {"ssh_host": "web-1", "ssh_forward": ["", "15439:db:5432"]}
+        )
+
+
+@pytest.mark.parametrize("key", ["ssh_batch_mode", "ssh_allow_reuse"])
+@pytest.mark.parametrize("value", ["false", "no", 0, 1])
+def test_a_flag_a_profile_did_not_write_as_a_boolean_is_refused(
+    key: str, value: object
+) -> None:
+    """`ssh_batch_mode = "false"` read as true is a wrong a user cannot see."""
+    with pytest.raises(HarlequinConfigError, match=key):
+        SshOptions.from_config({"ssh_host": "web-1", key: value})
+
+
+def test_a_timeout_that_is_not_seconds_is_named_as_one() -> None:
+    """Ahead of the destination check, which would otherwise answer first."""
+    with pytest.raises(HarlequinConfigError, match="positive number of seconds"):
+        take_ssh_keys({"ssh_timeout": -5})
+
+
+def test_two_tunnels_that_forward_different_ports_never_key_alike() -> None:
+    """`ssh -G` says nothing here, so the specs asked for are what is left."""
+    one = SshTunnel(["ssh", "web-1"], requested=("15439:a:5439",), host="web-1")
+    two = SshTunnel(["ssh", "web-1"], requested=("15440:b:5440",), host="web-1")
+    assert one.cache_material() != two.cache_material()
+
+
+def test_a_forward_on_every_interface_is_said_out_loud() -> None:
+    tunnel = SshTunnel(
+        ["ssh", "web-1"],
+        forwards=(Forward("[0.0.0.0]:15439", "[db]:5439"),),
+        host="web-1",
+    )
+    assert tunnel.exposed == ("0.0.0.0:15439",)
+    assert "every interface" in " ".join(tunnel.warnings())
+
+
+def test_a_loopback_forward_says_nothing_beyond_where_it_goes() -> None:
+    tunnel = SshTunnel(
+        ["ssh", "web-1"], forwards=(Forward("15439", "[db]:5439"),), host="web-1"
+    )
+    assert tunnel.warnings() == ()
+
+
+def test_a_tunnel_ssh_would_not_describe_says_it_waited_for_nothing() -> None:
+    tunnel = SshTunnel(["ssh", "web-1"], resolved=False, host="web-1")
+    assert "did not wait" in " ".join(tunnel.warnings())
+
+
 # reopening one that dropped
 
 
@@ -918,14 +1065,65 @@ def test_a_tunnel_that_dropped_asks_to_be_reopened(
         tunnel.stop()
 
 
-def test_a_restart_never_asks_for_a_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_restart_never_asks_for_a_credential(
+    drop_trigger: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Something owns the terminal by now, so a prompt has nowhere to go."""
+    record = tmp_path / "argv.jsonl"
+    monkeypatch.setenv("FAKE_SSH_ARGV", str(record))
     tunnel = child_tunnel(free_port())
+    tunnel.watch(lambda notice: None)
     tunnel.start()
     try:
-        assert "BatchMode=yes" not in tunnel.argv
+        assert "BatchMode=yes" not in calls(record)[-1]
+        drop_trigger.touch()
+        assert wait_until(lambda: tunnel.needs_restart)
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
         tunnel.restart()
-        assert "BatchMode=yes" in tunnel.argv
+        assert "BatchMode=yes" in calls(record)[-1]
+        # and the tunnel still says what it was configured with
+        assert "BatchMode=yes" not in tunnel.argv
+    finally:
+        tunnel.stop()
+
+
+def test_two_workers_reopening_at_once_do_not_bury_a_working_tunnel(
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loser would otherwise lose the bind race and latch never-retry.
+
+    `_execute_query` and `update_schema_data` are exclusive within their own
+    worker groups and not against each other, so both can arrive at once.
+    """
+    port = free_port()
+    tunnel = child_tunnel(port)
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: tunnel.needs_restart)
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+        started = threading.Barrier(2)
+        raised: list[BaseException] = []
+
+        def restart() -> None:
+            started.wait()
+            try:
+                tunnel.restart()
+            except BaseException as e:
+                raised.append(e)
+
+        threads = [threading.Thread(target=restart) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert raised == []
+        assert tunnel.running
+        assert accepts(port)
+        assert not tunnel.dropped
     finally:
         tunnel.stop()
 

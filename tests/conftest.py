@@ -89,6 +89,20 @@ def data_dir() -> Path:
 
 
 @pytest.fixture
+def fake_ssh_client(data_dir: Path) -> Path:
+    """The stand-in for the `ssh` binary, which needs no server to bind a forward."""
+    return data_dir / "unit_tests" / "ssh" / "ssh"
+
+
+@pytest.fixture
+def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Touch the path this returns, and the fake client drops its forwards."""
+    path = tmp_path / "drop"
+    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
+    return path
+
+
+@pytest.fixture
 def tiny_duck(tmp_path: Path, data_dir: Path) -> Path:
     """
     Creates a duckdb database file from the contents of
