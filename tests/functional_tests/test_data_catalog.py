@@ -20,6 +20,7 @@ from textual.geometry import Offset
 from textual.widgets import Input, Tooltip
 
 from harlequin import Harlequin
+from harlequin.autocomplete.completers import BUFFER_TYPE_LABEL
 from harlequin.catalog import CatalogItem, InteractiveCatalogItem
 from harlequin.components import ExportScreen
 from harlequin_duckdb.adapter import DuckDbAdapter
@@ -459,16 +460,14 @@ async def test_reload_while_loader_is_fetching(
         while tree.loading:
             await pilot.pause()
 
-        node = tree.root.add(
-            "blocking",
-            data=BlockingCatalogItem(
-                qualified_identifier="blocking",
-                query_name="blocking",
-                label="blocking",
-                type_label="t",
-            ),
+        item = BlockingCatalogItem(
+            qualified_identifier="blocking",
+            query_name="blocking",
+            label="blocking",
+            type_label="t",
         )
-        tree._add_to_load_queue(node, priority=0)  # type: ignore[arg-type]
+        tree.root.add("blocking", data=item)
+        tree._add_to_load_queue(item, priority=0)
 
         # wait until the adapter call is actually in flight
         while not BlockingCatalogItem.started.is_set():
@@ -537,3 +536,65 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
         tooltip = app.screen.get_child_by_type(Tooltip)
         await pilot.pause(app.TOOLTIP_DELAY + 0.1)
         assert tooltip.display
+
+
+@pytest.mark.asyncio
+async def test_buffer_symbols_load_the_items_they_name(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The catalog loads the children of the items the query editor names.
+
+    Lazy loading otherwise leaves a schema's relations (and their columns) out of
+    the completions until the user expands the schema in the Data Catalog
+    ([#752](https://github.com/tconbeer/harlequin/issues/752)).
+    """
+    db_path = tmp_path / "symbols.db"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("create schema my_schema")
+    conn.execute("create table my_schema.my_table (my_col int)")
+    conn.close()
+
+    app = Harlequin(
+        duckdb_adapter((str(db_path),), no_init=True),
+        connection_hash="symbols",
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        tree = app.data_catalog.database_tree
+        while (
+            tree.loading
+            or app.editor is None
+            or app.editor_collection.member_completer is None
+        ):
+            await pilot.pause()
+        member_completer = app.editor_collection.member_completer
+
+        database_item = tree.root.data.children[0] if tree.root.data else None
+        assert database_item is not None
+        while not getattr(database_item, "loaded", False):
+            await pilot.pause()
+        schema_item = next(
+            item for item in database_item.children if item.label == "my_schema"
+        )
+        assert not schema_item.children
+        assert not member_completer("my_schema.my_t")
+
+        app.editor.text = "select * from my_schema.my_table"
+
+        # the editor re-reads the buffer on a timer, the tree loads the schema
+        # the buffer names, and then the relation it names under it
+        for _ in range(100):
+            if member_completer("my_table.my_c"):
+                break
+            await pilot.pause(0.1)
+
+        # the buffer names my_table, so its own completion for it is not proof;
+        # the column is one only the catalog could have offered.
+        (schema_label, schema_value), *_ = member_completer("my_schema.my_t")
+        assert schema_value == "my_schema.my_table"
+        assert schema_label[1] != BUFFER_TYPE_LABEL
+        (column_label, column_value), *_ = member_completer("my_table.my_c")
+        assert column_value == "my_table.my_col"
+        assert column_label[1] != BUFFER_TYPE_LABEL
