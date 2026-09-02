@@ -552,3 +552,177 @@ class TestDefaults:
         )
 
         assert load_config(config_path=path).profiles["one"]["legacy_mode"] is False
+
+
+class TestSsh:
+    """The tunnel's keys, which only a profile that has one should carry."""
+
+    PROFILE = '[profiles.one]\nadapter = "duckdb"\n'
+
+    def test_saying_no_writes_no_ssh_keys(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Do you connect via SSH?": False,
+            },
+        )
+
+        profile = load_config(config_path=path).profiles["one"]
+        assert not [key for key in profile if key.startswith("ssh")]
+
+    def test_the_question_defaults_to_no(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """An unanswered confirm takes the default it offered."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+        record: list[tuple[str, dict[str, Any]]] = []
+
+        run_wizard(
+            path, {"Which profile would you like to update?": "one"}, record=record
+        )
+
+        asked = [kwargs for message, kwargs in record if "via SSH" in message]
+        assert asked and asked[0]["default"] is False
+        profile = load_config(config_path=path).profiles["one"]
+        assert not [key for key in profile if key.startswith("ssh")]
+
+    def test_saying_yes_writes_the_tunnel(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Do you connect via SSH?": True,
+                "What SSH destination": "redshift_prod",
+                "What should it forward?": "15439:data.example.com:5439",
+                "Should ssh fail rather than prompt": True,
+                "How many seconds should Harlequin wait": "30",
+            },
+        )
+
+        profile = load_config(config_path=path).profiles["one"]
+        assert profile["ssh_host"] == "redshift_prod"
+        assert profile["ssh_forward"] == ["15439:data.example.com:5439"]
+        assert profile["ssh_batch_mode"] is True
+        assert profile["ssh_timeout"] == 30
+
+    def test_a_forward_the_ssh_config_supplies_is_left_out(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """The motivating case: the Host block has the LocalForward."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Do you connect via SSH?": True,
+                "What SSH destination": "redshift_prod",
+                "What should it forward?": "",
+                "Should ssh fail rather than prompt": False,
+                "How many seconds should Harlequin wait": "",
+            },
+        )
+
+        profile = load_config(config_path=path).profiles["one"]
+        assert profile["ssh_host"] == "redshift_prod"
+        assert "ssh_forward" not in profile
+        assert "ssh_batch_mode" not in profile
+        assert "ssh_timeout" not in profile
+
+    def test_several_forwards_are_written_as_a_list(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Do you connect via SSH?": True,
+                "What SSH destination": "web-1",
+                "What should it forward?": "15439:one:5439 15440:two:5440",
+            },
+        )
+
+        assert load_config(config_path=path).profiles["one"]["ssh_forward"] == [
+            "15439:one:5439",
+            "15440:two:5440",
+        ]
+
+    def test_an_existing_tunnel_is_offered_back(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(
+            "[profiles.one]\n"
+            'adapter = "duckdb"\n'
+            'ssh_host = "redshift_prod"\n'
+            'ssh_forward = ["15439:data.example.com:5439"]\n'
+        )
+        record: list[tuple[str, dict[str, Any]]] = []
+
+        run_wizard(
+            path, {"Which profile would you like to update?": "one"}, record=record
+        )
+
+        offered = {
+            message: kwargs.get("default")
+            for message, kwargs in record
+            if "via SSH" in message or "SSH destination" in message
+        }
+        assert offered["Do you connect via SSH?"] is True
+        assert "redshift_prod" in str(offered)
+        profile = load_config(config_path=path).profiles["one"]
+        assert profile["ssh_host"] == "redshift_prod"
+        assert profile["ssh_forward"] == ["15439:data.example.com:5439"]
+
+    def test_the_wizard_never_writes_the_key_a_config_file_may_not_answer(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        """`ssh_allow_reuse` is read from the command line only."""
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+        record: list[tuple[str, dict[str, Any]]] = []
+
+        run_wizard(
+            path,
+            {
+                "Which profile would you like to update?": "one",
+                "Do you connect via SSH?": True,
+                "What SSH destination": "web-1",
+            },
+            record=record,
+        )
+
+        assert "reuse" not in " ".join(message for message, _ in record).lower()
+        assert "ssh_allow_reuse" not in load_config(config_path=path).profiles["one"]
+
+    def test_the_tunnel_is_asked_about_before_the_adapter_options(
+        self, tmp_path: Path, run_wizard: Callable[..., None]
+    ) -> None:
+        path = tmp_path / ".harlequin.toml"
+        path.write_text(self.PROFILE)
+        record: list[tuple[str, dict[str, Any]]] = []
+
+        run_wizard(
+            path, {"Which profile would you like to update?": "one"}, record=record
+        )
+
+        messages = [message for message, _ in record]
+        asked = next(i for i, m in enumerate(messages) if "via SSH" in m)
+        options = next(i for i, m in enumerate(messages) if "adapter options" in m)
+        assert asked < options
