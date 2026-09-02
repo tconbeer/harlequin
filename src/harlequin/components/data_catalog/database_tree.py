@@ -93,11 +93,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self._symbol_names: frozenset[str] = frozenset()
         """The casefolded identifiers in the loaded buffer, from the query editor."""
         self._node_ids: dict[int, NodeID] = {}
-        """The id of the node _populate_node() built for each item, keyed by id(item).
-
-        The alternative is a scan of the tree's nodes per load, which grows with
-        the part of the catalog the user has expanded.
-        """
+        """The id of the node built for each item, keyed by id(item)."""
         self._prefetch_timer: Timer | None = None
         super().__init__(
             label="Root",
