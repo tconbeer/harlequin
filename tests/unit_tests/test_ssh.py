@@ -1,9 +1,8 @@
 """The `ssh` child's lifetime, and the one thing Harlequin parses: `ssh -G`.
 
 No SSH server, and no `ssh` binary except in the one test that asks a real
-client whether it accepts the argv. Everything else hands `SshTunnel` a Python
-child that binds the local end of a forward and sleeps, which is every
-observable thing a real forward does to the machine Harlequin runs on.
+client whether it accepts the argv. Everything else hands `SshTunnel` the fake
+client in `tests/data/unit_tests/ssh/ssh`.
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ from harlequin.ssh import (
     Forward,
     SshOptions,
     SshTunnel,
+    _client_path,
     build_argv,
     build_tunnel,
     parse_config,
@@ -129,6 +129,56 @@ def test_a_value_ssh_would_read_as_an_option_is_refused(kwargs: dict) -> None:
         build_argv(**kwargs)
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "web-1`touch /tmp/pwned`",
+        "web-1$(touch /tmp/pwned)",
+        "tco\ntouch /tmp/pwned@web-1",
+        "web-1;touch /tmp/pwned",
+        "web-1 --lol",
+        "web\\-1",
+    ],
+)
+def test_a_value_a_proxycommand_would_expand_is_refused(host: str) -> None:
+    """A destination reaches the user's own ssh config as %h, %r and %p.
+
+    A `ProxyCommand` there runs them through a shell, and the destination can
+    come from a config file discovered in the working directory.
+    """
+    with pytest.raises(HarlequinSshError, match="ProxyCommand"):
+        build_argv(host)
+    with pytest.raises(HarlequinSshError, match="ProxyCommand"):
+        build_argv("web-1", [f"15439:{host}:5432"])
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["tco@web-1", "ssh://tco@web-1:2222", "10.0.0.4", "redshift_prod", "web-1.a.b"],
+)
+def test_an_ordinary_destination_is_not_refused(value: str) -> None:
+    assert build_argv(value)[-1] == value
+
+
+@posix_only
+def test_the_client_is_resolved_against_path_not_the_working_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Windows searches the working directory first; a repo could ship an ssh."""
+    on_path = tmp_path / "bin"
+    on_path.mkdir()
+    real = on_path / "ssh"
+    real.write_text("#!/bin/sh\nexit 0\n")
+    real.chmod(0o755)
+    decoy = tmp_path / "repo"
+    decoy.mkdir()
+    (decoy / "ssh").write_text("#!/bin/sh\ntouch pwned\n")
+    (decoy / "ssh").chmod(0o755)
+    monkeypatch.setenv("PATH", str(on_path))
+    monkeypatch.chdir(decoy)
+    assert _client_path("ssh") == str(real)
+
+
 # `ssh -G`, the one thing this feature parses
 
 
@@ -145,18 +195,21 @@ def test_forwards_parse_with_a_bind_address_ipv6_and_a_socket_path() -> None:
     )
     assert config is not None
     assert [forward.endpoint for forward in config.forwards] == [
-        ("127.0.0.1", 15439),
+        # a bare port is polled by name, so both families are tried
+        ("localhost", 15439),
         ("127.0.0.1", 15440),
         ("::1", 15441),
         None,
     ]
-    assert str(config.forwards[0]) == "127.0.0.1:15439 -> data.example.com:5439"
+    assert str(config.forwards[0]) == "localhost:15439 -> data.example.com:5439"
 
 
-def test_a_wildcard_bind_is_polled_on_the_loopback() -> None:
+def test_a_wildcard_bind_is_polled_by_name_and_reported_as_written() -> None:
+    """A forward on 0.0.0.0 reaches the whole network; the notice must say so."""
     config = parse_config("hostname web-1\nlocalforward [0.0.0.0]:15439 [db]:5439\n")
     assert config is not None
-    assert config.forwards[0].endpoint == ("127.0.0.1", 15439)
+    assert config.forwards[0].endpoint == ("localhost", 15439)
+    assert str(config.forwards[0]) == "0.0.0.0:15439 -> db:5439"
 
 
 def test_a_config_with_only_a_dynamic_forward_forwards_nothing() -> None:
@@ -208,9 +261,9 @@ def test_a_forward_from_the_ssh_config_is_the_one_waited_on(
     """The motivating case: Harlequin was never told a port number."""
     monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:data.example.com:5439")
     tunnel = build_tunnel("redshift_prod")
-    assert tunnel.endpoints == (("127.0.0.1", 15439),)
+    assert tunnel.endpoints == (("localhost", 15439),)
     assert tunnel.describe() == (
-        "127.0.0.1:15439 -> data.example.com:5439 via redshift_prod"
+        "localhost:15439 -> data.example.com:5439 via redshift_prod"
     )
 
 
@@ -260,6 +313,54 @@ def test_a_child_that_exits_is_reported_in_its_own_words(
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
     with pytest.raises(HarlequinSshError, match="Permission denied"):
         child_tunnel(free_port()).start()
+
+
+def test_a_slow_client_does_not_make_a_bound_port_look_like_a_forward(
+    listener: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ssh binds its forwards only after authenticating.
+
+    A listener already on the port answers for the whole handshake, so nothing
+    but the child exiting or the deadline can say whether the forward is ours.
+    """
+    monkeypatch.setenv("FAKE_SSH_DELAY", "1.5")
+    tunnel = child_tunnel(listener)
+    with pytest.raises(HarlequinSshError):
+        tunnel.start()
+    assert not tunnel.reused
+
+
+def test_a_slow_client_still_reuses_the_listener_when_asked(
+    listener: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_DELAY", "1.5")
+    tunnel = child_tunnel(listener, allow_reuse=True)
+    tunnel.start()
+    try:
+        assert tunnel.reused
+    finally:
+        tunnel.stop()
+
+
+def test_a_bound_port_that_ssh_never_answers_for_names_the_flag(
+    listener: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """And a timeout under the old settle window no longer reads as success."""
+    monkeypatch.setenv("FAKE_SSH_HANG", "1")
+    tunnel = child_tunnel(listener, timeout=0.5)
+    with pytest.raises(HarlequinSshError, match="--ssh-allow-reuse") as excinfo:
+        tunnel.start()
+    assert "already bound" in str(excinfo.value)
+
+
+def test_a_tunnel_waiting_on_a_passphrase_quotes_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one path where a user most needs ssh's own words, and it is alive."""
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Enter passphrase for key '/k/id_ed25519':")
+    monkeypatch.setenv("FAKE_SSH_HANG", "1")
+    with pytest.raises(HarlequinSshError, match="Enter passphrase for key"):
+        child_tunnel(free_port(), timeout=0.5).start()
 
 
 def test_a_port_that_is_already_bound_fails(listener: int) -> None:
@@ -359,7 +460,7 @@ def test_a_real_client_accepts_the_argv_and_says_what_it_would_forward() -> None
     )
     config = resolve_config(argv, timeout=30)
     assert config is not None
-    assert [forward.endpoint for forward in config.forwards] == [("127.0.0.1", 15439)]
+    assert [forward.endpoint for forward in config.forwards] == [("localhost", 15439)]
 
 
 def test_the_lifecycle_helpers_agree_about_ports(
@@ -480,7 +581,7 @@ def test_hsql_runs_sql_through_a_tunnel(
     )
     assert result.exit_code == 0
     assert "one" in result.output
-    assert f"ssh: 127.0.0.1:{port} -> data.example.com:5439 via redshift_prod" in (
+    assert f"ssh: localhost:{port} -> data.example.com:5439 via redshift_prod" in (
         result.stderr
     )
     # the child is gone with the run, rather than left for the user to kill
@@ -674,6 +775,18 @@ def test_the_ssh_timeout_is_the_one_default_both_commands_carry() -> None:
 def test_a_tunnel_with_no_destination_is_refused(config: dict) -> None:
     with pytest.raises(HarlequinConfigError, match="ssh_host"):
         take_ssh_keys(dict(config))
+
+
+def test_a_config_file_may_not_turn_off_the_bound_port_check() -> None:
+    """The fail-closed default of §5.3 stays the caller's to turn off.
+
+    Config files are discovered in the working directory, so a cloned
+    repository supplies one.
+    """
+    profile = {"ssh_host": "web-1", "ssh_allow_reuse": True}
+    with pytest.raises(HarlequinConfigError, match="--ssh-allow-reuse"):
+        take_ssh_keys(dict(profile))
+    assert take_ssh_keys(dict(profile), typed={"ssh_allow_reuse"}) == profile
 
 
 def test_the_ssh_keys_come_off_whatever_else_a_profile_holds() -> None:
