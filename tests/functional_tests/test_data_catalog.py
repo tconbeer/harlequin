@@ -9,6 +9,7 @@ from typing import (
     NamedTuple,
     Set,
     Type,
+    cast,
 )
 from unittest.mock import MagicMock
 
@@ -16,18 +17,25 @@ import duckdb
 import pytest
 from rich.style import Style
 from rich.text import Text
+from textual import work
 from textual.geometry import Offset
 from textual.widgets import Input, Tooltip
+from textual.worker import WorkerState
 
 from harlequin import Harlequin
 from harlequin.autocomplete.completers import BUFFER_TYPE_LABEL
 from harlequin.catalog import CatalogItem, InteractiveCatalogItem
-from harlequin.components import ExportScreen
+from harlequin.components import ErrorModal, ExportScreen
+from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin_duckdb.adapter import DuckDbAdapter
 
 
 class MockS3Object(NamedTuple):
     key: str
+
+
+class SimpleCatalogItem(InteractiveCatalogItem):
+    """An interactive item whose children fetch as an empty list."""
 
 
 @pytest.fixture
@@ -598,3 +606,142 @@ async def test_buffer_symbols_load_the_items_they_name(
         (column_label, column_value), *_ = member_completer("my_table.my_c")
         assert column_value == "my_table.my_col"
         assert column_label[1] != BUFFER_TYPE_LABEL
+
+
+@pytest.mark.asyncio
+async def test_child_worker_failure_is_surfaced_and_loader_continues(
+    duckdb_adapter: Type[DuckDbAdapter],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unexpected failure in the loader's per-item worker shows one catalog
+    modal, and the loader goes on to the next item.
+
+    _load_children catches adapter failures itself; a child worker that fails
+    anyway reaches the loader's WorkerFailed path, and its StateChanged ERROR
+    is surfaced by DatabaseTree rather than crashing Harlequin (regression
+    test for #1117).
+    """
+    poison_item = SimpleCatalogItem(
+        qualified_identifier="poison",
+        query_name="poison",
+        label="poison",
+        type_label="t",
+    )
+    good_item = SimpleCatalogItem(
+        qualified_identifier="good",
+        query_name="good",
+        label="good",
+        type_label="t",
+    )
+    original_load_children = cast(
+        Callable[[DatabaseTree, CatalogItem], list[CatalogItem]],
+        getattr(DatabaseTree._load_children, "__wrapped__"),  # noqa: B009
+    )
+
+    @work(thread=True, exit_on_error=False, description="_load_children")
+    def patched_load_children(
+        tree: DatabaseTree, item: CatalogItem
+    ) -> list[CatalogItem]:
+        if item is poison_item:
+            raise RuntimeError("boom in _load_children")
+        return original_load_children(tree, item)
+
+    monkeypatch.setattr(DatabaseTree, "_load_children", patched_load_children)
+
+    app = Harlequin(duckdb_adapter((":memory:",)), connection_hash="child-failure")
+    async with app.run_test(size=(120, 36)) as pilot:
+        tree = app.data_catalog.database_tree
+        while tree.loading or app.editor is None:
+            await pilot.pause()
+
+        tree.root.add("poison", data=poison_item)
+        tree._add_to_load_queue(poison_item, priority=0)
+        for _ in range(200):
+            if any(isinstance(screen, ErrorModal) for screen in app.screen_stack):
+                break
+            await pilot.pause(0.05)
+        assert isinstance(app.screen, ErrorModal)
+        assert "boom in _load_children" in str(app.screen.error)
+        assert app._exception is None
+        await pilot.press("space")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+
+        # the loader survived the failed item and still processes the queue
+        tree.root.add("good", data=good_item)
+        tree._add_to_load_queue(good_item, priority=0)
+        for _ in range(200):
+            if good_item.loaded:
+                break
+            await pilot.pause(0.05)
+        assert good_item.loaded
+        assert len(app.screen_stack) == 1
+        assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_background_loader_failure_is_surfaced_without_crashing(
+    duckdb_adapter: Type[DuckDbAdapter],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unexpected failure inside the background loader stops that loader
+    with one catalog modal, and does not crash Harlequin.
+
+    Regression test for #1117: the loader used Textual's default
+    exit_on_error=True, so anything escaping its loop took the whole app down.
+    """
+
+    def raise_on_named_items(tree: DatabaseTree) -> None:
+        raise RuntimeError("boom in the loader")
+
+    monkeypatch.setattr(DatabaseTree, "_queue_named_items", raise_on_named_items)
+    # the editor's own symbol scans reach _queue_named_items on the message
+    # pump (via load_items_named); record their names without queuing, so the
+    # raiser above only ever fires from inside the background loader.
+    monkeypatch.setattr(
+        DatabaseTree,
+        "load_items_named",
+        lambda tree, names: setattr(
+            tree, "_symbol_names", frozenset(name.casefold() for name in names)
+        ),
+    )
+    # no prefetch work either: the loader must still be waiting on an empty
+    # queue when the test captures it, not already dead on a queued item.
+    monkeypatch.setattr(DatabaseTree, "_schedule_prefetch_scan", lambda self: None)
+    app = Harlequin(duckdb_adapter((":memory:",)), connection_hash="loader-failure")
+    async with app.run_test(size=(120, 36)) as pilot:
+        tree = app.data_catalog.database_tree
+        while tree.loading or app.editor is None:
+            await pilot.pause()
+        for _ in range(200):
+            loaders = [
+                worker
+                for worker in app.workers
+                if worker.name == "_database_tree_background_loader"
+                and worker.state == WorkerState.RUNNING
+            ]
+            if loaders:
+                break
+            await pilot.pause(0.05)
+        assert len(loaders) == 1
+        loader = loaders[0]
+
+        item = SimpleCatalogItem(
+            qualified_identifier="x",
+            query_name="x",
+            label="x",
+            type_label="t",
+        )
+        tree.root.add("x", data=item)
+        tree._add_to_load_queue(item, priority=0)
+        for _ in range(200):
+            if any(isinstance(screen, ErrorModal) for screen in app.screen_stack):
+                break
+            await pilot.pause(0.05)
+        assert isinstance(app.screen, ErrorModal)
+        assert "boom in the loader" in str(app.screen.error)
+        assert app._exception is None
+
+        # the failure stopped the loader: it is terminal, not waiting for work
+        assert loader.state == WorkerState.ERROR
+        assert app.is_running
