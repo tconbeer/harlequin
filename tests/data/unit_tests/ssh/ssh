@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A stand-in for the `ssh` binary, for tests that must not need an SSH server.
 
-It understands the three things Harlequin passes it -- `-G`, `-L` and a
+It understands the four things Harlequin passes it -- `-G`, `-V`, `-L` and a
 destination -- and answers `-G` in the format OpenSSH's own config dumper uses.
 Without `-G` it binds the local end of each forward and sleeps, which is every
 observable thing a real forward does to the machine Harlequin is running on.
@@ -18,6 +18,9 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_DELAY      seconds to wait before binding
     FAKE_SSH_PROBE_EXIT exit `-G` with this code
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
+    FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval (default 0,
+                        so every tunnel built here is given a keepalive)
+    FAKE_SSH_DROP_WHEN  hold the forwards until this path exists, then drop them
 """
 
 from __future__ import annotations
@@ -81,6 +84,10 @@ def main() -> int:
         with open(record, "a", encoding="utf-8") as f:
             f.write(json.dumps(argv) + "\n")
 
+    if "-V" in argv:
+        print("FakeSSH_1.0, a stand-in", file=sys.stderr)
+        return 0
+
     forwards, destination, dump_config = parse_argv(argv)
     from_config = os.environ.get("FAKE_SSH_FORWARD")
     if from_config:
@@ -101,6 +108,7 @@ def main() -> int:
         print(f"host {destination}")
         print(f"hostname {destination}")
         print("port 22")
+        print(f"serveraliveinterval {os.environ.get('FAKE_SSH_ALIVE_INTERVAL', '0')}")
         for spec in forwards:
             listen, connect = format_forward(spec)
             print(f"localforward {listen} {connect}")
@@ -136,6 +144,16 @@ def main() -> int:
                 return 255
             sock.listen(8)
             listeners.append(sock)
+    drop_when = os.environ.get("FAKE_SSH_DROP_WHEN")
+    if drop_when:
+        # the test controls when the forward drops, so nothing races the
+        # readiness poll on a loaded machine
+        while not os.path.exists(drop_when):
+            time.sleep(0.02)
+        for sock in listeners:
+            sock.close()
+        print("Timeout, server web-1 not responding.", file=sys.stderr)
+        return 255
     while True:
         time.sleep(3600)
 

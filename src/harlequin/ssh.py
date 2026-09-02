@@ -29,7 +29,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Collection, Iterator, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterator, Mapping, Sequence
 
 from harlequin.config import CONFIG_ERROR_TITLE, DEFAULT_SSH_TIMEOUT, parse_seconds
 from harlequin.exception import HarlequinConfigError, HarlequinSshError
@@ -42,6 +42,27 @@ DEFAULT_TIMEOUT = DEFAULT_SSH_TIMEOUT
 """Seconds to wait for the forwards, when nothing says otherwise."""
 
 ERROR_TITLE = "Harlequin could not open the SSH tunnel."
+
+KEEPALIVE_SECONDS = 30
+"""What Harlequin sets `ServerAliveInterval` to where `ssh -G` resolves it to 0.
+
+`ssh` sends no keepalives by default, so an idle forward behind a NAT or a
+firewall is reaped silently.
+
+A resolved `0` always becomes this, including where a `Host` block set it to
+`0` deliberately: `ssh -G` prints `serveraliveinterval 0` for both "nothing set
+it" and "something set it to zero", so the two cannot be told apart. Any other
+resolved value is left as it is.
+"""
+
+KEEPALIVE_COUNT = 3
+"""How many unanswered keepalives end a connection Harlequin set the interval on.
+
+Imposed with the interval rather than inherited, so the budget is a known
+`KEEPALIVE_SECONDS * KEEPALIVE_COUNT`. `ServerAliveCountMax 0` is inert while
+the interval is 0 and would otherwise end a healthy connection at the first
+keepalive.
+"""
 
 _POLL_INTERVAL = 0.05
 _CONNECT_TIMEOUT = 0.5
@@ -124,6 +145,13 @@ class SshConfig:
     """
 
     forwards: tuple[Forward, ...]
+
+    server_alive_interval: int | None = None
+    """What the resolved config sets. Real `ssh -G` output always says.
+
+    None is for text that named no `serveraliveinterval` at all, which leaves
+    the keepalive alone rather than guessing at one.
+    """
 
 
 @dataclass(frozen=True)
@@ -234,12 +262,15 @@ def build_argv(
     forwards: Sequence[str] = (),
     *,
     batch_mode: bool = False,
+    keepalive: int | None = None,
 ) -> list[str]:
     """The `ssh` command that holds `forwards` open, and runs nothing.
 
-    `ExitOnForwardFailure` is the only option Harlequin imposes on its own: a
-    forward that silently did not happen is the one failure a user cannot
-    diagnose.
+    `ExitOnForwardFailure` is the only option Harlequin imposes unconditionally:
+    a forward that silently did not happen is the one failure a user cannot
+    diagnose. `keepalive` is passed where the resolved config resolves the
+    interval to zero, and carries its own `ServerAliveCountMax` so the budget
+    it opens is a known one.
 
     Raises: HarlequinSshError for a value ssh would read as an option or expand
     into a shell.
@@ -250,6 +281,13 @@ def build_argv(
     argv = [SSH, "-N", "-o", "ExitOnForwardFailure=yes"]
     if batch_mode:
         argv += ["-o", "BatchMode=yes"]
+    if keepalive is not None:
+        argv += [
+            "-o",
+            f"ServerAliveInterval={keepalive}",
+            "-o",
+            f"ServerAliveCountMax={KEEPALIVE_COUNT}",
+        ]
     for forward in forwards:
         argv += ["-L", forward]
     argv.append(host)
@@ -273,6 +311,12 @@ def build_tunnel(
     """
     argv = build_argv(host, forwards, batch_mode=batch_mode)
     config = resolve_config(argv)
+    if config is not None and config.server_alive_interval == 0:
+        # nothing in the resolved config keeps this connection alive; the added
+        # option changes nothing else `-G` would report
+        argv = build_argv(
+            host, forwards, batch_mode=batch_mode, keepalive=KEEPALIVE_SECONDS
+        )
     if config is not None and not config.forwards:
         raise HarlequinConfigError(
             f"{host} configures no local forward, so a tunnel to it would "
@@ -327,12 +371,14 @@ def resolve_config(
 def parse_config(text: str) -> SshConfig | None:
     """`ssh -G`'s output, or None if this is not `ssh -G`'s output.
 
-    Each line is a lowercase keyword and its resolved value, and the only one
-    read is `localforward`. A `hostname` line is what tells the two apart: every
+    Each line is a lowercase keyword and its resolved value; the two read are
+    `localforward` and `serveraliveinterval`. A `hostname` line is what tells
+    `-G`'s output from anything else that reached this: every
     `-G` prints one, so text without it is something else, and the caller
     degrades rather than concluding there is nothing to forward.
     """
     forwards: list[Forward] = []
+    server_alive_interval: int | None = None
     is_ssh_output = False
     for line in text.splitlines():
         match = _KEYWORD.match(line.strip())
@@ -345,9 +391,14 @@ def parse_config(text: str) -> SshConfig | None:
             fields = value.split()
             if len(fields) == 2:
                 forwards.append(Forward(listen=fields[0], destination=fields[1]))
+        elif keyword == "serveraliveinterval":
+            with contextlib.suppress(ValueError):
+                server_alive_interval = int(value)
     if not is_ssh_output:
         return None
-    return SshConfig(forwards=tuple(forwards))
+    return SshConfig(
+        forwards=tuple(forwards), server_alive_interval=server_alive_interval
+    )
 
 
 class SshTunnel:
@@ -393,6 +444,7 @@ class SshTunnel:
         self._process: subprocess.Popen[bytes] | None = None
         self._stderr: _Output | None = None
         self._stdout: _Output | None = None
+        self._on_close: Callable[[str], None] | None = None
 
     @property
     def endpoints(self) -> tuple[tuple[str, int], ...]:
@@ -480,6 +532,18 @@ class SshTunnel:
         )
         return (self.host, *forwarded)
 
+    def watch(self, on_close: Callable[[str], None]) -> None:
+        """Call `on_close` from a thread when the child exits on its own.
+
+        Not called for a tunnel `stop()` took down. Set once -- a second call
+        is ignored, so a caller cannot end up with two threads and two notices
+        -- and every `start()` after this re-arms it.
+        """
+        if self._on_close is not None:
+            return
+        self._on_close = on_close
+        self._arm_watcher()
+
     def start(self) -> None:
         """Start it and block until the forwarded ports accept connections.
 
@@ -516,6 +580,7 @@ class SshTunnel:
         except BaseException:
             self.stop()
             raise
+        self._arm_watcher()
 
     def stop(self) -> None:
         """Kill the child, if there is one. Safe to call more than once."""
@@ -542,6 +607,33 @@ class SshTunnel:
 
     def __exit__(self, *exc: Any) -> None:
         self.stop()
+
+    def _arm_watcher(self) -> None:
+        """Start the thread that waits on the child, if anything is listening.
+
+        On the child existing rather than on it still running: the IDE watches
+        from `on_mount`, long after `start()` returned, and a child that died
+        in between is exactly what there is to report. A reused listener is not
+        watched -- its child exited by design, and it is not ours to call dead.
+        """
+        if self._on_close is None or self._process is None or self.reused:
+            return
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def _watch(self) -> None:
+        process, stderr, on_close = self._process, self._stderr, self._on_close
+        if process is None or on_close is None:
+            return
+        process.wait()
+        if self._process is not process:
+            # `stop()` clears it, and `start()` replaces it: either way the
+            # child this thread waited on is not the tunnel's any more
+            return
+        last_line = ""
+        if stderr is not None:
+            stderr.settle()
+            last_line = stderr.last_line()
+        on_close(f"tunnel closed: {last_line}" if last_line else "tunnel closed")
 
     def _wait_until_ready(self, *, already_bound: Collection[tuple[str, int]]) -> None:
         """Block until every forwarded port answers, or say why it never did.
@@ -668,6 +760,11 @@ class _Output:
         """What ssh said, as an error may quote it: redacted, and printable."""
         raw = b"".join(self._chunks).decode("utf-8", errors="replace")
         return redact_text(_readable(raw)).strip()
+
+    def last_line(self) -> str:
+        """The last line ssh wrote. `text()` is stripped, so none of them is blank."""
+        lines = self.text().splitlines()
+        return lines[-1] if lines else ""
 
     def settle(self) -> None:
         """Wait for the drain to catch up with a child that has exited.
@@ -801,13 +898,13 @@ def _refuse_unsafe_value(option: str, value: str) -> None:
         )
 
 
-def _client_path(program: str) -> str:
-    """`program` as a path, resolved against PATH and nothing else.
+def find_client(program: str = SSH) -> str | None:
+    """`program` as a path, resolved against PATH and nothing else, or None.
 
-    Windows' `CreateProcess` searches the working directory ahead of PATH, so a
-    repository that ships an `ssh.exe` would otherwise run in place of the
-    user's client. A program that already names a path is returned as it is,
-    and so is one PATH does not have -- letting the spawn raise as usual.
+    Not `shutil.which()`, which prepends the working directory on Windows --
+    where `CreateProcess` searches it ahead of PATH anyway, so a repository
+    that ships an `ssh.exe` would run in place of the user's client. A program
+    that already names a path is returned as it is.
     """
     if os.path.dirname(program):
         return program
@@ -823,7 +920,16 @@ def _client_path(program: str) -> str:
             candidate = os.path.join(directory, program + suffix)
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 return candidate
-    return program
+    return None
+
+
+def _client_path(program: str) -> str:
+    """`program` as something to spawn: a resolved path, or the name it was.
+
+    A name PATH does not have is handed to `Popen` as it is, so the spawn
+    raises where it always did.
+    """
+    return find_client(program) or program
 
 
 def _split(field: str) -> tuple[str, str] | None:

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import platform
+import subprocess
 import sys
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -54,6 +55,10 @@ NONE = "none"
 
 UNKNOWN = "unknown"
 """What an adapter that would not import declares, in place of a capability map."""
+
+
+_VERSION_SECONDS = 5.0
+"""How long `ssh -V` has to answer. It reads no config and opens no socket."""
 
 
 def report(
@@ -93,6 +98,7 @@ def report(
             "release": platform.release(),
             "machine": platform.machine(),
         },
+        "ssh": _ssh_client(),
         "config": _config_files(config_path),
         "profile": profile,
         "adapter": adapter_in_use,
@@ -100,6 +106,38 @@ def report(
     }
     out.write((json.dumps(document, indent=2, default=str) + "\n").encode("utf-8"))
     return ExitCode.OK
+
+
+def _ssh_client() -> dict[str, Any]:
+    """The client `--ssh-host` would run, if there is one on this machine.
+
+    `ssh -V` connects to nothing.
+    """
+    from harlequin.ssh import find_client
+
+    # the same resolution `start()` uses, so this reports the client that would
+    # actually run rather than one the working directory shadowed
+    path = find_client()
+    if path is None:
+        return {"client": None, "version": None}
+    try:
+        completed = subprocess.run(
+            [path, "-V"],
+            capture_output=True,
+            timeout=_VERSION_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"client": path, "version": None}
+    if completed.returncode != 0:
+        # not a client that answers `-V`: whatever it printed is not a version
+        return {"client": path, "version": None}
+    # OpenSSH writes its version to stderr
+    version_text = (completed.stderr or completed.stdout).decode(
+        "utf-8", errors="replace"
+    )
+    first_line = version_text.strip().splitlines()
+    return {"client": path, "version": first_line[0].strip() if first_line else None}
 
 
 def _config_files(config_path: Path | None) -> dict[str, Any]:

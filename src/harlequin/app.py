@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import time
@@ -161,6 +162,14 @@ class ResultsFetched(Message):
         self.results = results
         self.errors = errors
         self.elapsed = elapsed
+
+
+class TunnelClosed(Message):
+    """The SSH tunnel's child exited on its own, and took the forward with it."""
+
+    def __init__(self, notice: str) -> None:
+        super().__init__()
+        self.notice = notice
 
 
 class TransactionModeChanged(Message):
@@ -375,6 +384,7 @@ class Harlequin(AppBase):
                 ),
                 markup=False,
             )
+            self.ssh_tunnel.watch(self._post_tunnel_closed)
 
         self._connect()
         self._load_catalog_cache()
@@ -858,6 +868,22 @@ class Harlequin(AppBase):
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
 
+    def _post_tunnel_closed(self, notice: str) -> None:
+        """Called on the tunnel's watcher thread, so it only posts a message.
+
+        A child that dies during shutdown reaches a loop that is already
+        closing, which raises rather than delivering.
+        """
+        with contextlib.suppress(RuntimeError):
+            self.post_message(TunnelClosed(notice))
+
+    @on(TunnelClosed)
+    def notify_tunnel_closed(self, message: TunnelClosed) -> None:
+        message.stop()
+        # ssh quotes a server's own disconnect message and a helper's output,
+        # so the notice is text rather than markup
+        self.notify(message.notice, title="SSH tunnel", severity="error", markup=False)
+
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
         message.stop()
@@ -1069,6 +1095,9 @@ class Harlequin(AppBase):
             config_path=config_path,
             keymap_names=self.keymap_names,
             theme=self.theme,
+            ssh_tunnel=(
+                self.ssh_tunnel.describe() if self.ssh_tunnel is not None else None
+            ),
         )
         adapter_info = AdapterDebugInfo(
             adapter_options=adapter_options,

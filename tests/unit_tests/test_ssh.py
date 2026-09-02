@@ -13,8 +13,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Iterator, Sequence
+from typing import Callable, Iterator, Sequence
 from unittest.mock import MagicMock
 
 import click
@@ -28,6 +29,8 @@ from harlequin.hsql.cli import build_cli as hsql_cli
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.ssh import (
     DEFAULT_TIMEOUT,
+    KEEPALIVE_COUNT,
+    KEEPALIVE_SECONDS,
     Forward,
     SshOptions,
     SshTunnel,
@@ -558,6 +561,143 @@ def test_the_lifecycle_helpers_agree_about_ports(
         assert all(accepts(port) for port in ports)
 
 
+# keeping it open, and saying when it is not
+
+
+@posix_only
+def test_a_config_with_no_keepalive_gets_one(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idle forward behind a NAT is reaped silently, and ssh sends none."""
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "0")
+    assert f"ServerAliveInterval={KEEPALIVE_SECONDS}" in build_tunnel("web-1").argv
+
+
+@posix_only
+def test_a_config_that_sets_its_own_keepalive_is_left_alone(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "60")
+    assert not any("ServerAlive" in arg for arg in build_tunnel("web-1").argv)
+
+
+@posix_only
+def test_a_probe_that_says_nothing_imposes_no_keepalive(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SSH_PROBE_TEXT", "who knows\n")
+    assert not any("ServerAlive" in arg for arg in build_tunnel("web-1").argv)
+
+
+@posix_only
+def test_a_keepalive_carries_its_own_budget(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ServerAliveCountMax 0` is inert at interval 0 and lethal at 30."""
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5432")
+    monkeypatch.setenv("FAKE_SSH_ALIVE_INTERVAL", "0")
+    argv = build_tunnel("web-1").argv
+    assert f"ServerAliveCountMax={KEEPALIVE_COUNT}" in argv
+
+
+def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
+    config = parse_config("hostname web-1\nserveraliveinterval 60\n")
+    assert config is not None and config.server_alive_interval == 60
+    # real `ssh -G` always prints the keyword; text that does not is not it
+    bare = parse_config("hostname web-1\n")
+    assert bare is not None and bare.server_alive_interval is None
+
+
+def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
+    """Poll until something a thread does becomes true, or give up."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
+def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> None:
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: bool(notices))
+    finally:
+        tunnel.stop()
+    assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
+
+
+def test_a_tunnel_watched_after_it_started_is_still_reported(
+    drop_trigger: Path,
+) -> None:
+    """The IDE's own order: `cli.py` starts the tunnel, `on_mount` watches it.
+
+    Everything in between -- building the app, mounting the widget tree -- is
+    time the child can die in.
+    """
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert tunnel._process is not None
+        tunnel._process.wait()
+        tunnel.watch(notices.append)
+        assert wait_until(lambda: bool(notices))
+    finally:
+        tunnel.stop()
+    assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
+
+
+def test_a_reused_listener_is_never_called_closed(
+    listener: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its child exited by design, and the listener is not Harlequin's to bury."""
+    monkeypatch.setenv("FAKE_SSH_EXIT", "255")
+    notices: list[str] = []
+    tunnel = child_tunnel(listener, allow_reuse=True)
+    tunnel.start()
+    try:
+        assert tunnel.reused
+        tunnel.watch(notices.append)
+        time.sleep(0.3)
+    finally:
+        tunnel.stop()
+    assert notices == []
+
+
+def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
+    tunnel.watch(notices.append)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: bool(notices))
+        time.sleep(0.3)
+    finally:
+        tunnel.stop()
+    assert len(notices) == 1
+
+
+def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
+    """The control is the test above: the same harness does fire, on a death."""
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
+    tunnel.start()
+    tunnel.stop()
+    time.sleep(0.5)
+    assert notices == []
+
+
 # both commands, end to end, against a fake client on PATH
 
 
@@ -659,7 +799,19 @@ def test_the_tunnel_is_not_opened_for_a_mode_that_never_connects(
 ) -> None:
     result = run_hsql("-a", "duckdb", *TUNNELED, "15439:db.internal:5432", "--info")
     assert result.exit_code == 0
-    assert calls(ssh_on_path) == []
+    # `ssh -V` to report the client, and nothing else
+    assert calls(ssh_on_path) == [["-V"]]
+    assert json.loads(result.stdout)["ssh"]["version"].startswith("FakeSSH")
+
+
+@posix_only
+def test_info_reports_no_client_where_the_machine_has_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_discovered_config: None
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    result = run_hsql("-a", "duckdb", "--info")
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["ssh"] == {"client": None, "version": None}
 
 
 @posix_only
