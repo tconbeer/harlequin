@@ -13,6 +13,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
@@ -438,9 +439,8 @@ def test_a_caller_that_lost_the_screen_gets_the_words_in_the_error(
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
     tunnel = child_tunnel(free_port())
-    tunnel.echo_stderr = False
     with pytest.raises(HarlequinSshError, match="Permission denied"):
-        tunnel.start()
+        tunnel.start(echo_stderr=False)
     assert "Permission denied" not in capsys.readouterr().err
 
 
@@ -631,6 +631,7 @@ def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> No
     finally:
         tunnel.stop()
     assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
+    assert tunnel.dropped
 
 
 def test_a_tunnel_watched_after_it_started_is_still_reported(
@@ -1038,3 +1039,106 @@ def test_a_loopback_forward_says_nothing_beyond_where_it_goes() -> None:
 def test_a_tunnel_ssh_would_not_describe_says_it_waited_for_nothing() -> None:
     tunnel = SshTunnel(["ssh", "web-1"], resolved=False, host="web-1")
     assert "did not wait" in " ".join(tunnel.warnings())
+
+
+# reopening one that dropped
+
+
+def test_a_tunnel_that_dropped_asks_to_be_reopened(
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = free_port()
+    tunnel = child_tunnel(port)
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    assert not tunnel.needs_restart
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: tunnel.needs_restart)
+        assert not accepts(port)
+        # the child that comes back stays up
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+        tunnel.restart()
+        assert accepts(port)
+        assert not tunnel.needs_restart
+    finally:
+        tunnel.stop()
+
+
+def test_a_restart_never_asks_for_a_credential(
+    drop_trigger: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Something owns the terminal by now, so a prompt has nowhere to go."""
+    record = tmp_path / "argv.jsonl"
+    monkeypatch.setenv("FAKE_SSH_ARGV", str(record))
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    try:
+        assert "BatchMode=yes" not in calls(record)[-1]
+        drop_trigger.touch()
+        assert wait_until(lambda: tunnel.needs_restart)
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+        tunnel.restart()
+        assert "BatchMode=yes" in calls(record)[-1]
+        # and the tunnel still says what it was configured with
+        assert "BatchMode=yes" not in tunnel.argv
+    finally:
+        tunnel.stop()
+
+
+def test_two_workers_reopening_at_once_do_not_bury_a_working_tunnel(
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loser would otherwise lose the bind race and latch never-retry.
+
+    `_execute_query` and `update_schema_data` are exclusive within their own
+    worker groups and not against each other, so both can arrive at once.
+    """
+    port = free_port()
+    tunnel = child_tunnel(port)
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: tunnel.needs_restart)
+        monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+        started = threading.Barrier(2)
+        raised: list[BaseException] = []
+
+        def restart() -> None:
+            started.wait()
+            try:
+                tunnel.restart()
+            except BaseException as e:
+                raised.append(e)
+
+        threads = [threading.Thread(target=restart) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert raised == []
+        assert tunnel.running
+        assert accepts(port)
+        assert not tunnel.dropped
+    finally:
+        tunnel.stop()
+
+
+def test_a_restart_that_fails_is_not_tried_again(
+    drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(lambda notice: None)
+    tunnel.start()
+    drop_trigger.touch()
+    assert wait_until(lambda: tunnel.needs_restart)
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
+    monkeypatch.setenv("FAKE_SSH_EXIT", "255")
+    with pytest.raises(HarlequinSshError, match="Permission denied"):
+        tunnel.restart()
+    assert tunnel.dropped
+    assert not tunnel.needs_restart

@@ -16,11 +16,11 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_EXIT       exit with this code instead of binding anything
     FAKE_SSH_HANG       bind nothing and sleep, as ssh does waiting on a passphrase
     FAKE_SSH_DELAY      seconds to wait before binding
+    FAKE_SSH_DROP_WHEN  hold the forwards until this path exists, then drop them
     FAKE_SSH_PROBE_EXIT exit `-G` with this code
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
     FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval (default 0,
                         so every tunnel built here is given a keepalive)
-    FAKE_SSH_DROP_WHEN  hold the forwards until this path exists, then drop them
 """
 
 from __future__ import annotations

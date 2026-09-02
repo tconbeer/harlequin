@@ -435,6 +435,10 @@ class SshTunnel:
         self.timeout = timeout
         self.reused = False
         """Whether a listener that was already there is what answers now."""
+        self.dropped = False
+        """Whether the child exited on its own, taking the forward with it."""
+        self.restart_failed = False
+        """Whether a restart already failed, and so must not be tried again."""
         self.echo_stderr = True
         """Whether ssh's stderr goes to ours while the tunnel opens.
 
@@ -445,6 +449,12 @@ class SshTunnel:
         self._stderr: _Output | None = None
         self._stdout: _Output | None = None
         self._on_close: Callable[[str], None] | None = None
+        self._restart_lock = threading.Lock()
+        """Held across a restart, so two of them cannot overlap.
+
+        The loser of the race would otherwise fail to bind the port the winner
+        just took, and mark a working tunnel as never to be reopened again.
+        """
 
     @property
     def endpoints(self) -> tuple[tuple[str, int], ...]:
@@ -454,6 +464,15 @@ class SshTunnel:
             for forward in self.forwards
             if (endpoint := forward.endpoint) is not None
         )
+
+    @property
+    def needs_restart(self) -> bool:
+        """Whether the next thing that needs the database should reopen this first.
+
+        False once a restart has failed: a background retry storm against a
+        bastion that is down is how an account gets locked.
+        """
+        return self.dropped and not self.restart_failed
 
     @property
     def running(self) -> bool:
@@ -544,18 +563,28 @@ class SshTunnel:
         self._on_close = on_close
         self._arm_watcher()
 
-    def start(self) -> None:
+    def start(self, *, batch_mode: bool = False, echo_stderr: bool = True) -> None:
         """Start it and block until the forwarded ports accept connections.
+
+        `batch_mode` adds ssh's own `BatchMode=yes` for this run alone, and
+        `echo_stderr` says whether ssh's output goes to ours while it opens.
+        Both are a restart's, so `argv` keeps saying what the tunnel was
+        configured with.
 
         Raises: HarlequinSshError, quoting ssh's stderr.
         """
         if self.running:
             return
         self.reused = False
+        self.dropped = False
+        self.echo_stderr = echo_stderr
         already_bound = frozenset(
             endpoint for endpoint in self.endpoints if _accepts(endpoint)
         )
         argv = [_client_path(self.argv[0]), *self.argv[1:]]
+        if batch_mode and "BatchMode=yes" not in argv:
+            # ahead of the destination, which ssh takes last
+            argv = [*argv[:-1], "-o", "BatchMode=yes", argv[-1]]
         try:
             process = subprocess.Popen(
                 argv,
@@ -581,6 +610,30 @@ class SshTunnel:
             self.stop()
             raise
         self._arm_watcher()
+
+    def restart(self) -> None:
+        """Open it again under `BatchMode=yes`, with ssh's stderr in the error.
+
+        Something owns the terminal by now, so a passphrase prompt has nowhere
+        to go and nobody is reading ssh's stderr.
+
+        One caller at a time: a second one that was waiting finds the forward
+        already open and returns, rather than losing the bind race to the first
+        and concluding the tunnel is gone.
+
+        Raises: HarlequinSshError, after marking this tunnel as not to be
+        retried.
+        """
+        with self._restart_lock:
+            if not self.needs_restart:
+                return
+            self.stop()
+            try:
+                self.start(batch_mode=True, echo_stderr=False)
+            except BaseException:
+                self.dropped = True
+                self.restart_failed = True
+                raise
 
     def stop(self) -> None:
         """Kill the child, if there is one. Safe to call more than once."""
@@ -629,6 +682,7 @@ class SshTunnel:
             # `stop()` clears it, and `start()` replaces it: either way the
             # child this thread waited on is not the tunnel's any more
             return
+        self.dropped = True
         last_line = ""
         if stderr is not None:
             stderr.settle()
