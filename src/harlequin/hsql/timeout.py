@@ -118,13 +118,13 @@ class Deadline:
 
 def _halt(code: ExitCode) -> NoReturn:
     """End the process now, around a worker thread that would abort it."""
-    with contextlib.suppress(Exception):
-        # `os._exit()` runs no atexit handler, and an ssh child that outlives
-        # the run is the thing the tunnel feature exists to remove
-        from harlequin.ssh import stop_all
-
-        stop_all()
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(Exception):
             stream.flush()
+    # ahead of `os._exit()`, which runs no atexit handler, and after the flush,
+    # because stopping a tunnel can spend seconds on a child that will not go
+    with contextlib.suppress(BaseException):
+        from harlequin.ssh import stop_all
+
+        stop_all()
     os._exit(code)

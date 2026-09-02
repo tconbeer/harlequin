@@ -226,14 +226,35 @@ def test_output_that_is_not_a_resolved_config_degrades(text: str) -> None:
 
 
 @posix_only
-def test_a_probe_that_fails_degrades(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_probe_that_ssh_rejects_is_reported_in_its_own_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same argv `start()` would run, so the run ends here either way."""
     monkeypatch.setenv("FAKE_SSH_PROBE_EXIT", "255")
-    assert resolve_config([str(FAKE_SSH), "web-1"], timeout=10) is None
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Bad local forwarding specification ''")
+    with pytest.raises(HarlequinSshError) as excinfo:
+        resolve_config([str(FAKE_SSH), "web-1"])
+    assert "Bad local forwarding specification" in str(excinfo.value)
 
 
 @posix_only
 def test_a_missing_client_degrades() -> None:
-    assert resolve_config(["harlequin-no-such-ssh", "web-1"], timeout=10) is None
+    assert resolve_config(["harlequin-no-such-ssh", "web-1"]) is None
+
+
+@posix_only
+def test_the_probe_does_not_spend_the_wait_configured_for_the_tunnel(
+    fake_ssh: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ssh -G` connects to nothing, so a short --ssh-timeout must not skip it.
+
+    A probe that timed out would leave the tunnel with no forwards to poll, and
+    so nothing to check the local port against.
+    """
+    monkeypatch.setenv("FAKE_SSH_FORWARD", "15439:db.internal:5439")
+    tunnel = build_tunnel("redshift_prod", timeout=0.001)
+    assert tunnel.resolved
+    assert tunnel.endpoints == (("localhost", 15439),)
 
 
 # building a tunnel, which is the probe plus the argv
@@ -804,3 +825,64 @@ def test_a_profile_may_write_one_forward_as_a_string() -> None:
         {"ssh_host": "web-1", "ssh_forward": "15439:db:5432"}
     )
     assert options.forwards == ("15439:db:5432",)
+
+
+@pytest.mark.parametrize("value", [5432, True, 1.5, {"15439:db:5432": 1}, [42]])
+def test_a_forward_that_is_not_a_spec_or_a_list_of_them_is_refused(
+    value: object,
+) -> None:
+    with pytest.raises(HarlequinConfigError, match="ssh_forward"):
+        SshOptions.from_config({"ssh_host": "web-1", "ssh_forward": value})
+
+
+def test_a_forward_with_nothing_in_it_is_refused() -> None:
+    """`ssh` answers `-L ""` by refusing the whole run, naming nothing useful."""
+    with pytest.raises(HarlequinConfigError, match="ssh_forward"):
+        SshOptions.from_config(
+            {"ssh_host": "web-1", "ssh_forward": ["", "15439:db:5432"]}
+        )
+
+
+@pytest.mark.parametrize("key", ["ssh_batch_mode", "ssh_allow_reuse"])
+@pytest.mark.parametrize("value", ["false", "no", 0, 1])
+def test_a_flag_a_profile_did_not_write_as_a_boolean_is_refused(
+    key: str, value: object
+) -> None:
+    """`ssh_batch_mode = "false"` read as true is a wrong a user cannot see."""
+    with pytest.raises(HarlequinConfigError, match=key):
+        SshOptions.from_config({"ssh_host": "web-1", key: value})
+
+
+def test_a_timeout_that_is_not_seconds_is_named_as_one() -> None:
+    """Ahead of the destination check, which would otherwise answer first."""
+    with pytest.raises(HarlequinConfigError, match="positive number of seconds"):
+        take_ssh_keys({"ssh_timeout": -5})
+
+
+def test_two_tunnels_that_forward_different_ports_never_key_alike() -> None:
+    """`ssh -G` says nothing here, so the specs asked for are what is left."""
+    one = SshTunnel(["ssh", "web-1"], requested=("15439:a:5439",), host="web-1")
+    two = SshTunnel(["ssh", "web-1"], requested=("15440:b:5440",), host="web-1")
+    assert one.cache_material() != two.cache_material()
+
+
+def test_a_forward_on_every_interface_is_said_out_loud() -> None:
+    tunnel = SshTunnel(
+        ["ssh", "web-1"],
+        forwards=(Forward("[0.0.0.0]:15439", "[db]:5439"),),
+        host="web-1",
+    )
+    assert tunnel.exposed == ("0.0.0.0:15439",)
+    assert "every interface" in " ".join(tunnel.warnings())
+
+
+def test_a_loopback_forward_says_nothing_beyond_where_it_goes() -> None:
+    tunnel = SshTunnel(
+        ["ssh", "web-1"], forwards=(Forward("15439", "[db]:5439"),), host="web-1"
+    )
+    assert tunnel.warnings() == ()
+
+
+def test_a_tunnel_ssh_would_not_describe_says_it_waited_for_nothing() -> None:
+    tunnel = SshTunnel(["ssh", "web-1"], resolved=False, host="web-1")
+    assert "did not wait" in " ".join(tunnel.warnings())

@@ -353,12 +353,15 @@ class Harlequin(AppBase):
         self.run_query_bar.apply_configured_limit()
 
         if self.ssh_tunnel is not None:
-            # which database this session is actually looking at, which the
-            # connection details alone no longer say
+            # which database this session is actually looking at
+            warnings = self.ssh_tunnel.warnings()
             self.notify(
-                self.ssh_tunnel.notice(),
+                "\n\n".join((self.ssh_tunnel.notice(), *warnings)),
                 title="SSH tunnel",
-                severity="warning" if self.ssh_tunnel.reused else "information",
+                severity=(
+                    "warning" if self.ssh_tunnel.reused or warnings else "information"
+                ),
+                markup=False,
             )
 
         self._connect()

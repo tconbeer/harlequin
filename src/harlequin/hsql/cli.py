@@ -54,6 +54,7 @@ from typing import (
 import click
 
 from harlequin.config import (
+    CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
     TUI_ONLY_KEYS,
@@ -510,8 +511,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
         read_only: bool = bool(values.pop("read_only", False))
         try:
-            # off the config either way: an adapter is never told a tunnel
-            # exists, so these keys are never part of what it is handed
+            # off the config either way: what is left of it is the adapter's
             ssh_config = take_ssh_keys(values, typed=explicitly_set)
         except HarlequinConfigError as e:
             diagnostics.report_error(e)
@@ -669,15 +669,19 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         )
         deadline = _deadline(timeout_seconds)
 
+        if ssh_config.get("ssh_host"):
+            # entered before the child exists: `start()` blocks for the whole
+            # handshake, and a signal caught in that window would otherwise
+            # leave `ssh` running
+            from harlequin.ssh import stopping_on_signal
+
+            ctx.with_resource(stopping_on_signal())
         tunnel = _open_tunnel(ctx, ssh_config)
         if tunnel is not None:
             # the run's, not the process's: click closes the context however
             # this ends, and `harlequin.ssh` keeps an atexit backstop under that
-            from harlequin.ssh import stopping_on_signal
-
-            ctx.with_resource(stopping_on_signal())
             ctx.call_on_close(tunnel.stop)
-            diagnostics.report_tunnel(tunnel.notice())
+            diagnostics.report_tunnel(tunnel.notice(), tunnel.warnings())
 
         if catalog:
             catalog_path = _catalog_path(ctx, path)
@@ -1437,6 +1441,10 @@ def _typed_profile_keys(
     # written from the mode's own argument instead, so that it is there whether
     # or not the caller named one
     typed.pop("adapter", None)
+    for key in CLI_ONLY_SSH_KEYS:
+        # a profile that set one is refused on the next run, so writing it here
+        # would be writing a file this command will not read back
+        typed.pop(key, None)
     if format_chosen:
         typed["format"] = format_name
     # first among what a profile sets, as it is on the command line, because it
