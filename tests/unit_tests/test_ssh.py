@@ -19,6 +19,7 @@ import pytest
 
 from harlequin.exception import HarlequinSshError
 from harlequin.ssh import (
+    DEFAULT_TIMEOUT,
     Forward,
     SshTunnel,
     _client_path,
@@ -296,12 +297,14 @@ def test_a_child_that_never_opens_the_forward_names_batch_mode(
 
 
 def test_a_child_that_exits_is_reported_in_its_own_words(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
-    with pytest.raises(HarlequinSshError, match="Permission denied"):
+    with pytest.raises(HarlequinSshError, match="exited with code 255"):
         child_tunnel(free_port()).start()
+    # on stderr as ssh wrote it, and so not repeated by the error
+    assert "Permission denied (publickey)." in capsys.readouterr().err
 
 
 def test_a_slow_client_does_not_make_a_bound_port_look_like_a_forward(
@@ -342,25 +345,72 @@ def test_a_bound_port_that_ssh_never_answers_for_names_the_flag(
     assert "already bound" in str(excinfo.value)
 
 
-def test_a_tunnel_waiting_on_a_passphrase_quotes_the_prompt(
-    monkeypatch: pytest.MonkeyPatch,
+def test_what_ssh_says_while_it_waits_is_shown_while_it_waits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The one path where a user most needs ssh's own words, and it is alive."""
-    monkeypatch.setenv("FAKE_SSH_STDERR", "Enter passphrase for key '/k/id_ed25519':")
+    """A helper's instructions are worthless after the timeout they caused.
+
+    Tailscale writes "to authenticate, visit ..." here, and it is a URL someone
+    has to open before the tunnel can open -- so it goes to stderr as it
+    arrives rather than being kept for an error.
+    """
+    monkeypatch.setenv(
+        "FAKE_SSH_STDERR",
+        "# Tailscale SSH requires an additional check.\n"
+        "# To authenticate, visit: https://login.tailscale.com/a/l4fc5f072",
+    )
     monkeypatch.setenv("FAKE_SSH_HANG", "1")
-    with pytest.raises(HarlequinSshError, match="Enter passphrase for key"):
+    tunnel = child_tunnel(free_port(), timeout=0.5)
+    with pytest.raises(HarlequinSshError) as excinfo:
+        tunnel.start()
+    printed = capsys.readouterr().err
+    assert "https://login.tailscale.com/a/l4fc5f072" in printed
+    # and the error does not read it back at someone who has seen it
+    assert "tailscale" not in str(excinfo.value).lower()
+    assert "--ssh-batch-mode" in str(excinfo.value)
+
+
+def test_a_line_ssh_left_unfinished_is_still_shown(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A prompt has no newline of its own, and is the point of the line."""
+    monkeypatch.setenv("FAKE_SSH_STDERR_PARTIAL", "Enter passphrase for key '/k/id':")
+    monkeypatch.setenv("FAKE_SSH_HANG", "1")
+    with pytest.raises(HarlequinSshError):
         child_tunnel(free_port(), timeout=0.5).start()
+    assert "Enter passphrase for key" in capsys.readouterr().err
 
 
-def test_a_port_that_is_already_bound_fails(listener: int) -> None:
-    """Quoting the client, whose wording for a failed bind is its own.
+def test_a_caller_that_lost_the_screen_gets_the_words_in_the_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After a restart there is no stderr a user reads, so the error carries it."""
+    monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
+    monkeypatch.setenv("FAKE_SSH_EXIT", "255")
+    tunnel = child_tunnel(free_port())
+    tunnel.echo_stderr = False
+    with pytest.raises(HarlequinSshError, match="Permission denied"):
+        tunnel.start()
+    assert "Permission denied" not in capsys.readouterr().err
+
+
+def test_the_default_wait_is_long_enough_for_a_person() -> None:
+    """An ssh that opens a browser for an identity provider is a slow one."""
+    assert DEFAULT_TIMEOUT >= 30
+
+
+def test_a_port_that_is_already_bound_fails(
+    listener: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Passing the client's own words through, whatever they are.
 
     Windows says "an attempt was made to access a socket in a way forbidden by
     its access permissions" where Unix says "address already in use", so what
-    is asserted is that the client's own line reached the error.
+    is asserted is that the client's own line reached the user.
     """
-    with pytest.raises(HarlequinSshError, match=f"bind .*{listener}"):
+    with pytest.raises(HarlequinSshError):
         child_tunnel(listener).start()
+    assert "bind" in capsys.readouterr().err
 
 
 def test_allow_reuse_connects_through_the_existing_listener(listener: int) -> None:

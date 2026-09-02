@@ -23,6 +23,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -30,12 +31,19 @@ from dataclasses import dataclass
 from typing import Any, Collection, Sequence
 
 from harlequin.exception import HarlequinSshError
+from harlequin.redact import redact_text
 
 SSH = "ssh"
 """The client, found on PATH."""
 
-DEFAULT_TIMEOUT = 10.0
-"""Seconds to wait for the forwards, when nothing says otherwise."""
+DEFAULT_TIMEOUT = 60.0
+"""Seconds to wait for the forwards, when nothing says otherwise.
+
+Long because the wait is on a human as often as on a network: an ssh that opens
+a browser for an identity provider, or asks for a hardware key, is a minute of
+someone reading a screen. `--ssh-batch-mode` is what an unattended caller passes
+to fail at the first prompt instead of waiting this out.
+"""
 
 ERROR_TITLE = "Harlequin could not open the SSH tunnel."
 
@@ -237,6 +245,12 @@ class SshTunnel:
         self.timeout = timeout
         self.reused = False
         """Whether a listener that was already there is what answers now."""
+        self.echo_stderr = True
+        """Whether ssh's stderr goes to ours while the tunnel opens.
+
+        True while a caller still owns the screen, which is where a helper's
+        "to authenticate, visit ..." has to appear to be worth anything.
+        """
         self._process: subprocess.Popen[bytes] | None = None
         self._stderr: _Stderr | None = None
 
@@ -285,7 +299,7 @@ class SshTunnel:
                 f"Harlequin could not run {argv[0]}: {e}", title=ERROR_TITLE
             ) from e
         self._process = process
-        self._stderr = _Stderr(process.stderr)
+        self._stderr = _Stderr(process.stderr, echo=self.echo_stderr)
         atexit.register(self.stop)
         try:
             self._wait_until_ready(already_bound=already_bound)
@@ -357,22 +371,22 @@ class SshTunnel:
 
     def _child_failed(self) -> HarlequinSshError:
         assert self._process is not None
-        detail = ""
+        # the child has exited, but what it wrote on the way out may still be
+        # in the pipe -- and it is the whole of why this failed
         if self._stderr is not None:
-            # the child has exited, but what it wrote on the way out may still
-            # be in the pipe; an error that quotes ssh has to wait for it
             self._stderr.settle()
-            detail = self._stderr.text()
         return HarlequinSshError(
             f"ssh exited with code {self._process.returncode} without opening "
-            f"the forward.\n\n{detail}".rstrip(),
+            f"the forward.\n\n{self._unseen()}".rstrip(),
             title=ERROR_TITLE,
         )
 
     def _timed_out(
         self, *, already_bound: Collection[tuple[str, int]] = ()
     ) -> HarlequinSshError:
-        detail = self._stderr.text() if self._stderr is not None else ""
+        if self._stderr is not None:
+            # a helper's last line may have no newline of its own
+            self._stderr.flush()
         if already_bound:
             listed = ", ".join(f"{host}:{port}" for host, port in sorted(already_bound))
             reason = (
@@ -389,16 +403,40 @@ class SshTunnel:
                 "confirmation of a host key; answer it, or pass "
                 "--ssh-batch-mode to fail immediately instead of waiting."
             )
-        return HarlequinSshError(f"{reason}\n\n{detail}".rstrip(), title=ERROR_TITLE)
+        return HarlequinSshError(
+            f"{reason}\n\n{self._unseen()}".rstrip(), title=ERROR_TITLE
+        )
+
+    def _unseen(self) -> str:
+        """What ssh said that the user has not already read on stderr.
+
+        Nothing, where it was echoed as it arrived: an error that repeated it
+        would print a helper's instructions twice.
+        """
+        if self._stderr is None or self.echo_stderr:
+            return ""
+        return self._stderr.text()
 
 
 class _Stderr:
-    """The tail of what ssh wrote to stderr, drained so it cannot block on it."""
+    """What ssh wrote to stderr: passed through as it arrives, and kept.
 
-    def __init__(self, stream: Any) -> None:
+    Passed through because the thing a user most needs to see arrives while the
+    tunnel is still opening and nothing has failed yet -- Tailscale's "to
+    authenticate, visit ..." is written here, and a helper's instructions are
+    worthless after the timeout they caused. `echo=False` is for a caller that
+    no longer owns the screen; it keeps the text for an error to quote instead.
+
+    A line at a time, so `redact_text()` sees whole lines: ssh is third-party
+    output, and a driver's DSN can reach it.
+    """
+
+    def __init__(self, stream: Any, *, echo: bool = True) -> None:
         self._stream = stream
+        self._echo = echo
         self._chunks: deque[bytes] = deque()
         self._size = 0
+        self._pending = b""
         self._thread = threading.Thread(target=self._drain, daemon=True)
         self._thread.start()
 
@@ -414,6 +452,12 @@ class _Stderr:
         """
         self._thread.join(timeout=_STDERR_SETTLE_SECONDS)
 
+    def flush(self) -> None:
+        """Show a last line ssh left without a newline, before giving up on it."""
+        pending, self._pending = self._pending, b""
+        if pending and self._echo:
+            self._show(pending + b"\n")
+
     def close(self) -> None:
         self._thread.join(timeout=_STDERR_SETTLE_SECONDS)
         with contextlib.suppress(OSError):
@@ -422,13 +466,28 @@ class _Stderr:
     def _drain(self) -> None:
         # `read1()`, not `read()`: the latter blocks until it has the full 1024
         # bytes or the pipe closes, and every ssh diagnostic is shorter -- so a
-        # tunnel still waiting on a passphrase would have nothing to quote.
+        # helper's instructions would not appear until the tunnel gave up.
         with contextlib.suppress(OSError, ValueError):
             while chunk := self._stream.read1(1024):
-                self._chunks.append(chunk)
-                self._size += len(chunk)
-                while self._size > _STDERR_LIMIT and len(self._chunks) > 1:
-                    self._size -= len(self._chunks.popleft())
+                self._keep(chunk)
+                if self._echo:
+                    self._pending += chunk
+                    lines, _, self._pending = self._pending.rpartition(b"\n")
+                    if lines:
+                        self._show(lines + b"\n")
+        self.flush()
+
+    def _keep(self, chunk: bytes) -> None:
+        self._chunks.append(chunk)
+        self._size += len(chunk)
+        while self._size > _STDERR_LIMIT and len(self._chunks) > 1:
+            self._size -= len(self._chunks.popleft())
+
+    def _show(self, raw: bytes) -> None:
+        text = redact_text(raw.decode("utf-8", errors="replace"))
+        with contextlib.suppress(OSError, ValueError):
+            sys.stderr.write(text)
+            sys.stderr.flush()
 
 
 def _refuse_unsafe_value(option: str, value: str) -> None:
