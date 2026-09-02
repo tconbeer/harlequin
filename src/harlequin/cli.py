@@ -38,6 +38,7 @@ from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
+from harlequin.redact import hide_secrets_in
 from harlequin.windows_timezone import check_and_install_tzdata
 
 if TYPE_CHECKING:
@@ -284,8 +285,8 @@ def _adapter_option_group(
 def _open_tunnel(ctx: click.Context, ssh_config: dict[str, Any]) -> "SshTunnel | None":
     """The tunnel the IDE runs through, or exit having said why there is none.
 
-    Here rather than in the app: once Textual owns the terminal, `ssh` cannot
-    ask for a passphrase and a 2FA push has nowhere to print "check your phone".
+    Once Textual owns the terminal, `ssh` cannot ask for a passphrase and a 2FA
+    push has nowhere to print "check your phone".
     """
     if not ssh_config.get("ssh_host"):
         # nothing to open, and so nothing to import
@@ -589,6 +590,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             profile=profile_config, cli_values=kwargs, explicitly_set=explicitly_set
         )
 
+        # what this process must not print, before anything can print it: an
+        # error panel quotes a driver, and ssh's stderr quotes whatever a
+        # config file pointed it at
+        hide_secrets_in(config, adapter_cls.ADAPTER_OPTIONS)
+
         # detect and install (if necessary) a tzdatabase on Windows
         if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
             try:
@@ -643,9 +649,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
             ctx.exit(2)
 
-        # off the config before the adapter is handed the rest of it: the
-        # connection details already name the local end of the forward, so an
-        # adapter is never told a tunnel exists
+        # off the config before the adapter is handed the rest of it
         try:
             ssh_config = take_ssh_keys(config, typed=explicitly_set)
         except HarlequinConfigError as e:
@@ -663,40 +667,42 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             pretty_print_error(e)
             ctx.exit(2)
 
-        # before Textual owns the terminal, which is the only place a
-        # passphrase prompt or a 2FA push has anywhere to go
-        tunnel = _open_tunnel(ctx, ssh_config)
-
-        connection_id = (
-            adapter_instance.connection_id
-            if adapter_instance.connection_id is not None
-            else get_connection_hash(conn_str, config)
-        )
-        if tunnel is not None:
-            connection_id = get_connection_hash(
-                (connection_id,), {}, through=tunnel.cache_material()
-            )
-
-        tui = Harlequin(
-            adapter=adapter_instance,
-            profile_name=profile,
-            keymap_names=keymap_names,
-            user_defined_keymaps=user_defined_keymaps,
-            connection_hash=connection_id,
-            viewer_max_rows=viewer_max_rows,
-            query_limit=query_limit,
-            theme=theme,
-            show_files=show_files,
-            show_s3=show_s3,
-            export_path=export_path,
-            ssh_tunnel=tunnel,
-        )
         with contextlib.ExitStack() as stack:
-            if tunnel is not None:
+            if ssh_config.get("ssh_host"):
                 from harlequin.ssh import stopping_on_signal
 
-                stack.callback(tunnel.stop)
+                # entered before the child exists: `start()` blocks for the
+                # whole handshake, and a signal caught in that window would
+                # otherwise leave `ssh` running
                 stack.enter_context(stopping_on_signal())
+            tunnel = _open_tunnel(ctx, ssh_config)
+            if tunnel is not None:
+                stack.callback(tunnel.stop)
+
+            connection_id = (
+                adapter_instance.connection_id
+                if adapter_instance.connection_id is not None
+                else get_connection_hash(conn_str, config)
+            )
+            if tunnel is not None:
+                connection_id = get_connection_hash(
+                    (connection_id,), {}, through=tunnel.cache_material()
+                )
+
+            tui = Harlequin(
+                adapter=adapter_instance,
+                profile_name=profile,
+                keymap_names=keymap_names,
+                user_defined_keymaps=user_defined_keymaps,
+                connection_hash=connection_id,
+                viewer_max_rows=viewer_max_rows,
+                query_limit=query_limit,
+                theme=theme,
+                show_files=show_files,
+                show_s3=show_s3,
+                export_path=export_path,
+                ssh_tunnel=tunnel,
+            )
             tui.run()
 
     # this command's own options, before any adapter's are added to it

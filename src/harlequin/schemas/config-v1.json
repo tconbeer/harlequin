@@ -207,11 +207,6 @@
           "description": "Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron.",
           "default": false
         },
-        "ssh_allow_reuse": {
-          "type": "boolean",
-          "description": "When the local port is already bound, warn and connect through the listener that has it instead of failing.",
-          "default": false
-        },
         "ssh_timeout": {
           "type": "number",
           "description": "Seconds to wait for the tunnel's forwards. [default: 60]"

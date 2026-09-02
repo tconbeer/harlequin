@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
+import threading
 import time
 from functools import partial
 from pathlib import Path
@@ -286,6 +288,15 @@ class Harlequin(AppBase):
             )
         self.query_timer: Union[float, None] = None
         self.connection: HarlequinConnection | None = None
+        self._recovery_lock = threading.Lock()
+        """Held across reopening the tunnel and the connection through it.
+
+        Two workers reaching recovery at once would otherwise each open a
+        connection, and one of them would be closed out from under the worker
+        still running on it.
+        """
+        self._recovered_connection: HarlequinConnection | None = None
+        """The connection a recovery opened, for a worker that waited on it."""
         self.harlequin_driver = HarlequinDriver(app=self)
         self._completer_merge_timer: Timer | None = None
         self._pending_completer_items: list[tuple[CatalogItem, list[CatalogItem]]] = []
@@ -377,15 +388,17 @@ class Harlequin(AppBase):
         self.run_query_bar.apply_configured_limit()
 
         if self.ssh_tunnel is not None:
-            # which database this session is actually looking at, which the
-            # connection details alone no longer say
+            # which database this session is actually looking at
+            warnings = self.ssh_tunnel.warnings()
             self.notify(
-                self.ssh_tunnel.notice(),
+                "\n\n".join((self.ssh_tunnel.notice(), *warnings)),
                 title="SSH tunnel",
-                severity="warning" if self.ssh_tunnel.reused else "information",
+                severity=(
+                    "warning" if self.ssh_tunnel.reused or warnings else "information"
+                ),
+                markup=False,
             )
-            # posted from the watcher's thread, which is why it is a message
-            self.ssh_tunnel.watch(self._report_tunnel_closed)
+            self.ssh_tunnel.watch(self._post_tunnel_closed)
 
         self._connect()
         self._load_catalog_cache()
@@ -839,19 +852,31 @@ class Harlequin(AppBase):
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
 
-    def _report_tunnel_closed(self, notice: str) -> None:
-        """Called on the tunnel's watcher thread, so it only posts a message."""
-        self.post_message(TunnelClosed(notice))
+    def _post_tunnel_closed(self, notice: str) -> None:
+        """Called on the tunnel's watcher thread, so it only posts a message.
+
+        A child that dies during shutdown reaches a loop that is already
+        closing, which raises rather than delivering.
+        """
+        with contextlib.suppress(RuntimeError):
+            self.post_message(TunnelClosed(notice))
 
     @on(TunnelClosed)
-    def report_tunnel_closed(self, message: TunnelClosed) -> None:
-        """Say the forward is gone, rather than let queries fail unexplained."""
+    def notify_tunnel_closed(self, message: TunnelClosed) -> None:
         message.stop()
-        self.notify(message.notice, title="SSH tunnel", severity="error")
+        # ssh quotes a server's own disconnect message and a helper's output,
+        # so the notice is text rather than markup
+        self.notify(message.notice, title="SSH tunnel", severity="error", markup=False)
 
     @on(TunnelReconnected)
     def report_tunnel_reconnected(self, message: TunnelReconnected) -> None:
         message.stop()
+        replaced, self.connection = self.connection, message.connection
+        if replaced is not None and replaced is not message.connection:
+            # its socket died with the forward, but an adapter does real work
+            # here -- thread pools, temp files -- and may raise on the way out
+            with contextlib.suppress(Exception):
+                replaced.close()
         self.post_message(
             TransactionModeChanged(new_mode=message.connection.transaction_mode)
         )
@@ -1173,8 +1198,8 @@ class Harlequin(AppBase):
     )
     def _execute_query(self, message: QuerySubmitted) -> None:
         # ahead of reading the connection: a tunnel that dropped took it too
-        self._recover_tunnel()
-        if self.connection is None:
+        connection = self._connection_for_worker()
+        if connection is None:
             return
         cursors: Dict[str, ExecutedStatement] = {}
         ddl_queries: list[str] = []
@@ -1188,7 +1213,7 @@ class Harlequin(AppBase):
             max_rows=message.limit, detect_overflow=message.limit is not None
         )
         for executed in execute(
-            connection=self.connection,
+            connection=connection,
             statements=statements,
             limit=limit,
         ):
@@ -1231,27 +1256,42 @@ class Harlequin(AppBase):
             )
         self.post_message(QueriesCanceled())
 
-    def _recover_tunnel(self) -> None:
-        """Reopen a tunnel that dropped, and the connection that died with it.
+    def _connection_for_worker(self) -> HarlequinConnection | None:
+        """The connection to run on, reopening a dropped tunnel first.
 
         Called on a worker's thread, ahead of the database work it was about to
         do: restarting `ssh` is not enough on its own, because the adapter's TCP
         connection ran *through* the old forward. One attempt, and none at all
         once one has failed -- the user retries by running their query again.
+
+        None is a worker that must not run: a recovery that failed leaves a
+        connection whose socket died with the forward, and running on it would
+        raise a second modal behind the one that said why.
         """
         tunnel = self.ssh_tunnel
-        if tunnel is None or not tunnel.needs_restart or self.connection is None:
-            return
-        try:
-            tunnel.restart()
-            connection = self.adapter.connect()
-        except BaseException as e:  # adapters are third-party code
-            self.post_message(TunnelUnrecoverable(e))
-            return
-        # assigned here rather than by the handler: the worker that called this
-        # is about to run a query on it, and cannot wait for a message to land.
-        self.connection = connection
+        if tunnel is None or self.connection is None:
+            return self.connection
+        with self._recovery_lock:
+            # `_execute_query` and `update_schema_data` are exclusive within
+            # their own worker groups and not against each other, so both can
+            # arrive here at once. The second finds the tunnel already back.
+            if not tunnel.needs_restart:
+                if tunnel.dropped:
+                    # a restart already failed and is not tried again, so what
+                    # is left is a connection whose socket went with the forward
+                    return None
+                return self._recovered_connection or self.connection
+            try:
+                tunnel.restart()
+                connection = self.adapter.connect()
+            except BaseException as e:  # adapters are third-party code
+                self.post_message(TunnelUnrecoverable(e))
+                return None
+            # what a worker still inside this method runs on; the handler is
+            # what makes it the app's, once the message lands
+            self._recovered_connection = connection
         self.post_message(TunnelReconnected(connection=connection))
+        return connection
 
     def _get_selected_queries(self) -> list[str]:
         if self.editor is None:
@@ -1385,10 +1425,10 @@ class Harlequin(AppBase):
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:
-        self._recover_tunnel()
-        if self.connection is None:
+        connection = self._connection_for_worker()
+        if connection is None:
             return
-        catalog = self.connection.get_catalog()
+        catalog = connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
 
     def _validate_selection(self) -> str:
