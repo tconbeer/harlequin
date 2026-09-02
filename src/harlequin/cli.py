@@ -647,7 +647,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # connection details already name the local end of the forward, so an
         # adapter is never told a tunnel exists
         try:
-            ssh_config = take_ssh_keys(config)
+            ssh_config = take_ssh_keys(config, typed=explicitly_set)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -693,7 +693,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         )
         with contextlib.ExitStack() as stack:
             if tunnel is not None:
+                from harlequin.ssh import stopping_on_signal
+
                 stack.callback(tunnel.stop)
+                stack.enter_context(stopping_on_signal())
             tui.run()
 
     # this command's own options, before any adapter's are added to it
