@@ -142,6 +142,8 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    ssh_options = _prompt_for_ssh_options(selected_profile)
+
     adapter_option_choices = (
         [
             questionary.Choice(
@@ -199,6 +201,7 @@ def _wizard(config_path: Path | None) -> None:
     if locale:
         new_profile["locale"] = locale
 
+    new_profile.update(ssh_options)
     new_profile.update(adapter_options)
 
     _confirm_profile_generation(
@@ -255,6 +258,71 @@ def _prompt_for_profile_name(profiles: dict[str, Profile]) -> str:
             validate=lambda x: True if x and x != "None" else "Cannot be empty or None",
         ).unsafe_ask()
     return profile_name
+
+
+def _prompt_for_ssh_options(selected_profile: Profile) -> dict[str, Any]:
+    """The tunnel's keys, asked for only when there is a tunnel.
+
+    Not `ssh_allow_reuse`: it turns off the check that the local port is not
+    already someone else's, and a run reads that one from the command line only.
+    """
+    tunneled = questionary.confirm(
+        message="Do you connect via SSH?",
+        default=bool(selected_profile.get("ssh_host")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+    if not tunneled:
+        return {}
+
+    ssh_host = questionary.text(
+        message="What SSH destination should this profile tunnel through?",
+        instruction=(
+            "A Host alias from your ssh config, or host, user@host or "
+            "ssh://user@host:port."
+        ),
+        default=str(selected_profile.get("ssh_host", "")),
+        validate=lambda raw: bool(raw.strip()) or "Cannot be empty",
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    existing_forwards = selected_profile.get("ssh_forward", [])
+    if isinstance(existing_forwards, str):
+        existing_forwards = [existing_forwards]
+    ssh_forward = questionary.text(
+        message="What should it forward?",
+        instruction=(
+            "LOCAL:HOST:REMOTE, as ssh -L takes it; separate several by a "
+            "space. Leave blank if your ssh config has a LocalForward. Point "
+            "this profile's connection details at the local end."
+        ),
+        default=" ".join(existing_forwards),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    ssh_batch_mode = questionary.confirm(
+        message="Should ssh fail rather than prompt for a passphrase or password?",
+        default=bool(selected_profile.get("ssh_batch_mode", False)),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    raw_timeout = questionary.text(
+        message="How many seconds should Harlequin wait for the forwards?",
+        instruction="Leave blank for app defaults.",
+        validate=_validate_seconds_or_blank,
+        default=str(selected_profile.get("ssh_timeout", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    options: dict[str, Any] = {"ssh_host": ssh_host.strip()}
+    if ssh_forward.strip():
+        options["ssh_forward"] = shlex.split(ssh_forward)
+    if ssh_batch_mode:
+        options["ssh_batch_mode"] = ssh_batch_mode
+    if raw_timeout.strip():
+        seconds = float(raw_timeout)
+        # written the way it was typed: `30`, not `30.0`
+        options["ssh_timeout"] = int(seconds) if seconds.is_integer() else seconds
+    return options
 
 
 def _prompt_to_set_adapter_options(
@@ -357,6 +425,16 @@ def _validate_int(raw: str) -> bool:
 def _validate_int_or_blank(raw: str) -> bool:
     """The limit prompt accepts blank, which means the app's default."""
     return not raw or _validate_int(raw)
+
+
+def _validate_seconds_or_blank(raw: str) -> bool:
+    """Blank means the app's default; anything else is a positive duration."""
+    if not raw.strip():
+        return True
+    try:
+        return float(raw) > 0
+    except ValueError:
+        return False
 
 
 def _validate_dir_or_blank(raw: str) -> bool:
