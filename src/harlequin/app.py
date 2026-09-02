@@ -204,6 +204,18 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
+_PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
+    "_load_catalog_cache": (
+        "Harlequin could not load its cache; your query history may be missing."
+    ),
+    "_extend_and_merge_completers": "Harlequin could not update completions.",
+    "_build_completers": "Harlequin could not build completions.",
+}
+"""Toast text for the workers whose failure is partial: the app stays usable,
+so their errors surface as a notification rather than an error modal.
+"""
+
+
 class Harlequin(AppBase):
     """
     The SQL IDE for your Terminal.
@@ -627,30 +639,60 @@ class Harlequin(AppBase):
             await self._handle_worker_error(message)
 
     async def _handle_worker_error(self, message: Worker.StateChanged) -> None:
-        if (
-            message.worker.name == "update_schema_data"
-            and message.worker.error is not None
-        ):
+        worker_name = message.worker.name
+        worker_error = message.worker.error
+        if self._exit or worker_error is None:
+            # an error that lands while the app is exiting is noise, not news.
+            return
+        if worker_name == "update_schema_data":
             self._push_error_modal(
                 title="Catalog Error",
                 header="Could not update data catalog",
-                error=message.worker.error,
+                error=worker_error,
             )
             self.data_catalog.database_tree.loading = False
-        elif message.worker.name == "_connect" and message.worker.error is not None:
+        elif worker_name == "_connect":
             title = getattr(
-                message.worker.error,
+                worker_error,
                 "title",
                 "Harlequin could not connect to your database.",
             )
             error = (
-                message.worker.error
-                if isinstance(message.worker.error, HarlequinError)
-                else HarlequinConnectionError(
-                    msg=str(message.worker.error), title=title
-                )
+                worker_error
+                if isinstance(worker_error, HarlequinError)
+                else HarlequinConnectionError(msg=str(worker_error), title=title)
             )
             self.exit(return_code=2, message=pretty_error_message(error))
+        elif worker_name in ("_execute_query", "_fetch_data"):
+            # the worker died before posting QueriesExecuted or ResultsFetched,
+            # which is what would have restored these.
+            self.run_query_bar.set_responsive()
+            self.results_viewer.show_table()
+            header = getattr(worker_error, "title", worker_error.__class__.__name__)
+            self._push_error_modal(
+                title="Query Error",
+                header=header,
+                error=worker_error,
+            )
+        elif worker_name == "toggle_transaction_mode":
+            self._push_error_modal(
+                title="Transaction Error",
+                header="Harlequin could not change the transaction mode.",
+                error=worker_error,
+            )
+        elif worker_name in _PARTIAL_FAILURE_WORKER_NOTIFICATIONS:
+            self.notify(
+                _PARTIAL_FAILURE_WORKER_NOTIFICATIONS[worker_name],
+                severity="warning",
+            )
+        else:
+            # loud by default: a worker added later is an error modal until
+            # someone decides its failures are benign.
+            self._push_error_modal(
+                title="Unexpected Error",
+                header="A background task failed. Harlequin is still running.",
+                error=worker_error,
+            )
 
     @on(HarlequinTree.CatalogError)
     def handle_catalog_error(self, message: HarlequinTree.CatalogError) -> None:
