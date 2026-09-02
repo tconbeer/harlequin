@@ -6,15 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Harlequin and hsql can now reach a database through an SSH tunnel, with any adapter: pass `--ssh-host` (and `--ssh-forward`, unless your ssh config already has a `LocalForward`), and point the connection details at the local end of the forward. The config wizard asks, too. Add `--ssh-batch-mode` in scripts and CI so ssh fails instead of prompting ([#545](https://github.com/tconbeer/harlequin/issues/545)).
+- Harlequin and hsql can now reach any database through an SSH tunnel: pass `--ssh-host` (and `--ssh-forward`, unless your ssh config already has a `LocalForward`), and configure the adapter's connection options for the local end of the forward. Add `--ssh-batch-mode` in scripts and CI so ssh fails instead of prompting ([#545](https://github.com/tconbeer/harlequin/issues/545)).
 - Data Catalog items that are too wide for the catalog now show their full name and type in a tooltip on hover ([#1104](https://github.com/tconbeer/harlequin/issues/1104)).
-- Autocompletion now offers the members of the schemas and tables you type: naming an object in the Query Editor loads its children from the database, without expanding it in the Data Catalog first ([#752](https://github.com/tconbeer/harlequin/issues/752)).
+- Harlequin's autocompletion now offers the members of the schemas and tables you type: naming an object in the Query Editor loads its children from the database, without having to first expand it in the Data Catalog ([#752](https://github.com/tconbeer/harlequin/issues/752)).
 
 ### Bug Fixes
 
-- The config wizard no longer pre-fills the unset query limit with `-1` or unset adapter options with `None` (`****` for secrets). Leave the limit blank for app defaults, or enter `-1` for no limit ([#1105](https://github.com/tconbeer/harlequin/issues/1105)).
+- The config wizard no longer pre-fills the unset query limit with `-1` or unset adapter options with `None` (`****` for secrets) ([#1105](https://github.com/tconbeer/harlequin/issues/1105)).
 - Harlequin and hsql no longer crash when trying to open a file that isn't text ([#1108](https://github.com/tconbeer/harlequin/issues/1108)).
-- Background task failures no longer disappear silently or crash Harlequin; they now show an error dialog or warning as appropriate ([#1117](https://github.com/tconbeer/harlequin/issues/1117)).
+- Background task failures can no longer disappear silently or crash Harlequin; they now show an error dialog or warning as appropriate ([#1117](https://github.com/tconbeer/harlequin/issues/1117)).
 
 ## [2.12.2] - 2026-08-31
 
