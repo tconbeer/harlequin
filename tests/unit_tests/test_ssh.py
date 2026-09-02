@@ -381,6 +381,23 @@ def test_what_ssh_says_while_it_waits_is_shown_while_it_waits(
     assert "--ssh-batch-mode" in str(excinfo.value)
 
 
+def test_what_a_helper_says_on_stdout_is_shown_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `ProxyCommand` helper inherits ssh's streams and picks its own.
+
+    Onto our stderr either way: hsql's stdout carries result sets, and a helper
+    must not be able to corrupt a caller's csv with an authentication notice.
+    """
+    monkeypatch.setenv("FAKE_SSH_STDOUT", "To authenticate, visit: https://example/a")
+    monkeypatch.setenv("FAKE_SSH_HANG", "1")
+    with pytest.raises(HarlequinSshError):
+        child_tunnel(free_port(), timeout=0.5).start()
+    captured = capsys.readouterr()
+    assert "To authenticate, visit: https://example/a" in captured.err
+    assert captured.out == ""
+
+
 def test_a_line_ssh_left_unfinished_is_still_shown(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
