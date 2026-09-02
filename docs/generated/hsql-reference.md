@@ -61,7 +61,7 @@ Alphabetical by name. Flags are off by default.
 | `--ssh-batch-mode` | boolean |  |  |  | Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron. |
 | `--ssh-forward` | text | `TEXT` |  |  | A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config has the LocalForward. |
 | `--ssh-host` | text | `TEXT` |  |  | Open an SSH tunnel to this destination first, and connect through it. A Host alias, host, user@host or ssh://user@host:port, passed to ssh verbatim. |
-| `--ssh-timeout` | number | `SECONDS` |  |  | Seconds to wait for the tunnel's forwards. [default: 10] |
+| `--ssh-timeout` | number | `SECONDS` |  |  | Seconds to wait for the tunnel's forwards. [default: 60] |
 | `--stats` | boolean |  |  |  | Write a one-line JSON summary to stderr. |
 | `--timeout` | number | `SECONDS` |  |  | Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info. |
 | `-t`, `--tuples-only` | boolean |  |  |  | Rows only: no header, no footer. As in psql. |

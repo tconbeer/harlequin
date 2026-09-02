@@ -214,7 +214,7 @@
         },
         "ssh_timeout": {
           "type": "number",
-          "description": "Seconds to wait for the tunnel's forwards. [default: 10]"
+          "description": "Seconds to wait for the tunnel's forwards. [default: 60]"
         },
         "config_path": {
           "type": "string",
