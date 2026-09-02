@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Data Catalog items that are too wide for the catalog now show their full name and type in a tooltip on hover ([#1104](https://github.com/tconbeer/harlequin/issues/1104)).
+- Autocompletion now offers the members of the schemas and tables you type: naming an object in the Query Editor loads its children from the database, without expanding it in the Data Catalog first ([#752](https://github.com/tconbeer/harlequin/issues/752)).
 
 ### Bug Fixes
 

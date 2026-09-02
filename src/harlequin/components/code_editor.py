@@ -331,9 +331,9 @@ class EditorCollection(Vertical):
         """Hand the loaded buffer's symbols to the completers.
 
         They are kept here as well, since the app swaps in whole new completers
-        every time it rebuilds them from the catalog.
+        every time it rebuilds them from the catalog. The message goes on to the
+        app, which asks the Data Catalog to load the items the buffer names.
         """
-        message.stop()
         self._buffer_symbols = message.symbols
         for completer in (self._word_completer, self._member_completer):
             if completer is not None:
