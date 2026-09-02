@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-09-02
+
 ### Features
 
 - Harlequin and hsql can now reach any database through an SSH tunnel: pass `--ssh-host` (and `--ssh-forward`, unless your ssh config already has a `LocalForward`), and configure the adapter's connection options for the local end of the forward. Add `--ssh-batch-mode` in scripts and CI so ssh fails instead of prompting ([#545](https://github.com/tconbeer/harlequin/issues/545)).
@@ -1084,7 +1086,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.12.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.13.0...HEAD
+[2.13.0]: https://github.com/tconbeer/harlequin/compare/2.12.2...2.13.0
 [2.12.2]: https://github.com/tconbeer/harlequin/compare/2.12.1...2.12.2
 [2.12.1]: https://github.com/tconbeer/harlequin/compare/2.12.0...2.12.1
 [2.12.0]: https://github.com/tconbeer/harlequin/compare/2.11.0...2.12.0
