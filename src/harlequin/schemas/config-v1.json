@@ -184,6 +184,33 @@
           "type": "number",
           "description": "Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info."
         },
+        "ssh_host": {
+          "type": "string",
+          "description": "Open an SSH tunnel to this destination first, and connect through it. A Host alias, host, user@host or ssh://user@host:port, passed to ssh verbatim."
+        },
+        "ssh_forward": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config has the LocalForward."
+        },
+        "ssh_batch_mode": {
+          "type": "boolean",
+          "description": "Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron.",
+          "default": false
+        },
+        "ssh_timeout": {
+          "type": "number",
+          "description": "Seconds to wait for the tunnel's forwards. [default: 60]"
+        },
         "config_path": {
           "type": "string",
           "description": "Use this config file instead of the ones hsql discovers."

@@ -57,6 +57,11 @@ Alphabetical by name. Flags are off by default.
 | `--result` | text | `all\|last\|N` | `all` |  | Which result set(s) to emit. |
 | `--skill` | boolean |  |  |  | Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'. |
 | `--spec` | boolean |  |  |  | Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter. |
+| `--ssh-allow-reuse` | boolean |  |  |  | When the local port is already bound, warn and connect through the listener that has it instead of failing. |
+| `--ssh-batch-mode` | boolean |  |  |  | Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron. |
+| `--ssh-forward` | text | `TEXT` |  |  | A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config has the LocalForward. |
+| `--ssh-host` | text | `TEXT` |  |  | Open an SSH tunnel to this destination first, and connect through it. A Host alias, host, user@host or ssh://user@host:port, passed to ssh verbatim. |
+| `--ssh-timeout` | number | `SECONDS` |  |  | Seconds to wait for the tunnel's forwards. [default: 60] |
 | `--stats` | boolean |  |  |  | Write a one-line JSON summary to stderr. |
 | `--timeout` | number | `SECONDS` |  |  | Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info. |
 | `-t`, `--tuples-only` | boolean |  |  |  | Rows only: no header, no footer. As in psql. |

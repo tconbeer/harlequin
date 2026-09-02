@@ -30,6 +30,7 @@ from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
+    HarlequinSshError,
 )
 from harlequin.redact import redact_text
 
@@ -90,7 +91,9 @@ def exit_code_for(error: BaseException) -> ExitCode:
         # a path that names nothing is a bad argument, not a failed query: the
         # catalog answered, and what it answered is that there is no such item.
         return ExitCode.USAGE
-    if isinstance(error, HarlequinConnectionError):
+    if isinstance(error, (HarlequinConnectionError, HarlequinSshError)):
+        # a tunnel that would not open is a database that cannot be reached,
+        # which is the one thing a caller does about either of them
         return ExitCode.CONNECTION
     return ExitCode.QUERY
 
@@ -135,6 +138,18 @@ def report_theme_confusion(conn_str: Sequence[str]) -> None:
         f"hsql has no themes; -t is --tuples-only, as in psql, "
         f"so {themed!r} was read as a connection string."
     )
+
+
+def report_tunnel(notice: str, warnings: Sequence[str] = ()) -> None:
+    """Say which local port the run is about to use, and where it goes.
+
+    On stderr, like every other diagnostic, because it is the one thing about
+    the run that says which database the results came from -- and stdout is
+    carrying them.
+    """
+    note(f"ssh: {notice}")
+    for warning in warnings:
+        note(f"ssh: {warning}")
 
 
 def timeout_message(seconds: float) -> str:

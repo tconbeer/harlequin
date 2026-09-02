@@ -95,6 +95,37 @@ caller asks a database what a query's columns are, and an option that spent
 that spelling on "unlimited" would take the idiom away.
 """
 
+DEFAULT_SSH_TIMEOUT = 60.0
+"""Seconds both commands wait for an SSH tunnel's forwards, by default.
+
+Long because the wait is on a person as often as on a network: an ssh that
+opens a browser for an identity provider, or asks for a hardware key, is a
+minute of someone reading a screen. `--ssh-batch-mode` is what an unattended
+caller passes to fail at the first prompt instead of waiting this out.
+"""
+
+SSH_KEYS = (
+    "ssh_host",
+    "ssh_forward",
+    "ssh_batch_mode",
+    "ssh_allow_reuse",
+    "ssh_timeout",
+)
+"""The profile keys that describe an SSH tunnel, which both commands read.
+
+Named here rather than in `harlequin.ssh` so that an invocation with no tunnel
+can take them off a config without importing the module that opens one.
+"""
+
+CLI_ONLY_SSH_KEYS = ("ssh_allow_reuse",)
+"""SSH keys a config file may not answer.
+
+Config files are discovered in the working directory, so a cloned repository
+supplies one. This key turns off the check that the local port is not already
+someone else's listener, and a default that fails closed has to stay the
+caller's to turn off.
+"""
+
 TUI_ONLY_KEYS = (
     "theme",
     "keymap_name",
@@ -636,6 +667,48 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
     if not seconds > 0 or not math.isfinite(seconds):
         raise refuse()
     return seconds
+
+
+def take_ssh_keys(
+    config: MutableMapping[str, Any], *, typed: Collection[str] = ()
+) -> dict[str, Any]:
+    """Remove the tunnel's keys from a merged config and return them.
+
+    They come off whether or not any is set: what is left of the config is the
+    adapter's, and an adapter is never told a tunnel exists. `typed` is the
+    names the caller actually passed on the command line, which is the whole of
+    what tells a `CLI_ONLY_SSH_KEYS` value from a config file's.
+
+    Raises: HarlequinConfigError if a tunnel is described with no destination to
+    open it through, which would otherwise connect straight past the forward,
+    if a config file answered a key only a caller may, or if `ssh_timeout` is
+    not a number of seconds.
+    """
+    taken = {key: config.pop(key) for key in SSH_KEYS if key in config}
+    for key in CLI_ONLY_SSH_KEYS:
+        if taken.get(key) and key not in typed:
+            spelled = key.replace("_", "-")
+            raise HarlequinConfigError(
+                f"{key} turns off the check that the local port is not already "
+                "in use by something else, so it is read from the command line "
+                f"and not from a config file. Pass --{spelled}.",
+                title=CONFIG_ERROR_TITLE,
+            )
+    if "ssh_timeout" in taken:
+        # typed before the destination check below, so that a value that is not
+        # a number is named as one rather than as a tunnel with nowhere to go
+        parse_seconds(taken["ssh_timeout"], key="ssh_timeout")
+    describe_the_tunnel = [
+        key for key in SSH_KEYS if key in taken and key != "ssh_host"
+    ]
+    if not taken.get("ssh_host") and describe_the_tunnel:
+        named = ", ".join(describe_the_tunnel)
+        raise HarlequinConfigError(
+            f"{named} describes an SSH tunnel, but ssh_host says nothing to "
+            "open one to.",
+            title=CONFIG_ERROR_TITLE,
+        )
+    return taken
 
 
 def discover_config_files(config_path: Path | None) -> list[Path]:

@@ -121,4 +121,10 @@ def _halt(code: ExitCode) -> NoReturn:
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(Exception):
             stream.flush()
+    # ahead of `os._exit()`, which runs no atexit handler, and after the flush,
+    # because stopping a tunnel can spend seconds on a child that will not go
+    with contextlib.suppress(BaseException):
+        from harlequin.ssh import stop_all
+
+        stop_all()
     os._exit(code)

@@ -87,17 +87,24 @@ def main() -> int:
         forwards.append(from_config)
 
     if dump_config:
+        probe_exit = int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        if probe_exit:
+            # a real client says why it would not take the argv
+            message = os.environ.get("FAKE_SSH_STDERR")
+            if message:
+                print(message, file=sys.stderr, flush=True)
+            return probe_exit
         text = os.environ.get("FAKE_SSH_PROBE_TEXT")
         if text is not None:
             sys.stdout.write(text)
-            return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+            return 0
         print(f"host {destination}")
         print(f"hostname {destination}")
         print("port 22")
         for spec in forwards:
             listen, connect = format_forward(spec)
             print(f"localforward {listen} {connect}")
-        return int(os.environ.get("FAKE_SSH_PROBE_EXIT", "0"))
+        return 0
 
     message = os.environ.get("FAKE_SSH_STDERR")
     if message:

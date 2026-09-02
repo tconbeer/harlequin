@@ -21,6 +21,7 @@ import atexit
 import contextlib
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -28,22 +29,17 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Collection, Sequence
+from typing import Any, Collection, Iterator, Mapping, Sequence
 
-from harlequin.exception import HarlequinSshError
+from harlequin.config import CONFIG_ERROR_TITLE, DEFAULT_SSH_TIMEOUT, parse_seconds
+from harlequin.exception import HarlequinConfigError, HarlequinSshError
 from harlequin.redact import redact_text
 
 SSH = "ssh"
 """The client, found on PATH."""
 
-DEFAULT_TIMEOUT = 60.0
-"""Seconds to wait for the forwards, when nothing says otherwise.
-
-Long because the wait is on a human as often as on a network: an ssh that opens
-a browser for an identity provider, or asks for a hardware key, is a minute of
-someone reading a screen. `--ssh-batch-mode` is what an unattended caller passes
-to fail at the first prompt instead of waiting this out.
-"""
+DEFAULT_TIMEOUT = DEFAULT_SSH_TIMEOUT
+"""Seconds to wait for the forwards, when nothing says otherwise."""
 
 ERROR_TITLE = "Harlequin could not open the SSH tunnel."
 
@@ -53,6 +49,15 @@ _CONNECT_TIMEOUT = 0.5
 
 _GRACE_SECONDS = 1.0
 """What a tunnel with no port to poll waits, before trusting the child."""
+
+_PROBE_SECONDS = 10.0
+"""How long `ssh -G` has to print the resolved config.
+
+Its own bound rather than the caller's: `-G` connects to nothing, so the wait a
+user configures -- for a network, or for a person answering a prompt -- says
+nothing about it, and a small one would otherwise skip the readiness poll by
+leaving Harlequin with no forwards to wait on.
+"""
 
 _TERMINATE_SECONDS = 2.0
 """How long a terminated child has to exit before it is killed."""
@@ -72,6 +77,12 @@ _ANY_INTERFACE = {"", "*", "0.0.0.0", "::"}
 """Bind addresses that are not themselves an address to connect to."""
 
 _KEYWORD = re.compile(r"^([a-z][a-z0-9]*)(?:\s+(.*))?$")
+
+_CONTROL = re.compile(r"[^\n\t\x20-\x7e\xa0-\U0010ffff]")
+"""Every character a terminal reads as a command rather than as text."""
+
+_LIVE: set[SshTunnel] = set()
+"""Every tunnel with a child running, for `stop_all()`."""
 
 _UNSAFE_IN_VALUE = re.compile(r"""[\x00-\x20\x7f`$\\"'|&;<>(){}]""")
 """Characters no destination or forward spec has, and that ssh may expand.
@@ -115,6 +126,109 @@ class SshConfig:
     forwards: tuple[Forward, ...]
 
 
+@dataclass(frozen=True)
+class SshOptions:
+    """The five `--ssh-*` values, as either command's merged config supplies them."""
+
+    host: str | None = None
+    forwards: tuple[str, ...] = ()
+    batch_mode: bool = False
+    allow_reuse: bool = False
+    timeout: float = DEFAULT_TIMEOUT
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any]) -> SshOptions:
+        """What `config.take_ssh_keys()` took, as values `ssh` can be run with.
+
+        Raises: HarlequinConfigError for a value its key does not take. A
+        profile can put anything under one, and click has already vetted
+        whatever was typed on the command line.
+        """
+        return cls(
+            host=_text(config.get("ssh_host"), key="ssh_host"),
+            forwards=_forwards(config.get("ssh_forward")),
+            batch_mode=_flag(config.get("ssh_batch_mode"), key="ssh_batch_mode"),
+            allow_reuse=_flag(config.get("ssh_allow_reuse"), key="ssh_allow_reuse"),
+            timeout=parse_seconds(config.get("ssh_timeout"), key="ssh_timeout")
+            or DEFAULT_TIMEOUT,
+        )
+
+
+def open_tunnel(config: Mapping[str, Any]) -> SshTunnel | None:
+    """The tunnel this invocation runs under, started, or None for no tunnel.
+
+    Both commands' one line of this feature: everything from the five keys to a
+    child process holding a forward open, with prompts still reaching a human
+    because neither has taken the terminal yet.
+
+    Raises: HarlequinConfigError for a value a key does not take, and
+    HarlequinSshError for a tunnel that would not open.
+    """
+    options = SshOptions.from_config(config)
+    if options.host is None:
+        return None
+    tunnel = build_tunnel(
+        options.host,
+        options.forwards,
+        batch_mode=options.batch_mode,
+        allow_reuse=options.allow_reuse,
+        timeout=options.timeout,
+    )
+    tunnel.start()
+    return tunnel
+
+
+def stop_all() -> None:
+    """Kill every tunnel this process started.
+
+    The `atexit` backstop cannot reach a process that ends in `os._exit()`, and
+    an ssh child that outlives the session is the thing this feature removes.
+    """
+    for tunnel in list(_LIVE):
+        tunnel.stop()
+
+
+@contextlib.contextmanager
+def stopping_on_signal() -> Iterator[None]:
+    """Stop every tunnel on `SIGTERM` and `SIGHUP`, for as long as one is up.
+
+    Neither signal runs an `atexit` handler, so a session that is killed, or
+    whose terminal goes away, would otherwise leave `ssh` holding a forward
+    open.
+
+    Having stopped them, the handler dies of the signal it caught rather than
+    raising: a `SystemExit` here unwinds the main thread while a worker is
+    still inside a database driver, which aborts the interpreter and exits 134.
+
+    A no-op off the main thread, and on a platform without the signal.
+    """
+    replaced: list[tuple[int, Any]] = []
+
+    def handle(number: int, frame: Any) -> None:
+        stop_all()
+        for stream in (sys.stdout, sys.stderr):
+            with contextlib.suppress(Exception):
+                stream.flush()
+        signal.signal(number, signal.SIG_DFL)
+        os.kill(os.getpid(), number)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            replaced.append((number, signal.signal(number, handle)))
+    try:
+        yield
+    finally:
+        for number, previous in replaced:
+            if previous is None:
+                # not installed from Python, and `signal()` takes no None back
+                continue
+            with contextlib.suppress(ValueError, OSError, TypeError):
+                signal.signal(number, previous)
+
+
 def build_argv(
     host: str,
     forwards: Sequence[str] = (),
@@ -152,13 +266,15 @@ def build_tunnel(
 ) -> SshTunnel:
     """The tunnel this invocation runs, having asked ssh what it will forward.
 
-    Raises: HarlequinSshError if nothing anywhere configures a local forward,
-    which is a destination Harlequin would connect to and never use.
+    Raises: HarlequinConfigError if nothing anywhere configures a local
+    forward, which is a destination Harlequin would connect to and never use,
+    and HarlequinSshError for an argv `ssh` must not be handed, or would not
+    take.
     """
     argv = build_argv(host, forwards, batch_mode=batch_mode)
-    config = resolve_config(argv, timeout=timeout)
+    config = resolve_config(argv)
     if config is not None and not config.forwards:
-        raise HarlequinSshError(
+        raise HarlequinConfigError(
             f"{host} configures no local forward, so a tunnel to it would "
             "carry nothing. Pass --ssh-forward LOCAL:HOST:REMOTE, or add a "
             f"LocalForward line to the {host} block of your ssh config.",
@@ -167,18 +283,26 @@ def build_tunnel(
     return SshTunnel(
         argv,
         forwards=config.forwards if config is not None else (),
+        requested=tuple(forwards),
+        resolved=config is not None,
         host=host,
         allow_reuse=allow_reuse,
         timeout=timeout,
     )
 
 
-def resolve_config(argv: Sequence[str], *, timeout: float) -> SshConfig | None:
+def resolve_config(
+    argv: Sequence[str], *, timeout: float = _PROBE_SECONDS
+) -> SshConfig | None:
     """What `ssh -G` says the argv about to run resolves to, or None.
 
     None is the degraded answer -- no client, no `-G`, or output this cannot
     read -- and every caller reads it as "ask ssh nothing else": no poll and no
     forwards-nothing error.
+
+    Raises: HarlequinSshError where the probe ran and rejected the argv. That
+    is the same argv `start()` is about to run, so the run ends either way, and
+    ssh names the value that is wrong while nothing has been spawned.
     """
     probe = [_client_path(argv[0]), "-G", *argv[1:]]
     try:
@@ -192,7 +316,11 @@ def resolve_config(argv: Sequence[str], *, timeout: float) -> SshConfig | None:
     except (OSError, subprocess.SubprocessError):
         return None
     if completed.returncode != 0:
-        return None
+        said = _readable(completed.stderr.decode("utf-8", errors="replace")).strip()
+        raise HarlequinSshError(
+            f"ssh would not accept the tunnel's options.\n\n{said}".rstrip(),
+            title=ERROR_TITLE,
+        )
     return parse_config(completed.stdout.decode("utf-8", errors="replace"))
 
 
@@ -234,12 +362,23 @@ class SshTunnel:
         argv: Sequence[str],
         *,
         forwards: Sequence[Forward] = (),
+        requested: Sequence[str] = (),
+        resolved: bool = True,
         host: str = "",
         allow_reuse: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.argv = list(argv)
         self.forwards = tuple(forwards)
+        self.requested = tuple(requested)
+        """The forward specs a caller asked for, as `ssh -L` spells them."""
+        self.resolved = resolved
+        """Whether `ssh -G` said what this tunnel forwards.
+
+        False leaves `forwards` empty however many were asked for, so there is
+        nothing to poll and nothing to name: what the tunnel opened is taken on
+        the child's word.
+        """
         self.host = host
         self.allow_reuse = allow_reuse
         self.timeout = timeout
@@ -275,6 +414,72 @@ class SshTunnel:
         via = f" via {self.host}" if self.host else ""
         return f"{listed}{via}" if listed else f"tunnel to {self.host}"
 
+    @property
+    def exposed(self) -> tuple[str, ...]:
+        """Every forward of this tunnel that is not bound to loopback alone.
+
+        A forward on `0.0.0.0` or `*` reaches the whole network the machine is
+        on, which is worth saying out loud: the spec may come from a config
+        file discovered in the working directory rather than from its user.
+        """
+        return tuple(
+            _pretty(forward.listen)
+            for forward in self.forwards
+            if _is_exposed(forward.listen)
+        )
+
+    def notice(self) -> str:
+        """What a started tunnel says for itself, on stderr or as a notification.
+
+        It is what tells a user which database they are actually looking at --
+        or, having reused a listener, that the one answering is not one
+        Harlequin opened.
+        """
+        if self.reused:
+            listed = ", ".join(f"{host}:{port}" for host, port in self.endpoints)
+            return (
+                f"{listed} is already bound; connecting through the existing "
+                "listener (--ssh-allow-reuse)"
+            )
+        return self.describe()
+
+    def warnings(self) -> tuple[str, ...]:
+        """What is worth saying about this tunnel beyond where it goes.
+
+        A forward spec can come from a config file discovered in the working
+        directory, so what it opened is not necessarily what its user asked
+        for.
+        """
+        said = []
+        if self.exposed:
+            said.append(
+                f"{', '.join(self.exposed)} is bound to every interface, so "
+                "anything that can reach this machine can reach the database "
+                "through it."
+            )
+        if not self.resolved:
+            said.append(
+                "ssh did not say what it forwards, so Harlequin did not wait "
+                "for a local port to answer before connecting."
+            )
+        return tuple(said)
+
+    def cache_material(self) -> tuple[str, ...]:
+        """What a connection reached through this tunnel is keyed by, beside itself.
+
+        Two bastions fronting two databases both look like `localhost:15439`,
+        and a catalog cache or a query history shared between them would be one
+        database's answers under the other's name. The specs a caller asked for
+        stand in where `ssh -G` did not say what was resolved, so two tunnels
+        that forward different ports never key alike.
+        """
+        forwarded = (
+            [f"{f.listen} {f.destination}" for f in self.forwards]
+            if self.forwards
+            else list(self.requested)
+        )
+        return (self.host, *forwarded)
+
     def start(self) -> None:
         """Start it and block until the forwarded ports accept connections.
 
@@ -304,6 +509,7 @@ class SshTunnel:
         self._process = process
         self._stderr = _Output(process.stderr, echo=self.echo_stderr)
         self._stdout = _Output(process.stdout, echo=self.echo_stderr)
+        _LIVE.add(self)
         atexit.register(self.stop)
         try:
             self._wait_until_ready(already_bound=already_bound)
@@ -314,6 +520,7 @@ class SshTunnel:
     def stop(self) -> None:
         """Kill the child, if there is one. Safe to call more than once."""
         atexit.unregister(self.stop)
+        _LIVE.discard(self)
         process, self._process = self._process, None
         if process is None:
             return
@@ -444,7 +651,8 @@ class _Output:
     stdout must not be able to corrupt a caller's csv.
 
     A line at a time, so `redact_text()` sees whole lines: ssh is third-party
-    output, and a driver's DSN can reach it.
+    output, and a driver's DSN can reach it. `_readable()` takes the control
+    characters out for the same reason.
     """
 
     def __init__(self, stream: Any, *, echo: bool = True) -> None:
@@ -457,7 +665,9 @@ class _Output:
         self._thread.start()
 
     def text(self) -> str:
-        return b"".join(self._chunks).decode("utf-8", errors="replace").strip()
+        """What ssh said, as an error may quote it: redacted, and printable."""
+        raw = b"".join(self._chunks).decode("utf-8", errors="replace")
+        return redact_text(_readable(raw)).strip()
 
     def settle(self) -> None:
         """Wait for the drain to catch up with a child that has exited.
@@ -500,10 +710,70 @@ class _Output:
             self._size -= len(self._chunks.popleft())
 
     def _show(self, raw: bytes) -> None:
-        text = redact_text(raw.decode("utf-8", errors="replace"))
+        text = redact_text(_readable(raw.decode("utf-8", errors="replace")))
         with contextlib.suppress(OSError, ValueError):
             sys.stderr.write(text)
             sys.stderr.flush()
+
+
+def _text(value: Any, *, key: str) -> str | None:
+    """One config value as the string `ssh` takes, or None where nothing was set."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise HarlequinConfigError(
+            f"{key}={value!r} is not text that ssh could read.",
+            title=CONFIG_ERROR_TITLE,
+        )
+    return value
+
+
+def _forwards(value: Any) -> tuple[str, ...]:
+    """One config value as the forward specs `ssh -L` takes.
+
+    A profile can put anything under the key: one spec, a list of them, or
+    something that is neither. An entry with nothing in it is refused rather
+    than passed on, since `ssh` answers `-L ""` by refusing the whole run.
+
+    Raises: HarlequinConfigError for a value that is not a spec or a list of them.
+    """
+    if value is None or value == "":
+        return ()
+    if isinstance(value, str):
+        value = (value,)
+    if not isinstance(value, (list, tuple)):
+        raise HarlequinConfigError(
+            f"ssh_forward={value!r} is not a forward spec, or a list of them.",
+            title=CONFIG_ERROR_TITLE,
+        )
+    forwards = []
+    for forward in value:
+        spec = _text(forward, key="ssh_forward")
+        if spec is None:
+            raise HarlequinConfigError(
+                "ssh_forward has an entry with nothing in it. Spell each one "
+                "LOCAL:HOST:REMOTE, or leave the key out.",
+                title=CONFIG_ERROR_TITLE,
+            )
+        forwards.append(spec)
+    return tuple(forwards)
+
+
+def _flag(value: Any, *, key: str) -> bool:
+    """One config value as the boolean its key takes.
+
+    Only a boolean: TOML has one, and reading `"false"` as true is the kind of
+    wrong a user cannot see in their own file.
+
+    Raises: HarlequinConfigError for anything else.
+    """
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise HarlequinConfigError(
+            f"{key}={value!r} is not true or false.", title=CONFIG_ERROR_TITLE
+        )
+    return value
 
 
 def _refuse_unsafe_value(option: str, value: str) -> None:
@@ -601,6 +871,30 @@ def _pretty(field: str) -> str:
     host, port = split
     host = host or "localhost"
     return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
+def _is_exposed(field: str) -> bool:
+    """Whether an `ssh -G` listen field binds somewhere other than loopback.
+
+    A field with no host is loopback: that is what ssh binds a bare port to. A
+    socket path is not an interface, so it is not one either.
+    """
+    split = _split(field)
+    if split is None:
+        return False
+    host = split[0]
+    return host not in ("", "localhost", "::1", "[::1]") and not host.startswith("127.")
+
+
+def _readable(text: str) -> str:
+    """`text` with the control characters a terminal would act on removed.
+
+    ssh's stderr carries a server's pre-auth banner and a helper's output
+    verbatim, and both are chosen by whatever the config file pointed at: an
+    escape sequence in either would drive the terminal it is printed to, or
+    become markup in the widget it is shown in.
+    """
+    return _CONTROL.sub("", text)
 
 
 def _accepts(endpoint: tuple[str, int]) -> bool:
