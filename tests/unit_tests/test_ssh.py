@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Iterator, Sequence
+from typing import Callable, Iterator, Sequence
 from unittest.mock import MagicMock
 
 import click
@@ -610,46 +610,46 @@ def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
     assert bare is not None and bare.server_alive_interval is None
 
 
-def wait_for(notices: list[str], *, seconds: float = 5.0) -> None:
+def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
+    """Poll until something a thread does becomes true, or give up."""
     deadline = time.monotonic() + seconds
-    while not notices and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
         time.sleep(0.02)
+    return predicate()
 
 
-def test_a_child_that_dies_says_so_in_ssh_s_last_words(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FAKE_SSH_STDERR", "Timeout, server web-1 not responding.")
-    monkeypatch.setenv("FAKE_SSH_DIE_AFTER", "0.2")
+def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> None:
     notices: list[str] = []
     tunnel = child_tunnel(free_port())
     tunnel.watch(notices.append)
     tunnel.start()
     try:
-        wait_for(notices)
+        drop_trigger.touch()
+        assert wait_until(lambda: bool(notices))
     finally:
         tunnel.stop()
     assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
 
 
 def test_a_tunnel_watched_after_it_started_is_still_reported(
-    monkeypatch: pytest.MonkeyPatch,
+    drop_trigger: Path,
 ) -> None:
     """The IDE's own order: `cli.py` starts the tunnel, `on_mount` watches it.
 
     Everything in between -- building the app, mounting the widget tree -- is
     time the child can die in.
     """
-    monkeypatch.setenv("FAKE_SSH_STDERR", "Timeout, server web-1 not responding.")
     notices: list[str] = []
     tunnel = child_tunnel(free_port())
     tunnel.start()
     try:
+        drop_trigger.touch()
         assert tunnel._process is not None
-        tunnel._process.kill()
         tunnel._process.wait()
         tunnel.watch(notices.append)
-        wait_for(notices)
+        assert wait_until(lambda: bool(notices))
     finally:
         tunnel.stop()
     assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
@@ -672,6 +672,21 @@ def test_a_reused_listener_is_never_called_closed(
     assert notices == []
 
 
+def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
+    notices: list[str] = []
+    tunnel = child_tunnel(free_port())
+    tunnel.watch(notices.append)
+    tunnel.watch(notices.append)
+    tunnel.start()
+    try:
+        drop_trigger.touch()
+        assert wait_until(lambda: bool(notices))
+        time.sleep(0.3)
+    finally:
+        tunnel.stop()
+    assert len(notices) == 1
+
+
 def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
     """The control is the test above: the same harness does fire, on a death."""
     notices: list[str] = []
@@ -681,23 +696,6 @@ def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
     tunnel.stop()
     time.sleep(0.5)
     assert notices == []
-
-
-def test_watching_twice_does_not_double_the_notice(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FAKE_SSH_DIE_AFTER", "0.2")
-    notices: list[str] = []
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(notices.append)
-    tunnel.watch(notices.append)
-    tunnel.start()
-    try:
-        wait_for(notices)
-        time.sleep(0.3)
-    finally:
-        tunnel.stop()
-    assert len(notices) == 1
 
 
 # both commands, end to end, against a fake client on PATH

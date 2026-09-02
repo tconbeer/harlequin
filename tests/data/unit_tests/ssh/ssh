@@ -20,8 +20,7 @@ Environment variables shape what it does, so one script covers the cases:
     FAKE_SSH_PROBE_TEXT print this from `-G` instead of a resolved config
     FAKE_SSH_ALIVE_INTERVAL  what `-G` reports for serveraliveinterval (default 0,
                         so every tunnel built here is given a keepalive)
-    FAKE_SSH_DIE_AFTER  seconds to hold the forwards before exiting, as a
-                        connection reaped by a NAT does
+    FAKE_SSH_DROP_WHEN  hold the forwards until this path exists, then drop them
 """
 
 from __future__ import annotations
@@ -145,9 +144,15 @@ def main() -> int:
                 return 255
             sock.listen(8)
             listeners.append(sock)
-    die_after = os.environ.get("FAKE_SSH_DIE_AFTER")
-    if die_after:
-        time.sleep(float(die_after))
+    drop_when = os.environ.get("FAKE_SSH_DROP_WHEN")
+    if drop_when:
+        # the test controls when the forward drops, so nothing races the
+        # readiness poll on a loaded machine
+        while not os.path.exists(drop_when):
+            time.sleep(0.02)
+        for sock in listeners:
+            sock.close()
+        print("Timeout, server web-1 not responding.", file=sys.stderr)
         return 255
     while True:
         time.sleep(3600)
