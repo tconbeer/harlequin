@@ -10,7 +10,7 @@
 [project]
 
 name = "hsql"
-version = "2.12.2"
+version = "2.13.0"
 requires-python = ">=3.10"
 description = "The headless SQL client for scripts and agents. Installs Harlequin."
 authors = [
@@ -39,7 +39,7 @@ classifiers = [
 # the entry point below honest -- it points into a module that only exists in
 # releases that ship the `hsql` command.
 dependencies = [
-    "harlequin==2.12.2",
+    "harlequin==2.13.0",
 ]
 
 
