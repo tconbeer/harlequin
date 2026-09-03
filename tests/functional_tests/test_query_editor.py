@@ -653,7 +653,7 @@ async def test_external_editor_round_trip(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("f7")
+        await pilot.press("alt+e")
         await pilot.pause()
 
         assert seen_text == ["select 1"]
@@ -686,7 +686,7 @@ async def test_external_editor_nonzero_exit_discards_the_edit(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("f7")
+        await pilot.press("alt+e")
         await pilot.pause()
 
         assert app.editor.text == "select 1"
@@ -711,7 +711,7 @@ async def test_external_editor_without_an_editor_named(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("f7")
+        await pilot.press("alt+e")
         await pilot.pause()
 
         assert isinstance(app.screen, ErrorModal)
@@ -735,7 +735,7 @@ async def test_external_editor_in_a_terminal_that_cannot_suspend(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("f7")
+        await pilot.press("alt+e")
         await pilot.pause()
 
         assert isinstance(app.screen, ErrorModal)
