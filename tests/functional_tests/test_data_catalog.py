@@ -75,6 +75,11 @@ async def test_data_catalog(
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
 
+        # the catalog's background loader is not one of the workers waited on
+        # above, so the root's children may not be there yet.
+        while catalog.database_tree.loading or not catalog.database_tree.root.children:
+            await pilot.pause()
+
         # this test app has two databases attached.
         dbs = catalog.database_tree.root.children
         assert len(dbs) == 2
@@ -173,6 +178,9 @@ async def test_double_click_inserts_node_into_editor(
         while app.editor is None:
             await pilot.pause()
         catalog = app.data_catalog
+
+        while catalog.database_tree.loading or not catalog.database_tree.root.children:
+            await pilot.pause()
 
         dbs = catalog.database_tree.root.children
         assert isinstance(dbs[0].data, InteractiveCatalogItem)

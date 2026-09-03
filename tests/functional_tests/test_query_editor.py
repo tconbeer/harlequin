@@ -665,12 +665,15 @@ async def test_external_editor_round_trip(
             await pilot.pause()
         app.editor.text = "select 1"
         app.editor.focus()
+        await pilot.press("ctrl+end")
 
         press_alt_e(app)
         await pilot.pause()
 
         assert seen_text == ["select 1"]
         assert app.editor.text == "select 2"
+        # the cursor comes back where it was, not at the start of the buffer
+        assert app.editor.selection == Selection((0, 8), (0, 8))
 
         # the round trip is one undo away
         await pilot.press("ctrl+z")
@@ -755,3 +758,34 @@ async def test_external_editor_in_a_terminal_that_cannot_suspend(
         assert "suspend" in app.screen.text
         assert app.editor.text == "select 1"
         assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_external_editor_clamps_the_cursor_to_a_shorter_buffer(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A position the edited buffer no longer holds lands at the nearest one."""
+    monkeypatch.setenv("EDITOR", "ed")
+
+    def fake_run_in_terminal(app: App, argv: Sequence[str]) -> int:
+        Path(argv[-1]).write_text("select 1\nfrom f", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1\nfrom foobar"
+        app.editor.focus()
+        await pilot.press("ctrl+end")
+        assert app.editor.selection == Selection((1, 11), (1, 11))
+
+        press_alt_e(app)
+        await pilot.pause()
+
+        assert app.editor.text == "select 1\nfrom f"
+        assert app.editor.selection == Selection((1, 6), (1, 6))

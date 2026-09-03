@@ -262,6 +262,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         """
         if self.text_input is None:
             return
+        old_selection = self.text_input.selection
         try:
             edit = launch_external_editor(self.app, self.text)
         except HarlequinExternalError as e:
@@ -281,6 +282,12 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             )
         elif edit.text != self.text:
             self.text = edit.text
+            # assigning text moves the cursor to the start of the document, and
+            # a shorter buffer may no longer hold the position it was at.
+            self.text_input.selection = Selection(
+                self.text_input.clamp_visitable(old_selection.start),
+                self.text_input.clamp_visitable(old_selection.end),
+            )
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):
