@@ -7,10 +7,7 @@ the temp file that carries the buffer, and the suspend -- and the app owns the
 widgets the result is applied to, so nothing here imports Textual outside
 `TYPE_CHECKING`.
 
-The editor comes from `$VISUAL` or `$EDITOR` and from nowhere else. There is no
-fallback to `vi` or `notepad`: launching an editor the user never named is the
-one outcome nobody asked for. The environment needs no confirmation, either --
-it is the user's own shell session, which a config file is not.
+The editor comes from `$VISUAL` or `$EDITOR`.
 """
 
 from __future__ import annotations
