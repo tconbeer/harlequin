@@ -107,6 +107,14 @@ HARLEQUIN_ACTIONS = {
     "code_editor.load_buffer": Action(
         target=CodeEditor, action="load", description="Open Query", show=True
     ),
+    # priority: a focused TextArea inserts any key that carries a printable
+    # character, and a terminal's alt+e carries an "e".
+    "code_editor.launch_external_editor": Action(
+        target=CodeEditor,
+        action="launch_external_editor",
+        description="Launch External Editor",
+        priority=True,
+    ),
     "code_editor.find": Action(
         target=CodeEditor, action="find", description="Find", show=True
     ),
