@@ -922,6 +922,9 @@ class Harlequin(AppBase):
         self.post_message(
             TransactionModeChanged(new_mode=message.connection.transaction_mode)
         )
+        # the tree's items were built on the connection that died with the
+        # forward; rebuild the catalog on this one, or lazy nodes fail to load
+        self.update_schema_data()
         self.notify(
             "The tunnel dropped and has been reopened, so this is a new "
             "session: an open transaction, a temp table, and anything set with "

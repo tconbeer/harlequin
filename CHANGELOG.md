@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- When an SSH tunnel reconnects, Harlequin now refreshes the Data Catalog on the new connection, so lazy catalog nodes keep loading without a manual refresh ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
+
 ## [2.13.0] - 2026-09-02
 
 ### Features

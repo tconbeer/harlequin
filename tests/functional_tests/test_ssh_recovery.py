@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
+from textual.pilot import Pilot
+from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
+from harlequin.catalog import CatalogItem, InteractiveCatalogItem
+from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
 
@@ -103,6 +107,86 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
             # both halves: a new session, on a forward that is open again
             assert app.connection is not None
             assert app.connection is not first_connection
+    finally:
+        dropping_tunnel.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_tunnel_rebuilds_the_catalog_on_the_new_connection(
+    app_small_sqlite: Harlequin,
+    dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    expand_catalog_node: Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A query that reopens a dropped tunnel leaves a catalog that still loads.
+
+    Regression test for #1127: the tree is built on the connection that died
+    with the forward, so an unloaded node's fetch fails with a Catalog Error
+    until a manual refresh. Recovering the tunnel must rebuild the catalog
+    itself. sqlite closes for real when the old connection is replaced, so a
+    stale item's fetch fails deterministically.
+    """
+    # no prefetch work: the root node must still be unloaded after startup, so
+    # the test can expand a node whose fetch runs after the drop
+    monkeypatch.setattr(DatabaseTree, "_schedule_prefetch_scan", lambda self: None)
+    app = app_small_sqlite
+    app.ssh_tunnel = dropping_tunnel
+    try:
+        async with app.run_test() as pilot:
+            await wait_for_workers(app)
+            while app.editor is None:
+                await pilot.pause()
+            first_connection = app.connection
+            first_catalog = app.data_catalog.database_tree.catalog
+            assert first_connection is not None
+            assert first_catalog is not None
+            first_node = app.data_catalog.database_tree.root.children[0]
+            assert isinstance(first_node.data, InteractiveCatalogItem)
+            assert not first_node.data.loaded
+            assert first_node.data.connection is first_connection
+
+            drop_trigger.touch()
+            assert wait_until(lambda: dropping_tunnel.needs_restart)
+            # the child that comes back stays up
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+            # the next database action is a query, not a refresh: a refresh
+            # would rebuild the tree itself (the manual workaround)
+            app.editor.text = "select 1"
+            await pilot.press("ctrl+a")
+            await pilot.press("ctrl+j")
+            await wait_for_workers(app)
+            for _ in range(200):
+                if app.connection is not first_connection:
+                    break
+                await pilot.pause(0.05)
+            assert dropping_tunnel.running
+            assert app.connection is not None
+            assert app.connection is not first_connection
+
+            # the catalog was rebuilt on the new connection, without ctrl+r
+            tree = app.data_catalog.database_tree
+            for _ in range(200):
+                root_data = tree.root.children[0].data if tree.root.children else None
+                if (
+                    tree.catalog is not first_catalog
+                    and isinstance(root_data, InteractiveCatalogItem)
+                    and root_data.connection is app.connection
+                ):
+                    break
+                await pilot.pause(0.05)
+            assert tree.catalog is not first_catalog
+            assert tree.root.children
+            db_node = tree.root.children[0]
+            assert isinstance(db_node.data, InteractiveCatalogItem)
+            assert db_node.data.connection is app.connection
+
+            # and a lazy node still loads, with no Catalog Error modal
+            await expand_catalog_node(pilot, db_node)
+            assert db_node.data.loaded
+            assert len(app.screen_stack) == 1
     finally:
         dropping_tunnel.stop()
 
