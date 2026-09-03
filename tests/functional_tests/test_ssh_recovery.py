@@ -19,7 +19,7 @@ from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
-from harlequin.catalog import CatalogItem, InteractiveCatalogItem
+from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
@@ -52,11 +52,32 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
     return predicate()
 
 
+async def _rendered_catalog(
+    pilot: Pilot, app: Harlequin, replacing: object = None
+) -> Catalog:
+    """The catalog the tree is holding, once it is not `replacing`.
+
+    `wait_for_workers` returns when `get_catalog()` has answered, which is
+    before the app has handled the message carrying its result, so reading the
+    tree straight after it races the message pump.
+    """
+    tree = app.data_catalog.database_tree
+    for _ in range(200):
+        if tree.catalog is not None and tree.catalog is not replacing:
+            return tree.catalog
+        await pilot.pause(0.05)
+    raise AssertionError(
+        "the data catalog was never replaced"
+        if replacing
+        else "the data catalog never loaded"
+    )
+
+
 async def _first_database_node(pilot: Pilot, app: Harlequin) -> TreeNode[CatalogItem]:
     """The tree's first database node, once the catalog has been rendered.
 
-    `wait_for_workers` returns when `get_catalog()` has answered, which is
-    before the message that reloads the tree has been handled.
+    Setting the catalog and mounting its nodes are two steps, so a tree with a
+    catalog can still have no children.
     """
     tree = app.data_catalog.database_tree
     for _ in range(200):
@@ -165,9 +186,8 @@ async def test_a_reconnect_leaves_a_catalog_that_still_loads(
         async with app.run_test() as pilot:
             await wait_for_workers(app)
             first_connection = app.connection
-            first_catalog = app.data_catalog.database_tree.catalog
+            first_catalog = await _rendered_catalog(pilot, app)
             assert first_connection is not None
-            assert first_catalog is not None
             db_node = await _first_database_node(pilot, app)
             assert isinstance(db_node.data, InteractiveCatalogItem)
             assert not db_node.data.loaded
@@ -182,14 +202,13 @@ async def test_a_reconnect_leaves_a_catalog_that_still_loads(
             app.post_message(QuerySubmitted(queries=["select 1"], limit=None))
             await pilot.pause()
             await wait_for_workers(app)
-            for _ in range(200):
-                if app.data_catalog.database_tree.catalog is not first_catalog:
-                    break
-                await pilot.pause(0.05)
+            rebuilt_catalog = await _rendered_catalog(
+                pilot, app, replacing=first_catalog
+            )
 
             assert len(schema_updates) == 1
+            assert rebuilt_catalog is not first_catalog
             assert app.connection is not first_connection
-            assert app.data_catalog.database_tree.catalog is not first_catalog
             db_node = await _first_database_node(pilot, app)
             assert isinstance(db_node.data, InteractiveCatalogItem)
             assert db_node.data.connection is app.connection
@@ -215,8 +234,7 @@ async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
     try:
         async with app.run_test() as pilot:
             await wait_for_workers(app)
-            first_catalog = app.data_catalog.database_tree.catalog
-            assert first_catalog is not None
+            first_catalog = await _rendered_catalog(pilot, app)
 
             drop_trigger.touch()
             assert wait_until(lambda: dropping_tunnel.needs_restart)
@@ -227,10 +245,12 @@ async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
             schema_updates.clear()
             app.action_refresh_catalog()
             await wait_for_workers(app)
-            await pilot.pause()
+            rebuilt_catalog = await _rendered_catalog(
+                pilot, app, replacing=first_catalog
+            )
 
             assert len(schema_updates) == 1
-            assert app.data_catalog.database_tree.catalog is not first_catalog
+            assert rebuilt_catalog is not first_catalog
     finally:
         dropping_tunnel.stop()
 
