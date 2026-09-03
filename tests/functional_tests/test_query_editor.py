@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
-from typing import Awaitable, Callable, List
+from pathlib import Path
+from typing import Awaitable, Callable, List, Sequence
 
 import pytest
+from textual.app import App
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 from textual.worker import WorkerFailed
@@ -12,6 +14,7 @@ from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
 from harlequin.components.code_editor import CodeEditor
+from harlequin.components.text_modal import ErrorModal
 from harlequin.statements import find_separators, split
 
 
@@ -619,3 +622,123 @@ async def test_numbers_do_not_open_the_completion_list(
         await pilot.press("enter")
         await pilot.pause()
         assert app.editor.text == "1\n"
+
+
+@pytest.mark.asyncio
+async def test_external_editor_round_trip(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The buffer goes out to $EDITOR as a file and comes back as one edit.
+
+    The suspend is patched out: the headless driver cannot suspend, so
+    run_in_terminal is the seam that stands in for a human's editor.
+    """
+    monkeypatch.setenv("EDITOR", "ed")
+    seen_text: list[str] = []
+
+    def fake_run_in_terminal(app: App, argv: Sequence[str]) -> int:
+        path = Path(argv[-1])
+        seen_text.append(path.read_text(encoding="utf-8"))
+        path.write_text("select 2", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1"
+        app.editor.focus()
+
+        await pilot.press("f7")
+        await pilot.pause()
+
+        assert seen_text == ["select 1"]
+        assert app.editor.text == "select 2"
+
+        # the round trip is one undo away
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+        assert app.editor.text == "select 1"
+
+
+@pytest.mark.asyncio
+async def test_external_editor_nonzero_exit_discards_the_edit(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "ed")
+
+    def fake_run_in_terminal(app: App, argv: Sequence[str]) -> int:
+        Path(argv[-1]).write_text("select 2", encoding="utf-8")
+        return 1
+
+    monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1"
+        app.editor.focus()
+
+        await pilot.press("f7")
+        await pilot.pause()
+
+        assert app.editor.text == "select 1"
+        notification = list(app._notifications)[-1]
+        assert "status 1" in notification.message
+        assert notification.severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_external_editor_without_an_editor_named(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1"
+        app.editor.focus()
+
+        await pilot.press("f7")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ErrorModal)
+        assert "$EDITOR" in app.screen.text
+        assert app.editor.text == "select 1"
+
+
+@pytest.mark.asyncio
+async def test_external_editor_in_a_terminal_that_cannot_suspend(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real suspend, which the headless driver refuses, is an error modal."""
+    monkeypatch.setenv("EDITOR", sys.executable)
+
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        app.editor.text = "select 1"
+        app.editor.focus()
+
+        await pilot.press("f7")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ErrorModal)
+        assert "suspend" in app.screen.text
+        assert app.editor.text == "select 1"
+        assert app.is_running

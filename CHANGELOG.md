@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Press `f7` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
+
 ### Bug Fixes
 
 - Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).

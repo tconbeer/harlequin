@@ -107,6 +107,11 @@ HARLEQUIN_ACTIONS = {
     "code_editor.load_buffer": Action(
         target=CodeEditor, action="load", description="Open Query", show=True
     ),
+    "code_editor.edit_externally": Action(
+        target=CodeEditor,
+        action="edit_externally",
+        description="Edit in External Editor",
+    ),
     "code_editor.find": Action(
         target=CodeEditor, action="find", description="Find", show=True
     ),

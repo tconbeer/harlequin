@@ -26,6 +26,8 @@ from harlequin.autocomplete import (
 )
 from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
+from harlequin.exception import HarlequinExternalError
+from harlequin.external import edit_text_externally
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators
 
@@ -250,6 +252,35 @@ class CodeEditor(TextEditor, inherit_bindings=False):
                 self.app.notify("Formatted query.")
             else:
                 self.app.notify("Query was already formatted; no changes made.")
+
+    def action_edit_externally(self) -> None:
+        """Round-trips the buffer through the user's editor.
+
+        Synchronous on the main thread, because the app has to be suspended for
+        the editor to own the terminal; the result is assigned to `text`, which
+        checkpoints undo history, so the whole round trip is one Ctrl+Z away.
+        """
+        if self.text_input is None:
+            return
+        try:
+            edit = edit_text_externally(self.app, self.text)
+        except HarlequinExternalError as e:
+            self.app.push_screen(
+                ErrorModal(
+                    title="External Editor Error",
+                    header=e.title,
+                    error=e,
+                )
+            )
+            return
+        if edit.text is None:
+            self.app.notify(
+                f"Your editor exited with status {edit.returncode}; "
+                "no changes were made to the buffer.",
+                severity="warning",
+            )
+        elif edit.text != self.text:
+            self.text = edit.text
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):
