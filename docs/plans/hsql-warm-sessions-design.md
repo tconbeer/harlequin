@@ -1,18 +1,24 @@
 # Warm sessions for `hsql` — a design for `hsql --serve`
 
 A design for a long-lived `hsql` process that holds an open connection, so that repeated
-invocations pay neither the import cost nor the connection cost again. Written against
-2.9.0 (M1 shipped, M2 planned in [the M2 technical plan](./m2-hsql-technical-plan.md)),
-and measured on this checkout: Python 3.11.15, Linux, four adapters installed.
+invocations pay neither the import cost nor the connection cost again.
 
-**Bottom line up front.** The idea works, and the win is bigger than the 250ms it was
-proposed to recover — but only if one constraint is treated as the load-bearing one:
-**the client must not import anything Harlequin owns.** A prototype built to that rule
-answers `select 1` in **20ms against 250ms cold**, and 20 sequential queries in **0.46s
-against 5.4s**. A client that imports `click` and nothing else would already be at 55ms,
-and one that imports `harlequin.config` at 70ms — so the difference between a good version
-of this feature and a mediocre one is decided by the first three lines of the console
-script, not by the protocol.
+**Revised against 2.13.0**, with [M1](./m1-hsql-technical-plan.md),
+[M2](./m2-hsql-technical-plan.md) and [M3](./m3-hsql-technical-plan.md) shipped and SSH
+tunnels landed; the first draft was written against 2.9.0, when M2 was still a plan. Every
+number below is re-measured on this checkout — Python 3.10.15, Linux, four adapters
+installed — on a machine about a third slower than the one the first draft used, so read
+the ratios rather than the absolutes. §10 lists what the revision changed, for a reader
+who has the first draft in their head. PR 1 has shipped; §9 says what is in it.
+
+**Bottom line up front.** The idea works, and the win is bigger than the quarter-second it
+was proposed to recover — but only if one constraint is treated as the load-bearing one:
+**the client must not import anything Harlequin owns.** The client built to that rule and
+shipped in PR 1 answers `select 1` in **27ms against 348ms cold**, and 20 sequential
+invocations in **0.55s against 7.5s**. A client that imported `click` and nothing else
+would already be near 65ms, and one that imported `harlequin.config` near 90ms (§2) — so
+the difference between a good version of this feature and a mediocre one is decided by the
+first few lines of the console script, not by the protocol.
 
 The other finding is that speed is the *smaller* half. A warm process is a **session**:
 temp tables, `SET`, `search_path`, and open transactions survive between invocations. That
@@ -24,54 +30,56 @@ Recommended shape, in one line:
 
 ```bash
 hsql --serve prod ./warehouse.db      # foreground, holds the connection
-HSQL_SESSION=prod hsql -c "select 1"  # 20ms, same bytes, same exit code
+HSQL_SESSION=prod hsql -c "select 1"  # 27ms, same bytes, same exit code
 ```
 
 ---
 
-## 1. Where the 250ms actually goes
+## 1. Where the 350ms actually goes
 
-`hsql -c "select 1"` against in-memory DuckDB, best of twelve runs of the real console
+`hsql -c "select 1"` against in-memory DuckDB, best of twenty runs of the real console
 script:
 
 | Invocation | Best | Median |
 | --- | --- | --- |
-| `hsql -c "select 1"` | 243ms | 250ms |
-| `hsql -c "select 1" -a sqlite` | 225ms | 237ms |
-| `hsql --help` | 91ms | 93ms |
-| `harlequin --version` | 733ms | 755ms |
+| `hsql -c "select 1"` | 348ms | 362ms |
+| `hsql -c "select 1" -a sqlite` | 323ms | 336ms |
+| `hsql --help` | 130ms | 134ms |
+| `harlequin --version` | 895ms | 917ms |
 
 Instrumenting the same work phase by phase, cumulative from process spawn:
 
 | Phase | Cumulative | Cost |
 | --- | --- | --- |
-| interpreter ready | 12ms | 12ms |
-| `import click` | 39ms | 27ms |
-| `harlequin.config` | 54ms | 15ms |
-| `harlequin.plugins` | 72ms | 18ms |
-| `load_adapter("duckdb")` | 115ms | 43ms |
-| `harlequin.query` (pyarrow + `textual_fastdatatable.backend`) | 182ms | 67ms |
-| `adapter()` | 182ms | 0ms |
-| `connect()` | 193ms | 11ms |
-| `execute()` + `fetch()` | 195ms | 2ms |
-| layout | 196ms | 1ms |
+| interpreter ready | 17ms | 17ms |
+| `import click` | 53ms | 36ms |
+| `harlequin.config` | 87ms | 34ms |
+| `harlequin.plugins` | 93ms | 6ms |
+| `load_adapter("duckdb")` | 163ms | 70ms |
+| `harlequin.query` (pyarrow + `textual_fastdatatable.backend`) | 266ms | 103ms |
+| `adapter()` + `connect()` | 279ms | 13ms |
+| the rest: `harlequin.statements`, `harlequin.layout`, and the query | 329ms | 50ms |
 
-**The database work is 2ms of a 250ms invocation.** Everything else is getting ready to do
-it. M1 already took the cheap wins — lazy entry points, the lazy `textual-fastdatatable`
-`__init__`, deferred `harlequin.query` — and what is left is genuinely irreducible on the
-cold path:
+That last row is mostly two more imports — tree-sitter for the splitter and wcwidth for
+the layout. Measured in a process that has already paid for all of them, `connect()` is
+10.8ms and **`execute()` + `fetch()` + layout together are 5.0ms.**
 
-- **pyarrow, 67ms with the backend.** `harlequin.query` normalizes every result set
+**So the database work is 5ms of a 350ms invocation.** Everything else is getting ready to
+do it. M1 already took the cheap wins — lazy entry points, the lazy
+`textual-fastdatatable` `__init__`, deferred `harlequin.query` — and what is left is
+genuinely irreducible on the cold path:
+
+- **pyarrow, 103ms with the backend.** `harlequin.query` normalizes every result set
   through `create_backend()`, which is the whole reason both front ends agree about what a
   row is. Removing it means a second normalizer, which the M1 plan rejected for good
   reasons that have not changed.
-- **The driver, 43ms for duckdb.** Not ours.
-- **click, 27ms.** Ours to remove in principle, at the cost of hand-rolling the option
+- **The driver, 70ms for duckdb.** Not ours.
+- **click, 36ms.** Ours to remove in principle, at the cost of hand-rolling the option
   surface that adapters plug into. Not worth it.
-- **CPython itself, 12ms.** The floor for any Python process on this machine.
+- **CPython itself, 17ms.** The floor for any Python process on this machine.
 
 So: even a version of `hsql` that imported *nothing* of Harlequin's beyond click and its
-config would land near 150ms, and one that also dropped click near 120ms. **There is no
+config would land near 200ms, and one that also dropped click near 165ms. **There is no
 sequence of import fixes that reaches 50ms.** That is the honest case for a second
 process, and it is worth stating in the plan because the alternative — "keep optimizing" —
 has been the right answer up to now and stops being the right answer here.
@@ -79,70 +87,98 @@ has been the right answer up to now and stops being the right answer here.
 ### 1.1 And `connect()` is 11ms only because DuckDB is a library
 
 The table above understates the win, because the adapter it measures opens a file. The
-in-tree numbers are `connect()` at 11ms for in-memory DuckDB, 14ms for a DuckDB file, 2.6ms
-for SQLite. Every adapter that speaks to a *server* — Postgres, MySQL, BigQuery, Trino,
+in-tree number is `connect()` at 10.8ms for in-memory DuckDB, and a local file or SQLite
+is the same order. Every adapter that speaks to a *server* — Postgres, MySQL, BigQuery, Trino,
 Databricks, Snowflake — pays TCP setup, a TLS handshake, and an auth round trip on each
 `connect()`, and for the OAuth-shaped ones a token exchange on top. Those are the
 connections a human hands an agent, and they are the ones where holding the connection open
 matters more than holding the imports.
 
-This design should therefore not be sold on "250ms → 20ms against DuckDB." It should be
+This design should therefore not be sold on "350ms → 27ms against DuckDB." It should be
 sold on **the invocation cost stops depending on how far away the database is**, with the
 DuckDB number as the floor case rather than the typical one.
 
 ## 2. What a warm session costs instead — measured, not projected
 
-I built a throwaway server (a `AF_UNIX` socket, one pre-connected DuckDB connection, the
-real `harlequin.query` core and the real `hsql.output` writer) and a stdlib-only client
-that sends SQL and writes back whatever bytes it gets. Same machine, same twenty runs:
+The first draft measured a throwaway prototype. These are the **shipped** client from PR 1
+— the real `main()`, the real `harlequin.hsql.client`, the real frames — against a stub
+server that speaks `protocol.py` and returns fixed bytes without touching a database, so
+the number is the invocation's cost rather than a query's. Same machine, twenty runs:
 
 | | Best | Median |
 | --- | --- | --- |
-| warm round trip, `select 1` | **20.0ms** | 21.4ms |
-| warm round trip, 1000 rows | 22.0ms | 23.3ms |
-| cold `hsql -c "select 1"` | 253.7ms | 263.2ms |
-| **20 sequential queries, warm** | **459ms** | — |
-| **20 sequential queries, cold** | **5386ms** | — |
+| warm round trip, `select 1` | **26.6ms** | 27.6ms |
+| cold `hsql -c "select 1"` | 348.2ms | 361.8ms |
+| **20 sequential invocations, warm** | **547ms** | — |
+| **20 sequential invocations, cold** | **7520ms** | — |
 
-The warm client's 20ms decomposes almost entirely into things that are not the feature:
+The warm client's 27ms decomposes almost entirely into things that are not the feature:
 
-| | Cost |
-| --- | --- |
-| CPython boot (`python -c pass`) | 12ms |
-| `import socket` | +6ms |
-| `import struct` | +1ms |
-| connect, send, receive, write, exit | ~1ms |
+| | Cumulative | Modules |
+| --- | --- | --- |
+| CPython boot (`python -c pass`) | 16.8ms | 33 |
+| `import harlequin.hsql` (the entry point) | 17.9ms | 36 |
+| `import harlequin.hsql.session` (the decision) | 18.0ms | 37 |
+| `import harlequin.hsql.client` (socket, struct, protocol) | 26.1ms | 58 |
+| connect, send, receive, write, exit | ~1ms | — |
 
-**The round trip is about a millisecond.** The client is 95% interpreter start-up, which
+**The round trip is about a millisecond.** The client is ~95% interpreter start-up, which
 means the protocol can afford to be careful — framing, a handshake, a version check, a
-capability exchange — without moving the number. It also means the ceiling is 12ms unless
+capability exchange — without moving the number. It also means the ceiling is 17ms unless
 the client stops being Python, which §7 leaves as future work rather than pretending it is
 free.
 
+**25 modules over a bare interpreter is the whole of it**, and that is why §6's guard
+counts modules rather than milliseconds: a count is the same on every machine, where a
+wall clock on a shared CI runner is not. For scale, on the same interpreter `import click`
+is 100 modules, `harlequin.config` 141 and `harlequin.hsql.diagnostics` 149.
+
 ### 2.1 The constraint this puts on the entry point
 
-`import click` costs 27ms and `import json` costs 3.5ms. On a 20ms budget those are 135%
-and 18% respectively. So the rule is not "the client should be lean," it is:
+`import click` costs 36ms and `import json` costs 9ms. Against a 27ms invocation those are
+133% and 33%. So the rule is not "the client should be lean," it is:
 
 > **`harlequin.hsql.main()` must decide whether this invocation belongs to a session, and
-> hand off to a stdlib-only module, before it imports click.**
+> hand off to a stdlib-only module, before it imports anything that is not stdlib.**
 
-Today `main()` opens with `import click`. The change is to look at `HSQL_SESSION` /
-`--session` first — a `sys.argv` scan and an `os.environ` lookup, both free — and only fall
-through to `build_cli()` when there is no session. That is a five-line change to
-`__init__.py` and it is the single most important line-level decision in this document.
+That is the single most important line-level decision in this document, and the first
+draft under-scoped it. Three things were on the entry point's path, not one, and PR 1 took
+all three off:
+
+- **click, 36ms.** `main()` opened with `import click`. It now looks at `HSQL_SESSION` and
+  `--session` first — a `sys.argv` scan and an `os.environ` lookup, both free — and only
+  falls through to `build_cli()` when there is no session.
+- **`harlequin.hsql.diagnostics`, 68ms.** The bigger one, and invisible until measured:
+  `harlequin/hsql/__init__.py` imported `ExitCode` from it at module scope, and that
+  module reaches `harlequin.redact` → `harlequin.config` → msgspec. Deferred into the cold
+  path, where it was already being imported anyway.
+- **`typing`, 10ms.** `harlequin/__init__.py` imported it, and importing *any*
+  `harlequin.*` submodule executes that file. Every annotation there is a string under PEP
+  563, so the module now declares `TYPE_CHECKING = False` itself and imports nothing at
+  all. The four modules on the client's path do the same.
+
+A consequence worth stating, because it looks like a violation of a rule this repo has:
+**the client writes its own stderr rather than going through `diagnostics._write()`**,
+which is otherwise "the one line every message leaves through". Nothing is lost. That
+function exists to redact, and the client holds no secret to redact — it reads no profile,
+loads no adapter, and never sees a connection string. The server's stderr arrives already
+redacted and is copied through untouched.
 
 It also gives the guard a shape CI can hold, exactly as the "no Textual in `hsql`" rule
-does: **an import-linter contract saying the client module's graph contains nothing from
-`harlequin` and nothing from `click`**, plus a test that runs the client with
-`-X importtime` and fails if the module count crosses a threshold. Otherwise the first
-contributor who needs a config value in the client re-adds 15ms and nobody notices.
+does: **an import-linter contract saying the client's three modules reach nothing of
+Harlequin's and nothing third-party**, plus a run-time test that counts modules against a
+bare interpreter. One caveat the first draft missed: import-linter cannot express "this
+package's `__init__` may not import click at module scope" — a contract's source module
+matches its descendants — so *that* half is a run-time test only
+(`test_deciding_whether_an_invocation_is_warm_does_not_import_click`). Without both, the
+first contributor who needs a config value in the client re-adds 68ms and nobody
+notices.
 
 ## 3. Why a daemon, rather than the four cheaper things
 
 ### 3.1 Not "keep optimizing imports"
 
-§1 measured the floor at ~120–150ms. Rejected on arithmetic.
+§1 measured the floor at ~165–200ms. Rejected on arithmetic.
 
 ### 3.2 Not a batch mode (`hsql --repl`, statements on stdin)
 
@@ -161,7 +197,8 @@ socket.
 ### 3.3 Not MCP instead — but this is the closest call
 
 M6 in the product plan is `hsql mcp`: a long-lived process an agent talks to over stdio,
-running on the same M1 execution core. **It is already a warm session.** It holds a
+running on the same M1 execution core — still the last milestone, with M4 (handoff, in
+three releases) and M5 (streaming) ahead of it. **It is already a warm session.** It holds a
 connection, it pays the imports once, and it needs no socket, no file permissions, no
 daemon lifecycle, and no uid check, because the agent harness owns the process and the pipe
 is the security boundary. If the only persona were "an agent whose harness speaks MCP,"
@@ -231,7 +268,7 @@ Considered and not taken:
 | **`hsqld NAME CONN_STR`** + `hsql --session NAME` | The clearest of all, on forty years of `sshd`/`dockerd`, and it frees the daemon's own knobs from any prefix. Costs a third console script to package and document, and worse discoverability than `hsql` — which the product plan already lists as a risk. **The runner-up**; take it if the daemon's flag surface ever outgrows one command. |
 | `--listen NAME` | Accurate about the mechanism, unambiguous about direction, but reads network-y: someone will look for the port. Wrong prior for a design that refuses TCP on purpose (§4.7). |
 | `--daemon NAME` | Unambiguous and false. This process runs in the foreground; a `--daemon` flag that does not daemonize is a lie the user finds out about when they try to background it. |
-| `--host-session NAME` | "Host a session" reads well, but `-h/--host` is a connection option on the postgres, mysql and trino adapters — and **hsql's own flags win collisions** (`_attach_adapter_options`), so this would quietly take `--host` away from them. Every new flag in this design needs that check; `--serve`, `--session`, `--idle-timeout` and `--max-lifetime` pass it against the in-tree adapters, and should be checked against the ecosystem before PR 1. |
+| `--host-session NAME` | "Host a session" reads well, but `-h/--host` is a connection option on the postgres, mysql and trino adapters — and **hsql's own flags win collisions** (`first_pass.attach_adapter_options`, under the spellings hsql reserves), so this would quietly take `--host` away from them. Every new flag in this design needs that check. Done, against duckdb, sqlite, postgres and mysql: none of `--serve`, `--session`, `--idle-timeout`, `--max-lifetime` or `--queue-timeout` collides with anything any of them declares. |
 | `--attach NAME` | tmux/docker vocabulary, and every agent knows it — but `ATTACH` is a DuckDB statement for attaching a database. Collides with the subject matter, in a tool whose subject matter is databases. |
 | `--connect NAME` | Overloaded with the connection every other part of this CLI is about. |
 | No server flag: infer the role from argument shape (a CONN_STR and no SQL means serve) | This is principle 7's "never make the agent guess," inverted. |
@@ -251,8 +288,8 @@ by *when the question it answers can possibly be answered*:
 
 | Group | Answered | Flags | `--serve` | client |
 | --- | --- | --- | --- | --- |
-| **connection-time** | once, when the server connects | `CONN_STR`, `-a`, `-P`, `--config-path`, every adapter option, M2's `--read-only` | **accepted** | accepted, but rejected if it differs from the server's (§4.4) |
-| **per-request** | on every invocation | `-c`, `-f`, `-o`, `--format` and the shorthand flags, `-t`, `-A`, `--no-header`, `--no-footer`, `--null-string`, `--limit`, `--display-rows`, `--result`, `--on-error`, `--stats`, `--color`, M2's mode options and `--timeout` | **refused, exit 2** | accepted |
+| **connection-time** | once, when the server connects | `CONN_STR`, `-a`, `-P`, `--config-path`, `-r`/`--read-only`, every adapter option, and the five SSH options (`--ssh-host`, `--ssh-forward`, `--ssh-batch-mode`, `--ssh-allow-reuse`, `--ssh-timeout`) | **accepted** | accepted, but rejected if it differs from the server's (§4.4) |
+| **per-request** | on every invocation | `-c`, `-f`, `-o`, `--format` and the shorthand flags, `-t`, `-A`, `-x`, `--no-header`, `--no-footer`, `--null-string`, `--limit`, `--display-rows`, `--result`, `--on-error`, `--stats`, `--color`, `--timeout`, and every mode: `--catalog`, `--catalog-search`, `--path`, `--config`, `--info`, `--spec`, `--skill` | **refused, exit 2** | accepted |
 | **server-lifetime** | once, and only a server has one | `--idle-timeout`, `--max-lifetime`, `--queue-timeout` | **accepted** | refused, exit 2 |
 
 The partition is exact and it is symmetric: **each side refuses the other's group.** That
@@ -283,17 +320,35 @@ would mean the only way to serve anything but a local file is a profile.
 
 But `--serve` changes their risk profile, and the docs should say so. **A server's command
 line is long-lived and visible in `ps`.** A password on a one-shot invocation is exposed for
-250ms; the same password on an eight-hour session is exposed for eight hours, to every
+350ms; the same password on an eight-hour session is exposed for eight hours, to every
 process on the box. So:
 
 - **`-P` is the spelling the docs should show.** A profile is already "how to connect to my
   warehouse," and `hsql --serve prod -P prod` should be the normal form with the flag-soup
   version as the exception.
 - **Warn when a secret-typed option is passed literally to `--serve`**, detected through
-  M2's declarative secret type (#667) rather than a hand-written list of flag names. A
-  warning rather than a refusal in v1, because refusing needs env interpolation (#898) to
-  have shipped first so that there is a documented alternative for the container case.
-  Tightening it to a refusal once #898 lands is a reasonable later call, and a cheap one.
+  the declarative `secret=` that shipped with #667 rather than a hand-written list of flag
+  names. A warning rather than a refusal in v1, because refusing needs env interpolation
+  (#898) to have shipped first so that there is a documented alternative for the container
+  case. Tightening it to a refusal once #898 lands is a reasonable later call, and a cheap
+  one.
+
+#### The SSH options are connection-time, and a session is where they pay off
+
+They landed after the first draft, and they fit the partition without an exception: a
+tunnel is opened once, on the way to `connect()`, so `--ssh-host` and its four companions
+are group 1. This is the case a warm session is *most* worth having — a tunnel costs an
+ssh handshake on every cold invocation, and holding it open is the larger half of the win
+§1.1 describes.
+
+Two consequences the server has to carry rather than invent:
+
+- **The tunnel is part of what the server holds open**, so §4.7's "the server is a
+  credential" reads on it too, and `--max-lifetime` bounds it.
+- **`--ssh-allow-reuse` is already a `CLI_ONLY_SSH_KEYS` key** — a config file may not turn
+  off the check that the local port is not already someone else's listener, because config
+  files are discovered in the working directory. That reasoning does not weaken on a
+  server; it is the same flag, read the same way.
 
 Clients opt in two ways, and the distinction matters:
 
@@ -301,6 +356,11 @@ Clients opt in two ways, and the distinction matters:
 | --- | --- | --- |
 | **ambient** | `HSQL_SESSION=prod` in the environment | warn on stderr, run cold |
 | **explicit** | `hsql --session prod -c "..."` | fail, exit 3 (connection) |
+
+A name that could never name a session — one with a `/` or a space in it, which §4.4's
+validation refuses — is the same shape of answer one step earlier: exit **2**, because a
+bad name is a bad argument rather than a server that is down. Native Windows is the same
+again: explicit exits 2 (it can never work here), ambient warns and runs cold.
 
 An environment variable is a preference — the human or the harness set it once, and an
 `hsql` call that still works when the server is down is the behavior that does not break a
@@ -316,14 +376,20 @@ my temp tables vanished" must never be something the caller has to guess at.
 
 ```
 harlequin/hsql/
-  __init__.py     main(): session check, then click or the client. No new imports.
-  client.py       stdlib only: socket, struct, sys, os. No click, no json, no harlequin.
+  __init__.py     main(): session check, then click or the client. Stdlib only.
+  session.py      which session an invocation names, and where its socket is.
+                  Stdlib only, and read before anything else.
+  client.py       stdlib only: socket, struct, sys, os. No click, no json, no
+                  harlequin beyond session.py and protocol.py.
   protocol.py     framing + the frame vocabulary, shared -- but written so that
                   client.py's half needs no imports the client cannot afford.
   server.py       accept loop, one worker, lifecycle, the uid check.
-  session.py      socket path derivation, stale-socket handling, the identity record.
   cli.py          unchanged, plus --serve / --session
 ```
+
+The first three of those shipped in PR 1. `session.py` is separate from `client.py`
+because the decision has to be cheaper than the client: a cold invocation reads it, finds
+no session, and pays two modules and no socket for the question.
 
 **The server parses the flags; the client does not.** The client scans `sys.argv` for the
 three things it cannot avoid knowing about —
@@ -410,11 +476,19 @@ Not "reconnect with the new options" (that is a different session, and silently 
 the database under a caller is the worst possible behavior), and not "ignore them"
 (a client that typed `-a postgres` and got DuckDB has been lied to).
 
-Socket path: `$XDG_RUNTIME_DIR/hsql/<name>.sock`, falling back to a 0700 directory under
-the platformdirs user runtime/cache dir when `XDG_RUNTIME_DIR` is unset — which is macOS,
-and also WSL2 without systemd, and also this container (§4.8). The fallback is the common
-path, not the exotic one. The name is validated as `[A-Za-z0-9_-]{1,64}` so it cannot escape
-the directory.
+Socket path: `$XDG_RUNTIME_DIR/hsql/<name>.sock`, falling back to `$TMPDIR/hsql-<uid>/`
+(or `/tmp/hsql-<uid>/`) when `XDG_RUNTIME_DIR` is unset — which is macOS, and also WSL2
+without systemd, and also this container (§4.8). The fallback is the common path, not the
+exotic one, and the directory is created 0700 and owned by the user either way. The name is
+validated as `[A-Za-z0-9_-]{1,64}` so it cannot escape the directory.
+
+**Not platformdirs**, which is what the rest of Harlequin uses for a user directory and
+what the first draft named here. It costs ~22ms to import — about the whole of what a warm
+invocation is supposed to cost — so the derivation is a dozen lines of `os.path` in
+`session.py`, shared by both halves so they cannot disagree about where the socket is. It
+is also the smaller question than it looks: `XDG_RUNTIME_DIR` is the only path platformdirs
+would resolve differently on Linux, and the fallback branch is the one this design has to
+get right anyway.
 
 **No `--session-socket PATH` in v1.** Letting a caller name the socket file directly is the
 obvious escape hatch and the obvious way to end up with a socket on a mode-0777 shared
@@ -439,9 +513,9 @@ exclusive=True)` workers, which is to say *one at a time, and cancel the previou
 `hsql --serve` inherits that invariant rather than inventing a new one.
 
 So: **a single worker thread, and a request queue.** A second client waits. Waiting is
-bounded by `--queue-timeout` (default: the same value as `--timeout`, once M2 ships
-it), and a client that times out in the queue exits 4 with a message that says it never
-reached the database — which is a different fact from a query that ran too long, and the
+bounded by `--queue-timeout` (default: the same value as the request's own `--timeout`,
+which shipped in M2), and a client that times out in the queue exits 4 with a message that
+says it never reached the database — which is a different fact from a query that ran too long, and the
 caller needs to be able to tell them apart.
 
 The accept loop stays responsive while a query runs, so `--session-status` and cancellation
@@ -477,6 +551,13 @@ request 7 came back empty" — rather than from anything the adapter says. Worth
 because the alternative is a caller who sees `(0 rows)` and exit 0 for a query that was
 killed.
 
+**This is not a new mechanism, and PR 4 should not invent one.** `--timeout` shipped in M2
+and has exactly this problem: `harlequin/hsql/timeout.py` cancels, then reads its own
+deadline between results and attributes the empty result itself, and
+`diagnostics.report_timeout()` is the line that says so. The server's bookkeeping is the
+same shape, one level up — "I called `cancel()` on request 7" instead of "the deadline
+passed" — and it should read like it.
+
 (A cleaner long-term fix is a distinguished return or exception on the contract, which is
 an adapter-ecosystem change of the same shape as M2's five additive members. Out of scope
 here; noted in §7.)
@@ -501,8 +582,12 @@ is no password on the wire and there does not need to be — the socket *is* the
   `0` to disable). A credential held forever because someone opened a tmux tab in March is
   the predictable bad outcome; these two make the default outcome "it goes away."
 - **No secrets in `--session-status`.** It reports the adapter, the session name, the
-  redacted connection identity, uptime, request count, and current state — through M2's
-  declarative redaction (#667), not through a hand-written allowlist.
+  redacted connection identity, uptime, request count, and current state — through
+  `harlequin.redact` and the declarative `secret=` that shipped with #667, not through a
+  hand-written allowlist.
+- **An SSH tunnel is part of the credential.** A session opened with `--ssh-host` holds an
+  `ssh` process and a local listener for as long as it runs, and `--max-lifetime` is what
+  bounds that too.
 
 ### 4.8 Windows — and WSL2, which is not the same question
 
@@ -532,8 +617,8 @@ Two WSL-specific notes, both of which §4.4's path derivation already handles:
   not work. The socket lives in the runtime dir, so this is right by construction — but it
   is one of the reasons §4.4 keeps `--session-socket PATH` out of v1.
 - **`XDG_RUNTIME_DIR` is often unset under WSL2**, since systemd is opt-in there. That is
-  exactly the fallback branch §4.4 specifies (a 0700 directory under the platformdirs
-  runtime dir), and it is not hypothetical — it is unset in the container these
+  exactly the fallback branch §4.4 specifies (a 0700 `hsql-<uid>` directory under
+  `TMPDIR`), and it is not hypothetical — it is unset in the container these
   measurements were taken in, too. The fallback is the common path, not the exotic one, and
   should be tested as such.
 
@@ -547,7 +632,7 @@ different Python installations on two different filesystems, and the Windows one
 | Failure | Detection | Behavior |
 | --- | --- | --- |
 | **Stale socket** (server died, file remains) | `connect()` → `ECONNREFUSED` | client unlinks it, then falls back or fails per §4.1 |
-| **Version skew** (server 2.9, client 2.10) | server sends its version in the handshake; the client compares against a literal in `client.py` | refuse, exit 2, "restart the session" — never serve, because output bytes are the API and two versions may not agree on them |
+| **Version skew** (server 2.13, client 2.14) | server sends its version in the handshake; the client compares against a literal in `protocol.py` | refuse, exit 2, "restart the session" — never serve, because output bytes are the API and two versions may not agree on them |
 | **Server busy shutting down** | server stops accepting before it closes the connection | client sees a clean refusal, not a truncated frame |
 | **Client dies mid-query** | `EPIPE` on write | server finishes or cancels the request, drops the response, keeps running |
 
@@ -556,14 +641,20 @@ documented as frozen, but "frozen" has always meant "across releases we intend";
 from a different release serving bytes a caller attributes to the installed version is a
 category of bug nobody will diagnose quickly.
 
+**A literal, and not `importlib.metadata.version("harlequin")`**, which costs ~43ms —
+nearly twice the whole warm invocation. That makes it the second version `uv version`
+cannot reach, beside the plugin manifest, so `scripts/bump_plugin_version.py` became
+`scripts/bump_versions.py` and writes both; a test pins each to the installed version, so a
+release that forgot fails in the release PR rather than in a user's shell.
+
 ### 4.10 Observability
 
 `hsql --session prod --session-status` returns JSON on stdout:
 
 ```json
-{"session":"prod","pid":8123,"version":"2.9.0","adapter":"duckdb",
+{"session":"prod","pid":8123,"version":"2.13.0","adapter":"duckdb",
  "connection":"/home/ted/warehouse.db","uptime_s":412,"requests":37,
- "state":"idle","queued":0,"transaction_mode":null,
+ "state":"idle","queued":0,"transaction_mode":null,"ssh":null,
  "idle_timeout_s":1800,"expires_in_s":26988}
 ```
 
@@ -646,10 +737,12 @@ Three kinds of test, then, not one:
 
 1. **Equivalence** — every single-invocation functional test, run twice, asserting identical
    stdout bytes, identical stderr bytes, identical exit code. The golden-format snapshots
-   (`test_golden_formats.py`) come along for free, since they already assert on bytes. This
-   is the drift guard, and it is the suite that runs on every PR if only one can.
+   (`test_golden_formats.py`) come along for free, since they are single-file syrupy
+   snapshots written in binary and already assert on bytes. This is the drift guard, and it
+   is the suite that runs on every PR if only one can.
 2. **Divergence, marked and asserted** — a multi-invocation test cannot be in group 1, and a
-   marker (`@pytest.mark.session_divergent`) takes it out. The marker's cost is that it does
+   marker (`@pytest.mark.session_divergent`, registered in `[tool.pytest.ini_options]`
+   beside `online`, `use_cache` and `py12`) takes it out. The marker's cost is that it does
    not merely opt out: **the test must assert what the warm behavior *is***, not just that it
    differs. A temp table created by invocation 1 is `no such table` cold and a result set
    warm, and both belong in the assertions. Otherwise the exemption list becomes the place
@@ -667,11 +760,15 @@ asks whether §5 should have mentioned it.
 
 Alongside those:
 
-- **Import-linter contracts**, next to the existing `hsql does not reach the TUI` one:
-  `hsql.client` may not import `harlequin.*` or `click`, and `harlequin.hsql.__init__` may
-  not import click at module scope.
-- **A cold-start benchmark for the client**, next to the existing one for `hsql`, so the
-  20ms is a number CI defends rather than a number this document once measured.
+- **An import-linter contract**, next to the existing `hsql does not reach the TUI` one,
+  saying the client's three modules may not import `click` or anything of Harlequin's
+  outside themselves. Its other half is *not* expressible there — a contract's source
+  module matches its descendants, so "`harlequin.hsql.__init__` may not import click at
+  module scope" cannot be written — and is a run-time test instead. Both shipped in PR 1.
+- **A cold-start benchmark for the client**, next to the existing one for `hsql`
+  (`scripts/cold_start.py`), plus a run-time test that counts the client's modules against
+  a bare interpreter — a count, not a wall clock, because the count is what a shared CI
+  runner can hold. Both shipped in PR 1.
 - **Deterministic lifecycle tests**, not timing ones: stale socket, wrong uid (skipped
   unless the test runner can drop privileges), version skew, a client killed mid-query, two
   clients queued, a cancel that lands, a cancel against an adapter that cannot cancel.
@@ -706,7 +803,7 @@ convenience.
 - **A distinguished cancellation signal on the adapter contract** (§4.6). Real, and an
   ecosystem change; it belongs with M2's additive members, not here. The server's own
   bookkeeping is a correct workaround in the meantime.
-- **A compiled client.** 12ms of the 20ms is CPython boot, so a Rust or Go client would
+- **A compiled client.** 16ms of the 27ms is CPython boot, so a Rust or Go client would
   land near 2ms. It also means platform wheels for a project that ships pure Python, and
   it optimizes the half of the budget that is already smallest. Revisit only if someone is
   running thousands of invocations.
@@ -740,21 +837,38 @@ convenience.
 Six PRs, in dependency order. The first two are the ones with the interesting decisions in
 them; everything after is additive and independently revertible.
 
-1. **The entry-point split and the framing.** `main()` checks for a session before
-   importing click; `client.py` (stdlib only), `protocol.py` (chunked frames, handshake,
-   version). No server yet — the client's only reachable behavior is the fallback path,
-   which is testable on its own. Ships the two import-linter contracts and the client
-   benchmark.
+1. **The entry-point split and the framing. Shipped.** `main()` decides whether an
+   invocation belongs to a session before it imports anything that is not stdlib;
+   `session.py` (the decision, and the socket path), `client.py` (stdlib only) and
+   `protocol.py` (chunked frames, handshake, version). No server yet — the client's only
+   reachable behavior is the fallback path, which is testable on its own, and the rest is
+   pinned against a stub server built on `protocol.py`. Ships the import-linter contract,
+   the run-time guards, and the client's steps in `scripts/cold_start.py`.
+
+   Two things moved out of it, both deliberately. **`--session` is not yet a click
+   option**: the client intercepts it before click, so it works, but a flag `--help` and
+   `--spec` advertise while no server can answer it would be worse than one they do not
+   mention yet. And declaring it raises a question PR 2 has to answer anyway — a click
+   parameter's name becomes a *profile* key, and `session` must not be one, because the
+   decision is made before any config file is read. That is a `CLI_ONLY_SSH_KEYS`-shaped
+   refusal, and it belongs with the flag. Until then no adapter reserves the spelling
+   either; none of the four checked declares it (§4.1).
 2. **The server: accept loop, one worker, the queue, the uid check, socket lifecycle.**
-   `hsql --serve NAME`, `--session NAME`, `HSQL_SESSION`, and the §4.1 flag partition on
-   both sides. Ships §6's equivalence suite with it, not after it — this is the PR where
-   equivalence is cheap to establish and expensive to retrofit.
+   `hsql --serve NAME`, the `--session` click option and its profile-key refusal,
+   `HSQL_SESSION`, and the §4.1 flag partition on both sides. Ships §6's equivalence suite
+   with it, not after it — this is the PR where equivalence is cheap to establish and
+   expensive to retrofit.
    **`--session-reset` lands here too**, ahead of the rest of the lifecycle work: §6's
    fixture needs it to give each test a fresh session, so it is a dependency of the suite
    rather than a nicety, and the suite is the thing that proves it works.
 3. **Identity and rejection.** The server's recorded connection identity, the
    differing-options rejection, client-side profile resolution against the client's cwd
-   (§4.2), `--session-status`.
+   (§4.2), `--session-status`. One question this PR settles that the first draft did not
+   ask: **whether `HARLEQUIN_CONFIG_PATH` travels with the request.** It is the caller's
+   intent in the same way `--config-path` is, and it is the one environment variable that
+   changes which config file a run reads — but forwarding it widens
+   `protocol.FORWARDED_ENV_VARS` past "what `--color auto` needs", which is the line PR 1
+   drew. Decide it here, with the rest of config resolution.
 4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
 5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
@@ -764,6 +878,35 @@ them; everything after is additive and independently revertible.
    spirit — a feature that must be deliberately adopted is a feature that lives or dies by
    its docs.
 
-M2 does not block any of this, and this does not block M2 — the two touch `cli.py` in
-different places. Sequencing between them is a scheduling question, not a technical one.
-The one real ordering constraint is §3.3's: **settle the relationship with M6 first.**
+M2 has shipped, and M3 with it. M4 is in flight in three releases and touches `cli.py`
+elsewhere (`--open`, the hooks, query history), so sequencing against it is a scheduling
+question rather than a technical one. The one real ordering constraint is still §3.3's:
+**settle the relationship with M6 first.**
+
+---
+
+## 10. What this revision changed
+
+For a reader who has the first draft in their head. Nothing about the shape of the design
+moved; the changes are the arithmetic, the flags that shipped in between, and three things
+the first draft got wrong about the entry point.
+
+- **Re-measured on 2.13.0** (§1, §2). The machine is slower than the first draft's, so the
+  absolutes moved and the ratios did not: 348ms cold, 27ms warm, and the database work is
+  5ms of the 348.
+- **§2 is the shipped client, not a prototype.** PR 1's numbers replace the throwaway's.
+- **The entry point had three imports on it, not one** (§2.1). click was the known one;
+  `harlequin.hsql.diagnostics` (68ms, via `redact` → `config` → msgspec) and `typing`
+  (10ms, via `harlequin/__init__.py`) were not. Together they were more than twice the
+  invocation they sat on.
+- **One import-linter contract, not two** (§2.1, §6). The second is not expressible; it is
+  a run-time test.
+- **The socket path is derived with stdlib, not platformdirs** (§4.4), which costs ~22ms.
+- **The version literal lives in `protocol.py`, and a release script writes it** (§4.9).
+- **M2's flags are no longer conditional** — `--read-only`, `--timeout`, the mode options
+  and declarative `secret=` all shipped, and `--timeout`'s implementation in
+  `hsql/timeout.py` is the precedent PR 4's cancellation attribution should follow (§4.6).
+- **The SSH options are in the partition** (§4.1), as connection-time, and the tunnel is
+  part of what §4.7 calls a credential held open.
+- **`--session` waits for PR 2 to become a click option** (§9), and PR 3 has one more
+  question to answer about `HARLEQUIN_CONFIG_PATH`.
