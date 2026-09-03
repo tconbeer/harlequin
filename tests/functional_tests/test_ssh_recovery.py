@@ -16,6 +16,7 @@ from typing import Awaitable, Callable
 import pytest
 
 from harlequin import Harlequin
+from harlequin.app import QuerySubmitted
 from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
 
@@ -103,6 +104,84 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
             # both halves: a new session, on a forward that is open again
             assert app.connection is not None
             assert app.connection is not first_connection
+    finally:
+        dropping_tunnel.stop()
+
+
+@pytest.fixture
+def schema_updates(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Every call to `update_schema_data`, so a double refresh is visible."""
+    calls: list[None] = []
+    start_worker = Harlequin.update_schema_data
+
+    def counted(app: Harlequin) -> None:
+        calls.append(None)
+        start_worker(app)
+
+    monkeypatch.setattr(Harlequin, "update_schema_data", counted)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_reconnect_rebuilds_the_catalog_on_the_new_connection(
+    app: Harlequin,
+    dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
+    schema_updates: list[None],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.ssh_tunnel = dropping_tunnel
+    try:
+        async with app.run_test() as pilot:
+            await wait_for_workers(app)
+            first_catalog = app.data_catalog.database_tree.catalog
+            assert first_catalog is not None
+
+            drop_trigger.touch()
+            assert wait_until(lambda: dropping_tunnel.needs_restart)
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+            # a query is the recovery's other trigger, and it leaves a tree
+            # whose items load their children on the connection that died
+            schema_updates.clear()
+            app.post_message(QuerySubmitted(queries=["select 1"], limit=None))
+            await pilot.pause()
+            await wait_for_workers(app)
+            await pilot.pause()
+
+            assert len(schema_updates) == 1
+            assert app.data_catalog.database_tree.catalog is not first_catalog
+    finally:
+        dropping_tunnel.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
+    app: Harlequin,
+    dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
+    schema_updates: list[None],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.ssh_tunnel = dropping_tunnel
+    try:
+        async with app.run_test() as pilot:
+            await wait_for_workers(app)
+            drop_trigger.touch()
+            assert wait_until(lambda: dropping_tunnel.needs_restart)
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+            # the refresh builds the tree on the connection it recovered, so
+            # two `get_catalog()` calls would be two threads inside one adapter
+            schema_updates.clear()
+            app.action_refresh_catalog()
+            await wait_for_workers(app)
+            await pilot.pause()
+
+            assert len(schema_updates) == 1
+            assert app.data_catalog.database_tree.catalog is not None
     finally:
         dropping_tunnel.stop()
 
