@@ -176,11 +176,11 @@ class TunnelClosed(Message):
 class TunnelReconnected(Message):
     """The dropped tunnel is back, and what runs through it is a new session."""
 
-    def __init__(self, connection: HarlequinConnection, stale_catalog: bool) -> None:
+    def __init__(self, connection: HarlequinConnection, rebuild_catalog: bool) -> None:
         super().__init__()
         self.connection = connection
-        self.stale_catalog = stale_catalog
-        """Whether the tree still holds items bound to the connection that died."""
+        self.rebuild_catalog = rebuild_catalog
+        """Whether this handler is the one that has to rebuild the tree."""
 
 
 class TunnelUnrecoverable(Message):
@@ -924,7 +924,7 @@ class Harlequin(AppBase):
         self.post_message(
             TransactionModeChanged(new_mode=message.connection.transaction_mode)
         )
-        if message.stale_catalog:
+        if message.rebuild_catalog:
             # the tree's items load their children on the connection the adapter
             # captured when it built them, so expanding an unloaded node would
             # reach the socket that died with the old forward
@@ -1322,7 +1322,9 @@ class Harlequin(AppBase):
 
         `rebuilds_catalog` is the caller about to build a tree on the connection
         it gets back, so a recovery here does not ask for a second one -- two
-        `get_catalog()` calls at once are two threads inside one adapter.
+        `get_catalog()` calls at once are two threads inside one adapter. It
+        reports the caller's own intent, which the worker that loses the lock
+        below cannot: a query and a refresh that hit the same drop rebuild twice.
         """
         tunnel = self.ssh_tunnel
         if tunnel is None or self.connection is None:
@@ -1347,7 +1349,9 @@ class Harlequin(AppBase):
             # what makes it the app's, once the message lands
             self._recovered_connection = connection
         self.post_message(
-            TunnelReconnected(connection=connection, stale_catalog=not rebuilds_catalog)
+            TunnelReconnected(
+                connection=connection, rebuild_catalog=not rebuilds_catalog
+            )
         )
         return connection
 
@@ -1485,6 +1489,11 @@ class Harlequin(AppBase):
     def update_schema_data(self) -> None:
         connection = self._connection_for_worker(rebuilds_catalog=True)
         if connection is None:
+            # no NewCatalog is coming, and a plain return is not a worker error,
+            # so nothing else stops the spinner a refresh started
+            self.call_from_thread(
+                setattr, self.data_catalog.database_tree, "loading", False
+            )
             return
         catalog = connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
