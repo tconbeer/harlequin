@@ -25,9 +25,17 @@ import time
 
 # (label, statement). Ordered cheapest to dearest, which is also roughly the
 # order a headless invocation touches them.
+#
+# The first three are the warm-session client's whole graph, and the budget
+# they live inside is the tightest here: a round trip to a session is about a
+# millisecond, so what a caller waits for is these. Everything below `click` is
+# already more than the feature costs.
 STEPS: list[tuple[str, str]] = [
     ("interpreter only", "pass"),
     ("harlequin", "import harlequin"),
+    ("hsql session", "import harlequin.hsql.session"),
+    ("hsql client", "import harlequin.hsql.client"),
+    ("click", "import click"),
     ("harlequin.statements", "import harlequin.statements"),
     ("harlequin.catalog", "import harlequin.catalog"),
     ("harlequin.options", "import harlequin.options"),

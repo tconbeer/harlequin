@@ -45,10 +45,11 @@ jobs:
           uv version --project packaging/hsql --frozen ${{ github.event.inputs.newVersion }}
           uv add --project packaging/hsql --frozen "harlequin==${{ github.event.inputs.newVersion }}"
 
-      - name: Bump the plugin manifest
-        # the plugin is the skill for one release of hsql, so it carries that
-        # release's number. It is the only version `uv version` cannot reach.
-        run: python scripts/bump_plugin_version.py ${{ github.event.inputs.newVersion }}
+      - name: Bump the versions uv cannot reach
+        # the plugin manifest, which is the skill for one release of hsql, and
+        # the session protocol's version, which its client cannot afford to
+        # read off the package metadata.
+        run: python scripts/bump_versions.py ${{ github.event.inputs.newVersion }}
 
       - name: Ensure packages can be built
         run: |

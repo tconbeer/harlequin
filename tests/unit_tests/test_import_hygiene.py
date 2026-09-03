@@ -26,6 +26,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.export",
     "import harlequin.hsql",
     "import harlequin.hsql.cli",
+    "import harlequin.hsql.client",
     "import harlequin.keymap",
     "import harlequin.layout",
     "import harlequin.navigate",
@@ -62,6 +63,70 @@ def test_headless_imports_do_not_load_the_tui(
     )
     leaked = [m for m in proc.stdout.strip().split(",") if m]
     assert not leaked, f"{statement!r} imported {leaked}"
+
+
+# The warm-session client's whole graph, over a bare interpreter. A round trip
+# to a session is about a millisecond, so what a caller waits for is this
+# number -- and `import click` alone is +67 modules, which is why the client
+# has neither it nor anything else of ours on its path.
+CLIENT_MODULE_BUDGET = 40
+
+
+def test_the_session_client_costs_almost_nothing_to_load(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """Measured against a bare interpreter in the same environment, because the
+    absolute count moves with the Python version and this budget does not."""
+    bare = run_python("import sys\nprint(len(sys.modules))\n")
+    loaded = run_python(
+        "import harlequin.hsql.client\nimport sys\nprint(len(sys.modules))\n"
+    )
+    cost = int(loaded.stdout) - int(bare.stdout)
+    assert cost <= CLIENT_MODULE_BUDGET, (
+        f"loading the session client cost {cost} modules"
+    )
+
+
+def test_deciding_whether_an_invocation_is_warm_does_not_import_click(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The single most important line-level decision in the feature.
+
+    `main()` looks at `--session` and `HSQL_SESSION` before it builds anything,
+    because `import click` costs more than the whole round trip it would be
+    paying for. import-linter reads the static graph and cannot see a deferral,
+    so this is what proves it defers.
+    """
+    proc = run_python(
+        "import harlequin.hsql\n"
+        "import sys\n"
+        "print(','.join(m for m in ('click', 'harlequin.hsql.cli', "
+        "'harlequin.hsql.diagnostics') if m in sys.modules))\n"
+    )
+    leaked = [m for m in proc.stdout.strip().split(",") if m]
+    assert not leaked, f"importing the entry point loaded {leaked}"
+
+
+def test_a_warm_invocation_never_reaches_the_cold_path(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """A typed session that is not running fails without building a command:
+    there is no server to parse the flags, and no reason to pay for a parser."""
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '--session', 'nobody-started-this', '-c', 'select 1']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit as e:\n"
+        "    print(e.code)\n"
+        "print(','.join(m for m in ('click', 'harlequin.config') "
+        "if m in sys.modules))\n"
+    )
+    # the client writes its refusal to stderr, so stdout is these two lines
+    code, leaked = proc.stdout.split("\n")[:2]
+    assert code == "3"
+    assert not leaked
 
 
 def test_importing_the_completers_does_not_parse_sql(

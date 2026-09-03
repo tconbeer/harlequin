@@ -376,6 +376,61 @@ unmatched_ignore_imports_alerting = "error"
 
 [[tool.importlinter.contracts]]
 
+# A warm session answers in about 20ms, almost all of which is the interpreter
+# starting, so the client's import graph is the feature. `click` alone costs
+# more than the round trip and `harlequin.config` more again -- so the three
+# modules a session client loads reach for stdlib and each other, and nothing
+# else. The run-time guards in tests/unit_tests/test_import_hygiene.py are what
+# hold the stdlib half of the same rule, by counting modules.
+name = "The warm-session client imports nothing it cannot afford"
+type = "forbidden"
+source_modules = [
+    "harlequin.hsql.client",
+    "harlequin.hsql.protocol",
+    "harlequin.hsql.session",
+]
+# every harlequin module that is not one of the three above, plus the
+# third-party packages a headless invocation would otherwise pay for
+forbidden_modules = [
+    "click",
+    "msgspec",
+    "platformdirs",
+    "pyarrow",
+    "questionary",
+    "textual",
+    "textual_fastdatatable",
+    "textual_textarea",
+    "tomlkit",
+    "wcwidth",
+    "harlequin.adapter",
+    "harlequin.autocomplete",
+    "harlequin.catalog",
+    "harlequin.cli",
+    "harlequin.config",
+    "harlequin.config_schema",
+    "harlequin.exception",
+    "harlequin.export",
+    "harlequin.first_pass",
+    "harlequin.hsql.cli",
+    "harlequin.hsql.diagnostics",
+    "harlequin.hsql.modes",
+    "harlequin.hsql.output",
+    "harlequin.hsql.timeout",
+    "harlequin.layout",
+    "harlequin.navigate",
+    "harlequin.options",
+    "harlequin.plugins",
+    "harlequin.query",
+    "harlequin.redact",
+    "harlequin.ssh",
+    "harlequin.statements",
+    "harlequin.transaction_mode",
+]
+unmatched_ignore_imports_alerting = "error"
+
+
+[[tool.importlinter.contracts]]
+
 # Importing any harlequin.* submodule executes this package's __init__, so a
 # single eager import there puts the whole TUI behind every consumer. The
 # public names are resolved by a PEP 562 __getattr__ instead.
