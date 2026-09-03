@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
+from textual.pilot import Pilot
+from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
+from harlequin.app import QuerySubmitted
+from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
+from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.text_modal import ErrorModal
 from harlequin.ssh import Forward, SshTunnel
 
@@ -45,6 +50,41 @@ def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
             return True
         time.sleep(0.02)
     return predicate()
+
+
+async def _rendered_catalog(
+    pilot: Pilot, app: Harlequin, replacing: object = None
+) -> Catalog:
+    """The catalog the tree is holding, once it is not `replacing`.
+
+    `wait_for_workers` returns when `get_catalog()` has answered, which is
+    before the app has handled the message carrying its result, so reading the
+    tree straight after it races the message pump.
+    """
+    tree = app.data_catalog.database_tree
+    for _ in range(200):
+        if tree.catalog is not None and tree.catalog is not replacing:
+            return tree.catalog
+        await pilot.pause(0.05)
+    raise AssertionError(
+        "the data catalog was never replaced"
+        if replacing
+        else "the data catalog never loaded"
+    )
+
+
+async def _first_database_node(pilot: Pilot, app: Harlequin) -> TreeNode[CatalogItem]:
+    """The tree's first database node, once the catalog has been rendered.
+
+    Setting the catalog and mounting its nodes are two steps, so a tree with a
+    catalog can still have no children.
+    """
+    tree = app.data_catalog.database_tree
+    for _ in range(200):
+        if tree.root.children:
+            return tree.root.children[0]
+        await pilot.pause(0.05)
+    raise AssertionError("the data catalog never rendered a database")
 
 
 def _modal_text(app: Harlequin) -> str:
@@ -107,6 +147,114 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
         dropping_tunnel.stop()
 
 
+@pytest.fixture
+def schema_updates(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Every call to `update_schema_data`, so a double refresh is visible."""
+    calls: list[None] = []
+    start_worker = Harlequin.update_schema_data
+
+    def counted(app: Harlequin) -> None:
+        calls.append(None)
+        start_worker(app)
+
+    monkeypatch.setattr(Harlequin, "update_schema_data", counted)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_reconnect_leaves_a_catalog_that_still_loads(
+    app_small_sqlite: Harlequin,
+    dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
+    schema_updates: list[None],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    expand_catalog_node: Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A query that reopens a dropped tunnel leaves a catalog that still loads.
+
+    sqlite is the adapter here because its `close()` really closes the driver
+    connection, so an item left on the old one fails deterministically rather
+    than by luck.
+    """
+    # the node under test has to still be unloaded when the tunnel drops, and
+    # the prefetch scan would have loaded it during start-up
+    monkeypatch.setattr(DatabaseTree, "_schedule_prefetch_scan", lambda _self: None)
+    app = app_small_sqlite
+    app.ssh_tunnel = dropping_tunnel
+    try:
+        async with app.run_test() as pilot:
+            await wait_for_workers(app)
+            first_connection = app.connection
+            first_catalog = await _rendered_catalog(pilot, app)
+            assert first_connection is not None
+            db_node = await _first_database_node(pilot, app)
+            assert isinstance(db_node.data, InteractiveCatalogItem)
+            assert not db_node.data.loaded
+
+            drop_trigger.touch()
+            assert wait_until(lambda: dropping_tunnel.needs_restart)
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+            # a query is the recovery's other trigger; a refresh would rebuild
+            # the tree on its own, which is the workaround this replaces
+            schema_updates.clear()
+            app.post_message(QuerySubmitted(queries=["select 1"], limit=None))
+            await pilot.pause()
+            await wait_for_workers(app)
+            rebuilt_catalog = await _rendered_catalog(
+                pilot, app, replacing=first_catalog
+            )
+
+            assert len(schema_updates) == 1
+            assert rebuilt_catalog is not first_catalog
+            assert app.connection is not first_connection
+            db_node = await _first_database_node(pilot, app)
+            assert isinstance(db_node.data, InteractiveCatalogItem)
+            assert db_node.data.connection is app.connection
+
+            # the symptom in #1127: expanding a node that had not loaded yet
+            await expand_catalog_node(pilot, db_node)
+            assert db_node.data.loaded
+            assert len(app.screen_stack) == 1  # no Catalog Error modal
+    finally:
+        dropping_tunnel.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
+    app: Harlequin,
+    dropping_tunnel: SshTunnel,
+    drop_trigger: Path,
+    schema_updates: list[None],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.ssh_tunnel = dropping_tunnel
+    try:
+        async with app.run_test() as pilot:
+            await wait_for_workers(app)
+            first_catalog = await _rendered_catalog(pilot, app)
+
+            drop_trigger.touch()
+            assert wait_until(lambda: dropping_tunnel.needs_restart)
+            monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
+
+            # the refresh builds the tree on the connection it recovered, so
+            # two `get_catalog()` calls would be two threads inside one adapter
+            schema_updates.clear()
+            app.action_refresh_catalog()
+            await wait_for_workers(app)
+            rebuilt_catalog = await _rendered_catalog(
+                pilot, app, replacing=first_catalog
+            )
+
+            assert len(schema_updates) == 1
+            assert rebuilt_catalog is not first_catalog
+    finally:
+        dropping_tunnel.stop()
+
+
 @pytest.mark.asyncio
 async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
     app: Harlequin,
@@ -143,5 +291,7 @@ async def test_a_tunnel_that_will_not_come_back_is_not_tried_twice(
             await pilot.pause()
             assert not dropping_tunnel.running
             assert len(app.screen_stack) == 1
+            # no catalog is coming, so the refresh's spinner has to stop
+            assert not app.data_catalog.database_tree.loading
     finally:
         dropping_tunnel.stop()

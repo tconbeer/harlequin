@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
+
 ## [2.13.0] - 2026-09-02
 
 ### Features
