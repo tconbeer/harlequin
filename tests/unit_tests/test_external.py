@@ -11,7 +11,7 @@ from textual.app import App, SuspendNotSupported
 from harlequin.exception import HarlequinExternalError
 from harlequin.external import (
     ExternalEdit,
-    edit_text_externally,
+    launch_external_editor,
     resolve_editor,
     run_in_terminal,
     split_command,
@@ -120,7 +120,7 @@ def test_the_round_trip_is_a_sql_file(
 
     monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
 
-    edit = edit_text_externally(cast("App[None]", fake_app), "select 1")
+    edit = launch_external_editor(cast("App[None]", fake_app), "select 1")
 
     assert edit == ExternalEdit(returncode=0, text="select 2\n")
     assert list(seen[0][:2]) == ["ed", "--wait"]
@@ -142,7 +142,7 @@ def test_a_nonzero_exit_discards_the_edit(
 
     monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
 
-    edit = edit_text_externally(cast("App[None]", fake_app), "select 1")
+    edit = launch_external_editor(cast("App[None]", fake_app), "select 1")
 
     assert edit == ExternalEdit(returncode=1, text=None)
     assert not paths[0].exists()
@@ -159,7 +159,7 @@ def test_crlf_does_not_come_back_in_the_buffer(
 
     monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
 
-    edit = edit_text_externally(cast("App[None]", fake_app), "select 1")
+    edit = launch_external_editor(cast("App[None]", fake_app), "select 1")
 
     assert edit.text == "select 1\nfrom foo\n"
 
@@ -177,6 +177,6 @@ def test_the_temp_file_is_removed_after_an_error(
     monkeypatch.setattr("harlequin.external.run_in_terminal", fake_run_in_terminal)
 
     with pytest.raises(HarlequinExternalError):
-        edit_text_externally(cast("App[None]", fake_app), "select 1")
+        launch_external_editor(cast("App[None]", fake_app), "select 1")
 
     assert not paths[0].exists()

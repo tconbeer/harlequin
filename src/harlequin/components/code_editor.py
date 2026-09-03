@@ -27,7 +27,7 @@ from harlequin.autocomplete import (
 from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
 from harlequin.exception import HarlequinExternalError
-from harlequin.external import edit_text_externally
+from harlequin.external import launch_external_editor
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators
 
@@ -253,7 +253,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             else:
                 self.app.notify("Query was already formatted; no changes made.")
 
-    def action_edit_externally(self) -> None:
+    def action_launch_external_editor(self) -> None:
         """Round-trips the buffer through the user's editor.
 
         Synchronous on the main thread, because the app has to be suspended for
@@ -263,7 +263,7 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if self.text_input is None:
             return
         try:
-            edit = edit_text_externally(self.app, self.text)
+            edit = launch_external_editor(self.app, self.text)
         except HarlequinExternalError as e:
             self.app.push_screen(
                 ErrorModal(

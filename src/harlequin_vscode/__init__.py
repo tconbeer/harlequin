@@ -27,7 +27,7 @@ VSCODE_EDITOR_BINDINGS = [
     HarlequinKeyBinding("f4", "code_editor.format_buffer"),
     HarlequinKeyBinding("ctrl+s", "code_editor.save_buffer"),
     HarlequinKeyBinding("ctrl+o", "code_editor.load_buffer"),
-    HarlequinKeyBinding("f7", "code_editor.edit_externally"),
+    HarlequinKeyBinding("f7", "code_editor.launch_external_editor"),
     HarlequinKeyBinding("ctrl+f", "code_editor.find"),
     HarlequinKeyBinding("f3", "code_editor.find_next"),
     HarlequinKeyBinding("ctrl+g", "code_editor.goto_line"),

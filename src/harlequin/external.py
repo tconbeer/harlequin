@@ -114,7 +114,7 @@ def run_in_terminal(app: "App", argv: Sequence[str]) -> int:
         ) from e
 
 
-def edit_text_externally(app: "App", text: str) -> ExternalEdit:
+def launch_external_editor(app: "App", text: str) -> ExternalEdit:
     """Round-trips text through the user's editor, using a temp file.
 
     The exchange is a file because editors do not read stdin; it is handed over
