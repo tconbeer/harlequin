@@ -150,6 +150,10 @@ class QueriesCanceled(Message):
     pass
 
 
+class CatalogRefreshAborted(Message):
+    """The catalog worker stopped without a connection to build a tree on."""
+
+
 class ResultsFetched(Message):
     def __init__(
         self,
@@ -741,6 +745,10 @@ class Harlequin(AppBase):
     def handle_new_catalog(self, message: NewCatalog) -> None:
         self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
+
+    @on(CatalogRefreshAborted)
+    def stop_catalog_loading(self) -> None:
+        self.data_catalog.database_tree.loading = False
 
     @on(NewCatalogItems)
     def handle_new_catalog_item(self, message: NewCatalogItems) -> None:
@@ -1491,9 +1499,7 @@ class Harlequin(AppBase):
         if connection is None:
             # no NewCatalog is coming, and a plain return is not a worker error,
             # so nothing else stops the spinner a refresh started
-            self.call_from_thread(
-                setattr, self.data_catalog.database_tree, "loading", False
-            )
+            self.post_message(CatalogRefreshAborted())
             return
         catalog = connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
