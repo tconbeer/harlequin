@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, List, Sequence
 
 import pytest
+from textual import events
 from textual.app import App
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
@@ -624,6 +625,18 @@ async def test_numbers_do_not_open_the_completion_list(
         assert app.editor.text == "1\n"
 
 
+def press_alt_e(app: Harlequin) -> None:
+    """Sends alt+e the way a terminal does.
+
+    ESC + e parses to the key `alt+e` carrying the character "e", which
+    `pilot.press()` does not send and a focused TextArea would insert.
+    """
+    key_event = events.Key("alt+e", "e")
+    key_event.set_sender(app)
+    assert app._driver is not None
+    app._driver.send_message(key_event)
+
+
 @pytest.mark.asyncio
 async def test_external_editor_round_trip(
     app: Harlequin,
@@ -653,7 +666,7 @@ async def test_external_editor_round_trip(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("alt+e")
+        press_alt_e(app)
         await pilot.pause()
 
         assert seen_text == ["select 1"]
@@ -686,7 +699,7 @@ async def test_external_editor_nonzero_exit_discards_the_edit(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("alt+e")
+        press_alt_e(app)
         await pilot.pause()
 
         assert app.editor.text == "select 1"
@@ -711,7 +724,7 @@ async def test_external_editor_without_an_editor_named(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("alt+e")
+        press_alt_e(app)
         await pilot.pause()
 
         assert isinstance(app.screen, ErrorModal)
@@ -735,7 +748,7 @@ async def test_external_editor_in_a_terminal_that_cannot_suspend(
         app.editor.text = "select 1"
         app.editor.focus()
 
-        await pilot.press("alt+e")
+        press_alt_e(app)
         await pilot.pause()
 
         assert isinstance(app.screen, ErrorModal)
