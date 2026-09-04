@@ -323,6 +323,15 @@ def report_fixed_format_ignored(mode: str, format_name: str, *, written: str) ->
     note(f"{mode} writes {written}, so --format {format_name} had no effect")
 
 
+def report_query_log_failure(message: str) -> None:
+    """Say once that this run was not recorded in the query history.
+
+    A store that cannot be written never fails the query it was recording, so
+    the only way a caller learns their history has a hole in it is this line.
+    """
+    note(message)
+
+
 def report_written(paths: Sequence[Path]) -> None:
     """Name the files a directory `-o` wrote, since the caller did not name them.
 

@@ -71,6 +71,7 @@ from harlequin.config import (
     CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
+    SHARED_ONLY_KEYS,
     SSH_KEYS,
     TUI_ONLY_KEYS,
     UNLIMITED,
@@ -78,6 +79,7 @@ from harlequin.config import (
     parse_profile_options,
     parse_row_count,
     parse_seconds,
+    take_history_key,
     take_ssh_keys,
 )
 from harlequin.exception import (
@@ -106,6 +108,7 @@ if TYPE_CHECKING:
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
     from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
+    from harlequin.query_log import QueryLog, Status
     from harlequin.ssh import SshTunnel
     from harlequin.statements import Statement
 
@@ -679,6 +682,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
         read_only: bool = bool(values.pop("read_only", False))
         ssh_config: dict[str, Any] = {}
+        try:
+            # off the config either way: what is left of it is the adapter's
+            record_history = take_history_key(values)
+        except HarlequinConfigError as e:
+            diagnostics.report_error(e)
+            ctx.exit(ExitCode.USAGE)
         if served is not None and connects:
             # the session connected when it started, through whatever tunnel
             # it has, as whichever adapter it was given: a profile discovered
@@ -689,7 +698,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             read_only = False
         else:
             try:
-                # off the config either way: what is left of it is the adapter's
                 ssh_config = take_ssh_keys(values, typed=explicitly_set)
             except HarlequinConfigError as e:
                 diagnostics.report_error(e)
@@ -898,13 +906,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog")
-            connection = _connection_for(
+            connection, _ = _connection_for(
                 ctx,
                 served,
                 adapter=adapter,
                 conn_str=conn_str,
                 read_only=read_only,
                 values=values,
+                tunnel=tunnel,
             )
             ctx.exit(
                 _under_deadline(
@@ -941,13 +950,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog-search")
-            connection = _connection_for(
+            connection, _ = _connection_for(
                 ctx,
                 served,
                 adapter=adapter,
                 conn_str=conn_str,
                 read_only=read_only,
                 values=values,
+                tunnel=tunnel,
             )
             ctx.exit(
                 _under_deadline(
@@ -1019,16 +1029,30 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=limit is not None,
         )
 
-        connection = _connection_for(
+        connection, keyed_connection = _connection_for(
             ctx,
             served,
             adapter=adapter,
             conn_str=conn_str,
             read_only=read_only,
             values=values,
+            tunnel=tunnel,
         )
 
-        run = _Run(deadline=deadline)
+        from harlequin.query_log import QueryLog
+
+        query_log = QueryLog(
+            program=PROGRAM,
+            connection=keyed_connection,
+            profile=profile,
+            adapter=adapter,
+            enabled=record_history,
+        )
+        # the run's, not the process's: click closes the context however this
+        # ends, and every write is committed before then in any case
+        ctx.call_on_close(query_log.close)
+
+        run = _Run(deadline=deadline, log=query_log)
         layout_options, file_options = _output_options(
             tuples_only=tuples_only,
             no_align=no_align,
@@ -1115,6 +1139,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 run.timed_out = deadline.seconds
                 diagnostics.report_timeout(deadline.seconds)
 
+        if query_log.failure is not None:
+            # once, and after the run: a store that would not open never stops
+            # a query, and this is the only way a caller learns their history
+            # has a hole in it
+            diagnostics.report_query_log_failure(query_log.failure)
+
         if stats:
             diagnostics.report_stats(
                 status=run.status,
@@ -1139,7 +1169,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 adapter=found.adapter,
                 adapter_options=adapter_cls.ADAPTER_OPTIONS,
                 command_options={param.name for param in cmd.params}
-                | set(TUI_ONLY_KEYS),
+                | set(TUI_ONLY_KEYS)
+                | set(SHARED_ONLY_KEYS),
             )
         except HarlequinConfigError as e:
             setup_error = e
@@ -1220,14 +1251,17 @@ def _connect(
     conn_str: Sequence[str],
     read_only: bool,
     values: Mapping[str, Any],
-) -> "HarlequinConnection":
-    """The connection this invocation runs on, or exit having said why not."""
-    return _connected(
-        ctx,
-        _adapter_instance(
-            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
-        ),
+    tunnel: "SshTunnel | None" = None,
+) -> tuple["HarlequinConnection", str]:
+    """The connection this invocation runs on and the id it is logged under.
+
+    Exits having said why not, if there is none.
+    """
+    adapter_instance = _adapter_instance(
+        ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
     )
+    keyed = _keyed_connection(adapter_instance, conn_str, values, tunnel=tunnel)
+    return _connected(ctx, adapter_instance), keyed
 
 
 def _adapter_instance(
@@ -1244,6 +1278,29 @@ def _adapter_instance(
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
+
+
+def _keyed_connection(
+    adapter_instance: "HarlequinAdapter",
+    conn_str: Sequence[str],
+    values: Mapping[str, Any],
+    *,
+    tunnel: "SshTunnel | None",
+) -> str:
+    """The id one database is logged under.
+
+    Derived here rather than beside each caller because the adapter instance it
+    reads does not outlive the function that built it, and because both
+    commands -- and a session's server -- have to key one database the same way.
+    """
+    from harlequin.query_log import connection_id
+
+    return connection_id(
+        adapter_instance.connection_id,
+        conn_str,
+        values,
+        through=tunnel.cache_material() if tunnel is not None else (),
+    )
 
 
 def _connected(
@@ -1264,14 +1321,25 @@ def _connection_for(
     conn_str: Sequence[str],
     read_only: bool,
     values: Mapping[str, Any],
-) -> "HarlequinConnection":
-    """The session's connection when there is a session, and a new one otherwise."""
+    tunnel: "SshTunnel | None" = None,
+) -> tuple["HarlequinConnection", str]:
+    """The session's connection when there is a session, and a new one otherwise.
+
+    Either way it comes back with the id it is logged under: the session
+    derived its own when it connected, from the options a served request is
+    refused, so a warm run and a cold one key one database alike.
+    """
     if served is None:
         return _connect(
-            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+            ctx,
+            adapter=adapter,
+            conn_str=conn_str,
+            read_only=read_only,
+            values=values,
+            tunnel=tunnel,
         )
     try:
-        return served.connection()
+        return served.connection(), served.connection_id
     except HarlequinConnectionError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.CONNECTION)
@@ -1298,11 +1366,15 @@ def _serve(
     adapter_instance = _adapter_instance(
         ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
     )
+    # once, here: a served request is refused every option this is derived
+    # from, so the answer cannot change between requests
+    keyed = _keyed_connection(adapter_instance, conn_str, values, tunnel=None)
     connection = _connected(ctx, adapter_instance)
     return Server(
         name,
         adapter=adapter,
         connection=connection,
+        connection_id=keyed,
         reconnect=adapter_instance.connect,
         queue_timeout=queue_timeout,
     ).serve()
@@ -2044,9 +2116,53 @@ class _Run:
 
     started: float = field(default_factory=time.monotonic)
 
+    log: "QueryLog | None" = None
+    """Where each statement is recorded, or None for a run that records none."""
+
+    rows_written: dict[int, int | None] = field(default_factory=dict)
+    """The query log's row for each statement, by its index in the script."""
+
     @property
     def elapsed_ms(self) -> int:
         return round((time.monotonic() - self.started) * 1000)
+
+    def record(
+        self,
+        statement: Statement,
+        *,
+        status: Status = "ok",
+        error: BaseException | None = None,
+    ) -> None:
+        """Log one statement, as the database is asked to run it.
+
+        Before its rows are known, so that a run killed mid-fetch has still
+        recorded the query; `record_result()` completes the row.
+        """
+        if self.log is None:
+            return
+        self.rows_written[statement.index] = self.log.write(
+            statement.sql, status=status, error=_message_for(error)
+        )
+
+    def record_result(
+        self,
+        statement: Statement,
+        *,
+        status: Status = "ok",
+        result: "ResultSet | None" = None,
+        error: BaseException | None = None,
+    ) -> None:
+        """Complete one statement's row, now that its result is known."""
+        if self.log is None:
+            return
+        self.log.update(
+            self.rows_written.get(statement.index),
+            status=status,
+            rows=None if result is None else result.fetched_row_count,
+            truncated=None if result is None else result.truncated,
+            elapsed_ms=None if result is None else result.elapsed * 1000,
+            error=_message_for(error),
+        )
 
     @property
     def stopped(self) -> bool:
@@ -2106,9 +2222,14 @@ def _execute_all(
         run.statements += 1
         if item.error is not None:
             run.failure = item.error
+            run.record(item.statement, status="error", error=item.error)
             diagnostics.report_error(item.error)
         elif item.has_result_set:
+            run.record(item.statement)
             executed.append(item)
+        else:
+            # DDL/DML: no cursor, so the row is complete where it is written
+            run.record(item.statement)
     return executed
 
 
@@ -2198,6 +2319,7 @@ def _fetched(
     for position, item in enumerate(selected, start=1):
         if run.stopped:
             # the clock ran out between statements
+            run.record_result(item.statement, status="canceled")
             return
         try:
             result = fetch(item, limit=limit)
@@ -2205,8 +2327,10 @@ def _fetched(
             if run.stopped:
                 # whatever the cancel raised on the way out is not this run's
                 # error to report; the deadline is
+                run.record_result(item.statement, status="canceled")
                 return
             run.failure = e
+            run.record_result(item.statement, status="error", error=e)
             diagnostics.report_error(e)
             if on_error == "stop":
                 return
@@ -2214,7 +2338,9 @@ def _fetched(
         if run.stopped:
             # the cancel landed inside that fetch, so the rows it returned are
             # the ones it had rather than the ones the query has
+            run.record_result(item.statement, status="canceled")
             return
+        run.record_result(item.statement, result=result)
         yield position, result
 
 

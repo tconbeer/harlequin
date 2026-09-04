@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Harlequin now saves your open buffers every minute, and offers them back the next time you start if it exited without a clean quit ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - When Harlequin hits a bug in itself, it now exits with a short message instead of a traceback, saves your buffers, and writes a crash report you can attach to an issue ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - `hsql` now exits `70` and writes a crash report when it hits a bug in itself, instead of printing a traceback and exiting `1`, which is the code for SQL the database rejected ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+- Harlequin and hsql now record every query they run as it runs, in a shared history at `<user state dir>/harlequin/history.db` — so a session that crashes keeps its history, and hsql's queries and Harlequin's are one list. Set `history = false` in a profile to record nothing ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 
 ### Bug Fixes
 

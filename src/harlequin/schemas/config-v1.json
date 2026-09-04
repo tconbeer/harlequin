@@ -321,6 +321,11 @@
         },
         "viewer_max_rows": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
+        "history": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to record the queries run under this profile in the query log both commands read. Set false to record none of them."
         }
       }
     },

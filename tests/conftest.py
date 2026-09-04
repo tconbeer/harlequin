@@ -94,6 +94,19 @@ def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("harlequin.config._search_directories", list)
 
 
+@pytest.fixture(autouse=True)
+def query_log_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the query log at a throwaway store, and return where it went.
+
+    Kept on rather than disabled: writing to it is what most of these tests
+    exercise incidentally, and a store in the user's state dir is a developer's
+    own history being written by their test run.
+    """
+    store = tmp_path / "history.db"
+    monkeypatch.setattr("harlequin.query_log.default_path", lambda: store)
+    return store
+
+
 @pytest.fixture
 def data_dir() -> Path:
     here = Path(__file__)
