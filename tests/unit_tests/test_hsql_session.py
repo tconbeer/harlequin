@@ -126,7 +126,8 @@ def test_the_fallback_runtime_dir_is_per_user() -> None:
 @needs_unix_sockets
 def test_a_directory_only_this_user_can_reach_is_accepted(tmp_path: Path) -> None:
     private = tmp_path / "run"
-    private.mkdir(mode=0o700)
+    private.mkdir()
+    os.chmod(private, 0o700)
     session.check_runtime_dir(str(private))
 
 
@@ -139,7 +140,9 @@ def test_a_directory_someone_else_can_reach_is_refused(
     a password. Under the TMPDIR fallback nothing guarantees the directory, so
     both halves check it rather than trusting their own mkdir."""
     shared = tmp_path / "run"
-    shared.mkdir(mode=mode)
+    shared.mkdir()
+    # after mkdir, so that the umask does not decide what this tests
+    os.chmod(shared, mode)
     with pytest.raises(session.UnsafeRuntimeDir):
         session.check_runtime_dir(str(shared))
 
@@ -324,13 +327,23 @@ Serve = Callable[..., StubServer]
 
 
 @pytest.fixture
-def runtime_dir() -> Iterator[str]:
-    """A short-pathed runtime dir: an AF_UNIX path is ~104 bytes on macOS, and
-    pytest's `tmp_path` is longer than that on its own."""
+def short_tmp_path() -> Iterator[Path]:
+    """A temp directory a socket path still fits under.
+
+    `sun_path` holds 104 bytes on macOS and pytest's `tmp_path` is longer than
+    that there before a socket name is added, so every test that binds or
+    connects one needs a shorter base than the built-in fixture.
+    """
     base = tempfile.mkdtemp(prefix="hsql-", dir="/tmp")
-    os.mkdir(os.path.join(base, "hsql"), mode=0o700)
-    yield base
+    yield Path(base)
     shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.fixture
+def runtime_dir(short_tmp_path: Path) -> str:
+    base = str(short_tmp_path)
+    os.mkdir(os.path.join(base, "hsql"), mode=0o700)
+    return base
 
 
 @pytest.fixture
@@ -529,11 +542,11 @@ def test_a_refused_socket_is_reported_and_left_alone(
 
 @needs_unix_sockets
 def test_a_runtime_dir_that_cannot_hold_a_socket_is_a_diagnostic(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    short_tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Not a traceback: every errno `connect()` can raise other than "nothing
     is listening" used to escape `run()` as one, and exit 1."""
-    not_a_directory = tmp_path / "file"
+    not_a_directory = short_tmp_path / "file"
     not_a_directory.write_text("")
     environ = {"XDG_RUNTIME_DIR": str(not_a_directory)}
     assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.CONNECTION
@@ -554,18 +567,24 @@ def test_a_socket_path_too_long_to_bind_is_refused_by_name(
 
 @needs_unix_sockets
 def test_a_directory_someone_else_could_reach_is_never_connected_to(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    short_tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """argv can carry a password, so a socket in a directory another user can
     write is one this must not send a request to."""
-    shared = tmp_path / "hsql"
-    shared.mkdir(mode=0o777)
+    shared = short_tmp_path / "hsql"
+    shared.mkdir()
+    # after mkdir, so that the umask does not decide what this tests
+    os.chmod(shared, 0o777)
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(shared / "prod.sock"))
     listener.listen(1)
     try:
         assert (
-            client.run(typed(), ["-c", "select 1"], {"XDG_RUNTIME_DIR": str(tmp_path)})
+            client.run(
+                typed(),
+                ["-c", "select 1"],
+                {"XDG_RUNTIME_DIR": str(short_tmp_path)},
+            )
             == ExitCode.CONNECTION
         )
     finally:

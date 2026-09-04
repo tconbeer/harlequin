@@ -123,21 +123,26 @@ def _cannot_be_served(
     A reason, a remedy and an exit code -- all `USAGE`, because none of them is
     a server that happens to be down, and a caller who answered an exit 3 by
     starting one would answer it forever.
+
+    Ordered most specific first. A flag with no value is the caller's typo on
+    every platform, so it is named before the platform is: telling someone on
+    Windows that sessions need a unix socket, when what they did was leave
+    `--session` empty, answers a question they did not ask.
     """
-    if not hasattr(socket, "AF_UNIX"):
-        # native Windows has no AF_UNIX in CPython. WSL2 is Linux and gets the
-        # feature, which is why the docs say *native* Windows.
-        return (
-            "hsql sessions need a unix socket, which native Windows has not",
-            "",
-            USAGE,
-        )
     if not session.name:
         # only a typed `--session` with nothing after it gets here: an empty
         # environment variable names no session at all
         return (
             f"{SESSION_OPTION} needs a name",
             f" Pass one: `hsql {SESSION_OPTION} prod ...`.",
+            USAGE,
+        )
+    if not hasattr(socket, "AF_UNIX"):
+        # native Windows has no AF_UNIX in CPython. WSL2 is Linux and gets the
+        # feature, which is why the docs say *native* Windows.
+        return (
+            "hsql sessions need a unix socket, which native Windows has not",
+            "",
             USAGE,
         )
     if not is_valid_name(session.name):
