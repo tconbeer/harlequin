@@ -68,6 +68,7 @@ EXIT_CODES = {
     ExitCode.USAGE: "A bad flag, a bad profile, or a config file hsql could not read.",
     ExitCode.CONNECTION: "hsql could not connect.",
     ExitCode.TIMEOUT: "`--timeout` ran out, and hsql stopped the run.",
+    ExitCode.CRASH: "hsql hit a bug in itself and wrote a crash report.",
     ExitCode.INTERRUPT: "Interrupted.",
 }
 """What each code means, in a sentence. A copy of what the enum's own docstrings

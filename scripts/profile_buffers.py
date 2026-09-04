@@ -17,7 +17,13 @@ async def wait_for_filtered_workers(app: Harlequin) -> None:
 
 
 async def load_lots_of_buffers() -> None:
-    with patch("harlequin.components.code_editor.load_cache") as mock_load_cache:
+    with (
+        patch("harlequin.components.code_editor.load_cache") as mock_load_cache,
+        patch(
+            "harlequin.components.code_editor.adopt_recovery",
+            return_value=(None, None),
+        ),
+    ):
         buff = BufferState(
             selection=Selection((0, 0), (0, 0)),
             text="select 1; " * 20,

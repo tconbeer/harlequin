@@ -104,4 +104,5 @@ names a file with.
 | `2` | A bad flag, a bad profile, or a config file hsql could not read. |
 | `3` | hsql could not connect. |
 | `4` | `--timeout` ran out, and hsql stopped the run. |
+| `70` | hsql hit a bug in itself and wrote a crash report. |
 | `130` | Interrupted. |

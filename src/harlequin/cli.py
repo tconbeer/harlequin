@@ -269,7 +269,7 @@ def _keys_app_callback(ctx: click.Context, param: Any, value: bool) -> None:
         keymap_name=ctx.params.get("keymap_name", None),
     )
     app.run()
-    ctx.exit(0)
+    ctx.exit(app.return_code or 0)
 
 
 def _adapter_option_group(
@@ -692,6 +692,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             tui = Harlequin(
                 adapter=adapter_instance,
                 profile_name=profile,
+                adapter_name=adapter_name,
                 keymap_names=keymap_names,
                 user_defined_keymaps=user_defined_keymaps,
                 connection_hash=connection_id,
@@ -704,6 +705,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 ssh_tunnel=tunnel,
             )
             tui.run()
+
+        # a crash exits 1 and a config or connection error exits 2; without
+        # this, both of those exited 0
+        ctx.exit(tui.return_code or 0)
 
     # this command's own options, before any adapter's are added to it
     harlequin_options = {param.name for param in inner_cli.params}

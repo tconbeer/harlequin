@@ -6,10 +6,12 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     Optional,
@@ -76,8 +78,15 @@ from harlequin.config import (
     load_profile_and_keymaps,
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
+from harlequin.crash import ACTIVE_BUFFER
 from harlequin.driver import HarlequinDriver
-from harlequin.editor_cache import Cache
+from harlequin.editor_cache import (
+    CHECKPOINT_INTERVAL_SECONDS,
+    Cache,
+    clear_recovery,
+    get_recovery_file,
+    write_recovery,
+)
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinBindingError,
@@ -210,6 +219,24 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
+def _adapter_distribution(adapter_name: str | None) -> str | None:
+    """The distribution an adapter came from, and its version.
+
+    Read off the entry point rather than the class: an adapter's module name
+    is not its distribution name, and both bundled adapters ship inside
+    `harlequin` itself. Importing nothing, which is what makes it safe to ask
+    mid-crash.
+    """
+    from harlequin.plugins import adapter_distributions, adapter_versions
+
+    if adapter_name is None:
+        return None
+    distribution = adapter_distributions().get(adapter_name)
+    if distribution is None:
+        return None
+    return f"{distribution} {adapter_versions().get(adapter_name)}"
+
+
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
     "_load_catalog_cache": (
         "Harlequin could not load its cache; your query history may be missing."
@@ -237,6 +264,7 @@ class Harlequin(AppBase):
         adapter: HarlequinAdapter,
         profile_name: str | None = None,
         *,
+        adapter_name: str | None = None,
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
@@ -258,6 +286,7 @@ class Harlequin(AppBase):
             watch_css=watch_css,
         )
         self.adapter = adapter
+        self.adapter_name = adapter_name
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
@@ -305,6 +334,8 @@ class Harlequin(AppBase):
                 ),
             )
         self.query_timer: Union[float, None] = None
+        self._last_checkpointed_cache: Cache | None = None
+        """What the recovery file holds, so an idle session stops rewriting it."""
         self.connection: HarlequinConnection | None = None
         self._recovery_lock = threading.Lock()
         """Held across reopening the tunnel and the connection through it.
@@ -421,6 +452,7 @@ class Harlequin(AppBase):
         self._connect()
         self._load_catalog_cache()
         self.action_bind_keymaps(*self.keymap_names)
+        self.set_interval(CHECKPOINT_INTERVAL_SECONDS, self._checkpoint_editor_cache)
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -1123,6 +1155,105 @@ class Harlequin(AppBase):
     def action_focus_results_viewer(self) -> None:
         self.results_viewer.focus()
 
+    def _build_editor_cache(self) -> Cache | None:
+        """The open buffers, or None when there is nothing worth writing.
+
+        `editor_collection` is assigned in `compose()`, so before the app
+        mounts the attribute does not exist at all -- and a crash before that
+        is one of the crashes the caller runs for.
+
+        Blank buffers are nothing either: writing them over a recovery file
+        would destroy exactly the work this exists to save.
+        """
+        editor_collection = getattr(self, "editor_collection", None)
+        if editor_collection is None or not editor_collection.is_mounted:
+            return None
+        cache = Cache(
+            focus_index=editor_collection.active_buffer_index,
+            buffers=editor_collection.buffers,
+        )
+        if not any(buffer.text.strip() for buffer in cache.buffers):
+            return None
+        return cache
+
+    def _checkpoint_editor_cache(self) -> None:
+        """Write the open buffers to this session's recovery file, if they moved.
+
+        Synchronously, on the message pump: pickling a few SQL buffers is
+        microseconds, and a thread worker would only add the hazard of two
+        checkpoints racing. `Cache` compares by content, so no dirty flag has
+        to stay in sync with tab swaps.
+        """
+        cache = self._build_editor_cache()
+        if cache is None or cache == self._last_checkpointed_cache:
+            return
+        if write_recovery(cache):
+            self._last_checkpointed_cache = cache
+
+    def _save_work_on_crash(self) -> bool:
+        """Save the buffers and the query history a crash would otherwise lose.
+
+        The buffers go to a `recovered-` file rather than this session's
+        recovery file, so the next start adopts them however old they are. The
+        cache the last clean quit wrote is left alone: if the recovered content
+        is itself what crashed, that is still on disk.
+        """
+        saved = False
+        try:
+            # the crash may be *in* the editor, and building this reads it
+            cache = self._build_editor_cache()
+        except Exception:
+            cache = self._last_checkpointed_cache
+        if cache is not None and write_recovery(cache):
+            try:
+                os.replace(get_recovery_file(), self._crash_recovery_file())
+                saved = True
+            except OSError:
+                pass
+        try:
+            update_catalog_cache(
+                connection_hash=self.connection_hash,
+                catalog=None,
+                s3_tree=self.data_catalog.s3_tree,
+                history=self.history,
+            )
+        except Exception:
+            pass
+        return saved
+
+    def _crash_recovery_file(self) -> Path:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return get_recovery_file().with_name(f"recovered-{stamp}-{os.getpid()}.pickle")
+
+    def _crash_context(self) -> dict[str, Any]:
+        """What this session was, for the crash report.
+
+        Every fact is cheap and separately wrapped. It deliberately does not
+        call `adapter_facts()`: importing every installed adapter mid-crash is
+        slow, and a fresh place to crash.
+        """
+        context: dict[str, Any] = {}
+        adapter_cls = type(self.adapter)
+        for key, get_fact in (
+            ("adapter", lambda: self.adapter_name),
+            ("adapter_class", lambda: adapter_cls.__qualname__),
+            ("adapter_module", lambda: adapter_cls.__module__),
+            ("adapter_distribution", lambda: _adapter_distribution(self.adapter_name)),
+            ("profile", lambda: self.profile_name),
+            ("keymaps", lambda: ", ".join(self.keymap_names)),
+            ("theme", lambda: self.theme),
+            ("connected", lambda: self.connection is not None),
+            ("buffers", lambda: self.editor_collection.tab_count),
+            ("size", lambda: str(self.size)),
+            ("recovery_file", lambda: str(self._crash_recovery_file())),
+            (ACTIVE_BUFFER, lambda: self.editor.text if self.editor else None),
+        ):
+            try:
+                context[key] = get_fact()
+            except Exception:
+                context[key] = "unknown"
+        return context
+
     async def action_quit(self) -> None:
         write_editor_cache(
             Cache(
@@ -1130,6 +1261,7 @@ class Harlequin(AppBase):
                 buffers=self.editor_collection.buffers,
             )
         )
+        clear_recovery()
         update_catalog_cache(
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.

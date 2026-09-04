@@ -872,6 +872,8 @@ def test_the_ide_opens_the_tunnel_before_it_starts(
     ssh_on_path: Path, no_discovered_config: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = MagicMock()
+    # the command exits with it, and a MagicMock is not an exit code
+    app.return_value.return_code = 0
     monkeypatch.setattr("harlequin.cli.Harlequin", app)
     port = free_port()
     result = run_harlequin(
@@ -897,6 +899,8 @@ def test_two_bastions_do_not_share_a_catalog_cache(
 ) -> None:
     """Both look like `localhost:15439`, and the details cannot tell them apart."""
     app = MagicMock()
+    # the command exits with it, and a MagicMock is not an exit code
+    app.return_value.return_code = 0
     monkeypatch.setattr("harlequin.cli.Harlequin", app)
     forward = f"{free_port()}:data.example.com:5439"
     hashes = []

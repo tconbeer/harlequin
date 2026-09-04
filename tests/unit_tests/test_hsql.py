@@ -20,6 +20,7 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
+from harlequin.crash import ISSUE_URL
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -4362,3 +4363,110 @@ def test_a_real_duckdb_query_times_out_and_says_so(tmp_path: Path) -> None:
     # the empty result set a cancelled DuckDB cursor returns, not printed
     assert proc.stdout == ""
     assert "timed out after 1s" in proc.stderr
+
+
+# --- a bug in hsql itself ----------------------------------------------------
+
+
+def run_main(monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
+    """Call the console script's entry point, which is where crashes are caught."""
+    from harlequin.hsql import main
+
+    monkeypatch.setattr(sys, "argv", ["hsql", *argv])
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    return cast(int, exit_info.value.code)
+
+
+@pytest.fixture
+def hsql_crashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bug in hsql, before anything it runs has had a chance to catch it."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("a bug in hsql")
+
+    monkeypatch.setattr("harlequin.hsql.cli.build_cli", _boom)
+
+
+def test_a_bug_in_hsql_is_not_reported_as_a_failed_query(
+    monkeypatch: pytest.MonkeyPatch,
+    hsql_crashes: None,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """1 is what a database rejecting the SQL means. A caller scripting against
+    these could not otherwise tell the two apart."""
+    code = run_main(monkeypatch, "-c", "select 1")
+
+    assert code == ExitCode.CRASH
+    assert code != ExitCode.QUERY
+
+    (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
+    assert "a bug in hsql" in report.read_text()
+
+    stderr = capsys.readouterr().err
+    assert "hsql hit a bug in itself" in stderr
+    assert "please report this crash to help improve Harlequin" in stderr
+    # the ask comes before the file it needs, and neither is called a review
+    assert stderr.index(ISSUE_URL) < stderr.index(str(report))
+    assert "review" not in stderr.lower()
+
+
+def test_a_crash_report_masks_a_dsn_typed_on_the_command_line(
+    monkeypatch: pytest.MonkeyPatch,
+    hsql_crashes: None,
+    crash_reports_go_to_tmp: Path,
+) -> None:
+    """A crash during parsing happens before `hide_secrets_in()` runs, so the
+    span-masking is the only thing that catches it."""
+    run_main(monkeypatch, "postgres://tco:hunter2-and-more@warehouse:5432/analytics")
+
+    (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
+    text = report.read_text()
+    assert "hunter2-and-more" not in text
+    # and the rest of the DSN survives, which is what makes the argv worth having
+    assert "warehouse:5432/analytics" in text
+
+
+def test_a_crash_report_that_cannot_be_written_still_exits_70(
+    monkeypatch: pytest.MonkeyPatch,
+    hsql_crashes: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise OSError("the log dir is gone")
+
+    monkeypatch.setattr("harlequin.crash.write_crash_report", _raise)
+
+    assert run_main(monkeypatch, "-c", "select 1") == ExitCode.CRASH
+    assert "hsql hit a bug in itself" in capsys.readouterr().err
+
+
+def test_an_interrupt_is_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _interrupt(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("harlequin.hsql.cli.build_cli", _interrupt)
+
+    assert run_main(monkeypatch, "-c", "select 1") == ExitCode.INTERRUPT
+
+
+def test_a_bug_in_the_session_client_is_a_crash_too(
+    monkeypatch: pytest.MonkeyPatch,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The warm path is hsql's too, so a bug in it exits 70 rather than 1."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("a bug in the client")
+
+    monkeypatch.setattr("harlequin.hsql.session.requested_session", _boom)
+
+    assert (
+        run_main(monkeypatch, "--session", "warm", "-c", "select 1") == ExitCode.CRASH
+    )
+
+    (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
+    assert "a bug in the client" in report.read_text()
+    assert "hsql hit a bug in itself" in capsys.readouterr().err

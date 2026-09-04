@@ -25,7 +25,7 @@ from harlequin.autocomplete import (
     find_symbols,
 )
 from harlequin.components.text_modal import ErrorModal
-from harlequin.editor_cache import BufferState, load_cache
+from harlequin.editor_cache import BufferState, adopt_recovery, load_cache
 from harlequin.exception import HarlequinExternalError
 from harlequin.external import launch_external_editor
 from harlequin.messages import WidgetMounted
@@ -333,6 +333,7 @@ class EditorCollection(Vertical):
         self._member_completer: MemberCompleter | None = None
         self._buffer_symbols: BufferSymbols = NO_SYMBOLS
         self.startup_cache = load_cache()
+        self.recovered_cache, self.recovered_from = adopt_recovery()
         self.buffer_states: dict[str, EditorState] = {}
         self.loaded_buffer_id: str | None = None
         self.tabs = Tabs()
@@ -407,12 +408,19 @@ class EditorCollection(Vertical):
                 completer.update_buffer_symbols(message.symbols)
 
     async def on_mount(self) -> None:
-        if self.startup_cache is not None and self.startup_cache.buffers:
-            for buffer in self.startup_cache.buffers:
+        # a recovered session started from the cache, so it is strictly newer
+        cache = self.recovered_cache or self.startup_cache
+        if cache is not None and cache.buffers:
+            for buffer in cache.buffers:
                 await self.action_new_buffer(state=buffer, activate=False)
-            self._activate_cached_buffer(self.startup_cache.focus_index)
+            self._activate_cached_buffer(cache.focus_index)
         else:
             await self.action_new_buffer()
+        if self.recovered_cache is not None:
+            self.notify(
+                "Recovered buffers from a session that ended unexpectedly.",
+                title="Buffers recovered",
+            )
         self.editor.theme = self.theme
         self.editor.word_completer = self.word_completer
         self.editor.member_completer = self.member_completer

@@ -29,21 +29,22 @@ adapter implements is the direction that gets someone hurt.
 from __future__ import annotations
 
 import json
-import platform
 import subprocess
-import sys
-from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from harlequin.config import DEFAULT_ADAPTER, discover_config_files, resolve_profile
+from harlequin.environment import (
+    adapter_facts,
+    harlequin_version,
+    platform_facts,
+    python_facts,
+)
 from harlequin.exception import HarlequinConfigError
 from harlequin.hsql import diagnostics
 from harlequin.hsql.diagnostics import ExitCode
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from harlequin.adapter import HarlequinAdapter
 
 FILENAME = "info.json"
 """What this document is called when `-o` names a folder to write it into."""
@@ -52,10 +53,6 @@ JSON = "json"
 """The one `--format` a document mode answers to. `none` writes nothing."""
 
 NONE = "none"
-
-UNKNOWN = "unknown"
-"""What an adapter that would not import declares, in place of a capability map."""
-
 
 _VERSION_SECONDS = 5.0
 """How long `ssh -V` has to answer. It reads no config and opens no socket."""
@@ -87,17 +84,9 @@ def report(
     profile["options"] = _redacted(profile["options"], adapter_in_use["name"])
     document = {
         "program": "hsql",
-        "version": version("harlequin"),
-        "python": {
-            "version": platform.python_version(),
-            "implementation": platform.python_implementation(),
-            "executable": sys.executable,
-        },
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-        },
+        "version": harlequin_version(),
+        "python": python_facts(),
+        "platform": platform_facts(),
         "ssh": _ssh_client(),
         "config": _config_files(config_path),
         "profile": profile,
@@ -217,58 +206,17 @@ def _redacted(options: Any, adapter: str) -> Any:
 
 
 def _adapters(only: str | None) -> dict[str, Any]:
-    """Every installed adapter's declarations, or one's, keyed by adapter name.
+    """Every installed adapter's declarations, or one's, and a note about each
+    one that would not import.
 
-    Keyed rather than a list, because the question a caller has is about a name
-    they already hold: what can `duckdb` do.
+    Both halves are worth reporting: an agent reading the document sees why the
+    capabilities are unknown, and a human sees it on stderr.
     """
-    from harlequin.plugins import (
-        adapter_distributions,
-        adapter_names,
-        adapter_versions,
-        load_adapter,
-    )
-
-    distributions = adapter_distributions()
-    versions = adapter_versions()
-    names = [only] if only is not None else adapter_names()
-    adapters: dict[str, Any] = {}
-    for name in names:
-        capabilities: dict[str, bool] | str = UNKNOWN
-        error: str | None = None
-        try:
-            adapter_cls = load_adapter(name)
-        except HarlequinConfigError as e:
-            # both halves are worth reporting: an agent reading the document
-            # sees why the capabilities are unknown, and a human sees it on
-            # stderr
-            error = e.msg
+    adapters = adapter_facts(only)
+    for name, facts in adapters.items():
+        if facts["error"] is not None:
             diagnostics.note(f"{name} is installed, but could not be imported.")
-        else:
-            capabilities = _capabilities(adapter_cls)
-        adapters[name] = {
-            "distribution": distributions.get(name),
-            "version": versions.get(name),
-            "capabilities": capabilities,
-            "error": error,
-        }
-    return adapters
-
-
-def _capabilities(adapter_cls: type[HarlequinAdapter]) -> dict[str, bool]:
-    """What one adapter declares, read off the class and never called.
-
-    The names come from the contract rather than a list kept here, so a
-    capability added to `HarlequinAdapter` is reported by this mode as soon as
-    it exists.
-    """
-    from harlequin.adapter import HarlequinAdapter
-
-    return {
-        name.lower(): bool(getattr(adapter_cls, name, False))
-        for name in sorted(vars(HarlequinAdapter))
-        if name.startswith("IMPLEMENTS_")
-    }
+    return dict(adapters)
 
 
 def _text(value: Any) -> str | None:

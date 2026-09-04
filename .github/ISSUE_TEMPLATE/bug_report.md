@@ -10,6 +10,7 @@ assignees: ''
 - [ ] I have consulted the [Troubleshooting guide](https://harlequin.sh/docs/troubleshooting/index).
 - [ ] I have searched Issues and Discussions in this repo.
 - [ ] Feature requests should be initiated as Discussions. This is a bug report.
+- [ ] Did Harlequin exit with an error and print a crash report path? Use the Crash Report template instead.
 
 **Describe the bug**
 A clear and concise description of what the bug is.
