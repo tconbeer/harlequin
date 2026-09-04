@@ -28,7 +28,13 @@ PLUGIN_PATH = SOURCE_ROOT / "hsql" / "skill" / ".claude-plugin" / "plugin.json"
 
 PROTOCOL_PATH = SOURCE_ROOT / "hsql" / "protocol.py"
 
-_PROTOCOL_VERSION = re.compile(r'^VERSION = "[^"]*"$', re.MULTILINE)
+_PROTOCOL_VERSION = re.compile(r'^VERSION = "[^"]*"(?=\r?$)', re.MULTILINE)
+"""The one line to rewrite, matched without consuming the newline before it.
+
+A lookahead rather than `$`, because the file is read untranslated (see
+`write_protocol_version`): with `\\r\\n` endings, `$` sits after the `\\r`, so a
+pattern ending in `"` would never match one.
+"""
 
 
 def write_plugin_version(version: str, path: Path = PLUGIN_PATH) -> None:
@@ -44,12 +50,22 @@ def write_plugin_version(version: str, path: Path = PLUGIN_PATH) -> None:
 
 
 def write_protocol_version(version: str, path: Path = PROTOCOL_PATH) -> None:
-    """Rewrite the session protocol's version, and nothing else."""
-    source = path.read_text(encoding="utf-8")
+    """Rewrite the session protocol's version, and nothing else.
+
+    Read and written with `newline=""`, so the file's own line endings survive:
+    this edits one line of a source file, and a checkout with CRLF endings --
+    which is every Windows one, since `.gitattributes` pins only the artifacts
+    whose bytes are a contract -- would otherwise come back with every other
+    line rewritten too. `open()` rather than `Path.read_text()`, which only
+    takes `newline` on 3.13 and up.
+    """
+    with path.open("r", encoding="utf-8", newline="") as source_file:
+        source = source_file.read()
     rewritten, replacements = _PROTOCOL_VERSION.subn(f'VERSION = "{version}"', source)
     if replacements != 1:
         raise SystemExit(f"{path} declares VERSION {replacements} times, not once")
-    path.write_text(rewritten, encoding="utf-8", newline="\n")
+    with path.open("w", encoding="utf-8", newline="") as target_file:
+        target_file.write(rewritten)
 
 
 def main() -> None:

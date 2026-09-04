@@ -417,6 +417,22 @@ def test_a_name_that_could_name_no_session_is_refused(
     assert "is not a session name" in capsys.readouterr().err
 
 
+def test_a_platform_without_unix_sockets_has_no_sessions(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Native Windows, exercised wherever the tests run.
+
+    A typed session is a *usage* error there rather than a connection one:
+    nothing is down, and a caller who answers an exit 3 by starting the server
+    would answer it forever. An ambient one warns and runs cold, like any other.
+    """
+    monkeypatch.delattr(socket, "AF_UNIX", raising=False)
+    assert client.run(typed(), ["-c", "select 1"], {}) == ExitCode.USAGE
+    assert "native Windows" in capsys.readouterr().err
+    assert client.run(ambient(), ["-c", "select 1"], {}) is None
+    assert "running cold" in capsys.readouterr().err
+
+
 @needs_unix_sockets
 def test_a_stale_socket_is_cleaned_up_by_whoever_finds_it(
     environ: dict[str, str],
@@ -468,6 +484,28 @@ def test_a_release_bumps_the_protocol_version_and_rewrites_nothing_else(
     assert copied.read_bytes() == source.read_bytes().replace(
         f'VERSION = "{version("harlequin")}"'.encode(), b'VERSION = "9.9.9"'
     )
+
+
+@pytest.mark.parametrize("ending", [b"\n", b"\r\n"])
+def test_a_release_leaves_the_files_line_endings_alone(
+    ending: bytes, tmp_path: Path
+) -> None:
+    """A Windows checkout has CRLF here -- `.gitattributes` pins only the
+    artifacts whose bytes are a contract -- and a release that normalized them
+    would rewrite every line of the file to change one.
+
+    Parametrized rather than left to the platform, so the ending this file does
+    *not* have in the checkout running the test is covered too.
+    """
+    source = Path(protocol.__file__).read_bytes().replace(b"\r\n", b"\n")
+    copied = tmp_path / "protocol.py"
+    copied.write_bytes(source.replace(b"\n", ending))
+    _release_script().write_protocol_version("9.9.9", copied)
+    written = copied.read_bytes()
+    assert b'VERSION = "9.9.9"' in written
+    assert written == source.replace(
+        f'VERSION = "{version("harlequin")}"'.encode(), b'VERSION = "9.9.9"'
+    ).replace(b"\n", ending)
 
 
 def _release_script() -> ModuleType:
@@ -537,7 +575,11 @@ def test_an_ambient_session_that_is_down_still_runs_the_query(
 
 def test_a_typed_session_that_is_down_runs_nothing(hsql_process: HsqlProcess) -> None:
     proc = hsql_process(["--session", "nobody", "-c", "select 1"])
-    assert proc.returncode == ExitCode.CONNECTION
+    # a platform that has no sessions at all is a usage error, not a server that
+    # happens to be down
+    assert proc.returncode == (
+        ExitCode.CONNECTION if HAS_UNIX_SOCKETS else ExitCode.USAGE
+    )
     assert not proc.stdout
 
 

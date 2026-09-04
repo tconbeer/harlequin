@@ -70,8 +70,15 @@ def run(
     if not hasattr(socket, "AF_UNIX"):
         # native Windows has no AF_UNIX in CPython, through 3.14. WSL2 is Linux
         # and gets the feature, which is why the docs say *native* Windows.
+        #
+        # A usage error rather than a connection one: nothing is down, and a
+        # caller who retries an exit 3 by starting the server would retry here
+        # forever. Same code as a name that could never name a session, for the
+        # same reason -- both say this invocation can never be served.
         return _no_session(
-            session, "hsql sessions need a unix socket, which native Windows has not"
+            session,
+            "hsql sessions need a unix socket, which native Windows has not",
+            code=USAGE,
         )
     if not is_valid_name(session.name):
         return _no_session(
