@@ -9,9 +9,20 @@ TUI. Attribute access still resolves the same names from the same modules, so
 app only when the app is what you asked for.
 """
 
-from typing import TYPE_CHECKING, Any
+from __future__ import annotations
+
+TYPE_CHECKING = False
+"""Declared here rather than imported, so that this module imports nothing.
+
+Importing any `harlequin.*` submodule executes this file, which puts whatever
+it imports on the path of the warm-session client, where the budget is a
+fraction of what `typing` costs. Every annotation below is a string (PEP 563),
+so nothing needs the name at run time.
+"""
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from harlequin.adapter import (
         HarlequinAdapter,
         HarlequinConnection,

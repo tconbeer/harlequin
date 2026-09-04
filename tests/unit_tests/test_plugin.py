@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MARKETPLACE_PATH = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 PLUGIN_PATH = skill_mode.SKILL_DIR / ".claude-plugin" / "plugin.json"
 
-BUMP_SCRIPT_PATH = REPO_ROOT / "scripts" / "bump_plugin_version.py"
+BUMP_SCRIPT_PATH = REPO_ROOT / "scripts" / "bump_versions.py"
 
 PACKAGED_PLUGIN_MANIFEST = "src/harlequin/hsql/skill/.claude-plugin/plugin.json"
 """The manifest's path from the repo root, as the build targets spell it."""
@@ -71,9 +71,7 @@ def plugin() -> dict[str, Any]:
 @pytest.fixture(scope="module")
 def bumper() -> ModuleType:
     """The release script, loaded from `scripts/`, which is not a package."""
-    spec = importlib.util.spec_from_file_location(
-        "bump_plugin_version", BUMP_SCRIPT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("bump_versions", BUMP_SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -133,7 +131,7 @@ def test_a_release_bumps_the_version_and_rewrites_nothing_else(
     committed = PLUGIN_PATH.read_bytes()
     manifest = tmp_path / "plugin.json"
     manifest.write_bytes(committed)
-    bumper.write_version("9.9.9", manifest)
+    bumper.write_plugin_version("9.9.9", manifest)
     assert manifest.read_bytes() == committed.replace(
         f'"version": "{version("harlequin")}"'.encode(), b'"version": "9.9.9"'
     )
