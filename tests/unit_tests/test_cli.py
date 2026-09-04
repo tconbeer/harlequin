@@ -118,6 +118,43 @@ def test_help(mock_adapter: MagicMock, mock_empty_config: None) -> None:
     assert "(TEXT)" in res.output
 
 
+def test_no_write_history_typed(
+    mock_harlequin: MagicMock, mock_adapter: MagicMock, mock_empty_config: None
+) -> None:
+    runner = CliRunner()
+    res = invoke(runner, "--no-write-history")
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["record_history"] is False
+
+
+def test_no_write_history_from_a_profile(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / ".harlequin.toml"
+    config.write_text("[profiles.quiet]\nadapter = 'duckdb'\nno_write_history = true\n")
+    runner = CliRunner()
+    res = invoke(runner, ["--config-path", str(config), "-P", "quiet"])
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["record_history"] is False
+
+
+def test_no_write_history_that_is_not_a_boolean_is_refused(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.odd]\nadapter = 'duckdb'\nno_write_history = 'sometimes'\n"
+    )
+    runner = CliRunner()
+    res = invoke(runner, ["--config-path", str(config), "-P", "odd"])
+    assert res.exit_code == 2
+    assert not mock_harlequin.called
+
+
 @pytest.mark.parametrize("harlequin_args", ["", ":memory:"])
 def test_default(
     mock_harlequin: MagicMock,

@@ -607,12 +607,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # config file pointed it at
         hide_secrets_in(config, adapter_cls.ADAPTER_OPTIONS)
 
-        # One profile serves both commands, so a profile written for hsql has
-        # to work here: its keys come off rather than being handed to an
-        # adapter that never declared them, as hsql drops this command's own.
-        # Which also keeps the two agreeing about a connection's id, since that
-        # is a hash of whatever is left. An option the adapter does declare is
-        # its own, however hsql spells the same word.
+        # drop hsql's own profile keys before the adapter sees the config; an
+        # option the adapter also declares is the adapter's
         declared_by_adapter = {
             sluggify_option_name(option.name)
             for option in adapter_cls.ADAPTER_OPTIONS or []
@@ -620,9 +616,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         for key in hsql_profile_keys() - harlequin_options - declared_by_adapter:
             config.pop(key, None)
 
-        # detect and install (if necessary) a tzdatabase on Windows. The key
-        # comes off on every platform, because what is left of the config is
-        # the adapter's and is what a connection is keyed by.
+        # detect and install (if necessary) a tzdatabase on Windows
+        # popped on every platform: the remaining config is the adapter's
         no_download_tzdata = config.pop("no_download_tzdata", None)
         if sys.platform == "win32" and not no_download_tzdata:
             try:
