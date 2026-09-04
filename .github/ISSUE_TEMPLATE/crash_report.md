@@ -8,6 +8,7 @@ assignees: ''
 ---
 **Before proceeding, please acknowledge**:
 - [ ] I have searched Issues and Discussions in this repo for this error.
+- [ ] I have redacted secrets and PII from the crash report pasted below.
 
 **Paste your crash report below.**
 

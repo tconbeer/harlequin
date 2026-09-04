@@ -219,15 +219,22 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
-def _distribution_version(adapter_cls: type[HarlequinAdapter]) -> str | None:
-    """The version of the distribution an adapter class came from, if it has one."""
-    from importlib.metadata import PackageNotFoundError, version
+def _adapter_distribution(adapter_name: str | None) -> str | None:
+    """The distribution an adapter came from, and its version.
 
-    package = adapter_cls.__module__.split(".")[0]
-    try:
-        return version(package)
-    except PackageNotFoundError:
+    Read off the entry point rather than the class: an adapter's module name
+    is not its distribution name, and both bundled adapters ship inside
+    `harlequin` itself. Importing nothing, which is what makes it safe to ask
+    mid-crash.
+    """
+    from harlequin.plugins import adapter_distributions, adapter_versions
+
+    if adapter_name is None:
         return None
+    distribution = adapter_distributions().get(adapter_name)
+    if distribution is None:
+        return None
+    return f"{distribution} {adapter_versions().get(adapter_name)}"
 
 
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
@@ -1151,9 +1158,12 @@ class Harlequin(AppBase):
     def _build_editor_cache(self) -> Cache | None:
         """The open buffers, or None when there is nothing worth writing.
 
-        Blank buffers are nothing: a crash before the editor mounts leaves the
-        collection empty, and writing that over a recovery file would destroy
-        exactly the work this exists to save.
+        `editor_collection` is assigned in `compose()`, so before the app
+        mounts the attribute does not exist at all -- and a crash before that
+        is one of the crashes the caller runs for.
+
+        Blank buffers are nothing either: writing them over a recovery file
+        would destroy exactly the work this exists to save.
         """
         editor_collection = getattr(self, "editor_collection", None)
         if editor_collection is None or not editor_collection.is_mounted:
@@ -1228,7 +1238,7 @@ class Harlequin(AppBase):
             ("adapter", lambda: self.adapter_name),
             ("adapter_class", lambda: adapter_cls.__qualname__),
             ("adapter_module", lambda: adapter_cls.__module__),
-            ("adapter_version", lambda: _distribution_version(adapter_cls)),
+            ("adapter_distribution", lambda: _adapter_distribution(self.adapter_name)),
             ("profile", lambda: self.profile_name),
             ("keymaps", lambda: ", ".join(self.keymap_names)),
             ("theme", lambda: self.theme),

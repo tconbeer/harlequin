@@ -114,9 +114,12 @@ def crash_message(
     cause = root_cause(error)
     lines = [f"{type(cause).__name__}: {cause}", ""]
     if saved:
-        lines.append(
-            "Your open buffers were saved, and Harlequin will offer them back "
-            "the next time you start it."
+        lines.extend(
+            [
+                "Your open buffers were saved, and Harlequin will offer them "
+                "back the next time you start it.",
+                "",
+            ]
         )
     if report_path is not None:
         lines.extend(

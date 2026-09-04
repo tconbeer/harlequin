@@ -102,8 +102,14 @@ async def test_a_crash_saves_the_open_buffers(
 
 @pytest.mark.asyncio
 async def test_the_report_holds_what_the_session_was(
-    app: Harlequin, crash_reports_go_to_tmp: Path
+    duckdb_adapter: type[HarlequinAdapter], crash_reports_go_to_tmp: Path
 ) -> None:
+    """Built the way `cli.py` builds it, which is where the adapter gets a name."""
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        adapter_name="duckdb",
+        profile_name="warehouse",
+    )
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
             while app.editor is None:
@@ -114,7 +120,12 @@ async def test_the_report_holds_what_the_session_was(
 
     (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
     text = report.read_text()
+    assert "adapter: duckdb" in text
     assert "adapter_class: DuckDbAdapter" in text
+    # the distribution, not the module: both bundled adapters ship inside
+    # `harlequin`, whose name their module never spells
+    assert "adapter_distribution: harlequin " in text
+    assert "profile: warehouse" in text
     assert "connected: True" in text
     assert "buffers: 1" in text
     # the SQL is last, under a heading that says what it is
