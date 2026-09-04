@@ -2335,12 +2335,15 @@ def _fetched(
     """Each selected result set, fetched, with its position among them."""
     from harlequin.query import fetch
 
+    def canceled_from(position: int) -> None:
+        """Mark this statement and every one after it, none of which is fetched."""
+        for unfetched in selected[position - 1 :]:
+            run.record_result(unfetched.statement, status="canceled")
+
     for position, item in enumerate(selected, start=1):
         if run.stopped:
-            # the clock ran out between statements, and nothing after this one
-            # will be fetched either
-            for unfetched in selected[position - 1 :]:
-                run.record_result(unfetched.statement, status="canceled")
+            # the clock ran out between statements
+            canceled_from(position)
             return
         try:
             result = fetch(item, limit=limit)
@@ -2348,7 +2351,7 @@ def _fetched(
             if run.stopped:
                 # whatever the cancel raised on the way out is not this run's
                 # error to report; the deadline is
-                run.record_result(item.statement, status="canceled")
+                canceled_from(position)
                 return
             run.failure = e
             run.record_result(item.statement, status="error", error=e)
@@ -2359,7 +2362,7 @@ def _fetched(
         if run.stopped:
             # the cancel landed inside that fetch, so the rows it returned are
             # the ones it had rather than the ones the query has
-            run.record_result(item.statement, status="canceled")
+            canceled_from(position)
             return
         run.record_result(item.statement, result=result)
         yield position, result

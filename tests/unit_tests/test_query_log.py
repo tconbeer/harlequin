@@ -296,7 +296,8 @@ def test_a_write_that_fails_disables_logging_and_does_not_raise(
 
 
 def test_a_disabled_log_writes_nothing(store: Path) -> None:
-    """`history = false`, which is the same object to everything upstream."""
+    """`--no-write-history`: a disabled log is a real object whose writes do
+    nothing."""
     log = QueryLog(program="hsql", path=store, enabled=False)
     assert not log.enabled
     assert log.failure is None
