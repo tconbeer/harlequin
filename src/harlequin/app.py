@@ -6,10 +6,12 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     Optional,
@@ -76,11 +78,13 @@ from harlequin.config import (
     load_profile_and_keymaps,
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
+from harlequin.crash import ACTIVE_BUFFER
 from harlequin.driver import HarlequinDriver
 from harlequin.editor_cache import (
     CHECKPOINT_INTERVAL_SECONDS,
     Cache,
     clear_recovery,
+    get_recovery_file,
     write_recovery,
 )
 from harlequin.editor_cache import write_cache as write_editor_cache
@@ -215,6 +219,17 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
+def _distribution_version(adapter_cls: type[HarlequinAdapter]) -> str | None:
+    """The version of the distribution an adapter class came from, if it has one."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    package = adapter_cls.__module__.split(".")[0]
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return None
+
+
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
     "_load_catalog_cache": (
         "Harlequin could not load its cache; your query history may be missing."
@@ -242,6 +257,7 @@ class Harlequin(AppBase):
         adapter: HarlequinAdapter,
         profile_name: str | None = None,
         *,
+        adapter_name: str | None = None,
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
@@ -263,6 +279,7 @@ class Harlequin(AppBase):
             watch_css=watch_css,
         )
         self.adapter = adapter
+        self.adapter_name = adapter_name
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
@@ -1162,6 +1179,70 @@ class Harlequin(AppBase):
             return
         if write_recovery(cache):
             self._last_checkpointed_cache = cache
+
+    def _save_work_on_crash(self) -> bool:
+        """Save the buffers and the query history a crash would otherwise lose.
+
+        The buffers go to a `recovered-` file rather than this session's
+        recovery file, so the next start adopts them however old they are. The
+        cache the last clean quit wrote is left alone: if the recovered content
+        is itself what crashed, that is still on disk.
+        """
+        saved = False
+        try:
+            # the crash may be *in* the editor, and building this reads it
+            cache = self._build_editor_cache()
+        except Exception:
+            cache = self._last_checkpointed_cache
+        if cache is not None and write_recovery(cache):
+            try:
+                os.replace(get_recovery_file(), self._crash_recovery_file())
+                saved = True
+            except OSError:
+                pass
+        try:
+            update_catalog_cache(
+                connection_hash=self.connection_hash,
+                catalog=None,
+                s3_tree=self.data_catalog.s3_tree,
+                history=self.history,
+            )
+        except Exception:
+            pass
+        return saved
+
+    def _crash_recovery_file(self) -> Path:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return get_recovery_file().with_name(f"recovered-{stamp}-{os.getpid()}.pickle")
+
+    def _crash_context(self) -> dict[str, Any]:
+        """What this session was, for the crash report.
+
+        Every fact is cheap and separately wrapped. It deliberately does not
+        call `adapter_facts()`: importing every installed adapter mid-crash is
+        slow, and a fresh place to crash.
+        """
+        context: dict[str, Any] = {}
+        adapter_cls = type(self.adapter)
+        for key, get_fact in (
+            ("adapter", lambda: self.adapter_name),
+            ("adapter_class", lambda: adapter_cls.__qualname__),
+            ("adapter_module", lambda: adapter_cls.__module__),
+            ("adapter_version", lambda: _distribution_version(adapter_cls)),
+            ("profile", lambda: self.profile_name),
+            ("keymaps", lambda: ", ".join(self.keymap_names)),
+            ("theme", lambda: self.theme),
+            ("connected", lambda: self.connection is not None),
+            ("buffers", lambda: self.editor_collection.tab_count),
+            ("size", lambda: str(self.size)),
+            ("recovery_file", lambda: str(self._crash_recovery_file())),
+            (ACTIVE_BUFFER, lambda: self.editor.text if self.editor else None),
+        ):
+            try:
+                context[key] = get_fact()
+            except Exception:
+                context[key] = "unknown"
+        return context
 
     async def action_quit(self) -> None:
         write_editor_cache(

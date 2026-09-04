@@ -65,6 +65,8 @@ def mock_sqlite_adapter(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 @pytest.fixture()
 def mock_harlequin(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock = MagicMock(spec=Harlequin)
+    # the command exits with it, and a MagicMock is not an exit code
+    mock.return_value.return_code = 0
     monkeypatch.setattr("harlequin.cli.Harlequin", mock)
     return mock
 
@@ -131,6 +133,7 @@ def test_default(
     mock_harlequin.assert_called_once_with(
         adapter=mock_adapter.return_value,
         profile_name=None,
+        adapter_name="duckdb",
         connection_hash=mock_adapter.return_value.connection_id,
         viewer_max_rows=DEFAULT_VIEWER_MAX_ROWS,
         query_limit=None,

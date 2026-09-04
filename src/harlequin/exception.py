@@ -35,6 +35,12 @@ class HarlequinConnectionError(HarlequinError):
     pass
 
 
+class HarlequinCrashError(HarlequinError):
+    """A bug in Harlequin itself, as the panel that replaces the traceback."""
+
+    pass
+
+
 class HarlequinCopyError(HarlequinError):
     pass
 

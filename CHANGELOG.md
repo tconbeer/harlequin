@@ -9,8 +9,11 @@ All notable changes to this project will be documented in this file.
 - Press `alt+e` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
 - Harlequin now saves your open buffers every minute, and offers them back the next time you start if it exited without a clean quit ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 
+- When Harlequin hits a bug in itself, it now exits with a short message instead of a traceback, saves your buffers, and writes a crash report you can attach to an issue ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+
 ### Bug Fixes
 
+- `harlequin` now exits non-zero when it fails: 1 after a crash, and 2 for a config or connection error it used to report as success ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
 
 ## [2.13.0] - 2026-09-02

@@ -65,6 +65,18 @@ def set_locale_to_enUS() -> None:
 
 
 @pytest.fixture(autouse=True)
+def crash_reports_go_to_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Every crash a test causes writes here, not into the developer's log dir.
+
+    `run_test` re-raises through `_handle_exception`, so without this every
+    failing functional test in the suite leaves a crash report behind.
+    """
+    report_dir = tmp_path / "crash-reports"
+    monkeypatch.setattr("harlequin.crash.get_crash_report_dir", lambda: report_dir)
+    return report_dir
+
+
+@pytest.fixture(autouse=True)
 def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the machine running the tests out of them.
 
