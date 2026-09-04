@@ -4630,28 +4630,61 @@ def test_a_secret_never_reaches_the_query_log(
     assert "hunter2-and-then-some" not in row["sql"]
 
 
+def _timed_out_run(
+    args: Sequence[str], *, clean_env: dict[str, str], tmp_path: Path
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, Any]]]:
+    """Run hsql in a child and read back what it recorded.
+
+    A child because a run that will not stop within the grace period ends in
+    `os._exit()`, which in process would take the xdist worker with it.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from harlequin.hsql import main; sys.argv = sys.argv[1:]; "
+            "main()",
+            "hsql",
+            *args,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=120,
+        cwd=tmp_path,
+        env=clean_env,
+    )
+    # wherever platformdirs put it on this platform; `clean_env` keeps it here
+    (store,) = tmp_path.rglob("history.db")
+    return proc, logged(store)
+
+
 def test_a_statement_cancelled_while_it_runs_is_still_recorded(
-    hsql: Hsql, query_log_path: Path
+    tmp_path: Path, clean_env: dict[str, str]
 ) -> None:
     """SQLite steps the query inside `execute()`, so the timeout lands there.
 
     A lazy adapter is cancelled in the fetch instead; the row has to exist
     either way, or the history depends on which driver ran the query.
     """
-    res = hsql(
-        *["-a", "sqlite", ":memory:"],
-        *["--timeout", "0.3"],
-        "-c",
-        "with recursive t(n) as (select 1 union all select n + 1 from t) "
-        "select count(*) from t",
+    proc, recorded = _timed_out_run(
+        [
+            *["-a", "sqlite", ":memory:"],
+            *["--timeout", "0.3"],
+            "-c",
+            "with recursive t(n) as (select 1 union all select n + 1 from t) "
+            "select count(*) from t",
+        ],
+        clean_env=clean_env,
+        tmp_path=tmp_path,
     )
-    assert res.exit_code == ExitCode.TIMEOUT, res.stderr
-    (row,) = logged(query_log_path)
+    assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
+    (row,) = recorded
     assert row["status"] == "canceled"
 
 
 def test_every_statement_a_cancel_stopped_says_so(
-    hsql: Hsql, duck: list[str], query_log_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, clean_env: dict[str, str]
 ) -> None:
     """Not just the one in flight: nothing after it was fetched either.
 
@@ -4659,14 +4692,17 @@ def test_every_statement_a_cancel_stopped_says_so(
     the clock caught leaves the last one `ok` with no rows -- which is what
     `--result last` looks like.
     """
-    res = hsql(
-        *duck,
-        *["--timeout", "0.3"],
-        "-c",
-        "select 1; select sum(i) from range(50000000000) t(i); select 2",
+    proc, recorded = _timed_out_run(
+        [
+            *["-a", "duckdb", "--no-init", ":memory:"],
+            *["--timeout", "0.3"],
+            "-c",
+            "select 1; select sum(i) from range(50000000000) t(i); select 2",
+        ],
+        clean_env=clean_env,
+        tmp_path=tmp_path,
     )
-    assert res.exit_code == ExitCode.TIMEOUT, res.stderr
-    recorded = logged(query_log_path)
+    assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
     assert len(recorded) == 3
     assert [row["status"] for row in recorded] == ["ok", "canceled", "canceled"]
     # the one that did finish keeps what it returned
