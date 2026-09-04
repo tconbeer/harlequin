@@ -8,6 +8,7 @@ which is the only way to prove a deferral actually defers.
 
 from __future__ import annotations
 
+import socket
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -125,7 +126,9 @@ def test_a_warm_invocation_never_reaches_the_cold_path(
     )
     # the client writes its refusal to stderr, so stdout is these two lines
     code, leaked = proc.stdout.split("\n")[:2]
-    assert code == "3"
+    # 3 where a session could have been running and was not; 2 on a platform
+    # that has no sessions at all, which is native Windows
+    assert code == ("3" if hasattr(socket, "AF_UNIX") else "2")
     assert not leaked
 
 
