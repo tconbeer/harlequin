@@ -23,6 +23,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.autocomplete",
     "import harlequin.catalog",
     "import harlequin.config",
+    "import harlequin.environment",
     "import harlequin.exception",
     "import harlequin.export",
     "import harlequin.hsql",

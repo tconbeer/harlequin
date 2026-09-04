@@ -262,6 +262,7 @@ source_modules = [
     "harlequin.autocomplete",
     "harlequin.catalog",
     "harlequin.config",
+    "harlequin.environment",
     "harlequin.exception",
     "harlequin.keymap",
     "harlequin.navigate",
