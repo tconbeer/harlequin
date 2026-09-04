@@ -17,14 +17,13 @@ from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
-    SHARED_ONLY_KEYS,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
     sluggify_option_name,
-    take_history_key,
+    take_no_write_history,
     take_ssh_keys,
 )
 from harlequin.config_wizard import wizard
@@ -150,6 +149,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
             "--config-path",
             "--locale",
             "--no-download-tzdata",
+            "--no-write-history",
         ],
     },
     {
@@ -432,6 +432,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--no-write-history",
+        "no_write_history",
+        is_flag=True,
+        help=(
+            "Do not record this session's queries in the query history that "
+            "Harlequin and hsql share."
+        ),
+    )
+    @click.option(
         "--read-only",
         "-r",
         "read_only",
@@ -583,9 +592,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 profile_config,
                 adapter=adapter_name,
                 adapter_options=adapter_cls.ADAPTER_OPTIONS,
-                command_options=harlequin_options
-                | hsql_profile_keys()
-                | set(SHARED_ONLY_KEYS),
+                command_options=harlequin_options | hsql_profile_keys(),
             )
         except HarlequinConfigError as e:
             pretty_print_error(e)
@@ -673,7 +680,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # off the config before the adapter is handed the rest of it
         try:
             ssh_config = take_ssh_keys(config, typed=explicitly_set)
-            record_history = take_history_key(config)
+            no_write_history = take_no_write_history(config)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -716,7 +723,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 user_defined_keymaps=user_defined_keymaps,
                 connection_hash=keyed_connection,
                 adapter_name=adapter_name,
-                record_history=record_history,
+                record_history=not no_write_history,
                 viewer_max_rows=viewer_max_rows,
                 query_limit=query_limit,
                 theme=theme,

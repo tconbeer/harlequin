@@ -154,14 +154,6 @@ the IDE sets it to group digits for a human, and output that varied with
 `LC_ALL` would be output a caller could not predict.
 """
 
-SHARED_ONLY_KEYS = ("history",)
-"""Profile keys both commands read and neither takes on the command line.
-
-`history = false` turns off the query log for the profile that sets it. It is a
-property of a profile rather than of one run, so no click parameter declares
-it -- and this is what keeps it from being mistaken for an adapter's option.
-"""
-
 Profile = Dict[str, Any]
 """One `[profiles.x]` table: a command's own options, plus its adapter's.
 
@@ -687,21 +679,24 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
     return seconds
 
 
-def take_history_key(config: MutableMapping[str, Any]) -> bool:
-    """Whether this profile records the queries it runs, and off the config.
+def take_no_write_history(config: MutableMapping[str, Any]) -> bool:
+    """Whether this run was asked not to record its queries, and off the config.
 
-    Off it either way: what is left of a merged config is the adapter's.
+    Off it either way: what is left of a merged config is the adapter's. Spelled
+    as a refusal in both commands, so that the value that changes behavior is
+    the one a profile writes.
 
     Raises: HarlequinConfigError if the value is not true or false.
     """
-    value = config.pop("history", True)
-    if not isinstance(value, bool):
+    asked = config.pop("no_write_history", False)
+    if not isinstance(asked, bool):
+        # `no_write_history = "false"` read as true is a wrong a user cannot see
         raise HarlequinConfigError(
-            f"history={value!r} is not true or false. Leave it out to record "
-            "the queries this profile runs.",
+            f"no_write_history={asked!r} is not true or false. Leave it out to "
+            "record the queries this profile runs.",
             title=CONFIG_ERROR_TITLE,
         )
-    return value
+    return asked
 
 
 def take_ssh_keys(

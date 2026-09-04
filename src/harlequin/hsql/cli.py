@@ -71,7 +71,6 @@ from harlequin.config import (
     CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
-    SHARED_ONLY_KEYS,
     SSH_KEYS,
     TUI_ONLY_KEYS,
     UNLIMITED,
@@ -79,7 +78,7 @@ from harlequin.config import (
     parse_profile_options,
     parse_row_count,
     parse_seconds,
-    take_history_key,
+    take_no_write_history,
     take_ssh_keys,
 )
 from harlequin.exception import (
@@ -189,6 +188,7 @@ PER_REQUEST_OPTIONS = frozenset(
         "stats",
         "color",
         "version",
+        "no_write_history",
     }
 )
 """Answered on every invocation, so a session's client sends them and
@@ -556,6 +556,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         help="What to do when a statement fails.",
     )
     @click.option(
+        "--no-write-history",
+        "no_write_history",
+        is_flag=True,
+        help=(
+            "Do not record this run's queries in the query history that "
+            "Harlequin and hsql share."
+        ),
+    )
+    @click.option(
         "--stats", is_flag=True, help="Write a one-line JSON summary to stderr."
     )
     @click.option(
@@ -683,8 +692,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         read_only: bool = bool(values.pop("read_only", False))
         ssh_config: dict[str, Any] = {}
         try:
-            # off the config either way: what is left of it is the adapter's
-            record_history = take_history_key(values)
+            # per-request, so a served invocation answers it for itself
+            no_write_history = take_no_write_history(values)
         except HarlequinConfigError as e:
             diagnostics.report_error(e)
             ctx.exit(ExitCode.USAGE)
@@ -1046,7 +1055,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             connection=keyed_connection,
             profile=profile,
             adapter=adapter,
-            enabled=record_history,
+            enabled=not no_write_history,
         )
         # the run's, not the process's: click closes the context however this
         # ends, and every write is committed before then in any case
@@ -1169,8 +1178,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 adapter=found.adapter,
                 adapter_options=adapter_cls.ADAPTER_OPTIONS,
                 command_options={param.name for param in cmd.params}
-                | set(TUI_ONLY_KEYS)
-                | set(SHARED_ONLY_KEYS),
+                | set(TUI_ONLY_KEYS),
             )
         except HarlequinConfigError as e:
             setup_error = e
