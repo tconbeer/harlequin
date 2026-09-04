@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from rich.console import COLOR_SYSTEMS
 
+import harlequin.app
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QuerySubmitted
+from harlequin.query import fetch
 
 
 @pytest.fixture
@@ -101,7 +105,7 @@ async def test_a_query_is_recorded_as_it_runs(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
 ) -> None:
-    """Not at quit, which is what a session that crashes used to lose."""
+    """As each statement runs, not at quit."""
     async with app.run_test() as pilot:
         while app.editor is None:
             await pilot.pause()
@@ -118,6 +122,76 @@ async def test_a_query_is_recorded_as_it_runs(
         assert recorded["select 1 as a;"]["rows"] == 1
         assert recorded["sel;"]["status"] == "error"
         assert recorded["sel;"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_row_exists_before_its_rows_are_known(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    query_log_path: Path,
+) -> None:
+    """The two-phase write: a session that dies mid-fetch keeps the query.
+
+    Asserted by holding the fetch open, which is the window a crash lands in.
+    """
+    fetching = threading.Event()
+    release = threading.Event()
+    real_fetch = fetch
+
+    def slow_fetch(*args: Any, **kwargs: Any) -> Any:
+        fetching.set()
+        release.wait(timeout=10)
+        return real_fetch(*args, **kwargs)
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        with patch.object(harlequin.app, "fetch", slow_fetch):
+            app.post_message(QuerySubmitted(queries=["select 1 as a;"], limit=None))
+            assert await asyncio.get_running_loop().run_in_executor(
+                None, fetching.wait, 10
+            ), "the fetch never started"
+
+            # mid-fetch: the row is already there, with its rows not yet known
+            (pending,) = logged(query_log_path)
+            assert pending["sql"] == "select 1 as a;"
+            assert pending["status"] == "ok"
+            assert pending["rows"] is None
+
+            release.set()
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        # and the same row is completed rather than a second one written
+        (final,) = logged(query_log_path)
+        assert final["id"] == pending["id"]
+        assert final["rows"] == 1
+        assert final["elapsed_ms"] is not None
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_leaves_a_finished_query_alone(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    query_log_path: Path,
+) -> None:
+    """Only what the fetch never completed is `canceled`."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1 as a;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        assert logged(query_log_path)[0]["status"] == "ok"
+
+        app._cancel_query()
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        (record,) = logged(query_log_path)
+        assert record["status"] == "ok", "a cancel rewrote a query that had finished"
+        assert record["rows"] == 1
 
 
 @pytest.mark.asyncio

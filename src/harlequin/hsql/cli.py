@@ -681,6 +681,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
         adapter: str = values.pop("adapter", DEFAULT_ADAPTER)
+        # the SQL to run, read from `sources` in the order it was typed. Off the
+        # config here because what is left of it is the adapter's, and because
+        # it is hashed into the connection's id.
+        values.pop("command", None)
+        values.pop("file", None)
         destination = _Destination.parse(values.pop("output", None))
         result_spec: str = str(values.pop("result", "all"))
         raw_on_error = str(values.pop("on_error", "stop"))
@@ -1057,8 +1062,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             adapter=adapter,
             enabled=not no_write_history,
         )
-        # the run's, not the process's: click closes the context however this
-        # ends, and every write is committed before then in any case
+        # click closes the context however this run ends
         ctx.call_on_close(query_log.close)
 
         run = _Run(deadline=deadline, log=query_log)
@@ -1149,9 +1153,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 diagnostics.report_timeout(deadline.seconds)
 
         if query_log.failure is not None:
-            # once, and after the run: a store that would not open never stops
-            # a query, and this is the only way a caller learns their history
-            # has a hole in it
+            # after the run, because the first write is what opens the store
             diagnostics.report_query_log_failure(query_log.failure)
 
         if stats:
@@ -2143,8 +2145,7 @@ class _Run:
     ) -> None:
         """Log one statement, as the database is asked to run it.
 
-        Before its rows are known, so that a run killed mid-fetch has still
-        recorded the query; `record_result()` completes the row.
+        `record_result()` completes the row once its result is known.
         """
         if self.log is None:
             return
@@ -2221,23 +2222,33 @@ def _execute_all(
     from harlequin.query import execute
 
     executed: list[ExecutedStatement] = []
-    for item in execute(connection, statements, limit=limit, on_error=on_error):
+
+    def recorded() -> Iterator[Statement]:
+        """Each statement, logged before the database is asked to run it.
+
+        `execute()` consumes this one at a time, which is what leaves a row for
+        an eager adapter cancelled inside `execute()` -- or for a process
+        killed while one is running.
+        """
+        for statement in statements:
+            run.record(statement)
+            yield statement
+
+    for item in execute(connection, recorded(), limit=limit, on_error=on_error):
         if run.stopped:
             # not consuming the rest is what stops the script: a statement
             # submitted after the cancel would run past the deadline, and the
             # error the cancel itself raised is not one to report.
+            run.record_result(item.statement, status="canceled")
             break
         run.statements += 1
         if item.error is not None:
             run.failure = item.error
-            run.record(item.statement, status="error", error=item.error)
+            run.record_result(item.statement, status="error", error=item.error)
             diagnostics.report_error(item.error)
         elif item.has_result_set:
-            run.record(item.statement)
             executed.append(item)
-        else:
-            # DDL/DML: no cursor, so the row is complete where it is written
-            run.record(item.statement)
+        # DDL/DML has no cursor and no error, so its row is already complete
     return executed
 
 
@@ -2326,8 +2337,10 @@ def _fetched(
 
     for position, item in enumerate(selected, start=1):
         if run.stopped:
-            # the clock ran out between statements
-            run.record_result(item.statement, status="canceled")
+            # the clock ran out between statements, and nothing after this one
+            # will be fetched either
+            for unfetched in selected[position - 1 :]:
+                run.record_result(unfetched.statement, status="canceled")
             return
         try:
             result = fetch(item, limit=limit)

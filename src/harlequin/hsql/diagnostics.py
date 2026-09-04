@@ -324,11 +324,7 @@ def report_fixed_format_ignored(mode: str, format_name: str, *, written: str) ->
 
 
 def report_query_log_failure(message: str) -> None:
-    """Say once that this run was not recorded in the query history.
-
-    A store that cannot be written never fails the query it was recording, so
-    the only way a caller learns their history has a hole in it is this line.
-    """
+    """Say that this run was not recorded in the query history."""
     note(message)
 
 

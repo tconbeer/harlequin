@@ -1,23 +1,7 @@
-"""Every query both commands have run, in one SQLite database.
+"""One SQLite store of every query both commands run, written as it runs.
 
-One store, at `<user_state_dir>/harlequin/history.db`, one row per statement,
-written as each statement runs -- so a session that never exits cleanly still
-has its history, and an agent's queries and a human's are one list rather than
-two.
-
-**SQLite because the store is searched.** A tail read is bounded by
-construction, which an append-only file serves well; a search reaches queries
-run weeks ago, which means reading all of them. Over 100,000 records that is
-396ms as a file scan and 35ms as a `like`, and 400ms per keystroke is not a
-filter anyone can type into. The pragmas below are part of that answer rather
-than tuning, and a schema change here is an `alter table`: this is the one
-store whose contents cannot be re-fetched, so a version bump may not discard
-what it does not understand.
-
-**Logging never fails a query.** A store that cannot be opened, migrated or
-written disables itself and records why, in one place instead of at every call
-site; the caller says so once and runs on. The first write is what opens it, so
-holding a log costs nothing until there is something to record.
+Logging never fails a query: a store that cannot be opened, migrated or written
+disables itself and records why in `failure`, for the caller to report once.
 """
 
 from __future__ import annotations
@@ -25,22 +9,20 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
 
 from platformdirs import user_state_path
 
-from harlequin.redact import redact_text
+from harlequin.redact import redact_conn_str, redact_sql
 
 Status = Literal["ok", "error", "canceled"]
-"""What became of one statement.
-
-`canceled` is a status of its own because a cancelled cursor comes back empty
-and error-free, exactly like a query that matched nothing: only the caller that
-cancelled it can tell them apart.
-"""
+"""What became of one statement. Only the caller that cancelled a statement can
+tell it from one that matched nothing, so `canceled` is its own status."""
 
 MIGRATIONS: tuple[tuple[str, ...], ...] = (
     (
@@ -63,18 +45,13 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         "create index queries_connection_at on queries (connection, id desc)",
     ),
 )
-"""Each entry takes `pragma user_version` from its index to the next.
-
-Append-only, and statements rather than a script so that a migration runs
-inside the transaction that claimed the right to run it.
-"""
+"""Each entry takes `pragma user_version` from its index to the next, and is a
+list of statements so that a migration runs inside one transaction."""
 
 SCHEMA_VERSION = len(MIGRATIONS)
 
 RETENTION_ROWS = 100_000
-"""How many of the newest rows survive. Trimmed once per process, and as a
-delete rather than a rotation, so nothing is lost from the end that the
-beginning did not push out."""
+"""How many of the newest rows survive. Trimmed once per process."""
 
 COLUMNS = (
     "run_at",
@@ -96,17 +73,19 @@ _INSERT = "insert into queries ({}) values ({})".format(
     ", ".join("?" * len(COLUMNS)),
 )
 
-_BUSY_TIMEOUT_MS = 5000
-"""Long enough that several processes writing at once is a non-event: eight of
-them, 200 inserts each, produced 1,600 rows and no errors in 0.15s."""
+BUSY_TIMEOUT_MS = 5000
+"""How long a writer waits for a lock another process holds."""
+
+UI_BUSY_TIMEOUT_MS = 250
+"""What a front end that would otherwise stop redrawing waits instead.
+
+A missed row beats a frozen window, and the row is missed only while something
+else holds the store for longer than a person would sit through.
+"""
 
 
 def default_path() -> Path:
-    """Where the store lives, for a caller that was given no path.
-
-    State rather than cache: a cache is a thing that can be thrown away and
-    re-fetched, and a query history is neither.
-    """
+    """Where the store lives, for a caller that was given no path."""
     return user_state_path(appname="harlequin") / "history.db"
 
 
@@ -118,12 +97,8 @@ class QueryLog:
     it can change while a process is running.
 
     A disabled log is a real object whose writes do nothing, so that a caller
-    never branches on None: `--no-write-history`, and a store that could not be
-    opened, are the same object to everything upstream.
-
-    **Constructing one touches no disk.** The store is opened, migrated and
-    trimmed by the first write, so a front end can hold one from the moment it
-    starts and a session that runs no queries pays nothing for it.
+    never branches on None. Constructing one touches no disk: the first write
+    opens, migrates and trims the store.
     """
 
     def __init__(
@@ -135,6 +110,7 @@ class QueryLog:
         adapter: str | None = None,
         enabled: bool = True,
         path: Path | None = None,
+        busy_timeout_ms: int = BUSY_TIMEOUT_MS,
     ) -> None:
         self.program = program
         self.connection = connection
@@ -144,7 +120,12 @@ class QueryLog:
         """Why nothing is being logged, for a caller to report once."""
         self._path = path
         self._enabled = enabled
+        self._busy_timeout_ms = busy_timeout_ms
         self._db: sqlite3.Connection | None = None
+        # one connection, written from more than one thread: the IDE executes
+        # and fetches on different workers, and hsql moves a run to one under
+        # `--timeout`. sqlite3 does not serialize this for us.
+        self._writing = threading.Lock()
 
     @property
     def enabled(self) -> bool:
@@ -178,14 +159,12 @@ class QueryLog:
             self.connection,
             self.profile,
             self.adapter,
-            # a query can carry a credential -- `attach 'postgres://u:pw@h'` --
-            # and this store outlives the process that wrote it
-            redact_text(sql),
+            redact_sql(sql),
             status,
             rows,
             None if truncated is None else int(truncated),
             elapsed_ms,
-            None if error is None else redact_text(error),
+            None if error is None else redact_sql(error),
         )
         cursor = self._run(_INSERT, values)
         return None if cursor is None else cursor.lastrowid
@@ -200,12 +179,7 @@ class QueryLog:
         elapsed_ms: float | None = None,
         error: str | None = None,
     ) -> None:
-        """Complete the row for a statement whose result is now known.
-
-        Two phases because the row is written when the statement runs and the
-        rows it returned are known only after they are fetched -- and a run
-        that dies in between has still recorded the query.
-        """
+        """Complete the row for a statement whose result is now known."""
         if row is None:
             return
         self._run(
@@ -216,7 +190,7 @@ class QueryLog:
                 rows,
                 None if truncated is None else int(truncated),
                 elapsed_ms,
-                None if error is None else redact_text(error),
+                None if error is None else redact_sql(error),
                 row,
             ),
         )
@@ -226,6 +200,11 @@ class QueryLog:
 
         Writes after this are the no-ops a disabled log's are.
         """
+        with self._writing:
+            self._close()
+
+    def _close(self) -> None:
+        """Let go of the store, with the write lock already held."""
         if self._db is not None:
             with contextlib.suppress(sqlite3.Error):
                 self._db.close()
@@ -235,19 +214,21 @@ class QueryLog:
     def _open(self) -> sqlite3.Connection | None:
         """The store, configured and migrated, or None having recorded why.
 
-        Called by the first write rather than by `__init__`, so that opening a
-        file, migrating it and trimming it is work a session pays for when it
-        runs a query and not while it is starting up.
+        Called by the first write, so that a front end starting up pays nothing
+        for holding one.
         """
         store = self._path if self._path is not None else default_path()
         db: sqlite3.Connection | None = None
         try:
-            store.parent.mkdir(parents=True, exist_ok=True)
+            store.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # every statement this machine has run, so not world-readable.
+            # SQLite gives -wal and -shm the main file's mode. No-op on Windows.
+            os.close(os.open(store, os.O_CREAT | os.O_RDWR, 0o600))
             # not thread-bound: hsql writes from the worker thread `--timeout`
             # moves a run to, and one connection is only ever written by one
             # thread at a time in either command.
             db = sqlite3.connect(store, check_same_thread=False)
-            _configure(db)
+            _configure(db, busy_timeout_ms=self._busy_timeout_ms)
             _migrate(db)
             _trim(db)
         except (sqlite3.Error, OSError) as e:
@@ -262,33 +243,31 @@ class QueryLog:
     def _run(self, sql: str, values: Sequence[Any]) -> sqlite3.Cursor | None:
         """One statement against the store, or None having disabled logging.
 
-        The single place a write can fail -- opening it included, since that is
-        what the first one does. The query being recorded has already run, so
-        there is nothing here worth raising over.
+        The single place a write can fail, opening it included.
         """
-        if not self._enabled:
-            return None
-        if self._db is None:
-            self._db = self._open()
-            if self._db is None:
+        with self._writing:
+            if not self._enabled:
                 return None
-        try:
-            with self._db:
-                return self._db.execute(sql, values)
-        except sqlite3.Error as e:
-            self.failure = f"Harlequin could not write to its query log: {e}"
-            self.close()
-            return None
+            if self._db is None:
+                self._db = self._open()
+                if self._db is None:
+                    return None
+            try:
+                with self._db:
+                    return self._db.execute(sql, values)
+            except sqlite3.Error as e:
+                self.failure = f"Harlequin could not write to its query log: {e}"
+                self._close()
+                return None
 
 
-def _configure(db: sqlite3.Connection) -> None:
-    """The pragmas that make a write 0.02ms and a concurrent one a non-event.
+def _configure(db: sqlite3.Connection, *, busy_timeout_ms: int) -> None:
+    """The pragmas a write needs to be cheap and to survive a second writer.
 
-    WAL wants shared memory, which a network home directory does not have, so a
-    refusal falls back to the default journal -- 34x slower per write, and just
-    as correct.
+    WAL wants shared memory, which a network home directory does not have; the
+    default journal is slower and just as correct, so a refusal is not an error.
     """
-    db.execute(f"pragma busy_timeout = {_BUSY_TIMEOUT_MS}")
+    db.execute(f"pragma busy_timeout = {int(busy_timeout_ms)}")
     with contextlib.suppress(sqlite3.Error):
         db.execute("pragma journal_mode = wal")
     db.execute("pragma synchronous = normal")
@@ -298,13 +277,15 @@ def _migrate(db: sqlite3.Connection) -> None:
     """Bring the store up to `SCHEMA_VERSION`, one migration at a time.
 
     Under `begin immediate`, so that two processes opening a new store at once
-    do not both create it. A store written by a newer Harlequin is left alone:
-    its columns are a superset of these, so the inserts still name what they
-    mean.
+    do not both create it. A newer store is left alone; its columns are a
+    superset of these, so the inserts still name what they mean.
     """
     db.execute("begin immediate")
     try:
         (version,) = db.execute("pragma user_version").fetchone()
+        # a negative version would slice from the end and re-run a migration
+        # against a store that already has it, disabling logging for good
+        version = max(version, 0)
         for index, migration in enumerate(MIGRATIONS[version:], start=version):
             for statement in migration:
                 db.execute(statement)
@@ -346,9 +327,6 @@ def get_connection_hash(
     themselves: two SSH tunnels front two databases that both look like
     `localhost:15439`. Absent from the hashed material when there is none, so
     an untunneled connection keys on its details alone.
-
-    Here rather than in `catalog_cache` because a headless caller keys the same
-    connection the same way, and that module renders a history with rich.
     """
     material: dict[str, Any] = {"conn_str": tuple(conn_str), **config}
     if through:
@@ -370,11 +348,17 @@ def connection_id(
     """The id this connection is logged and cached under, in either command.
 
     `declared` is what the adapter says its connection is, where it says
-    anything; the details it was built from are the fallback. Shared because
-    the two commands writing one store have to agree about which database a row
-    belongs to.
+    anything; the details it was built from are the fallback.
     """
-    keyed = declared if declared is not None else get_connection_hash(conn_str, options)
+    if declared is None:
+        keyed = get_connection_hash(conn_str, options)
+    elif isinstance(declared, str):
+        # an adapter may hand back a hydrated connection string, and this
+        # reaches a column. Deterministic, so the cache and the log agree.
+        keyed = redact_conn_str([declared])[0]
+    else:
+        # adapters are third-party code, and this one did not return a string
+        keyed = declared
     if through:
         return get_connection_hash((keyed,), {}, through=through)
     return keyed

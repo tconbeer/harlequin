@@ -10,7 +10,7 @@ from platformdirs import user_cache_dir
 
 from harlequin.catalog import Catalog
 from harlequin.history import History
-from harlequin.query_log import get_connection_hash
+from harlequin.query_log import get_connection_hash  # re-exported
 
 if TYPE_CHECKING:
     from harlequin.components.data_catalog import S3Tree
@@ -23,9 +23,6 @@ __all__ = [
     "get_connection_hash",
     "update_catalog_cache",
 ]
-"""`get_connection_hash()` lives in `harlequin.query_log`, below the rich this
-module renders a history with, and is re-exported for the callers that have
-always asked this module which connection they are looking at."""
 
 
 def recursive_dict() -> defaultdict:

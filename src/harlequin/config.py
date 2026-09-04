@@ -682,9 +682,7 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
 def take_no_write_history(config: MutableMapping[str, Any]) -> bool:
     """Whether this run was asked not to record its queries, and off the config.
 
-    Off it either way: what is left of a merged config is the adapter's. Spelled
-    as a refusal in both commands, so that the value that changes behavior is
-    the one a profile writes.
+    Off it either way: what is left of a merged config is the adapter's.
 
     Raises: HarlequinConfigError if the value is not true or false.
     """

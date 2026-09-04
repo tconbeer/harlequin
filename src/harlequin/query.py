@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator, Literal, Sequence
+from typing import TYPE_CHECKING, Iterable, Iterator, Literal, Sequence
 
 import pyarrow as pa
 from textual_fastdatatable.backend import create_backend
@@ -226,14 +226,16 @@ def _cast_to_text_with_str(data: pa.Table) -> pa.Table:
 
 def execute(
     connection: HarlequinConnection,
-    statements: Sequence[Statement],
+    statements: Iterable[Statement],
     limit: RowLimit | None = None,
     on_error: OnError = "stop",
 ) -> Iterator[ExecutedStatement]:
     """Run each statement, yielding one `ExecutedStatement` per statement.
 
-    Yields lazily, so a caller that stops consuming stops the script. Nothing
-    is fetched here; pass each yielded statement to `fetch()` for that.
+    Yields lazily, so a caller that stops consuming stops the script, and
+    `statements` is consumed one at a time -- a caller that wants to do
+    something with each statement as it is submitted can pass a generator.
+    Nothing is fetched here; pass each yielded statement to `fetch()` for that.
 
     A statement the database refuses is yielded with its `error` set rather
     than raising, so the caller keeps the statement it belongs to. Under the

@@ -416,7 +416,9 @@ def test_a_profile_can_set_the_cap(hsql: Hsql, tmp_path: Path) -> None:
     assert res.stdout == "1\n2\n3\n"
 
 
-def test_diagnostics_follow_the_data_they_describe(tmp_path: Path) -> None:
+def test_diagnostics_follow_the_data_they_describe(
+    tmp_path: Path, clean_env: dict[str, str]
+) -> None:
     """stdout is block-buffered when it is a pipe; stderr is not.
 
     Without a flush between them a note overtakes the result set it is about,
@@ -438,6 +440,7 @@ def test_diagnostics_follow_the_data_they_describe(tmp_path: Path) -> None:
         stderr=subprocess.STDOUT,
         text=True,
         cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+        env=clean_env,
     )
     assert proc.returncode == ExitCode.OK, proc.stdout
     combined = proc.stdout
@@ -4287,7 +4290,9 @@ main()
 """An adapter that declares it can cancel and then does not stop."""
 
 
-def test_a_run_that_outlasts_the_grace_period_still_exits_4(tmp_path: Path) -> None:
+def test_a_run_that_outlasts_the_grace_period_still_exits_4(
+    tmp_path: Path, clean_env: dict[str, str]
+) -> None:
     """`sys.exit()` around a thread still inside a driver aborts the interpreter
     and exits 134, which is not a code hsql documents -- so the grace period
     ends in `os._exit()` instead. Only a real subprocess can show the code.
@@ -4299,6 +4304,7 @@ def test_a_run_that_outlasts_the_grace_period_still_exits_4(tmp_path: Path) -> N
         text=True,
         timeout=60,
         cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+        env=clean_env,
     )
     assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
     assert proc.stdout == ""
@@ -4337,7 +4343,9 @@ def test_a_timed_out_script_does_not_report_a_missing_result_set(
     assert "result sets" not in res.stderr
 
 
-def test_a_real_duckdb_query_times_out_and_says_so(tmp_path: Path) -> None:
+def test_a_real_duckdb_query_times_out_and_says_so(
+    tmp_path: Path, clean_env: dict[str, str]
+) -> None:
     """The fakes above pin the attribution; this pins the interrupt itself.
 
     A subprocess because it is the only place the exit code is real: an
@@ -4359,6 +4367,7 @@ def test_a_real_duckdb_query_times_out_and_says_so(tmp_path: Path) -> None:
         text=True,
         timeout=120,
         cwd=tmp_path,  # out of the repo, whose own .harlequin.toml would apply
+        env=clean_env,
     )
     assert proc.returncode == ExitCode.TIMEOUT, proc.stderr
     # the empty result set a cancelled DuckDB cursor returns, not printed
@@ -4621,11 +4630,60 @@ def test_a_secret_never_reaches_the_query_log(
     assert "hunter2-and-then-some" not in row["sql"]
 
 
+def test_a_statement_cancelled_while_it_runs_is_still_recorded(
+    hsql: Hsql, query_log_path: Path
+) -> None:
+    """SQLite steps the query inside `execute()`, so the timeout lands there.
+
+    A lazy adapter is cancelled in the fetch instead; the row has to exist
+    either way, or the history depends on which driver ran the query.
+    """
+    res = hsql(
+        *["-a", "sqlite", ":memory:"],
+        *["--timeout", "0.3"],
+        "-c",
+        "with recursive t(n) as (select 1 union all select n + 1 from t) "
+        "select count(*) from t",
+    )
+    assert res.exit_code == ExitCode.TIMEOUT, res.stderr
+    (row,) = logged(query_log_path)
+    assert row["status"] == "canceled"
+
+
+def test_every_statement_a_cancel_stopped_says_so(
+    hsql: Hsql, duck: list[str], query_log_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not just the one in flight: none of the rest was fetched either."""
+    res = hsql(
+        *duck,
+        *["--timeout", "0.3"],
+        "-c",
+        "select 1; select 2; select sum(i) from range(50000000000) t(i)",
+    )
+    assert res.exit_code == ExitCode.TIMEOUT, res.stderr
+    recorded = logged(query_log_path)
+    assert len(recorded) == 3
+    assert recorded[-1]["status"] == "canceled"
+    # the two that did finish keep what they returned
+    assert [row["rows"] for row in recorded[:2]] == [1, 1]
+
+
 def test_the_two_commands_key_one_connection_the_same_way(
     hsql: Hsql, tmp_path: Path, query_log_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One store with two writers is only one history if the ids agree -- and a
-    profile that sets hsql's own keys must not move the IDE's."""
+    """One store with two writers is only one history if the ids agree.
+
+    Against an adapter that declares no `connection_id`, which is the ABC's
+    default and so the case that actually hashes: a profile that sets hsql's
+    own keys, and a `-c` typed on the command line, must not move the id the
+    IDE derives from the same profile.
+    """
+    from harlequin_duckdb import DuckDbAdapter
+
+    # the property, replaced by the None every adapter that does not override
+    # it returns -- which is what sends both commands through the hash
+    monkeypatch.setattr(DuckDbAdapter, "connection_id", None)
+
     config = tmp_path / ".harlequin.toml"
     config.write_text(
         "[profiles.shared]\n"
@@ -4636,10 +4694,12 @@ def test_the_two_commands_key_one_connection_the_same_way(
         "format = 'csv'\n"
         "theme = 'fruity'\n"
         "no_download_tzdata = true\n"
+        "no_write_history = false\n"
     )
     res = hsql("--config-path", str(config), "-P", "shared", "-c", "select 1")
     assert res.exit_code == ExitCode.OK
     (row,) = logged(query_log_path)
+    assert row["connection"], "an unset id would make this test vacuous"
 
     app = MagicMock()
     monkeypatch.setattr("harlequin.cli.Harlequin", app)
@@ -4649,3 +4709,19 @@ def test_the_two_commands_key_one_connection_the_same_way(
     ide = CliRunner().invoke(ide_cli(argv), argv, catch_exceptions=False)
     assert ide.exit_code == 0
     assert app.call_args.kwargs["connection_hash"] == row["connection"]
+
+
+def test_the_sql_to_run_is_not_part_of_the_connections_id(
+    hsql: Hsql, query_log_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two queries against one database are one connection, not two."""
+    from harlequin_duckdb import DuckDbAdapter
+
+    monkeypatch.setattr(DuckDbAdapter, "connection_id", None)
+
+    for sql in ("select 1", "select 2"):
+        assert hsql("-a", "duckdb", "--no-init", ":memory:", "-c", sql).exit_code == (
+            ExitCode.OK
+        )
+    first, second = logged(query_log_path)
+    assert first["connection"] == second["connection"]
