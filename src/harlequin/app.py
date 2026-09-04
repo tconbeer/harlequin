@@ -828,6 +828,9 @@ class Harlequin(AppBase):
 
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
+        # the execute worker has written its rows by now, and only this thread
+        # may say so
+        self._report_query_log_failure()
         if message.cursors:  # select query
             self._fetch_data(message.cursors, message.submitted_at, message.limit)
         else:
@@ -855,6 +858,7 @@ class Harlequin(AppBase):
 
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
+        self._report_query_log_failure()
         for id_, result in message.results.items():
             await self.results_viewer.push_table(table_id=id_, result=result)
             self.append_to_history(
