@@ -224,7 +224,7 @@ class Server:
         *,
         adapter: str,
         connection: HarlequinConnection,
-        connection_id: str | None = None,
+        connection_id: str,
         reconnect: Callable[[], HarlequinConnection],
         queue_timeout: float | None = None,
         environ: Mapping[str, str] | None = None,

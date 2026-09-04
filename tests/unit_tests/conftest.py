@@ -86,13 +86,13 @@ def run_python(
 
 
 @pytest.fixture
-def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
+def hsql_subprocess(tmp_path: Path, clean_env: dict[str, str]) -> HsqlSubprocess:
     """Run `main()` the way the console script does, in a fresh interpreter.
 
     Bytes rather than text, because the bytes are what hsql promises. A clean
-    machine, as `run_python` gives: the child's cwd, home and config dir are
-    empty directories unless a test names a cwd, and no `HSQL_SESSION` of
-    whoever runs the tests reaches it -- a test that wants a session names
+    machine, as `run_python` gives: the child's cwd, home, config dir and state
+    dir are empty directories unless a test names a cwd, and no `HSQL_SESSION`
+    of whoever runs the tests reaches it -- a test that wants a session names
     one in `env`.
     """
 
@@ -116,16 +116,7 @@ def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
             input=stdin,
             cwd=tmp_path if cwd is None else cwd,
             env={
-                **{
-                    key: value
-                    for key, value in os.environ.items()
-                    if key not in ("HSQL_SESSION", "NO_COLOR")
-                },
-                "HOME": str(tmp_path),
-                "USERPROFILE": str(tmp_path),
-                "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
-                "APPDATA": str(tmp_path / "appdata"),
-                "LOCALAPPDATA": str(tmp_path / "localappdata"),
+                **{key: value for key, value in clean_env.items() if key != "NO_COLOR"},
                 **(env or {}),
             },
         )
@@ -146,7 +137,9 @@ def short_runtime_dir() -> Iterator[Path]:
 
 
 @pytest.fixture
-def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSession]:
+def serve_session(
+    short_runtime_dir: Path, tmp_path: Path, clean_env: dict[str, str]
+) -> Iterator[ServeSession]:
     """Start sessions, and stop every one of them when the test is done."""
     started: list[WarmSession] = []
 
@@ -160,6 +153,7 @@ def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSess
             serve_argv or ("-a", "duckdb", "--no-init", ":memory:"),
             runtime_dir=short_runtime_dir,
             home=tmp_path,
+            base_env=clean_env,
         )
         started.append(session)
         if wait:
