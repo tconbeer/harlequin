@@ -70,15 +70,15 @@ def build_crash_report(
     """
     cause = root_cause(error)
     facts = {key: value for key, value in context.items() if key != ACTIVE_BUFFER}
+    active_buffer = context.get(ACTIVE_BUFFER)
     sections = [
-        _header(program),
+        _header(program, includes_sql=bool(active_buffer)),
         _section("ENVIRONMENT", _lines(runtime_report())),
         _section("CONTEXT", _lines(facts)),
         _section("TRACEBACK", _traceback(cause)),
     ]
     if cause is not error:
         sections.append(_section("RAISED AS", _traceback(error)))
-    active_buffer = context.get(ACTIVE_BUFFER)
     if active_buffer:
         # usually what is needed to reproduce a TUI bug. Last, and under a
         # heading that says what it is, because SQL holds table names and
@@ -131,13 +131,15 @@ def crash_message(
     return "\n".join(lines)
 
 
-def _header(program: str) -> str:
+def _header(program: str, includes_sql: bool) -> str:
     written = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    holds = "your configuration, with passwords masked"
+    if includes_sql:
+        holds += ",\nand the SQL that was in your active buffer"
     return (
         f"{program} crash report, written {written}.\n"
         "\n"
-        "Please review this file before sharing it: it holds your configuration\n"
-        "(with passwords masked) and the SQL that was in your active buffer.\n"
+        f"Please review this file before sharing it: it holds {holds}.\n"
         f"Report this at {ISSUE_URL}\n"
     )
 
