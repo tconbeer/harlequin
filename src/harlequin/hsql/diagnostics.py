@@ -80,6 +80,14 @@ class ExitCode(IntEnum):
     TIMEOUT = 4
     """`--timeout` ran out, and hsql stopped the run."""
 
+    CRASH = 70
+    """hsql hit a bug in itself. `sysexits.h`'s EX_SOFTWARE.
+
+    70 rather than the next free small integer: it cannot be confused with the
+    codes above, and a caller scripting against them could not otherwise tell a
+    bug in hsql from a query the database rejected.
+    """
+
     INTERRUPT = 130
 
 
@@ -116,6 +124,20 @@ def report_error(exception: BaseException) -> None:
 
 def note(message: str) -> None:
     _write(f"note: {message}")
+
+
+def report_crash(report_path: Path | None) -> None:
+    """Say that this was a bug in hsql, and where the report is.
+
+    Plain text, no panel: hsql writes no box drawing, and this leaves through
+    `_write()` like everything else on this stream.
+    """
+    from harlequin.crash import ISSUE_URL
+
+    error("hsql hit a bug in itself and could not finish the run.")
+    if report_path is not None:
+        note(f"a crash report was written to {report_path}")
+    note(f"please review it, then report this bug at {ISSUE_URL}")
 
 
 def report_theme_confusion(conn_str: Sequence[str]) -> None:

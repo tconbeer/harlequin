@@ -65,6 +65,13 @@ Either the query is slower than the bound, or the bound is too tight. Do not sim
 it: check the query with `explain`, add the filter you forgot, or aggregate in SQL rather
 than fetching rows to count them.
 
+## `70` — a bug in hsql
+
+hsql failed at something that is not your run's fault. It wrote a crash report and
+printed the path on stderr; nothing you change about the SQL or the flags will help.
+Please report it, with that file, at
+<https://github.com/tconbeer/harlequin/issues/new?template=crash_report.md>.
+
 ## `130` — interrupted
 
 Someone or something sent an interrupt. Nothing to fix.

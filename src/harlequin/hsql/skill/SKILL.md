@@ -72,9 +72,10 @@ time, and never run hsql with `2>/dev/null`: truncation notices and errors both 
 ## 7. Branch on the exit code
 
 `0` success, `1` the database rejected the SQL, `2` a bad flag or a config problem, `3`
-could not connect, `4` `--timeout` ran out, `130` interrupted. A `2` is your bug, a `1`
-is the SQL's, a `3` the environment's — and stdout is empty on all of them, so read the
-code before the output. `references/troubleshooting.md` goes code by code.
+could not connect, `4` `--timeout` ran out, `70` a bug in hsql itself, `130` interrupted.
+A `2` is your bug, a `1` is the SQL's, a `3` the environment's, a `70` ours — and stdout
+is empty on all of them, so read the code before the output.
+`references/troubleshooting.md` goes code by code.
 
 ## 8. Ask before you write
 
