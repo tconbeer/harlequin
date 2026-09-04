@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from harlequin.hsql.session import socket_path
 
@@ -31,6 +31,7 @@ class WarmSession:
         *,
         runtime_dir: Path,
         home: Path,
+        base_env: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
         self.runtime_dir = runtime_dir
@@ -49,10 +50,14 @@ class WarmSession:
             stdout=subprocess.PIPE,
             stderr=self._stderr_file,
             cwd=home,
+            # `base_env` is what keeps a session off the machine running the
+            # tests: its config files, and the history a served query writes
             env={
                 **{
                     key: value
-                    for key, value in os.environ.items()
+                    for key, value in (
+                        os.environ if base_env is None else base_env
+                    ).items()
                     if key not in ("HSQL_SESSION", "NO_COLOR")
                 },
                 "HOME": str(home),

@@ -36,21 +36,14 @@ def result_set(
 
 
 @pytest.fixture
-def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[str]]:
-    """Run a snippet in a fresh interpreter and capture its streams.
+def clean_env(tmp_path: Path) -> dict[str, str]:
+    """The environment a child process needs to leave this machine alone.
 
-    In-process assertions can't see the state these tests care about: which
-    modules an import pulled in, and which stream something was written to.
-    Both are properties of a clean interpreter, and pytest has already imported
-    half the world by the time a test runs.
-
-    A clean *machine*, too: `no_discovered_config` cannot reach into a
-    subprocess, so the child gets an empty directory as its cwd, its home and
-    its config dir. Otherwise it reads the config files of whoever is running
-    the tests -- or, with `HSQL_SESSION` set, runs every `main()` through the
-    warm-session client and prefixes its stderr with a fallback warning.
+    `no_discovered_config` and the `query_log_path` monkeypatch cannot reach
+    into a subprocess, so without this a child reads the config files of
+    whoever is running the tests and writes its queries into their history.
     """
-    env = {
+    return {
         **{key: value for key, value in os.environ.items() if key != "HSQL_SESSION"},
         # where config discovery looks, on every platform platformdirs knows
         "HOME": str(tmp_path),
@@ -58,7 +51,26 @@ def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[st
         "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
         "APPDATA": str(tmp_path / "appdata"),
         "LOCALAPPDATA": str(tmp_path / "localappdata"),
+        # and where the query log goes, which a run writes as it runs. On
+        # Windows platformdirs asks the shell rather than the environment, and
+        # only these override it (platformdirs >= 4.2; the lock file has 4.11).
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "WIN_PD_OVERRIDE_LOCAL_APPDATA": str(tmp_path / "localappdata"),
+        "WIN_PD_OVERRIDE_APPDATA": str(tmp_path / "appdata"),
     }
+
+
+@pytest.fixture
+def run_python(
+    tmp_path: Path, clean_env: dict[str, str]
+) -> Callable[[str], subprocess.CompletedProcess[str]]:
+    """Run a snippet in a fresh interpreter and capture its streams.
+
+    In-process assertions can't see the state these tests care about: which
+    modules an import pulled in, and which stream something was written to.
+    Both are properties of a clean interpreter, and pytest has already imported
+    half the world by the time a test runs.
+    """
 
     def _run(code: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -67,20 +79,20 @@ def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[st
             text=True,
             check=True,
             cwd=tmp_path,
-            env=env,
+            env=clean_env,
         )
 
     return _run
 
 
 @pytest.fixture
-def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
+def hsql_subprocess(tmp_path: Path, clean_env: dict[str, str]) -> HsqlSubprocess:
     """Run `main()` the way the console script does, in a fresh interpreter.
 
     Bytes rather than text, because the bytes are what hsql promises. A clean
-    machine, as `run_python` gives: the child's cwd, home and config dir are
-    empty directories unless a test names a cwd, and no `HSQL_SESSION` of
-    whoever runs the tests reaches it -- a test that wants a session names
+    machine, as `run_python` gives: the child's cwd, home, config dir and state
+    dir are empty directories unless a test names a cwd, and no `HSQL_SESSION`
+    of whoever runs the tests reaches it -- a test that wants a session names
     one in `env`.
     """
 
@@ -104,16 +116,7 @@ def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
             input=stdin,
             cwd=tmp_path if cwd is None else cwd,
             env={
-                **{
-                    key: value
-                    for key, value in os.environ.items()
-                    if key not in ("HSQL_SESSION", "NO_COLOR")
-                },
-                "HOME": str(tmp_path),
-                "USERPROFILE": str(tmp_path),
-                "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
-                "APPDATA": str(tmp_path / "appdata"),
-                "LOCALAPPDATA": str(tmp_path / "localappdata"),
+                **{key: value for key, value in clean_env.items() if key != "NO_COLOR"},
                 **(env or {}),
             },
         )
@@ -134,7 +137,9 @@ def short_runtime_dir() -> Iterator[Path]:
 
 
 @pytest.fixture
-def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSession]:
+def serve_session(
+    short_runtime_dir: Path, tmp_path: Path, clean_env: dict[str, str]
+) -> Iterator[ServeSession]:
     """Start sessions, and stop every one of them when the test is done."""
     started: list[WarmSession] = []
 
@@ -148,6 +153,7 @@ def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSess
             serve_argv or ("-a", "duckdb", "--no-init", ":memory:"),
             runtime_dir=short_runtime_dir,
             home=tmp_path,
+            base_env=clean_env,
         )
         started.append(session)
         if wait:

@@ -46,6 +46,15 @@ _DSN_PASSWORD = re.compile(
 """`password=hunter2`, in a URL's query string or in libpq's space-separated
 pairs, quoted or bare."""
 
+_SQL_SECRET_LITERAL = re.compile(
+    r"[\w.]*(?:" + _SECRET_NAME.pattern + r"|key[_-]?id)[\w.]*"
+    r"\s*=?\s*'([^']*)'",
+    re.IGNORECASE,
+)
+"""A credential written into a statement: a name that reads like one, then a
+quoted literal. `create secret (… key_id 'AKIA…', secret '…')`, and `set
+s3_secret_access_key = '…'`."""
+
 _TOO_SHORT_TO_HIDE = 4
 """Below this, substituting a secret into prose would mangle the message."""
 
@@ -112,7 +121,7 @@ def redact_conn_str(conn_str: Sequence[str]) -> list[str]:
     reader has, and the password it no longer carries was never part of the
     answer.
     """
-    return [_mask_spans(item) for item in conn_str]
+    return [_mask_spans(item, _secret_spans(item)) for item in conn_str]
 
 
 def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:
@@ -132,6 +141,17 @@ def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:
     ):
         text = text.replace(secret, REDACTED)
     return text
+
+
+def redact_sql(sql: str) -> str:
+    """One statement with the credentials written into it masked.
+
+    A statement can carry one that no option describes and no caller
+    registered -- `attach 'postgres://user:pw@host'`, `create secret (…)` --
+    so the patterns run over it as well as the values this process was handed.
+    """
+    masked = redact_text(sql)
+    return _mask_spans(masked, _secret_spans(masked) + _sql_literal_spans(masked))
 
 
 def _declarations(
@@ -186,13 +206,28 @@ def _secret_spans(conn_str: str) -> list[tuple[int, int, str]]:
     return spans
 
 
-def _mask_spans(conn_str: str) -> str:
-    """One DSN with each credential in it replaced where it stands.
+def _sql_literal_spans(sql: str) -> list[tuple[int, int, str]]:
+    """Every `(start, end, value)` in one statement that is a credential."""
+    return [
+        (match.start(1), match.end(1), match.group(1))
+        for match in _SQL_SECRET_LITERAL.finditer(sql)
+        if match.group(1)
+    ]
+
+
+def _mask_spans(text: str, spans: Sequence[tuple[int, int, str]]) -> str:
+    """`text` with each of `spans` replaced where it stands.
 
     By position rather than by substitution, so a password that happens to
     spell the host name does not take the host with it.
     """
-    masked = conn_str
-    for start, end, _ in sorted(_secret_spans(conn_str), reverse=True):
+    masked = text
+    covered = len(text)
+    for start, end, _ in sorted(spans, reverse=True):
+        if end > covered:
+            # two patterns can find the same literal, and masking it twice
+            # would eat the quotes around it
+            continue
         masked = masked[:start] + REDACTED + masked[end:]
+        covered = start
     return masked

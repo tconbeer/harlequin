@@ -679,6 +679,24 @@ def parse_seconds(value: Any, *, key: str) -> float | None:
     return seconds
 
 
+def take_no_write_history(config: MutableMapping[str, Any]) -> bool:
+    """Whether this run was asked not to record its queries, and off the config.
+
+    Off it either way: what is left of a merged config is the adapter's.
+
+    Raises: HarlequinConfigError if the value is not true or false.
+    """
+    asked = config.pop("no_write_history", False)
+    if not isinstance(asked, bool):
+        # `no_write_history = "false"` read as true is a wrong a user cannot see
+        raise HarlequinConfigError(
+            f"no_write_history={asked!r} is not true or false. Leave it out to "
+            "record the queries this profile runs.",
+            title=CONFIG_ERROR_TITLE,
+        )
+    return asked
+
+
 def take_ssh_keys(
     config: MutableMapping[str, Any], *, typed: Collection[str] = ()
 ) -> dict[str, Any]:

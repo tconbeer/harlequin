@@ -286,6 +286,11 @@
           "description": "What to do when a statement fails.",
           "default": "stop"
         },
+        "no_write_history": {
+          "type": "boolean",
+          "description": "Do not record this run's queries in the query history that Harlequin and hsql share.",
+          "default": false
+        },
         "stats": {
           "type": "boolean",
           "description": "Write a one-line JSON summary to stderr.",

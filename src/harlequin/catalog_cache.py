@@ -1,37 +1,32 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import pickle
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from platformdirs import user_cache_dir
 
 from harlequin.catalog import Catalog
 from harlequin.history import History
+from harlequin.query_log import get_connection_hash  # re-exported
 
 if TYPE_CHECKING:
     from harlequin.components.data_catalog import S3Tree
 
 CACHE_VERSION = 2
 
+__all__ = [
+    "CatalogCache",
+    "get_catalog_cache",
+    "get_connection_hash",
+    "update_catalog_cache",
+]
+
 
 def recursive_dict() -> defaultdict:
     return defaultdict(recursive_dict)
-
-
-class PermissiveEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, Path):
-            return str(obj)
-        # Never raise a TypeError, just use the repr
-        try:
-            return str(obj)
-        except TypeError:
-            return ""
 
 
 @dataclass
@@ -54,26 +49,6 @@ class CatalogCache:
         self, cache_key: tuple[str | None, str | None, str | None]
     ) -> dict | None:
         return self.s3.get(cache_key, None)
-
-
-def get_connection_hash(
-    conn_str: Sequence[str], config: Mapping[str, Any], *, through: Sequence[str] = ()
-) -> str:
-    """What a connection's cached catalog and query history are keyed by.
-
-    `through` is how it was reached, where that is not part of the details
-    themselves: two SSH tunnels front two databases that both look like
-    `localhost:15439`. Absent from the hashed material when there is none, so
-    an untunneled connection keys on its details alone.
-    """
-    material: dict[str, Any] = {"conn_str": tuple(conn_str), **config}
-    if through:
-        material["through"] = tuple(through)
-    return (
-        hashlib.md5(json.dumps(material, cls=PermissiveEncoder).encode("utf-8"))
-        .digest()
-        .hex()
-    )
 
 
 def get_catalog_cache() -> CatalogCache | None:

@@ -384,9 +384,12 @@ IDE notifies once. **Retention** replaces file rotation and is a `delete` rather
 `rename`: once per process, rows beyond the newest 100,000 go, so nothing is ever lost from
 the end that the beginning did not push out.
 
-**Opt-out** is a profile key, `history = false`, read by both commands. Nothing else reports
-the store's path: `--info` describes the installation, not the user's data, and the mode below
-is how a caller reads the rows without needing to know where they are.
+**Opt-out** is `--no-write-history`, a flag on both commands and so a profile key of the same
+name (Ted's call). Spelled as a refusal because only one of the two values changes behavior,
+and because `--history` is the mode below: a key called `history` and a mode called `--history`
+would have been one word meaning two things. Nothing else reports the store's path: `--info`
+describes the installation, not the user's data, and the mode below is how a caller reads the
+rows without needing to know where they are.
 
 **JSON Lines does not go away; it stops being the storage.** `hsql --history --jsonl` emits
 exactly the record above, one object per line, because the mode is a result set and every
@@ -713,7 +716,7 @@ out of the buffer.
 
 **PR 6 — `harlequin.query_log`.** The schema, the pragmas, `user_version` and its migration
 step, the writer, retention, `get_connection_hash()`'s move out of `catalog_cache`,
-`history = false`, and both commands writing. The IDE starts calling `hide_secrets_in()`
+`--no-write-history`, and both commands writing. The IDE starts calling `hide_secrets_in()`
 here — the store is the first thing it persists that could carry a value from a profile
 (§1.4). Guards: `hsql`'s import set still contains no rich, and `hsql --version` is still
 ~120ms.

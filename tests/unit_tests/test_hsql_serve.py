@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -73,6 +74,7 @@ def in_process_server(duckdb_adapter: Any) -> Server:
         "inproc",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="inproc-connection",
         reconnect=adapter.connect,
     )
 
@@ -126,6 +128,7 @@ def test_an_adapters_options_are_connection_options(hsql: Hsql) -> None:
         ["--info"],
         ["-o", "out.csv"],
         ["--stats"],
+        ["--no-write-history"],
     ],
 )
 def test_serve_refuses_per_request_options(hsql: Hsql, args: list[str]) -> None:
@@ -394,7 +397,11 @@ def test_a_reset_that_cannot_reconnect_leaves_the_session_without_a_connection(
         return adapter.connect()
 
     session = Server(
-        "flaky", adapter="duckdb", connection=adapter.connect(), reconnect=reconnect
+        "flaky",
+        adapter="duckdb",
+        connection=adapter.connect(),
+        connection_id="flaky-connection",
+        reconnect=reconnect,
     )
     served = served_by(session)
     res = hsql("--session-reset", obj=served)
@@ -472,7 +479,11 @@ def test_an_abandoned_connection_is_offered_to_nobody_until_a_reset() -> None:
         return opened[-1]
 
     session = Server(
-        "stuck", adapter="duckdb", connection=opened[0], reconnect=reconnect
+        "stuck",
+        adapter="duckdb",
+        connection=opened[0],
+        connection_id="stuck-connection",
+        reconnect=reconnect,
     )
     assert session.connection() is opened[0]
     session.abandon()
@@ -1001,3 +1012,73 @@ def test_the_peer_uid_is_ours_on_a_socketpair() -> None:
     with left, right:
         uid = server.peer_uid(right)
     assert uid is None or uid == os.getuid()
+
+
+# --- the query log -----------------------------------------------------------
+
+
+def recorded(store: Path) -> list[dict[str, Any]]:
+    """Every row written to a query log, oldest first."""
+    db = sqlite3.connect(store)
+    db.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in db.execute("select * from queries order by id")]
+    finally:
+        db.close()
+
+
+def test_a_served_request_logs_under_the_sessions_connection(
+    hsql: Hsql, in_process_server: Server, query_log_path: Path
+) -> None:
+    """A served request is refused every option the id is derived from, so the
+    session is the only thing that can answer what its queries ran against."""
+    res = hsql("-c", "select 1 as a", obj=served_by(in_process_server))
+    assert res.exit_code == ExitCode.OK
+
+    (row,) = recorded(query_log_path)
+    assert row["sql"] == "select 1 as a"
+    assert row["connection"] == in_process_server.connection_id
+
+
+def test_a_served_request_can_opt_out_of_the_history(
+    hsql: Hsql, in_process_server: Server, query_log_path: Path
+) -> None:
+    """Per-request, so one invocation can go unrecorded without the session
+    having decided that for every other one."""
+    served = served_by(in_process_server)
+    assert hsql("-c", "select 1", obj=served).exit_code == ExitCode.OK
+    assert hsql("--no-write-history", "-c", "select 2", obj=served).exit_code == (
+        ExitCode.OK
+    )
+
+    assert [row["sql"] for row in recorded(query_log_path)] == ["select 1"]
+
+
+@needs_unix_sockets
+def test_a_warm_run_and_a_cold_one_are_one_history(
+    serve_session: ServeSession,
+    hsql_subprocess: HsqlSubprocess,
+    tmp_path: Path,
+) -> None:
+    """The point of keying a connection at all: the same database reached two
+    ways is one list, not two."""
+    database = tmp_path / "warehouse.db"
+    session = serve_session("keyed", "-a", "duckdb", "--no-init", str(database))
+    argv = ["-a", "duckdb", "--no-init", str(database)]
+
+    warm = hsql_subprocess(
+        ["--session", session.name, "-c", "select 1 as a"], env=session.env
+    )
+    assert warm.returncode == ExitCode.OK, warm.stderr
+    # the session holds the file, and duckdb locks it -- so the cold run is
+    # the same caller reaching the same database after the session is gone
+    session.stop()
+    cold = hsql_subprocess([*argv, "-c", "select 2 as a"])
+    assert cold.returncode == ExitCode.OK, cold.stderr
+
+    # wherever platformdirs put it on this platform; `clean_env` keeps it here
+    (store,) = tmp_path.rglob("history.db")
+    rows = recorded(store)
+    assert [row["sql"] for row in rows] == ["select 1 as a", "select 2 as a"]
+    assert rows[0]["connection"], "an unset id would make this test vacuous"
+    assert rows[0]["connection"] == rows[1]["connection"]

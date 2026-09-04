@@ -128,6 +128,11 @@ async def test_toggle_full_screen(
         )
         app.editor.text = "select 1"
         await pilot.press("ctrl+j")
+        # the results viewer takes focus as the table lands, so which widget
+        # f10 makes full screen depends on the query having finished
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
 
         app.results_viewer.focus()
         await pilot.press("f10")

@@ -189,6 +189,7 @@ class Served:
         self._server = server
         self.name = server.name
         self.adapter = server.adapter
+        self.connection_id = server.connection_id
         self.stdin = request.stdin
 
     def connection(self) -> HarlequinConnection:
@@ -223,11 +224,16 @@ class Server:
         *,
         adapter: str,
         connection: HarlequinConnection,
+        connection_id: str,
         reconnect: Callable[[], HarlequinConnection],
         queue_timeout: float | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
+        self.connection_id = connection_id
+        """What a request logs its queries under: the id this session's own
+        connection options hash to, so a served run and a cold one are one
+        history. A reconnect reopens the same options, so it does not move."""
         self.adapter = adapter
         self._connection: HarlequinConnection | None = connection
         self._connection_error: str | None = None
