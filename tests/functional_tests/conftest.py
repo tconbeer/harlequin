@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from contextlib import suppress
 from typing import Awaitable, Callable
@@ -181,15 +182,40 @@ def mock_pyperclip(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return mock
 
 
+_WORKER_HANDOFFS = 8
+"""How many times a worker may hand off to another before the wait gives up.
+
+The query path is two (`_execute_query` then `_fetch_data`); the ceiling is
+there so a worker that restarts itself cannot hang the suite.
+"""
+
+_PUMP_TICKS = 4
+"""Event-loop turns to give the message pump between passes."""
+
+
 @pytest.fixture
 def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
     async def wait_for_filtered_workers(app: Harlequin) -> None:
-        filtered_workers = [
-            w for w in app.workers if w.name != "_database_tree_background_loader"
-        ]
-        if filtered_workers:
+        """Wait until no worker but the catalog's background loader is running.
+
+        In a loop, because a worker's result is delivered as a message and the
+        handler for it starts the next one: `_execute_query` posts
+        `QueriesExecuted`, whose handler starts `_fetch_data`. Waiting on the
+        set once returns before the second one exists, which is only invisible
+        while every worker is fast.
+        """
+        for _ in range(_WORKER_HANDOFFS):
+            filtered_workers = [
+                w for w in app.workers if w.name != "_database_tree_background_loader"
+            ]
+            if not filtered_workers:
+                return
             with suppress(WorkerCancelled):
                 await app.workers.wait_for_complete(filtered_workers)
+            # let the message carrying the result be handled, so that a worker
+            # it starts is in the set the next pass reads
+            for _ in range(_PUMP_TICKS):
+                await asyncio.sleep(0)
 
     return wait_for_filtered_workers
 
