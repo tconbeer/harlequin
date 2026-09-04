@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Error panels no longer drop bracketed identifiers (like `[amount]`) from database error messages ([#1137](https://github.com/tconbeer/harlequin/issues/1137)).
 - `harlequin` now exits non-zero when it fails: 1 after a crash, and 2 for a config or connection error it used to report as success ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
 
