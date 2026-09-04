@@ -4653,19 +4653,24 @@ def test_a_statement_cancelled_while_it_runs_is_still_recorded(
 def test_every_statement_a_cancel_stopped_says_so(
     hsql: Hsql, duck: list[str], query_log_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Not just the one in flight: none of the rest was fetched either."""
+    """Not just the one in flight: nothing after it was fetched either.
+
+    The slow statement is in the middle, so a fix that marks only the statement
+    the clock caught leaves the last one `ok` with no rows -- which is what
+    `--result last` looks like.
+    """
     res = hsql(
         *duck,
         *["--timeout", "0.3"],
         "-c",
-        "select 1; select 2; select sum(i) from range(50000000000) t(i)",
+        "select 1; select sum(i) from range(50000000000) t(i); select 2",
     )
     assert res.exit_code == ExitCode.TIMEOUT, res.stderr
     recorded = logged(query_log_path)
     assert len(recorded) == 3
-    assert recorded[-1]["status"] == "canceled"
-    # the two that did finish keep what they returned
-    assert [row["rows"] for row in recorded[:2]] == [1, 1]
+    assert [row["status"] for row in recorded] == ["ok", "canceled", "canceled"]
+    # the one that did finish keeps what it returned
+    assert recorded[0]["rows"] == 1
 
 
 def test_the_two_commands_key_one_connection_the_same_way(

@@ -1480,6 +1480,13 @@ class Harlequin(AppBase):
     def _cancel_query(self) -> None:
         if self.connection is None or not self.adapter.IMPLEMENTS_CANCEL:
             return
+        # before the cancel, not after: a cancelled cursor comes back empty and
+        # error-free, so the fetch would complete these rows as `ok` in the
+        # window between `cancel()` returning and this running. Taken in one
+        # step, because the fetch worker is popping from the same dict.
+        pending, self.logged_rows = self.logged_rows, {}
+        for row in pending.values():
+            self.query_log.update(row, status="canceled")
         try:
             self.connection.cancel()
         except Exception as e:
@@ -1489,12 +1496,6 @@ class Harlequin(AppBase):
                 header="Harlequin could not cancel your queries.",
                 error=e,
             )
-        # whatever the fetch has not completed. A cancelled cursor comes back
-        # empty and error-free, so only this can tell those rows from a query
-        # that matched nothing.
-        while self.logged_rows:
-            _, row = self.logged_rows.popitem()
-            self.query_log.update(row, status="canceled")
         self.post_message(QueriesCanceled())
 
     def _connection_for_worker(
@@ -1581,7 +1582,7 @@ class Harlequin(AppBase):
         # number of rows fetched known exactly.
         for id_, executed in cursors.items():
             try:
-                results[id_] = fetch(
+                result = results[id_] = fetch(
                     executed, limit=limit, display_limit=self.viewer_max_rows
                 )
             except BaseException as e:
@@ -1589,18 +1590,19 @@ class Harlequin(AppBase):
                 self.query_log.update(
                     self.logged_rows.pop(id_, None), status="error", error=str(e)
                 )
+            else:
+                # here rather than after the batch, so a cancel part-way
+                # through cannot mark a statement that already returned. Its
+                # own fetch, which is what hsql records too.
+                self.query_log.update(
+                    self.logged_rows.pop(id_, None),
+                    rows=result.fetched_row_count,
+                    truncated=result.truncated,
+                    elapsed_ms=result.elapsed * 1000,
+                )
         # each ResultSet times its own fetch; the app reports the batch,
         # measured from the moment the query was submitted.
         elapsed = time.monotonic() - submitted_at
-        for id_, result in results.items():
-            # taken off as it is completed, so that a later cancel marks only
-            # what was still running
-            self.query_log.update(
-                self.logged_rows.pop(id_, None),
-                rows=result.fetched_row_count,
-                truncated=result.truncated,
-                elapsed_ms=elapsed * 1000,
-            )
         self.post_message(
             ResultsFetched(
                 cursors=cursors, results=results, errors=errors, elapsed=elapsed

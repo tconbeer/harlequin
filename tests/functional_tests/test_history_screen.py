@@ -170,6 +170,65 @@ async def test_a_row_exists_before_its_rows_are_known(
 
 
 @pytest.mark.asyncio
+async def test_a_query_cancelled_mid_fetch_is_recorded_as_canceled(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    query_log_path: Path,
+) -> None:
+    """The cancel has to mark the rows before it cancels the cursor.
+
+    A cancelled cursor comes back empty and error-free, so a fetch that
+    completes in the window between `cancel()` returning and the marking would
+    record `ok` with no rows -- indistinguishable from a query that matched
+    nothing, which is the ambiguity `canceled` exists to remove. The fake
+    `cancel()` here puts the fetch's completion inside that window on purpose,
+    rather than racing for it.
+    """
+    fetching = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+
+    def slow_fetch(*args: Any, **kwargs: Any) -> Any:
+        fetching.set()
+        release.wait(timeout=10)
+        return fetch(*args, **kwargs)
+
+    real_update = app.query_log.update
+
+    def watched_update(row: int | None, **kwargs: Any) -> None:
+        real_update(row, **kwargs)
+        completed.set()
+
+    def fake_cancel() -> None:
+        # let the fetch run to completion, inside the cancel
+        release.set()
+        completed.wait(timeout=10)
+
+    async with app.run_test() as pilot:
+        while app.editor is None or app.connection is None:
+            await pilot.pause()
+        app.query_log.update = watched_update  # type: ignore[method-assign]
+        with (
+            patch.object(harlequin.app, "fetch", slow_fetch),
+            patch.object(app.adapter, "IMPLEMENTS_CANCEL", True),
+            patch.object(app.connection, "cancel", fake_cancel),
+        ):
+            app.post_message(QuerySubmitted(queries=["select 1 as a;"], limit=None))
+            assert await asyncio.get_running_loop().run_in_executor(
+                None, fetching.wait, 10
+            ), "the fetch never started"
+
+            app._cancel_query()
+            await wait_for_workers(app)
+            await pilot.pause()
+
+        (record,) = logged(query_log_path)
+        assert record["status"] == "canceled", (
+            "the fetch completed the row before the cancel marked it"
+        )
+
+
+@pytest.mark.asyncio
 async def test_a_cancel_leaves_a_finished_query_alone(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
