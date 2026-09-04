@@ -100,6 +100,7 @@ from harlequin.history import History
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
+from harlequin.query_log import QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 
@@ -268,6 +269,8 @@ class Harlequin(AppBase):
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
+        adapter_name: str | None = None,
+        record_history: bool = True,
         theme: str = "harlequin",
         show_files: Path | None = None,
         show_s3: str | None = None,
@@ -290,6 +293,16 @@ class Harlequin(AppBase):
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
+        # opened here rather than at mount so that a query run before the
+        # catalog cache has loaded is still recorded
+        self.query_log = QueryLog(
+            program="harlequin",
+            connection=connection_hash,
+            profile=profile_name,
+            adapter=adapter_name,
+            enabled=record_history,
+        )
+        self._reported_query_log_failure = False
         self.show_files = show_files
         self.show_s3 = show_s3 or None
         # already started, by the command that built this app: `ssh` prompts for
@@ -425,13 +438,38 @@ class Harlequin(AppBase):
         return new_screen
 
     def append_to_history(
-        self, query_text: str, result_row_count: int, elapsed: float
+        self,
+        query_text: str,
+        result_row_count: int,
+        elapsed: float,
+        error: BaseException | None = None,
     ) -> None:
         if self.history is None:
             self.history = History.blank()
         self.history.append(
             query_text=query_text, result_row_count=result_row_count, elapsed=elapsed
         )
+        # a negative count is how this app has always spelled "that one raised"
+        failed = result_row_count < 0
+        self.query_log.write(
+            query_text,
+            status="error" if failed else "ok",
+            rows=None if failed else result_row_count,
+            elapsed_ms=elapsed * 1000,
+            error=None if error is None else str(error),
+        )
+        self._report_query_log_failure()
+
+    def _report_query_log_failure(self) -> None:
+        """Say once that queries are no longer being recorded, and carry on.
+
+        A store that cannot be written never fails the query it was recording,
+        so a notification is the only way this is visible at all.
+        """
+        if self.query_log.failure is None or self._reported_query_log_failure:
+            return
+        self._reported_query_log_failure = True
+        self.notify(self.query_log.failure, title="Query History", severity="warning")
 
     async def on_mount(self) -> None:
         self.run_query_bar.apply_configured_limit()
@@ -743,7 +781,10 @@ class Harlequin(AppBase):
     @on(QueryError)
     def handle_query_error(self, message: QueryError) -> None:
         self.append_to_history(
-            query_text=message.query_text, result_row_count=-1, elapsed=0.0
+            query_text=message.query_text,
+            result_row_count=-1,
+            elapsed=0.0,
+            error=message.error,
         )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
@@ -838,9 +879,12 @@ class Harlequin(AppBase):
                 elapsed=message.elapsed,
             )
         if message.errors:
-            for _, query_text in message.errors:
+            for error, query_text in message.errors:
                 self.append_to_history(
-                    query_text=query_text, result_row_count=-1, elapsed=0.0
+                    query_text=query_text,
+                    result_row_count=-1,
+                    elapsed=0.0,
+                    error=error,
                 )
             header = getattr(
                 message.errors[0][0],
@@ -1268,6 +1312,7 @@ class Harlequin(AppBase):
             s3_tree=self.data_catalog.s3_tree,
             history=self.history,
         )
+        self.query_log.close()
         if self.connection:
             self.connection.close()
         await super().action_quit()

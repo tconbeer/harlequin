@@ -317,6 +317,7 @@ source_modules = [
     "harlequin.export",
     "harlequin.layout",
     "harlequin.query",
+    "harlequin.query_log",
     "harlequin.statements",
 ]
 forbidden_modules = [
@@ -330,9 +331,16 @@ forbidden_modules = [
     "harlequin.keys_app",
     "harlequin.messages",
 ]
-# deferred into pretty_print_warning(), which nothing here calls; the run-time
-# test in tests/unit_tests/test_import_hygiene.py is what proves it defers.
-ignore_imports = ["harlequin.exception -> harlequin.colors"]
+# the same deliberate deferrals the adapter-API contract lists, each with a
+# comment at its import site; `harlequin.query_log` reaches the second three
+# through `harlequin.redact`, which reads a profile's option declarations.
+# tests/unit_tests/test_import_hygiene.py is what proves they defer.
+ignore_imports = [
+    "harlequin.exception -> harlequin.colors",       # pretty_print_warning()
+    "harlequin.options -> harlequin.copy_widgets",   # to_widgets()
+    "harlequin.options -> harlequin.colors",         # to_questionary()
+    "harlequin.options -> questionary",              # to_questionary()
+]
 unmatched_ignore_imports_alerting = "error"
 
 
