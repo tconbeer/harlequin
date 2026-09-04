@@ -34,7 +34,6 @@ from harlequin.config import (
     CLI_ONLY_SESSION_KEYS,
     CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
-    SHARED_ONLY_KEYS,
     TUI_ONLY_KEYS,
     Config,
     adapter_options_model,
@@ -88,19 +87,6 @@ DESCRIPTIONS = {
 and the one profile key click has no help text for because it is an argument."""
 
 IDE_ONLY = "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
-
-SHARED_ONLY: dict[str, dict[str, Any]] = {
-    "history": {
-        "type": "boolean",
-        "default": True,
-        "description": (
-            "Whether to record the queries run under this profile in the "
-            "query log both commands read. Set false to record none of them."
-        ),
-    },
-}
-"""A profile key no command declares as an option, and so one no click
-parameter can describe. Every name in `SHARED_ONLY_KEYS` belongs here."""
 
 UNKNOWN_ADAPTER_OPTIONS = (
     "This adapter is installed but could not be imported, so the options it "
@@ -215,8 +201,6 @@ def _profile(
     }
     for key in TUI_ONLY_KEYS:
         properties.setdefault(key, {"description": IDE_ONLY})
-    for key in SHARED_ONLY_KEYS:
-        properties.setdefault(key, dict(SHARED_ONLY.get(key, {})))
     for key in (*CLI_ONLY_SSH_KEYS, *CLI_ONLY_SESSION_KEYS):
         # refused from a profile at run time, so a file that sets one is wrong
         # however the editor validating it was told to read this document

@@ -126,7 +126,7 @@ async def test_a_session_that_records_nothing_still_runs_queries(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
 ) -> None:
-    """`history = false` in the profile that started it."""
+    """`--no-write-history`, or the key of that name in the profile."""
     app = Harlequin(
         duckdb_adapter([":memory:"], no_init=True),
         connection_hash="foo",

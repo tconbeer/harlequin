@@ -4525,6 +4525,14 @@ def test_a_statement_whose_rows_were_never_fetched_is_still_recorded(
     assert (second["status"], second["rows"]) == ("ok", 1)
 
 
+def test_a_run_can_be_told_not_to_record_itself(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    res = hsql(*duck, "--no-write-history", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert not query_log_path.exists()
+
+
 def test_a_profile_can_turn_the_log_off(
     hsql: Hsql, tmp_path: Path, query_log_path: Path
 ) -> None:
@@ -4534,26 +4542,43 @@ def test_a_profile_can_turn_the_log_off(
         "adapter = 'duckdb'\n"
         "conn_str = [ ':memory:' ]\n"
         "no_init = true\n"
-        "history = false\n"
+        "no_write_history = true\n"
     )
     res = hsql("--config-path", str(config), "-P", "quiet", "-c", "select 1")
     assert res.exit_code == ExitCode.OK
     assert not query_log_path.exists()
 
 
-def test_history_that_is_not_a_boolean_is_a_usage_error(
+def test_a_profile_that_says_nothing_records_the_run(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path
+) -> None:
+    """The flag only turns recording off: leaving it out is the default."""
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.loud]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "no_init = true\n"
+    )
+    res = hsql("--config-path", str(config), "-P", "loud", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert len(logged(query_log_path)) == 1
+
+
+def test_no_write_history_that_is_not_a_boolean_is_a_usage_error(
     hsql: Hsql, tmp_path: Path
 ) -> None:
+    """`no_write_history = "false"` read as true is a wrong a user cannot see."""
     config = tmp_path / ".harlequin.toml"
     config.write_text(
         "[profiles.odd]\n"
         "adapter = 'duckdb'\n"
         "conn_str = [ ':memory:' ]\n"
-        "history = 'sometimes'\n"
+        "no_write_history = 'sometimes'\n"
     )
     res = hsql("--config-path", str(config), "-P", "odd", "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
-    assert "history=" in res.stderr
+    assert "no_write_history=" in res.stderr
 
 
 def test_a_log_that_cannot_be_written_does_not_fail_the_query(
