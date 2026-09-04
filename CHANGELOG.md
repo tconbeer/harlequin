@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Press `alt+e` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
+- Harlequin now saves your open buffers every minute, and offers them back the next time you start if it exited without a clean quit ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 
 ### Bug Fixes
 

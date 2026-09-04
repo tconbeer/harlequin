@@ -134,3 +134,29 @@ async def test_harlequin_clears_its_recovery_file_on_quit(app: Harlequin) -> Non
 
     assert not recovery_file.exists()
     assert get_cache_file().exists()
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_harlequin_checkpoints_buffers(app: Harlequin) -> None:
+    recovery_file = get_recovery_file()
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app._checkpoint_editor_cache()
+        # a blank buffer is not work, so there is nothing to save yet
+        assert not recovery_file.exists()
+
+        app.editor.text = "select 1"
+        app._checkpoint_editor_cache()
+        assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"
+
+        # and an idle session does not rewrite what it already wrote
+        written_at = recovery_file.stat().st_mtime_ns
+        app._checkpoint_editor_cache()
+        assert recovery_file.stat().st_mtime_ns == written_at
+
+        # a blank buffer cannot destroy a good checkpoint, either
+        app.editor.text = ""
+        app._checkpoint_editor_cache()
+        assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"

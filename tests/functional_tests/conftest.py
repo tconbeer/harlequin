@@ -37,6 +37,7 @@ def no_use_buffer_cache(
         "harlequin.components.code_editor.adopt_recovery", lambda: (None, None)
     )
     monkeypatch.setattr("harlequin.app.write_editor_cache", lambda *_: None)
+    monkeypatch.setattr("harlequin.app.write_recovery", lambda *_: True)
     monkeypatch.setattr("harlequin.app.clear_recovery", lambda *_: None)
 
 

@@ -77,7 +77,12 @@ from harlequin.config import (
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
-from harlequin.editor_cache import Cache, clear_recovery
+from harlequin.editor_cache import (
+    CHECKPOINT_INTERVAL_SECONDS,
+    Cache,
+    clear_recovery,
+    write_recovery,
+)
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinBindingError,
@@ -305,6 +310,8 @@ class Harlequin(AppBase):
                 ),
             )
         self.query_timer: Union[float, None] = None
+        self._last_checkpointed_cache: Cache | None = None
+        """What the recovery file holds, so an idle session stops rewriting it."""
         self.connection: HarlequinConnection | None = None
         self._recovery_lock = threading.Lock()
         """Held across reopening the tunnel and the connection through it.
@@ -421,6 +428,7 @@ class Harlequin(AppBase):
         self._connect()
         self._load_catalog_cache()
         self.action_bind_keymaps(*self.keymap_names)
+        self.set_interval(CHECKPOINT_INTERVAL_SECONDS, self._checkpoint_editor_cache)
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -1122,6 +1130,38 @@ class Harlequin(AppBase):
 
     def action_focus_results_viewer(self) -> None:
         self.results_viewer.focus()
+
+    def _build_editor_cache(self) -> Cache | None:
+        """The open buffers, or None when there is nothing worth writing.
+
+        Blank buffers are nothing: a crash before the editor mounts leaves the
+        collection empty, and writing that over a recovery file would destroy
+        exactly the work this exists to save.
+        """
+        editor_collection = getattr(self, "editor_collection", None)
+        if editor_collection is None or not editor_collection.is_mounted:
+            return None
+        cache = Cache(
+            focus_index=editor_collection.active_buffer_index,
+            buffers=editor_collection.buffers,
+        )
+        if not any(buffer.text.strip() for buffer in cache.buffers):
+            return None
+        return cache
+
+    def _checkpoint_editor_cache(self) -> None:
+        """Write the open buffers to this session's recovery file, if they moved.
+
+        Synchronously, on the message pump: pickling a few SQL buffers is
+        microseconds, and a thread worker would only add the hazard of two
+        checkpoints racing. `Cache` compares by content, so no dirty flag has
+        to stay in sync with tab swaps.
+        """
+        cache = self._build_editor_cache()
+        if cache is None or cache == self._last_checkpointed_cache:
+            return
+        if write_recovery(cache):
+            self._last_checkpointed_cache = cache
 
     async def action_quit(self) -> None:
         write_editor_cache(
