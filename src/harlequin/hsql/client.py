@@ -82,7 +82,7 @@ def run(
     and my temp tables vanished" must not be something a caller has to guess
     at.
     """
-    refusal = _cannot_be_served(session, environ)
+    refusal = cannot_be_served(session, environ)
     if refusal is not None:
         return _no_session(session, refusal[0], remedy=refusal[1], code=refusal[2])
 
@@ -115,14 +115,16 @@ def run(
         connection.close()
 
 
-def _cannot_be_served(
+def cannot_be_served(
     session: "Session", environ: "Mapping[str, str]"
 ) -> "tuple[str, str, int] | None":
     """Why this invocation can never reach a session, before one is looked for.
 
     A reason, a remedy and an exit code -- all `USAGE`, because none of them is
     a server that happens to be down, and a caller who answered an exit 3 by
-    starting one would answer it forever.
+    starting one would answer it forever. The server asks the same question of
+    the name it was given, so that a name no client could reach is refused
+    before a connection is paid for.
 
     Ordered most specific first. A flag with no value is the caller's typo on
     every platform, so it is named before the platform is: telling someone on

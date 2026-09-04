@@ -43,20 +43,6 @@ def main() -> None:
 
 def _run_cold(argv: list[str]) -> None:
     """A fresh process, a fresh connection, and no memory of the last one."""
-    import click
+    from harlequin.hsql.cli import run
 
-    from harlequin.hsql.cli import PROGRAM, build_cli
-    from harlequin.hsql.diagnostics import ExitCode
-
-    try:
-        # the same arguments to both: which adapter's options the command
-        # carries is decided from them, and then click parses them.
-        code = build_cli(argv).main(args=argv, prog_name=PROGRAM, standalone_mode=False)
-    except click.ClickException as e:
-        # parse-level failures -- an unknown option, a bad choice. click already
-        # exits 2 for those, which is the code hsql documents for usage errors.
-        e.show()
-        sys.exit(e.exit_code)
-    except (click.Abort, KeyboardInterrupt):
-        sys.exit(ExitCode.INTERRUPT)
-    sys.exit(code if isinstance(code, int) else ExitCode.OK)
+    sys.exit(run(argv))

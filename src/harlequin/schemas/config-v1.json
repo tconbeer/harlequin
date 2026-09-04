@@ -254,6 +254,15 @@
           "description": "Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'.",
           "default": false
         },
+        "session_reset": {
+          "type": "boolean",
+          "description": "Ask the session to close its connection and open a fresh one, and exit without running SQL. Temp tables, settings and an open transaction are gone. Needs --session.",
+          "default": false
+        },
+        "queue_timeout": {
+          "type": "number",
+          "description": "With --serve: a request waits at most SECONDS for the one before it, then exits 4 without reaching the database. [default: no limit]"
+        },
         "limit": {
           "type": "integer",
           "description": "Maximum rows fetched per result set. -1 for no limit.",

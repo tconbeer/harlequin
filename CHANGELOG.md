@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- hsql can now hold a database connection open between invocations: `hsql --serve NAME [CONN_STR] [connection options]` starts a session in the foreground, and `hsql --session NAME -c ...` (or `HSQL_SESSION=NAME`) sends queries to it, paying neither the start-up nor the connection cost again. A session keeps its temp tables, settings and open transactions between invocations; `hsql --session NAME --session-reset` reconnects it. Not available on native Windows.
 - Press `alt+e` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
 
 ### Bug Fixes

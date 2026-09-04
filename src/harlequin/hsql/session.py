@@ -27,6 +27,12 @@ SESSION_ENV_VAR = "HSQL_SESSION"
 SESSION_OPTION = "--session"
 """The typed spelling: an assertion, so an invocation fails without one."""
 
+SERVE_OPTION = "--serve"
+"""The other role. An invocation that starts a session is never sent to one,
+whatever `HSQL_SESSION` says -- or a shell with it set could never start a
+second session -- and a `--session` typed beside it is left for the command
+to refuse, since the client has no parser to refuse it with."""
+
 MAX_NAME_LENGTH = 64
 
 MAX_SOCKET_PATH = 104
@@ -90,6 +96,8 @@ def requested_session(
         if argument == "--":
             # everything after it is an argument, not an option
             break
+        if argument == SERVE_OPTION or argument.startswith(SERVE_OPTION + "="):
+            return None
         if argument.startswith(SESSION_OPTION + "="):
             named = Session(argument.split("=", 1)[1], explicit=True)
         elif argument == SESSION_OPTION:
