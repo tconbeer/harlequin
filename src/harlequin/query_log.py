@@ -77,11 +77,8 @@ BUSY_TIMEOUT_MS = 5000
 """How long a writer waits for a lock another process holds."""
 
 UI_BUSY_TIMEOUT_MS = 250
-"""What a front end that would otherwise stop redrawing waits instead.
-
-A missed row beats a frozen window, and the row is missed only while something
-else holds the store for longer than a person would sit through.
-"""
+"""What a front end waits, so a worker is not held on a lock another process
+owns. A missed row beats a stalled worker."""
 
 
 def default_path() -> Path:
@@ -224,9 +221,7 @@ class QueryLog:
             # every statement this machine has run, so not world-readable.
             # SQLite gives -wal and -shm the main file's mode. No-op on Windows.
             os.close(os.open(store, os.O_CREAT | os.O_RDWR, 0o600))
-            # not thread-bound: hsql writes from the worker thread `--timeout`
-            # moves a run to, and one connection is only ever written by one
-            # thread at a time in either command.
+            # not thread-bound: the lock in `_run()` is what serializes writers
             db = sqlite3.connect(store, check_same_thread=False)
             _configure(db, busy_timeout_ms=self._busy_timeout_ms)
             _migrate(db)
