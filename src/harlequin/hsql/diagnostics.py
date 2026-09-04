@@ -135,9 +135,9 @@ def report_crash(report_path: Path | None) -> None:
     from harlequin.crash import ISSUE_URL
 
     error("hsql hit a bug in itself and could not finish the run.")
+    note(f"please report this crash to help improve Harlequin: {ISSUE_URL}")
     if report_path is not None:
-        note(f"a crash report was written to {report_path}")
-    note(f"please review it, then report this bug at {ISSUE_URL}")
+        note(f"the file you will need for the crash report is at {report_path}")
 
 
 def report_theme_confusion(conn_str: Sequence[str]) -> None:

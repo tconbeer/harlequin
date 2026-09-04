@@ -20,6 +20,7 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
+from harlequin.crash import ISSUE_URL
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -4405,7 +4406,10 @@ def test_a_bug_in_hsql_is_not_reported_as_a_failed_query(
 
     stderr = capsys.readouterr().err
     assert "hsql hit a bug in itself" in stderr
-    assert str(report) in stderr
+    assert "please report this crash to help improve Harlequin" in stderr
+    # the ask comes before the file it needs, and neither is called a review
+    assert stderr.index(ISSUE_URL) < stderr.index(str(report))
+    assert "review" not in stderr.lower()
 
 
 def test_a_crash_report_masks_a_dsn_typed_on_the_command_line(

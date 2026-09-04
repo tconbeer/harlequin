@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Type, Union
 
 from textual.app import App, InvalidThemeError
@@ -15,6 +16,23 @@ from harlequin.exception import (
     HarlequinThemeError,
     pretty_error_message,
 )
+
+_URL = re.compile(r"https?://[^\s\]]*[^\s.,;:!?)\]]")
+
+
+def _as_markup(message: str) -> str:
+    """The crash message with its URLs clickable and nothing else interpreted.
+
+    Terminals make an OSC-8 link clickable, which is what `[link=]` renders
+    to. The rest is escaped because the message quotes an exception, and a
+    driver that put brackets in one would otherwise lose them to the markup
+    parser.
+    """
+    from rich.markup import escape
+
+    return _URL.sub(
+        lambda match: f"[link={match.group()}]{match.group()}[/link]", escape(message)
+    )
 
 
 class ScreenBase(Screen):
@@ -126,7 +144,7 @@ class AppBase(App, inherit_bindings=False):
             self.panic(
                 pretty_error_message(
                     HarlequinCrashError(
-                        crash_message(report_path, error, saved),
+                        _as_markup(crash_message(report_path, error, saved)),
                         title="Harlequin crashed.",
                     )
                 )

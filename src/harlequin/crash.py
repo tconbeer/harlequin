@@ -13,6 +13,7 @@ to import the world to report a crash is a fresh place to crash.
 from __future__ import annotations
 
 import os
+import textwrap
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +33,11 @@ ISSUE_URL = "https://github.com/tconbeer/harlequin/issues/new?template=crash_rep
 ACTIVE_BUFFER = "active_buffer"
 """The one context key that is rendered as its own section rather than a fact."""
 
-_RULE = "=" * 72
+_WIDTH = 72
+"""What the report wraps its own prose at. The sections it quotes -- a
+traceback, the user's SQL -- are never rewrapped."""
+
+_RULE = "=" * _WIDTH
 
 
 def get_crash_report_dir() -> Path:
@@ -110,27 +115,31 @@ def crash_message(
     saved: bool,
     program: str = "harlequin",
 ) -> str:
-    """What the user reads on their terminal: what broke, and what to do now."""
+    """What the user reads on their terminal: what broke, and what to do now.
+
+    The ask comes before the path, because reporting the crash is the thing
+    the user is being asked to do and the file is only what it needs.
+    """
     cause = root_cause(error)
     lines = [f"{type(cause).__name__}: {cause}", ""]
     if saved:
         lines.extend(
             [
-                "Your open buffers were saved, and Harlequin will offer them "
+                "Your buffers have been saved, and Harlequin will offer them "
                 "back the next time you start it.",
                 "",
             ]
         )
+    lines.extend(
+        [
+            f"Please report this crash to help improve {program.capitalize()}.",
+            ISSUE_URL,
+        ]
+    )
     if report_path is not None:
         lines.extend(
-            [
-                f"A crash report was written to {report_path}.",
-                "",
-                f"Please review that file, then report this bug with it at {ISSUE_URL}",
-            ]
+            ["", "The file you will need for the crash report is at:", str(report_path)]
         )
-    else:
-        lines.append(f"Please report this at {ISSUE_URL}.")
     return "\n".join(lines)
 
 
@@ -138,11 +147,15 @@ def _header(program: str, includes_sql: bool) -> str:
     written = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
     holds = "your configuration, with passwords masked"
     if includes_sql:
-        holds += ",\nand the SQL that was in your active buffer"
+        holds += ", and the SQL that was in your active buffer"
+    warning = textwrap.fill(
+        f"Review and redact as necessary before sharing this file: it holds {holds}.",
+        width=_WIDTH,
+    )
     return (
         f"{program} crash report, written {written}.\n"
         "\n"
-        f"Please review this file before sharing it: it holds {holds}.\n"
+        f"{warning}\n"
         f"Report this at {ISSUE_URL}\n"
     )
 

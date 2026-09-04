@@ -144,14 +144,19 @@ def test_write_crash_report_returns_none_when_it_cannot_write(
 
 
 def test_the_message_says_what_to_do_next(tmp_path: Path) -> None:
+    report_path = tmp_path / "crash.log"
     error = raise_and_catch(ValueError("boom"))
 
-    message = crash_message(tmp_path / "crash.log", error, saved=True)
+    message = crash_message(report_path, error, saved=True)
 
     assert "ValueError: boom" in message
-    assert str(tmp_path / "crash.log") in message
-    assert ISSUE_URL in message
-    assert "saved" in message
+    assert "Your buffers have been saved" in message
+    assert "Please report this crash to help improve Harlequin." in message
+    # the ask comes before the file it needs
+    assert message.index(ISSUE_URL) < message.index(str(report_path))
+    # and nothing tells the user to review either one; the report says that
+    # itself, where they can act on it
+    assert "review" not in message.lower()
 
 
 def test_the_message_claims_no_save_that_did_not_happen() -> None:
@@ -161,3 +166,12 @@ def test_the_message_claims_no_save_that_did_not_happen() -> None:
 
     assert "saved" not in message
     assert ISSUE_URL in message
+
+
+def test_the_report_asks_the_user_to_redact_it() -> None:
+    """The masking reaches registered secrets and DSNs. The rest is theirs."""
+    error = raise_and_catch(ValueError("boom"))
+
+    report = build_crash_report(error, {ACTIVE_BUFFER: "select 1"})
+
+    assert "Review and redact as necessary" in report.splitlines()[2]

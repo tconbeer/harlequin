@@ -12,11 +12,15 @@ import pickle
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.app_base import _as_markup
+from harlequin.crash import ISSUE_URL, crash_message
 from harlequin.editor_cache import BufferState, Cache, get_cache_file
+from harlequin.exception import HarlequinCrashError, pretty_error_message
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +74,7 @@ async def test_a_crash_prints_a_panel_and_not_a_traceback(
     printed = panel_text(capsys)
     assert "Harlequin crashed." in printed
     assert "RuntimeError: boom" in printed
+    assert "Please report this crash to help improve Harlequin." in printed
     assert str(report) in unwrapped(printed)
     assert "Traceback (most recent call last)" not in printed
 
@@ -97,7 +102,7 @@ async def test_a_crash_saves_the_open_buffers(
     # themselves the problem, that is still on disk
     assert not get_cache_file().exists()
 
-    assert "saved" in panel_text(capsys)
+    assert "Your buffers have been saved" in panel_text(capsys)
 
 
 @pytest.mark.asyncio
@@ -244,3 +249,35 @@ async def test_a_crash_while_replaying_recovered_buffers_cannot_repeat(
         assert app_all_adapters.editor_collection is not None
         assert app_all_adapters.editor_collection.tab_count == 1
         assert app_all_adapters.editor.text == ""
+
+
+def render_panel(message: str) -> str:
+    """The panel as a terminal receives it, escape sequences and all."""
+    console = Console(width=100, force_terminal=True, legacy_windows=False)
+    with console.capture() as capture:
+        console.print(
+            pretty_error_message(
+                HarlequinCrashError(_as_markup(message), title="Harlequin crashed.")
+            )
+        )
+    return capture.get()
+
+
+def test_the_reporting_url_is_a_clickable_link() -> None:
+    """A bare URL is not clickable in every terminal; an OSC-8 link is."""
+    message = crash_message(Path("/tmp/crash.log"), RuntimeError("boom"), saved=False)
+
+    assert f"[link={ISSUE_URL}]{ISSUE_URL}[/link]" in _as_markup(message)
+
+    rendered = render_panel(message)
+    assert "\x1b]8;" in rendered  # the escape a terminal makes clickable
+    assert ISSUE_URL in rendered  # and the URL still readable where it isn't
+
+
+def test_an_exception_whose_text_looks_like_markup_survives() -> None:
+    """The message quotes a driver, and a driver may put brackets in one."""
+    message = crash_message(
+        None, RuntimeError("no column [amount] in orders"), saved=False
+    )
+
+    assert "[amount]" in render_panel(message)
