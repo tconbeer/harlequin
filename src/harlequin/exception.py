@@ -39,6 +39,12 @@ class HarlequinCopyError(HarlequinError):
     pass
 
 
+class HarlequinExternalError(HarlequinError):
+    """Someone else's program that Harlequin could not run, or could not read."""
+
+    pass
+
+
 class HarlequinQueryError(HarlequinError):
     pass
 

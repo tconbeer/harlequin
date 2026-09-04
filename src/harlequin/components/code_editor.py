@@ -26,6 +26,8 @@ from harlequin.autocomplete import (
 )
 from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, load_cache
+from harlequin.exception import HarlequinExternalError
+from harlequin.external import launch_external_editor
 from harlequin.messages import WidgetMounted
 from harlequin.statements import find_separators
 
@@ -250,6 +252,42 @@ class CodeEditor(TextEditor, inherit_bindings=False):
                 self.app.notify("Formatted query.")
             else:
                 self.app.notify("Query was already formatted; no changes made.")
+
+    def action_launch_external_editor(self) -> None:
+        """Round-trips the buffer through the user's editor.
+
+        Synchronous on the main thread, because the app has to be suspended for
+        the editor to own the terminal; the result is assigned to `text`, which
+        checkpoints undo history, so the whole round trip is one Ctrl+Z away.
+        """
+        if self.text_input is None:
+            return
+        old_selection = self.text_input.selection
+        try:
+            edit = launch_external_editor(self.app, self.text)
+        except HarlequinExternalError as e:
+            self.app.push_screen(
+                ErrorModal(
+                    title="External Editor Error",
+                    header=e.title,
+                    error=e,
+                )
+            )
+            return
+        if edit.text is None:
+            self.app.notify(
+                f"Your editor exited with status {edit.returncode}; "
+                "no changes were made to the buffer.",
+                severity="warning",
+            )
+        elif edit.text != self.text:
+            self.text = edit.text
+            # assigning text moves the cursor to the start of the document, and
+            # a shorter buffer may no longer hold the position it was at.
+            self.text_input.selection = Selection(
+                self.text_input.clamp_visitable(old_selection.start),
+                self.text_input.clamp_visitable(old_selection.end),
+            )
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):
