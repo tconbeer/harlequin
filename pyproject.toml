@@ -243,6 +243,7 @@ markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
     "use_cache: override the autouse fixture the disables the buffer cache",
     "py12: Only run on Python 3.12 or higher",
+    "session_divergent: asserts state a warm session keeps between invocations that a cold run does not",
 ]
 
 

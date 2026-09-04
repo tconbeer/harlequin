@@ -30,6 +30,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.hsql",
     "import harlequin.hsql.cli",
     "import harlequin.hsql.client",
+    "import harlequin.hsql.server",
     "import harlequin.keymap",
     "import harlequin.layout",
     "import harlequin.navigate",

@@ -57,6 +57,12 @@ needs_unix_sockets = pytest.mark.skipif(
         (["--session"], {}, ("", True)),
         # after `--` everything is an argument, so this is a connection string
         (["--", "--session", "prod"], {}, None),
+        # the other role: a server is never a client, whatever the shell says
+        (["--serve", "prod"], {"HSQL_SESSION": "prod"}, None),
+        (["--serve=prod", "-a", "sqlite"], {"HSQL_SESSION": "other"}, None),
+        # and a typed `--session` beside it is left for the command to refuse
+        (["--session", "a", "--serve", "b"], {}, None),
+        (["--", "--serve", "prod"], {"HSQL_SESSION": "prod"}, ("prod", False)),
     ],
 )
 def test_the_session_an_invocation_names(
