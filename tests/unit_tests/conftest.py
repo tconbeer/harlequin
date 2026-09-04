@@ -142,12 +142,14 @@ def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSess
         name: str = "test",
         *serve_argv: str,
         wait: bool = True,
+        env: Mapping[str, str] | None = None,
     ) -> WarmSession:
         session = WarmSession(
             name,
             serve_argv or ("-a", "duckdb", "--no-init", ":memory:"),
             runtime_dir=short_runtime_dir,
             home=tmp_path,
+            env=env,
         )
         started.append(session)
         if wait:

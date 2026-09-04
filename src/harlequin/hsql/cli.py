@@ -97,7 +97,7 @@ from harlequin.hsql import diagnostics, output
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.modes import CONFIG_MODES, INIT
 from harlequin.plugins import adapter_names, load_adapter
-from harlequin.redact import hide_secrets_in
+from harlequin.redact import hide_secrets_in, redact_profile
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
@@ -105,6 +105,7 @@ if TYPE_CHECKING:
     from harlequin.hsql.timeout import Deadline
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
+    from harlequin.options import AbstractOption
     from harlequin.query import ExecutedStatement, OnError, ResultSet, RowLimit
     from harlequin.ssh import SshTunnel
     from harlequin.statements import Statement
@@ -179,6 +180,7 @@ PER_REQUEST_OPTIONS = frozenset(
         "info",
         "skill",
         "session_reset",
+        "session_status",
         "limit",
         "display_rows",
         "result",
@@ -213,6 +215,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--info"], is_flag=True),
             click.Option(["--skill"], is_flag=True),
             click.Option(["--session-reset"], is_flag=True),
+            click.Option(["--session-status"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -222,7 +225,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # of its answer; `--spec` describes the command, which a config file it
         # could not read has no bearing on.
         # `--session-reset` asks a running session to reconnect with whatever
-        # it connected with, so it takes no profile and no adapter either.
+        # it connected with, and `--session-status` only asks it what it is
+        # doing, so neither takes a profile or an adapter.
         needs_profile=lambda params: (
             not (
                 params.get("config") is not None
@@ -230,6 +234,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 or params.get("info")
                 or params.get("skill")
                 or params.get("session_reset")
+                or params.get("session_status")
             )
         ),
         # `--config init` is the mode that needs an adapter without a profile:
@@ -243,6 +248,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 or params.get("info")
                 or params.get("skill")
                 or params.get("session_reset")
+                or params.get("session_status")
             )
         ),
         # bare `hsql` renders help, so it names no adapter either
@@ -512,6 +518,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--session-status",
+        is_flag=True,
+        help=(
+            "Ask the session what it is doing -- adapter, connection, uptime, "
+            "requests, whether it is busy -- as JSON, and exit. Answered "
+            "while a query is running. Needs --session."
+        ),
+    )
+    @click.option(
         "--queue-timeout",
         metavar="SECONDS",
         type=click.FloatRange(min=0, min_open=True),
@@ -577,6 +592,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         serve: str | None,
         session: str | None,
         session_reset: bool,
+        session_status: bool,
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
@@ -650,6 +666,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 connects=connects,
                 profile=profile,
                 profile_config=profile_config,
+                values=values,
+                options=adapter_cls.ADAPTER_OPTIONS
+                if adapter_cls is not None
+                else None,
             )
         elif "queue_timeout" in explicitly_set:
             diagnostics.error(
@@ -658,6 +678,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
             ctx.exit(ExitCode.USAGE)
         raw_queue_timeout = values.pop("queue_timeout", None)
+        # what a session records about itself, taken before hsql's own keys
+        # come off `values`: the two halves have to read the same snapshot,
+        # or a request would be compared against something else
+        connection_identity = connection_options_in(values)
 
         # redact secrets in config values and CLI args
         hide_secrets_in(
@@ -725,6 +749,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             skill=skill,
             serve=serve,
             session_reset=session_reset,
+            session_status=session_status,
         )
         if path is not None and not catalog and catalog_search is None:
             diagnostics.error("--path must be used with --catalog or --catalog-search.")
@@ -838,6 +863,16 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
 
         # every mode below this connects to the database
+        if session_status:
+            # the client answers this one before click exists, off a frame the
+            # session replies to while it is busy; reaching the parser means
+            # no session did
+            diagnostics.error(
+                "--session-status asks a running session what it is doing, and "
+                "no session answered this invocation. Run "
+                f"'{PROGRAM} --session NAME --session-status'."
+            )
+            ctx.exit(ExitCode.USAGE)
         if session_reset:
             if served is None:
                 diagnostics.error(
@@ -888,6 +923,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     conn_str=conn_str,
                     read_only=read_only,
                     values=values,
+                    identity=connection_identity,
+                    options=adapter_cls.ADAPTER_OPTIONS
+                    if adapter_cls is not None
+                    else None,
+                    ssh=None if tunnel is None else tunnel.notice(),
                     queue_timeout=queue_timeout,
                 )
             )
@@ -1163,6 +1203,7 @@ def _one_mode(
     skill: bool,
     serve: str | None = None,
     session_reset: bool = False,
+    session_status: bool = False,
 ) -> str | None:
     """The one mode this invocation chose, or exit having named the two it did.
 
@@ -1179,6 +1220,7 @@ def _one_mode(
         ("--skill", skill),
         (f"--serve {serve}", serve is not None),
         ("--session-reset", session_reset),
+        ("--session-status", session_status),
     )
     chosen = [name for name, was_asked in asked if was_asked]
     if len(chosen) > 1:
@@ -1285,11 +1327,17 @@ def _serve(
     conn_str: Sequence[str],
     read_only: bool,
     values: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    options: "Sequence[AbstractOption] | None",
+    ssh: str | None,
     queue_timeout: float | None,
 ) -> ExitCode:
     """Connect, and answer for the session called `name` until stopped.
 
-    The server reconnects for `--session-reset`, so it is handed the adapter.
+    The server reconnects for `--session-reset`, so it is handed the adapter;
+    it records what it connected with, so a request that asserts a connection
+    option can be told what it would have changed; and it reports what the
+    adapter declares secret, so `--session-status` prints no credential.
     """
     # here rather than at module scope: sockets and threads are the one
     # invocation in many that serves, and every other one would pay for them
@@ -1304,6 +1352,9 @@ def _serve(
         adapter=adapter,
         connection=connection,
         reconnect=adapter_instance.connect,
+        identity=identity,
+        options=options,
+        ssh=ssh,
         queue_timeout=queue_timeout,
     ).serve()
 
@@ -1382,6 +1433,30 @@ def _refuse_unservable_name(ctx: click.Context, name: str) -> None:
         ctx.exit(code)
 
 
+def connection_options_in(values: Mapping[str, Any]) -> dict[str, Any]:
+    """The connection-time half of what an invocation asked for.
+
+    A session records this when it connects and a served request builds the
+    same thing from its own values, so the two can be compared key by key.
+    What the *caller* asked for, not every option's resolved value: the merge
+    holds the profile's keys and the typed ones, and an option neither named
+    is one the adapter defaults for itself, which core cannot enumerate. Read
+    from one snapshot on both sides, because every key hsql owns comes off
+    that dict as the run goes on.
+    """
+    return {key: value for key, value in values.items() if _is_connection_option(key)}
+
+
+def _comparable(value: Any) -> Any:
+    """One connection option's value, in the shape both sides spell it.
+
+    A profile writes `conn_str = ["f1.db"]` and a command line produces a
+    tuple; nothing else about a connection option's value differs by where it
+    came from, since both sides parsed it with the same adapter's options.
+    """
+    return tuple(value) if isinstance(value, list) else value
+
+
 def _refuse_the_sessions_options(
     ctx: click.Context,
     served: "Served",
@@ -1390,66 +1465,136 @@ def _refuse_the_sessions_options(
     connects: bool,
     profile: str | None,
     profile_config: Mapping[str, Any],
+    values: Mapping[str, Any],
+    options: "Sequence[AbstractOption] | None",
 ) -> None:
     """Exit with an error if a served request asked for what the session owns.
 
-    A connection option describes a connection the session already opened,
-    and a server-lifetime option describes a server that is up. A typed `-P`
-    is judged by the keys its profile holds rather than by being one: a
-    profile of per-request keys applies, and one that names a database is
-    refused under the key that names it.
+    A server-lifetime option describes a server that is up, and is refused
+    outright. A connection option is *compared*: the name is the caller's and
+    the identity is the server's, so a request that asserts what the session
+    already connected with is served, and one that asserts anything else is
+    told what it would have changed. Not a reconnect -- that is a different
+    session -- and not silence, which lies to a caller who typed `-a postgres`
+    and got DuckDB.
 
-    Only a *typed* profile, because that is the caller asserting this profile
-    for this invocation -- the rule `merge_profile_with_cli()` reads a command
-    line by. One discovered in the caller's directory says nothing about the
-    session, so its connection-time keys are moot rather than wrong.
+    A typed `-P` is judged by the keys its profile holds rather than by being
+    one: a profile of per-request keys applies, and one that names a database
+    is compared under the key that names it. Only a *typed* profile, because
+    that is the caller asserting this profile for this invocation -- the rule
+    `merge_profile_with_cli()` reads a command line by. One discovered in the
+    caller's directory says nothing about the session, so its connection-time
+    keys are moot rather than wrong.
     """
     for key in sorted(typed):
-        spelling = _spelling(ctx, key)
         if key in SERVER_OPTIONS:
             diagnostics.error(
-                f"{spelling} is a --serve option, and the session named "
-                f"{served.name!r} already has one."
+                f"{_spelling(ctx, key)} is a --serve option, and the session "
+                f"named {served.name!r} already has one."
             )
             ctx.exit(ExitCode.USAGE)
-        if connects and _is_connection_option(key):
-            diagnostics.error(
-                f"{spelling} is a connection option, and the session named "
-                f"{served.name!r} connected when it started. Drop it, or start "
-                f"a session with it: '{PROGRAM} --serve NAME {spelling} ...'."
-            )
-            ctx.exit(ExitCode.USAGE)
-    if profile is None or "profile" not in typed:
+    if not connects:
+        # a mode that reads no database is not the session's business: it runs
+        # where the caller is, with the options the caller typed
         return
-    for key in sorted(profile_config):
-        if key in SERVER_OPTIONS or (connects and _is_connection_option(key)):
+    typed_keys = {key for key in typed if _is_connection_option(key)}
+    profile_keys: set[str] = set()
+    if profile is not None and "profile" in typed:
+        profile_keys = {
+            key for key in profile_config if _is_connection_option(key)
+        } - typed_keys
+    identity = served.identity
+    for key in sorted(typed_keys | profile_keys):
+        asked = _comparable(values.get(key))
+        if key in identity and asked == _comparable(identity[key]):
+            continue
+        _refuse_a_differing_option(
+            ctx,
+            served,
+            key=key,
+            asked=values.get(key),
+            has=identity.get(key),
+            known=key in identity,
+            profile=None if key in typed_keys else profile,
+            options=options,
+        )
+
+
+def _refuse_a_differing_option(
+    ctx: click.Context,
+    served: "Served",
+    *,
+    key: str,
+    asked: Any,
+    has: Any,
+    known: bool,
+    profile: str | None,
+    options: "Sequence[AbstractOption] | None",
+) -> None:
+    """Exit having named the connection option that differs, and both values.
+
+    Both are masked by `harlequin.redact` before they are printed: a
+    connection option is exactly where a password is typed, and this is a
+    message about one that was.
+    """
+    spelling = _spelling(ctx, key)
+    if not known:
+        # the session never named this one, so it connected with whatever its
+        # adapter defaults to -- which core cannot enumerate, and so cannot
+        # tell apart from what this request asks for
+        if profile is None:
             diagnostics.error(
-                f"the profile {profile!r} sets {key}, which the session named "
-                f"{served.name!r} answered when it started. Use a profile of "
-                f"per-request options here, or start a session with this one: "
-                f"'{PROGRAM} --serve NAME -P {profile}'."
+                f"{spelling} is a connection option the session named "
+                f"{served.name!r} did not ask for. Its connection is fixed, so "
+                f"drop it here, or start a session with it: "
+                f"'{PROGRAM} --serve NAME {spelling} ...'."
             )
-            ctx.exit(ExitCode.USAGE)
+        else:
+            diagnostics.error(
+                f"the profile {profile!r} sets {key}, a connection option the "
+                f"session named {served.name!r} did not ask for. Use a profile "
+                f"of per-request options here, or start a session with this "
+                f"one: '{PROGRAM} --serve NAME -P {profile}'."
+            )
+        ctx.exit(ExitCode.USAGE)
+    mine = redact_profile({key: asked}, options)[key]
+    theirs = redact_profile({key: has}, options)[key]
+    if profile is None:
+        diagnostics.error(
+            f"{spelling} says {mine!r}, and the session named {served.name!r} "
+            f"connected with {theirs!r}. Its connection is fixed, so drop it "
+            f"here, or start a session with it: "
+            f"'{PROGRAM} --serve NAME {spelling} ...'."
+        )
+    else:
+        diagnostics.error(
+            f"the profile {profile!r} sets {key} to {mine!r}, and the session "
+            f"named {served.name!r} connected with {theirs!r}. Use a profile of "
+            f"per-request options here, or start a session with this one: "
+            f"'{PROGRAM} --serve NAME -P {profile}'."
+        )
+    ctx.exit(ExitCode.USAGE)
 
 
 def _refuse_session_keys_from_a_profile(
     ctx: click.Context, values: Mapping[str, Any]
 ) -> None:
-    """Exit with an error if a config file said which process runs this.
+    """Exit with an error if a config file said which process answers this.
 
-    Only a profile can have put one of these in the merged values: the two
-    flags are named parameters of the callback, so a typed one never reaches
+    Only a profile can have put one of these in the merged values: each of
+    them is a named parameter of the callback, so a typed one never reaches
     the merge.
     """
     for key in CLI_ONLY_SESSION_KEYS:
         if key in values:
+            spelling = f"--{key.replace('_', '-')}"
             remedy = (
-                f"Pass --{key}, or set HSQL_SESSION"
+                f"Pass {spelling}, or set HSQL_SESSION"
                 if key == "session"
-                else f"Pass --{key}"
+                else f"Pass {spelling}"
             )
             diagnostics.error(
-                f"{key} says which process runs an invocation, so it is read "
+                f"{key} says which process answers an invocation, so it is read "
                 f"from the command line and not from a config file. {remedy}."
             )
             ctx.exit(ExitCode.USAGE)

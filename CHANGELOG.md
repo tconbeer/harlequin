@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - `hsql --serve NAME [CONN_STR]` holds a database connection open as a named session, and `hsql --session NAME -c ...` (or `HSQL_SESSION=NAME`) sends queries to it without paying start-up or connection cost again. Temp tables, settings and open transactions persist between invocations; `--session-reset` reconnects. POSIX only.
+- `hsql --session NAME --session-status` reports what a session is doing -- its adapter, connection, uptime, request count and whether it is busy -- as JSON, and answers while a query is running. A request that names a different database, adapter or connection option than the session connected with is now refused rather than run on the session's connection.
 - Press `alt+e` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
 - Harlequin now saves your open buffers every minute, and offers them back the next time you start if it exited without a clean quit ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - When Harlequin hits a bug in itself, it now exits with a short message instead of a traceback, saves your buffers, and writes a crash report you can attach to an issue ([#687](https://github.com/tconbeer/harlequin/issues/687)).

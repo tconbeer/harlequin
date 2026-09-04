@@ -27,6 +27,14 @@ SESSION_ENV_VAR = "HSQL_SESSION"
 SESSION_OPTION = "--session"
 """The typed spelling: an assertion, so an invocation fails without one."""
 
+STATUS_OPTION = "--session-status"
+"""What a running session is doing, which only the session can answer.
+
+The client's own flag in the same way `--session` is: it asks the process
+rather than asking it to run something, and the answer has to arrive while a
+query is running or it answers nothing worth asking.
+"""
+
 SERVE_OPTION = "--serve"
 """The other role. An invocation that starts a session is never sent to one,
 whatever `HSQL_SESSION` says -- or a shell with it set could never start a
@@ -127,6 +135,22 @@ def without_session_option(argv: "Sequence[str]") -> "list[str]":
             continue
         remaining.append(argument)
     return remaining
+
+
+def asks_for_status(argv: "Sequence[str]") -> bool:
+    """Whether this invocation asks the session what it is doing.
+
+    A scan, like every other question the client answers before click exists.
+    An option *value* that is the literal string is the same ambiguity
+    `requested_session()` has, and fails as visibly: the whole argv travels
+    with the ask, and the session refuses one carrying anything else.
+    """
+    for argument in argv:
+        if argument == "--":
+            break
+        if argument == STATUS_OPTION:
+            return True
+    return False
 
 
 def is_valid_name(name: str) -> bool:

@@ -13,7 +13,17 @@ A session is one connection, so requests run **one at a time**: the adapter
 contract says nothing about thread-safety, and the IDE has never needed it. A
 second client waits its turn, bounded by `--queue-timeout`, and is told it
 never reached the database if that runs out -- a different fact from a query
-that ran too long.
+that ran too long. `--session-status` is the one thing that does not wait,
+because a status that answered only once the query it was asked about had
+finished would answer nothing worth asking -- so it is its own frame rather
+than an invocation, and the server answers it off its own bookkeeping.
+
+The name is the caller's and the **identity is the server's**: what it
+resolved its connection options to when it connected is what a served
+request's own connection options are compared against. Identical is served,
+different is refused by name. Not a reconnect -- that is a different session
+-- and not silence, which lies to a caller who typed `-a postgres` and got
+DuckDB.
 
 A running server is a live, authenticated connection that anything able to
 write its socket can use, so the socket is the credential: `AF_UNIX` only, in
@@ -26,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import signal
 import socket
@@ -42,6 +53,7 @@ from harlequin.exception import HarlequinConnectionError
 from harlequin.hsql import diagnostics, protocol
 from harlequin.hsql.diagnostics import PROGRAM, ExitCode
 from harlequin.hsql.session import (
+    STATUS_OPTION,
     UnsafeRuntimeDir,
     check_runtime_dir,
     socket_path,
@@ -52,6 +64,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from harlequin.adapter import HarlequinConnection
+    from harlequin.options import AbstractOption
 
 ACCEPT_POLL_SECONDS = 0.5
 """How often the accept loop looks up from the socket to see if it was stopped."""
@@ -91,6 +104,12 @@ class Turnstile:
         """How many requests are waiting their turn."""
         with self._condition:
             return len(self._waiting)
+
+    @property
+    def busy(self) -> bool:
+        """Whether a request holds the connection right now."""
+        with self._condition:
+            return self._busy
 
     def enter(self, timeout: float | None) -> bool:
         """Wait for a turn, and return whether one came before `timeout`."""
@@ -189,6 +208,7 @@ class Served:
         self._server = server
         self.name = server.name
         self.adapter = server.adapter
+        self.identity = server.identity
         self.stdin = request.stdin
 
     def connection(self) -> HarlequinConnection:
@@ -224,11 +244,21 @@ class Server:
         adapter: str,
         connection: HarlequinConnection,
         reconnect: Callable[[], HarlequinConnection],
+        identity: Mapping[str, Any] | None = None,
+        options: Sequence[AbstractOption] | None = None,
+        ssh: str | None = None,
         queue_timeout: float | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
         self.adapter = adapter
+        self.identity: Mapping[str, Any] = {"adapter": adapter, **(identity or {})}
+        """What this session resolved its connection options to when it
+        connected, and what a served request's own are compared against."""
+        self._adapter_options = options
+        """What the adapter declares, so that `secret=` decides what prints."""
+        self._ssh = ssh
+        self._started = time.monotonic()
         self._connection: HarlequinConnection | None = connection
         self._connection_error: str | None = None
         self._reconnect = reconnect
@@ -247,6 +277,67 @@ class Server:
     def requests(self) -> int:
         """How many requests this session has answered."""
         return self._requests
+
+    def status(self) -> "dict[str, Any]":
+        """What this session is, and what it is doing, ready to be JSON.
+
+        Answered while a request runs, which is what makes "is it hung or is
+        it slow" a question with an answer -- so nothing here may touch the
+        connection while another thread holds it. `transaction_mode` is the
+        one field that would have to: the adapter contract says nothing about
+        thread-safety, so a busy session reports it as null rather than asking
+        a driver a question on a second thread.
+
+        No secrets: the connection string is masked by span and every other
+        value by what its adapter declared `secret=`.
+        """
+        from harlequin.redact import redact_conn_str, redact_profile
+
+        identity = dict(self.identity)
+        conn_str = identity.pop("conn_str", ()) or ()
+        if isinstance(conn_str, str):
+            conn_str = (conn_str,)
+        busy = self._turnstile.busy
+        return {
+            "session": self.name,
+            "pid": os.getpid(),
+            "version": protocol.VERSION,
+            "adapter": identity.pop("adapter", self.adapter),
+            "connection": " ".join(redact_conn_str(list(conn_str))) or None,
+            "connection_options": redact_profile(identity, self._adapter_options),
+            "uptime_s": round(time.monotonic() - self._started, 1),
+            "requests": self._requests,
+            "state": self._state(busy),
+            "queued": self._turnstile.queued,
+            "transaction_mode": None if busy else self._transaction_mode(),
+            "ssh": self._ssh,
+            # `--idle-timeout` and `--max-lifetime` are not built yet, and a
+            # key that appears in a later release is worse for a caller
+            # reading this than one that is null until it can be answered
+            "idle_timeout_s": None,
+            "expires_in_s": None,
+        }
+
+    def _state(self, busy: bool) -> str:
+        if self._abandoned or self._connection is None:
+            return "unavailable"
+        return "busy" if busy else "idle"
+
+    def _transaction_mode(self) -> "str | None":
+        """The label of the session's transaction mode, when it has one.
+
+        The sharp edge of a session being state: a caller who ran `BEGIN` and
+        exited left every later request inside that transaction, and nothing
+        rolls it back.
+        """
+        connection = self._connection
+        if connection is None:
+            return None
+        try:  # adapters are third-party code
+            mode = connection.transaction_mode
+        except Exception:
+            return None
+        return None if mode is None else mode.label
 
     def stop(self) -> None:
         """Ask the accept loop to finish, from any thread."""
@@ -463,6 +554,9 @@ class Server:
                 if frame is None:
                     # a client that refused to be served by this version
                     return
+                if frame[0] == protocol.STATUS:
+                    self._answer_status(connection, protocol.unpack_status(frame[1]))
+                    return
                 if frame[0] != protocol.REQUEST:
                     raise protocol.ProtocolError(f"expected a request, got {frame[0]}")
                 request = protocol.unpack_request(frame[1])
@@ -488,6 +582,34 @@ class Server:
             diagnostics.report_request(
                 self._requests, code, elapsed_ms, stream=self._stderr
             )
+
+    def _answer_status(self, connection: socket.socket, argv: Sequence[str]) -> None:
+        """Answer `--session-status`, without waiting for the connection.
+
+        Written here rather than run through the command, because a status
+        that took its turn would answer only once the query it was asked about
+        had finished -- and a served invocation borrows this process's cwd,
+        environment and streams for its whole run, so a second one parsed
+        beside it would take them out from under the query. The ask carries
+        the argv the caller typed, so a flag beside it is refused by name
+        rather than silently dropped.
+        """
+        recorder = Recorder()
+        extra = next((argument for argument in argv if argument != STATUS_OPTION), None)
+        if extra is not None:
+            diagnostics.error(
+                f"{STATUS_OPTION} asks the session what it is doing, and takes "
+                f"nothing else; {extra} is for an invocation that runs.",
+                stream=recorder.stderr(),
+            )
+            self._answer(connection, recorder.segments, ExitCode.USAGE)
+            return
+        print(
+            json.dumps(self.status(), separators=(",", ":"), default=str),
+            file=recorder.stdout(),
+        )
+        self._answer(connection, recorder.segments, ExitCode.OK)
+        diagnostics.report_status_answered(stream=self._stderr)
 
     def _run(
         self, request: protocol.Request

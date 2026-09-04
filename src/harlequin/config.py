@@ -126,14 +126,16 @@ someone else's listener, and a default that fails closed has to stay the
 caller's to turn off.
 """
 
-CLI_ONLY_SESSION_KEYS = ("session", "serve")
-"""The keys that say which process runs an invocation, which a config file may
-not decide.
+CLI_ONLY_SESSION_KEYS = ("session", "serve", "session_status")
+"""The keys that say which process answers an invocation, which a config file
+may not decide.
 
 `session` is read before any config file is, so a profile setting it would
-name a session the invocation was never sent to; and a profile that answered
-`serve` would turn a query into a server. Both are read from the command line
-alone, as `CLI_ONLY_SSH_KEYS` are.
+name a session the invocation was never sent to; a profile that answered
+`serve` would turn a query into a server; and `session_status` is read off
+argv by the client, so a profile could set it only for the runs that never
+reach a session. All three are read from the command line alone, as
+`CLI_ONLY_SSH_KEYS` are.
 """
 
 TUI_ONLY_KEYS = (
