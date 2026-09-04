@@ -236,7 +236,7 @@ class Server:
         *,
         adapter: str,
         connection: HarlequinConnection,
-        connection_id: str | None = None,
+        connection_id: str,
         reconnect: Callable[[], HarlequinConnection],
         identity: Mapping[str, Any] | None = None,
         options: Sequence[AbstractOption] | None = None,
