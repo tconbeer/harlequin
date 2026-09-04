@@ -1,3 +1,4 @@
+import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,11 +53,36 @@ def load_cache() -> Union[Cache, None]:
         return cache
 
 
-def write_cache(cache: Cache) -> None:
+def _write_pickle(cache: Cache, path: Path) -> bool:
     """
-    Updates dumps buffer contents to to disk
+    Pickles a Cache to path, atomically. Returns False if it could not be written.
+
+    The write goes to a temp file in the same directory and is renamed into
+    place, so a reader never sees a partial file; the fsync is what keeps a
+    power loss from leaving a zero-length one. The temp name carries the pid,
+    so a killed process leaves at most one stray behind. It never raises: the
+    callers run where an exception would itself take the app down.
     """
-    cache_file = get_cache_file()
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(cache_file, "wb") as f:
-        pickle.dump(cache, f)
+    temp_file = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_file, "wb") as f:
+            pickle.dump(cache, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, path)
+    except (OSError, pickle.PicklingError):
+        try:
+            temp_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    else:
+        return True
+
+
+def write_cache(cache: Cache) -> bool:
+    """
+    Dumps buffer contents to disk. Returns False if they could not be written.
+    """
+    return _write_pickle(cache, get_cache_file())
