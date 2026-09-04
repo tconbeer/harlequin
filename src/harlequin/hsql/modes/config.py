@@ -490,13 +490,11 @@ def _command_options() -> set[str]:
     to validate here or `--config validate` would report the other command's
     config as broken.
     """
-    from harlequin.config import SHARED_ONLY_KEYS, TUI_ONLY_KEYS
+    from harlequin.config import TUI_ONLY_KEYS
     from harlequin.hsql.cli import bare_command
 
-    return (
-        {param.name for param in bare_command().params if param.name}
-        | set(TUI_ONLY_KEYS)
-        | set(SHARED_ONLY_KEYS)
+    return {param.name for param in bare_command().params if param.name} | set(
+        TUI_ONLY_KEYS
     )
 
 
