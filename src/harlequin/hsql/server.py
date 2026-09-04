@@ -46,16 +46,13 @@ from harlequin.hsql.session import (
     check_runtime_dir,
     socket_path,
 )
+from harlequin.redact import redact_text
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
 
 ACCEPT_POLL_SECONDS = 0.5
 """How often the accept loop looks up from the socket to see if it was stopped."""
-
-REQUEST_TIMEOUT_SECONDS = 30.0
-"""How long a connected client has to send its request before it is dropped,
-so that a client that connects and stalls cannot hold a thread forever."""
 
 REPEATED_SIGNAL_SECONDS = 1.0
 """A second stop signal this long after the first is an operator who wants
@@ -77,9 +74,8 @@ class SessionRunning(Exception):
 class Turnstile:
     """One request at a time, in the order they arrived.
 
-    A lock would serve requests in whatever order the interpreter woke the
-    waiters; this hands out tickets so that the client that has waited longest
-    goes next, and so that a waiter can give up on a deadline of its own.
+    Hands out tickets, so the client that has waited longest goes next and a
+    waiter can give up on a deadline of its own.
     """
 
     def __init__(self) -> None:
@@ -136,10 +132,16 @@ class Recorder:
             self.segments.append((kind, bytearray(data)))
 
     def stdout(self) -> io.TextIOWrapper:
-        """A stand-in for `sys.stdout`, whose `.buffer` is what `-o -` writes."""
+        """A stand-in for `sys.stdout`, whose `.buffer` is what `-o -` writes.
+
+        `newline="\n"` is what CPython builds `sys.stdout` with on POSIX, and
+        the bytes are hsql's contract: the default would translate every `\n`
+        this writes to `os.linesep`.
+        """
         return io.TextIOWrapper(
             _Stream(self, protocol.STDOUT, isatty=self._stdout_isatty),
             encoding="utf-8",
+            newline="\n",
             write_through=True,
         )
 
@@ -148,6 +150,7 @@ class Recorder:
             _Stream(self, protocol.STDERR, isatty=self._stderr_isatty),
             encoding="utf-8",
             errors="backslashreplace",
+            newline="\n",
             write_through=True,
         )
 
@@ -203,10 +206,8 @@ class Served:
     def abandon(self) -> None:
         """Note that a cancelled run outlasted its grace period.
 
-        The cold path ends the process here, because a thread still inside a
-        driver aborts an interpreter that exits around it. A server ends the
-        request instead, and offers no connection until it is reset: the next
-        request would otherwise run on a connection another thread still has.
+        The session then offers no connection until it is reset: the next
+        request would otherwise run on one another thread still holds.
         """
         self._server.abandon()
 
@@ -295,8 +296,6 @@ class Server:
             self.name, self._requests, stream=self._stderr
         )
         if self._abandoned:
-            # a thread still inside the driver aborts an interpreter that
-            # exits around it
             from harlequin.hsql.timeout import halt
 
             halt(ExitCode.OK)
@@ -455,9 +454,10 @@ class Server:
                 protocol.send_frame(
                     connection, protocol.HELLO, protocol.VERSION.encode("utf-8")
                 )
-                connection.settimeout(REQUEST_TIMEOUT_SECONDS)
+                # no clock on this read: a `-f -` sends the bytes a human is
+                # still typing, and a client that stalls holds a daemon thread
+                # rather than a turn at the connection
                 frame = protocol.recv_frame(connection)
-                connection.settimeout(None)
                 if frame is None:
                     # a client that refused to be served by this version
                     return
@@ -503,7 +503,10 @@ class Server:
             diagnostics.error(str(e), stream=recorder.stderr())
             return recorder.segments, ExitCode.USAGE
         except Exception as e:  # noqa: BLE001 -- the server outlives a request
-            traceback.print_exc(file=self._stderr)
+            diagnostics.note(
+                f"request failed: {redact_text(traceback.format_exc())}",
+                stream=self._stderr,
+            )
             diagnostics.error(
                 f"the session named {self.name!r} could not run this request: "
                 f"{e or type(e).__name__}",

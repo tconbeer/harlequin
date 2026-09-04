@@ -41,10 +41,9 @@ TEN_ROWS = (
 ELAPSED = re.compile(rb'"elapsed_ms":\d+')
 """The one field of `--stats` that two runs of anything never agree on."""
 
-# Cases that connect and run SQL (or error at/after the connect step): cold
-# carries the connection, warm carries the session, and the per-request args
-# are the same. This is the drift surface the design cares about -- a NULL, a
-# footer, a truncation notice, an error's exit code.
+# Cases that connect and run SQL, or error at the connect step: cold carries
+# the connection, warm carries the session, and the per-request args are the
+# same on both sides.
 CONNECTING: dict[str, list[str]] = {
     "select": ["-c", "select 1 as a, 'two' as b, null as c"],
     "tuples-only": ["-tAc", "select 42"],

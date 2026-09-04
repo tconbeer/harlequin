@@ -36,6 +36,7 @@ class WarmSession:
         self.runtime_dir = runtime_dir
         self.env = {"XDG_RUNTIME_DIR": str(runtime_dir)}
         self.stderr_path = runtime_dir / f"{name}.stderr"
+        self._stderr_file = self.stderr_path.open("wb")
         self.process = subprocess.Popen(
             [
                 sys.executable,
@@ -46,7 +47,7 @@ class WarmSession:
                 "main()\n",
             ],
             stdout=subprocess.PIPE,
-            stderr=self.stderr_path.open("wb"),
+            stderr=self._stderr_file,
             cwd=home,
             env={
                 **{
@@ -99,6 +100,7 @@ class WarmSession:
         finally:
             if self.process.stdout is not None:
                 self.process.stdout.close()
+            self._stderr_file.close()
 
 
 ServeSession = Callable[..., WarmSession]

@@ -28,6 +28,7 @@ from click.testing import CliRunner, Result
 from harlequin.exception import HarlequinConnectionError
 from harlequin.hsql import protocol, server
 from harlequin.hsql.cli import (
+    CONFIG_OPTIONS,
     CONNECTION_OPTIONS,
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
@@ -91,7 +92,13 @@ def test_every_option_is_in_exactly_one_group() -> None:
     group and a served request refuses the server's, so an option in neither
     or in both would be one nobody refuses -- or one both do."""
     declared = {param.name for param in bare_command().params if param.name}
-    groups = [CONNECTION_OPTIONS, PER_REQUEST_OPTIONS, SERVER_OPTIONS, ROLE_OPTIONS]
+    groups = [
+        CONNECTION_OPTIONS,
+        CONFIG_OPTIONS,
+        PER_REQUEST_OPTIONS,
+        SERVER_OPTIONS,
+        ROLE_OPTIONS,
+    ]
     assert declared == set().union(*groups)
     for first in groups:
         for second in groups:
@@ -149,10 +156,13 @@ def test_serve_does_not_reset(hsql: Hsql) -> None:
 @pytest.mark.parametrize(
     "name,reason",
     [
+        # a flag with no value is the caller's typo on every platform, so it is
+        # answered before the platform is; the rest reach the name check only
+        # where a session could have run
         ("", "needs a name"),
-        ("bad name", "is not a session name"),
-        ("../etc", "is not a session name"),
-        ("x" * 65, "is not a session name"),
+        pytest.param("bad name", "is not a session name", marks=needs_unix_sockets),
+        pytest.param("../etc", "is not a session name", marks=needs_unix_sockets),
+        pytest.param("x" * 65, "is not a session name", marks=needs_unix_sockets),
     ],
 )
 def test_serve_refuses_a_name_no_client_could_reach(
@@ -242,19 +252,60 @@ def test_a_served_request_may_not_type_a_connection_option(
 ) -> None:
     """The session connected when it started, so its connection is fixed: a
     request that typed a connection option would otherwise run on the session's
-    connection while believing it had changed it. (Comparing the value against
-    the session's, so an identical one is served, is PR 3's refinement.)
-
-    -P and --config-path are connection options too, but they fail earlier, in
-    the first pass that reads them -- also an exit 2, and also before any query
-    runs on the wrong connection.
-    """
+    connection while believing it had changed it."""
     res = hsql(*args, "-c", "select 1", obj=served_by(in_process_server))
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert "is a connection option, and the session named 'inproc' connected" in (
         res.stderr
     )
+
+
+def test_a_served_request_takes_a_profile_of_per_request_options(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path
+) -> None:
+    """A profile names where options come from rather than being one, so what
+    it holds decides: nothing here says which database, so it applies -- the
+    same way a `default_profile` discovered in the caller's directory does."""
+    path = tmp_path / "hsql.toml"
+    path.write_text('[profiles.csv-out]\nformat = "csv"\nlimit = 5\n')
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "csv-out",
+        "-c",
+        "select 1 as a",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "a\n1\n"
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [("adapter", '"sqlite"'), ("read_only", "true"), ("conn_str", '["other.db"]')],
+)
+def test_a_served_request_refuses_a_profile_that_names_a_connection(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path, key: str, value: str
+) -> None:
+    """A typed profile that answers what the session answered at start-up is
+    refused under the key that answers it, rather than as a flag."""
+    path = tmp_path / "hsql.toml"
+    path.write_text(f"[profiles.prod]\n{key} = {value}\n")
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "prod",
+        "-c",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert f"the profile 'prod' sets {key}" in res.stderr
+    assert "--serve NAME -P prod" in res.stderr
 
 
 def test_a_served_request_may_not_type_a_server_option(
@@ -375,10 +426,9 @@ class _FakeConnection:
 def test_a_deadline_a_server_gave_an_abandon_hook_ends_the_run_not_the_process() -> (
     None
 ):
-    """The cold path ends the process when cancelled work outlasts the grace,
-    because a thread inside a driver aborts an interpreter exiting around it.
-    A server has to keep running, so its deadline calls an abandon hook instead
-    of halting, and raises TimedOut for the request to attribute."""
+    """Where the cold path halts the process, a deadline given an abandon hook
+    calls it and raises TimedOut for the request to attribute, so the server
+    lives on."""
     abandoned: list[bool] = []
     never = threading.Event()
     connection: Any = _FakeConnection("held")
@@ -421,26 +471,35 @@ def test_the_turnstile_serves_in_arrival_order() -> None:
     turnstile = server.Turnstile()
     order: list[int] = []
     assert turnstile.enter(None)
-    ready = threading.Barrier(3)
 
     def wait_turn(number: int) -> None:
-        ready.wait()
-        # a moment apart, so that the tickets are handed out in this order
-        time.sleep(0.05 * number)
         turnstile.enter(None)
         order.append(number)
         turnstile.leave()
 
-    threads = [threading.Thread(target=wait_turn, args=(n,)) for n in (1, 2)]
-    for thread in threads:
+    threads = []
+    for number in (1, 2):
+        thread = threading.Thread(target=wait_turn, args=(number,))
         thread.start()
-    ready.wait()
-    time.sleep(0.3)
-    assert turnstile.queued == 2
+        threads.append(thread)
+        # each ticket is taken before the next thread starts, so the arrival
+        # order is this loop's rather than the scheduler's
+        _until(lambda waiting=number: turnstile.queued == waiting)  # type: ignore[misc]
+
     turnstile.leave()
     for thread in threads:
         thread.join(5)
     assert order == [1, 2]
+
+
+def _until(condition: Callable[[], bool], timeout: float = 10.0) -> None:
+    """Block until `condition` holds, so a test orders threads by observation."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return
+        time.sleep(0.005)
+    raise AssertionError("the condition never held")
 
 
 def test_the_turnstile_gives_up_on_a_deadline() -> None:
@@ -771,6 +830,22 @@ def test_a_client_that_dies_mid_query_does_not_take_the_session_down(
 
 
 @needs_unix_sockets
+def test_a_timeout_stops_the_request_and_leaves_the_session_up(
+    send: HsqlSubprocess,
+) -> None:
+    """The whole chain a served `--timeout` crosses: the deadline cancels, the
+    request attributes it and exits 4, and the session is usable straight
+    after -- DuckDB's cancel lands inside the grace period, so the connection
+    is never abandoned. (The grace running out is `Deadline`'s own test: no
+    adapter that cancels can reach it.)"""
+    proc = send(["--timeout", "0.1", "-c", "select count(*) from range(2000000000)"])
+    assert proc.returncode == ExitCode.TIMEOUT
+    assert proc.stdout == b""
+    assert b"timed out after 0.1s" in proc.stderr
+    assert send(["-tAc", "select 'still up'"]).stdout == b"still up\n"
+
+
+@needs_unix_sockets
 def test_a_queue_timeout_is_not_a_query_timeout(
     serve_session: ServeSession,
     hsql_subprocess: HsqlSubprocess,
@@ -898,6 +973,7 @@ def test_color_auto_reads_the_callers_terminal(warm: WarmSession) -> None:
     assert b"\x1b[" not in b"".join(data for _, data in honored)
 
 
+@needs_unix_sockets
 def test_the_peer_uid_is_ours_on_a_socketpair() -> None:
     left, right = socket.socketpair(socket.AF_UNIX)
     with left, right:

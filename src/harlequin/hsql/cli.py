@@ -136,12 +136,20 @@ SHORTHANDS = {
 SOURCES = f"{__name__}.sources"
 """Context key under which `-c` and `-f` record themselves, in order."""
 
-CONNECTION_OPTIONS = frozenset(
-    {"conn_str", "adapter", "profile", "config_path", "read_only", *SSH_KEYS}
-)
+CONNECTION_OPTIONS = frozenset({"conn_str", "adapter", "read_only", *SSH_KEYS})
 """Answered once, when a connection is opened -- so `--serve` takes them and a
 served request may not. Every adapter option is one too, by
 `_is_connection_option()`: the command declares none of them itself."""
+
+CONFIG_OPTIONS = frozenset({"profile", "config_path"})
+"""Which file and which profile the other options are read from.
+
+Not connection-time, though a profile usually holds connection-time keys:
+these name where values come from rather than being values, so which group
+one belongs to is decided by what it resolves to. A profile of nothing but
+`format` and `limit` is per-request whichever way it was named, which is what
+lets a served `-P` behave the way a discovered `default_profile` does.
+"""
 
 SERVER_OPTIONS = frozenset({"queue_timeout"})
 """Answered once, and only a server has one to answer."""
@@ -636,7 +644,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             _refuse_unservable_name(ctx, serve)
         elif served is not None:
             _refuse_the_sessions_options(
-                ctx, served, typed=typed_options, connects=connects
+                ctx,
+                served,
+                typed=typed_options,
+                connects=connects,
+                profile=profile,
+                profile_config=profile_config,
             )
         elif "queue_timeout" in explicitly_set:
             diagnostics.error(
@@ -1276,8 +1289,7 @@ def _serve(
 ) -> ExitCode:
     """Connect, and answer for the session called `name` until stopped.
 
-    The server is what `--session-reset` reconnects through, so it is handed
-    the adapter and not just the connection.
+    The server reconnects for `--session-reset`, so it is handed the adapter.
     """
     # here rather than at module scope: sockets and threads are the one
     # invocation in many that serves, and every other one would pay for them
@@ -1319,7 +1331,7 @@ def _is_connection_option(name: str) -> bool:
     an adapter's options are all connection-time.
     """
     return name in CONNECTION_OPTIONS or name not in (
-        PER_REQUEST_OPTIONS | SERVER_OPTIONS | ROLE_OPTIONS
+        PER_REQUEST_OPTIONS | SERVER_OPTIONS | ROLE_OPTIONS | CONFIG_OPTIONS
     )
 
 
@@ -1371,14 +1383,26 @@ def _refuse_unservable_name(ctx: click.Context, name: str) -> None:
 
 
 def _refuse_the_sessions_options(
-    ctx: click.Context, served: "Served", *, typed: set[str], connects: bool
+    ctx: click.Context,
+    served: "Served",
+    *,
+    typed: set[str],
+    connects: bool,
+    profile: str | None,
+    profile_config: Mapping[str, Any],
 ) -> None:
-    """Exit with an error if a served request typed an option the session owns.
+    """Exit with an error if a served request asked for what the session owns.
 
     A connection option describes a connection the session already opened,
-    so a request that typed one either agrees with it, and asked for nothing,
-    or differs, and asked for a different session. A server-lifetime option
-    describes the server, which is up.
+    and a server-lifetime option describes a server that is up. A typed `-P`
+    is judged by the keys its profile holds rather than by being one: a
+    profile of per-request keys applies, and one that names a database is
+    refused under the key that names it.
+
+    Only a *typed* profile, because that is the caller asserting this profile
+    for this invocation -- the rule `merge_profile_with_cli()` reads a command
+    line by. One discovered in the caller's directory says nothing about the
+    session, so its connection-time keys are moot rather than wrong.
     """
     for key in sorted(typed):
         spelling = _spelling(ctx, key)
@@ -1393,6 +1417,17 @@ def _refuse_the_sessions_options(
                 f"{spelling} is a connection option, and the session named "
                 f"{served.name!r} connected when it started. Drop it, or start "
                 f"a session with it: '{PROGRAM} --serve NAME {spelling} ...'."
+            )
+            ctx.exit(ExitCode.USAGE)
+    if profile is None or "profile" not in typed:
+        return
+    for key in sorted(profile_config):
+        if key in SERVER_OPTIONS or (connects and _is_connection_option(key)):
+            diagnostics.error(
+                f"the profile {profile!r} sets {key}, which the session named "
+                f"{served.name!r} answered when it started. Use a profile of "
+                f"per-request options here, or start a session with this one: "
+                f"'{PROGRAM} --serve NAME -P {profile}'."
             )
             ctx.exit(ExitCode.USAGE)
 
