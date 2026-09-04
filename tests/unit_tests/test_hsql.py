@@ -4449,3 +4449,24 @@ def test_an_interrupt_is_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("harlequin.hsql.cli.build_cli", _interrupt)
 
     assert run_main(monkeypatch, "-c", "select 1") == ExitCode.INTERRUPT
+
+
+def test_a_bug_in_the_session_client_is_a_crash_too(
+    monkeypatch: pytest.MonkeyPatch,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The warm path is hsql's too, so a bug in it exits 70 rather than 1."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("a bug in the client")
+
+    monkeypatch.setattr("harlequin.hsql.session.requested_session", _boom)
+
+    assert (
+        run_main(monkeypatch, "--session", "warm", "-c", "select 1") == ExitCode.CRASH
+    )
+
+    (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
+    assert "a bug in the client" in report.read_text()
+    assert "hsql hit a bug in itself" in capsys.readouterr().err

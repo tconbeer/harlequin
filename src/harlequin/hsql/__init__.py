@@ -17,36 +17,48 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any, Sequence
+from typing import Any, NoReturn, Sequence
 
 __all__ = ["main"]
 
 
 def main() -> None:
     """The `hsql` console script."""
+    argv = sys.argv[1:]
+    try:
+        code = _run_warm(argv)
+    except BaseException as e:
+        _report_crash(e, argv)
+    if code is not None:
+        sys.exit(code)
+    _run_cold(argv)
+
+
+def _run_warm(argv: list[str]) -> int | None:
+    """What the session that answered exited with, or None to run cold.
+
+    None where this invocation names no session at all, and where it names an
+    ambient one that is not running -- the client has warned by then, and a
+    cold run is what the caller wanted either way.
+    """
     from harlequin.hsql.session import requested_session
 
-    argv = sys.argv[1:]
     session = requested_session(argv, os.environ)
-    if session is not None:
-        from harlequin.hsql.client import INTERRUPT, run
+    if session is None:
+        return None
 
-        try:
-            code = run(session, argv, os.environ)
-        except KeyboardInterrupt:
-            sys.exit(INTERRUPT)
-        if code is not None:
-            sys.exit(code)
-        # an ambient session that is not running: warned, and running cold
+    from harlequin.hsql.client import INTERRUPT, run
 
-    _run_cold(argv)
+    try:
+        return run(session, argv, os.environ)
+    except KeyboardInterrupt:
+        return INTERRUPT
 
 
 def _run_cold(argv: list[str]) -> None:
     """A fresh process, a fresh connection, and no memory of the last one."""
     import click
 
-    from harlequin.hsql import diagnostics
     from harlequin.hsql.cli import PROGRAM, build_cli
     from harlequin.hsql.diagnostics import ExitCode
 
@@ -62,22 +74,32 @@ def _run_cold(argv: list[str]) -> None:
     except (click.Abort, KeyboardInterrupt):
         sys.exit(ExitCode.INTERRUPT)
     except BaseException as e:
-        # a bug in hsql, rather than anything the run was asked to do. Python's
-        # own handler would print a traceback and exit 1, which is the code for
-        # a query the database rejected: a caller scripting against these could
-        # not tell the two apart.
-        from harlequin.crash import build_crash_report, write_crash_report
-
-        report_path = None
-        try:
-            report_path = write_crash_report(
-                build_crash_report(e, _crash_context(argv), program=PROGRAM)
-            )
-        except BaseException:
-            pass
-        diagnostics.report_crash(report_path)
-        sys.exit(ExitCode.CRASH)
+        _report_crash(e, argv)
     sys.exit(code if isinstance(code, int) else ExitCode.OK)
+
+
+def _report_crash(error: BaseException, argv: Sequence[str]) -> NoReturn:
+    """Exit `CRASH` over a bug in hsql, having written a report about it.
+
+    Python's own handler would print a traceback and exit 1, which is the code
+    for a query the database rejected: a caller scripting against these could
+    not tell the two apart. Both entry points end here, since a bug in the
+    client is as much hsql's as a bug in the command.
+    """
+    from harlequin.crash import build_crash_report, write_crash_report
+    from harlequin.hsql import diagnostics
+    from harlequin.hsql.cli import PROGRAM
+    from harlequin.hsql.diagnostics import ExitCode
+
+    report_path = None
+    try:
+        report_path = write_crash_report(
+            build_crash_report(error, _crash_context(argv), program=PROGRAM)
+        )
+    except BaseException:
+        pass
+    diagnostics.report_crash(report_path)
+    sys.exit(ExitCode.CRASH)
 
 
 def _crash_context(argv: Sequence[str]) -> dict[str, Any]:
