@@ -164,10 +164,17 @@ def check_runtime_dir(path: str) -> None:
     does nothing to a directory that already exists, so the server checks this
     too rather than trusting its own mkdir.
 
+    `lstat` rather than `stat`, so a symlink fails the directory test below
+    instead of being followed: an attacker who reaches the fallback path first
+    can point a link at a directory the user does own privately, pass a
+    following check, and repoint it before the connect. A real directory in a
+    sticky `/tmp` cannot be renamed or replaced by another user, and neither
+    location has a reason to be a link.
+
     Raises OSError if the directory cannot be read, and UnsafeRuntimeDir if it
     is not a directory this user owns privately.
     """
-    info = os.stat(path)
+    info = os.lstat(path)
     if not stat.S_ISDIR(info.st_mode):
         raise UnsafeRuntimeDir(f"{path} is not a directory")
     if info.st_uid != os.getuid():

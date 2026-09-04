@@ -585,7 +585,14 @@ is no password on the wire and there does not need to be — the socket *is* the
   created 0600 (bind, then `chmod`, or `umask` around the bind — file permissions on a UDS
   are honored on Linux and macOS but not on every kernel, which is why the *directory* mode
   is the real control).
-- **Both halves `stat` the directory before trusting it.** `XDG_RUNTIME_DIR` is
+- **The server refuses a request whose argv names `-f -` and carries no stdin
+  section.** The client's argv scan is a scan, not a parse, and its set of
+  boolean short flags is hsql's own — a boolean short an *adapter* declares is
+  not in it, so `-zf -` for such a `-z` would forward no stdin. One check on the
+  server turns every miss of that shape, including ones nobody has thought of,
+  into an exit 2 rather than a silently empty script. The server never reads its
+  own stdin.
+- **Both halves `lstat` the directory before trusting it.** `XDG_RUNTIME_DIR` is
   guaranteed by the system; the `TMPDIR` fallback is not, and on a shared host another
   user can create `/tmp/hsql-<uid>/` first and put a listener at `prod.sock`. What a
   client sends is argv, the cwd and piped stdin, and argv can carry a `CONN_STR` with a

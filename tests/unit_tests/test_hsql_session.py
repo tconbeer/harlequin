@@ -155,6 +155,20 @@ def test_a_runtime_dir_that_is_not_a_directory_is_refused(tmp_path: Path) -> Non
         session.check_runtime_dir(str(impostor))
 
 
+@needs_unix_sockets
+def test_a_symlink_to_a_private_directory_is_refused(tmp_path: Path) -> None:
+    """A following check can be passed with a link at a directory the user does
+    own privately, and repointed before the connect. The link owner controls it
+    in a sticky `/tmp`; a real directory there they cannot touch."""
+    private = tmp_path / "private"
+    private.mkdir()
+    os.chmod(private, 0o700)
+    link = tmp_path / "link"
+    link.symlink_to(private)
+    with pytest.raises(session.UnsafeRuntimeDir):
+        session.check_runtime_dir(str(link))
+
+
 # --- the frames --------------------------------------------------------------
 
 
@@ -544,8 +558,8 @@ def test_a_refused_socket_is_reported_and_left_alone(
 def test_a_runtime_dir_that_cannot_hold_a_socket_is_a_diagnostic(
     short_tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Not a traceback: every errno `connect()` can raise other than "nothing
-    is listening" used to escape `run()` as one, and exit 1."""
+    """Any errno from `connect()` other than nothing-is-listening is a
+    diagnostic and exit 3, not a traceback."""
     not_a_directory = short_tmp_path / "file"
     not_a_directory.write_text("")
     environ = {"XDG_RUNTIME_DIR": str(not_a_directory)}
@@ -761,8 +775,8 @@ def test_a_typed_session_that_is_down_runs_nothing(hsql_process: HsqlProcess) ->
 def test_a_session_flag_with_no_value_names_itself(
     hsql_process: HsqlProcess,
 ) -> None:
-    """The client refuses it rather than click, which does not know the option
-    until PR 2 declares it and would answer "No such option"."""
+    """The client refuses it; click does not declare the option, so its own
+    answer would be "No such option"."""
     proc = hsql_process(["--session"])
     assert proc.returncode == ExitCode.USAGE
     assert "--session needs a name" in proc.stderr

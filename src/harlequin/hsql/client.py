@@ -42,7 +42,7 @@ TYPE_CHECKING = False
 """Every annotation here is a string (PEP 563), so `typing` stays off this path."""
 
 if TYPE_CHECKING:
-    from typing import Mapping, Sequence
+    from typing import Mapping, Sequence, TextIO
 
     from harlequin.hsql.session import Session
 
@@ -228,13 +228,13 @@ def _exchange(
     return _relay(connection)
 
 
-def _isatty(stream: "object") -> bool:
+def _isatty(stream: "TextIO") -> bool:
     """Whether `stream` is a terminal, which only this side can answer.
 
     `--color auto` reads it, and on the server every stream is a buffer.
     """
     try:
-        return bool(stream.isatty())  # type: ignore[attr-defined]
+        return bool(stream.isatty())
     except (AttributeError, ValueError):
         # a closed or replaced stream: not a terminal, which is the safe answer
         return False
