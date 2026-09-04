@@ -66,6 +66,29 @@ def test_the_report_prints_no_registered_secret() -> None:
     assert REDACTED in report
 
 
+def test_the_report_masks_a_credential_typed_into_the_active_buffer() -> None:
+    """The report asks to be pasted into a public issue, and nothing registered
+    a credential the user wrote into a statement."""
+    error = raise_and_catch(ValueError("boom"))
+
+    report = build_crash_report(
+        error,
+        {
+            ACTIVE_BUFFER: (
+                "attach 'postgres://u:hunter2-and-more@warehouse/db' as w;\n"
+                "create secret (type s3, key_id 'AKIAEXAMPLE', secret 'sEcReT-value');"
+            )
+        },
+    )
+
+    assert "hunter2-and-more" not in report
+    assert "sEcReT-value" not in report
+    assert "AKIAEXAMPLE" not in report
+    # and the rest of the statement survives, which is what makes it worth having
+    assert "warehouse/db" in report
+    assert "attach" in report
+
+
 def test_the_report_pastes_into_a_fenced_block() -> None:
     """A report that carried its own fences would break out of the issue's."""
     error = raise_and_catch(ValueError("boom"))

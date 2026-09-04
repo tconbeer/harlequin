@@ -8,19 +8,27 @@ message pump is gone by then, so there is no screen to look at.
 
 from __future__ import annotations
 
+import asyncio
 import pickle
+import sqlite3
+import threading
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 from rich.console import Console
 from textual.widgets.text_area import Selection
 
+import harlequin.app
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.app import QuerySubmitted
 from harlequin.app_base import _as_markup
 from harlequin.crash import ISSUE_URL, crash_message
 from harlequin.editor_cache import BufferState, Cache, get_cache_file
 from harlequin.exception import HarlequinCrashError, pretty_error_message
+from harlequin.query import fetch
 
 
 @pytest.fixture(autouse=True)
@@ -249,6 +257,53 @@ async def test_a_crash_while_replaying_recovered_buffers_cannot_repeat(
         assert app_all_adapters.editor_collection is not None
         assert app_all_adapters.editor_collection.tab_count == 1
         assert app_all_adapters.editor.text == ""
+
+
+@pytest.mark.asyncio
+async def test_a_crash_mid_fetch_keeps_the_query_it_was_running(
+    app: Harlequin,
+    crash_reports_go_to_tmp: Path,
+    query_log_path: Path,
+) -> None:
+    """And needs nothing from the handler to do it: the row was committed when
+    the statement was run, which is what the two-phase write is for."""
+    fetching = threading.Event()
+    release = threading.Event()
+    real_fetch = fetch
+
+    def slow_fetch(*args: Any, **kwargs: Any) -> Any:
+        fetching.set()
+        release.wait(timeout=10)
+        return real_fetch(*args, **kwargs)
+
+    try:
+        with pytest.raises(RuntimeError):
+            async with app.run_test() as pilot:
+                while app.editor is None:
+                    await pilot.pause()
+                with patch.object(harlequin.app, "fetch", slow_fetch):
+                    app.post_message(
+                        QuerySubmitted(queries=["select 1 as a;"], limit=None)
+                    )
+                    assert await asyncio.get_running_loop().run_in_executor(
+                        None, fetching.wait, 10
+                    ), "the fetch never started"
+
+                    crash(app, RuntimeError("boom"))
+
+                    db = sqlite3.connect(query_log_path)
+                    db.row_factory = sqlite3.Row
+                    try:
+                        (row,) = db.execute("select * from queries").fetchall()
+                    finally:
+                        db.close()
+                    assert row["sql"] == "select 1 as a;"
+                    # the rows it would have returned are what the crash cost
+                    assert row["rows"] is None
+
+                    await pilot.pause()
+    finally:
+        release.set()
 
 
 def render_panel(message: str) -> str:

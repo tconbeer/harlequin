@@ -269,7 +269,6 @@ class Harlequin(AppBase):
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
-        adapter_name: str | None = None,
         record_history: bool = True,
         theme: str = "harlequin",
         show_files: Path | None = None,
