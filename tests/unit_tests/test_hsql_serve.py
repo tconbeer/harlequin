@@ -439,6 +439,28 @@ def test_a_deadline_a_server_gave_an_abandon_hook_ends_the_run_not_the_process()
     never.set()
 
 
+def test_a_bug_in_hsql_is_exit_70_through_a_session_too(
+    in_process_server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash is the one failure a session could answer differently from a
+    cold run: 70 says a bug in hsql and 1 says the database rejected the SQL,
+    which is the confusion `CRASH` exists to remove. The client gets the same
+    diagnostic either way, and the session goes on serving."""
+
+    def boom(*args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setattr("harlequin.hsql.cli.run", boom)
+    request = protocol.Request(
+        argv=["-c", "select 1"], cwd=os.getcwd(), environ={}, stdin=None
+    )
+    segments, code = in_process_server._run(request)
+    assert code == ExitCode.CRASH
+    stderr = b"".join(bytes(d) for kind, d in segments if kind == protocol.STDERR)
+    assert b"hsql hit a bug in itself" in stderr
+    assert not any(kind == protocol.STDOUT for kind, _ in segments)
+
+
 def test_an_abandoned_connection_is_offered_to_nobody_until_a_reset() -> None:
     """A cancel that outlasts its grace leaves the connection to the thread
     still inside it, so `abandon()` marks the session unusable until a reset,

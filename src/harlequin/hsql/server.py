@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
 
 from harlequin.exception import HarlequinConnectionError
 from harlequin.hsql import diagnostics, protocol
-from harlequin.hsql.diagnostics import ExitCode
+from harlequin.hsql.diagnostics import PROGRAM, ExitCode
 from harlequin.hsql.session import (
     UnsafeRuntimeDir,
     check_runtime_dir,
@@ -49,6 +49,8 @@ from harlequin.hsql.session import (
 from harlequin.redact import redact_text
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from harlequin.adapter import HarlequinConnection
 
 ACCEPT_POLL_SECONDS = 0.5
@@ -503,16 +505,17 @@ class Server:
             diagnostics.error(str(e), stream=recorder.stderr())
             return recorder.segments, ExitCode.USAGE
         except Exception as e:  # noqa: BLE001 -- the server outlives a request
+            # a bug in hsql, which a cold run answers with a crash report and
+            # exit 70 -- so a served one does too, rather than with the code
+            # for SQL the database rejected
             diagnostics.note(
                 f"request failed: {redact_text(traceback.format_exc())}",
                 stream=self._stderr,
             )
-            diagnostics.error(
-                f"the session named {self.name!r} could not run this request: "
-                f"{e or type(e).__name__}",
-                stream=recorder.stderr(),
+            diagnostics.report_crash(
+                _crash_report(e, request), stream=recorder.stderr()
             )
-            return recorder.segments, ExitCode.QUERY
+            return recorder.segments, ExitCode.CRASH
         return recorder.segments, code
 
     @contextlib.contextmanager
@@ -582,6 +585,25 @@ class Server:
             # the client went away; the request ran, and there is nobody to
             # tell about it
             diagnostics.report_client_gone(stream=self._stderr)
+
+
+def _crash_report(error: BaseException, request: protocol.Request) -> "Path | None":
+    """Write a crash report for a bug hit while serving, or None if it could not.
+
+    The same report a cold run writes, so a caller who hit the bug through a
+    session has the same file to attach.
+    """
+    from harlequin.crash import build_crash_report, write_crash_report
+    from harlequin.redact import redact_conn_str
+
+    try:
+        context = {
+            "argv": " ".join(redact_conn_str(list(request.argv))),
+            "session": True,
+        }
+        return write_crash_report(build_crash_report(error, context, program=PROGRAM))
+    except BaseException:
+        return None
 
 
 def _warm_imports() -> None:

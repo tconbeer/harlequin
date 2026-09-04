@@ -179,7 +179,7 @@ def report_queue_timeout(seconds: float, *, stream: TextIO) -> None:
     )
 
 
-def report_crash(report_path: Path | None) -> None:
+def report_crash(report_path: Path | None, *, stream: TextIO | None = None) -> None:
     """Say that this was a bug in hsql, and where the report is.
 
     Plain text, no panel: hsql writes no box drawing, and this leaves through
@@ -187,10 +187,16 @@ def report_crash(report_path: Path | None) -> None:
     """
     from harlequin.crash import ISSUE_URL
 
-    error("hsql hit a bug in itself and could not finish the run.")
-    note(f"please report this crash to help improve Harlequin: {ISSUE_URL}")
+    error("hsql hit a bug in itself and could not finish the run.", stream=stream)
+    note(
+        f"please report this crash to help improve Harlequin: {ISSUE_URL}",
+        stream=stream,
+    )
     if report_path is not None:
-        note(f"the file you will need for the crash report is at {report_path}")
+        note(
+            f"the file you will need for the crash report is at {report_path}",
+            stream=stream,
+        )
 
 
 def report_theme_confusion(conn_str: Sequence[str]) -> None:
