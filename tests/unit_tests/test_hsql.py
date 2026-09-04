@@ -4438,6 +4438,24 @@ def test_a_crash_report_masks_a_dsn_typed_on_the_command_line(
     assert "warehouse:5432/analytics" in text
 
 
+def test_a_crash_report_masks_a_credential_typed_into_the_query(
+    monkeypatch: pytest.MonkeyPatch,
+    hsql_crashes: None,
+    crash_reports_go_to_tmp: Path,
+) -> None:
+    """The argv holds the statement `-c` was given, and a statement can carry a
+    credential that no option describes and no caller registered."""
+    run_main(
+        monkeypatch, "-c", "create secret (type s3, secret 'sEcReT-value'); select 1"
+    )
+
+    (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
+    text = report.read_text()
+    assert "sEcReT-value" not in text
+    # and the rest of the statement survives
+    assert "create secret (type s3" in text
+
+
 def test_a_crash_report_that_cannot_be_written_still_exits_70(
     monkeypatch: pytest.MonkeyPatch,
     hsql_crashes: None,
@@ -4743,6 +4761,8 @@ def test_the_two_commands_key_one_connection_the_same_way(
     assert row["connection"], "an unset id would make this test vacuous"
 
     app = MagicMock()
+    # the command exits with it, and a MagicMock is not an exit code
+    app.return_value.return_code = 0
     monkeypatch.setattr("harlequin.cli.Harlequin", app)
     from harlequin.cli import build_cli as ide_cli
 
