@@ -10,6 +10,7 @@ from harlequin.editor_cache import (
     BufferState,
     Cache,
     get_cache_file,
+    get_recovery_file,
     load_cache,
     write_cache,
 )
@@ -96,3 +97,40 @@ async def test_harlequin_writes_cache(app: Harlequin) -> None:
     assert isinstance(cache, Cache)
     assert [buffer.text for buffer in cache.buffers] == ["first", "second"]
     assert cache.focus_index == 1
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_harlequin_recovers_buffers(cache: Cache, app: Harlequin) -> None:
+    """A recovered session started from the cache, so it wins over one."""
+    write_cache(Cache(focus_index=0, buffers=[BufferState(Selection(), "stale\n")]))
+    recovery_file = get_cache_file().with_name("recovered-20260904T120000Z-99.pickle")
+    recovery_file.write_bytes(pickle.dumps(cache))
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        assert app.editor_collection is not None
+        assert [buffer.text for buffer in app.editor_collection.buffers] == [
+            buffer.text for buffer in cache.buffers
+        ]
+
+    # the poisoned-buffer guard: replayed once, whatever happened during the replay
+    assert not recovery_file.exists()
+    assert recovery_file.with_suffix(".replayed").exists()
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_harlequin_clears_its_recovery_file_on_quit(app: Harlequin) -> None:
+    recovery_file = get_recovery_file()
+    recovery_file.parent.mkdir(parents=True, exist_ok=True)
+    recovery_file.write_bytes(pickle.dumps(Cache(focus_index=0, buffers=[])))
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        await pilot.press("ctrl+q")
+
+    assert not recovery_file.exists()
+    assert get_cache_file().exists()

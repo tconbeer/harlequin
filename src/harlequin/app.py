@@ -77,7 +77,7 @@ from harlequin.config import (
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.driver import HarlequinDriver
-from harlequin.editor_cache import Cache
+from harlequin.editor_cache import Cache, clear_recovery
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinBindingError,
@@ -1130,6 +1130,7 @@ class Harlequin(AppBase):
                 buffers=self.editor_collection.buffers,
             )
         )
+        clear_recovery()
         update_catalog_cache(
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.
