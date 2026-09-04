@@ -9,6 +9,7 @@ same query renders the same bytes wherever it is run.
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -4470,3 +4471,156 @@ def test_a_bug_in_the_session_client_is_a_crash_too(
     (report,) = list(crash_reports_go_to_tmp.glob("crash-*.log"))
     assert "a bug in the client" in report.read_text()
     assert "hsql hit a bug in itself" in capsys.readouterr().err
+
+
+# --- the query log -----------------------------------------------------------
+
+
+def logged(store: Path) -> list[dict[str, Any]]:
+    """Every row hsql wrote, oldest first."""
+    db = sqlite3.connect(store)
+    db.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in db.execute("select * from queries order by id")]
+    finally:
+        db.close()
+
+
+def test_a_run_records_every_statement(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    res = hsql(*duck, "-c", "create table t (a int); select 1 as a; select nope")
+    assert res.exit_code == ExitCode.QUERY
+    recorded = logged(query_log_path)
+    assert [row["sql"] for row in recorded] == [
+        "create table t (a int);",
+        "select 1 as a;",
+        "select nope",
+    ]
+    assert [row["status"] for row in recorded] == ["ok", "ok", "error"]
+    assert [row["program"] for row in recorded] == ["hsql"] * 3
+    assert recorded[1]["rows"] == 1
+    assert recorded[2]["error"]
+    # one connection, one id, whatever the statement did
+    assert len({row["connection"] for row in recorded}) == 1
+
+
+def test_a_truncated_result_is_recorded_as_truncated(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    res = hsql(*duck, "--limit", "3", "-c", TEN_ROWS)
+    assert res.exit_code == ExitCode.OK
+    (row,) = logged(query_log_path)
+    assert (row["rows"], row["truncated"]) == (3, 1)
+
+
+def test_a_statement_whose_rows_were_never_fetched_is_still_recorded(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    """`--result last` declines to pay for the rest; they still ran."""
+    res = hsql(*duck, "--result", "last", "-c", "select 1; select 2")
+    assert res.exit_code == ExitCode.OK
+    first, second = logged(query_log_path)
+    assert (first["status"], first["rows"]) == ("ok", None)
+    assert (second["status"], second["rows"]) == ("ok", 1)
+
+
+def test_a_profile_can_turn_the_log_off(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path
+) -> None:
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.quiet]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "no_init = true\n"
+        "history = false\n"
+    )
+    res = hsql("--config-path", str(config), "-P", "quiet", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert not query_log_path.exists()
+
+
+def test_history_that_is_not_a_boolean_is_a_usage_error(
+    hsql: Hsql, tmp_path: Path
+) -> None:
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.odd]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "history = 'sometimes'\n"
+    )
+    res = hsql("--config-path", str(config), "-P", "odd", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert "history=" in res.stderr
+
+
+def test_a_log_that_cannot_be_written_does_not_fail_the_query(
+    hsql: Hsql, duck: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Said once on stderr, because stdout belongs to the query's output."""
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("")
+    monkeypatch.setattr(
+        "harlequin.query_log.default_path", lambda: blocked / "history.db"
+    )
+    res = hsql(*duck, "-tA", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "1\n"
+    assert "query log" in res.stderr
+
+
+def test_a_secret_never_reaches_the_query_log(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path
+) -> None:
+    """A profile's declared secret is masked in the SQL that mentions it."""
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.duck]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "no_init = true\n"
+        "md_token = 'hunter2-and-then-some'\n"
+    )
+    res = hsql(
+        "--config-path",
+        str(config),
+        "-P",
+        "duck",
+        "-c",
+        "select 'hunter2-and-then-some' as a",
+    )
+    assert res.exit_code == ExitCode.OK
+    (row,) = logged(query_log_path)
+    assert "hunter2-and-then-some" not in row["sql"]
+
+
+def test_the_two_commands_key_one_connection_the_same_way(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One store with two writers is only one history if the ids agree -- and a
+    profile that sets hsql's own keys must not move the IDE's."""
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.shared]\n"
+        "adapter = 'duckdb'\n"
+        "conn_str = [ ':memory:' ]\n"
+        "no_init = true\n"
+        "limit = 5\n"
+        "format = 'csv'\n"
+        "theme = 'fruity'\n"
+        "no_download_tzdata = true\n"
+    )
+    res = hsql("--config-path", str(config), "-P", "shared", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    (row,) = logged(query_log_path)
+
+    app = MagicMock()
+    monkeypatch.setattr("harlequin.cli.Harlequin", app)
+    from harlequin.cli import build_cli as ide_cli
+
+    argv = ["--config-path", str(config), "-P", "shared"]
+    ide = CliRunner().invoke(ide_cli(argv), argv, catch_exceptions=False)
+    assert ide.exit_code == 0
+    assert app.call_args.kwargs["connection_hash"] == row["connection"]

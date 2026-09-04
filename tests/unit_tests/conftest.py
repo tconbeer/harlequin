@@ -45,10 +45,11 @@ def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[st
     half the world by the time a test runs.
 
     A clean *machine*, too: `no_discovered_config` cannot reach into a
-    subprocess, so the child gets an empty directory as its cwd, its home and
-    its config dir. Otherwise it reads the config files of whoever is running
-    the tests -- or, with `HSQL_SESSION` set, runs every `main()` through the
-    warm-session client and prefixes its stderr with a fallback warning.
+    subprocess, so the child gets an empty directory as its cwd, its home, its
+    config dir and its state dir. Otherwise it reads the config files of
+    whoever is running the tests and writes its queries into their history --
+    or, with `HSQL_SESSION` set, runs every `main()` through the warm-session
+    client and prefixes its stderr with a fallback warning.
     """
     env = {
         **{key: value for key, value in os.environ.items() if key != "HSQL_SESSION"},
@@ -58,6 +59,8 @@ def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[st
         "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
         "APPDATA": str(tmp_path / "appdata"),
         "LOCALAPPDATA": str(tmp_path / "localappdata"),
+        # and where the query log goes, which a run writes as it runs
+        "XDG_STATE_HOME": str(tmp_path / "state"),
     }
 
     def _run(code: str) -> subprocess.CompletedProcess[str]:

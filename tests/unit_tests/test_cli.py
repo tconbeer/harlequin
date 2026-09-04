@@ -135,6 +135,8 @@ def test_default(
         profile_name=None,
         adapter_name="duckdb",
         connection_hash=mock_adapter.return_value.connection_id,
+        adapter_name="duckdb",
+        record_history=True,
         viewer_max_rows=DEFAULT_VIEWER_MAX_ROWS,
         query_limit=None,
         keymap_names=DEFAULT_KEYMAP_NAMES,

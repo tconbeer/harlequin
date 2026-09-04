@@ -396,6 +396,7 @@ def test_a_served_request_is_refused_an_option_the_session_never_named(
         "bare",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="bare-connection",
         reconnect=adapter.connect,
     )
     res = hsql(*args, "-c", "select 1", obj=served_by(session))
@@ -585,6 +586,7 @@ def test_a_refusal_masks_an_option_its_adapter_declared_secret(
         "md",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="md-connection",
         reconnect=adapter.connect,
         identity={"md_token": "tok_theirs"},
         options=adapter.ADAPTER_OPTIONS,
@@ -1071,6 +1073,7 @@ def test_a_status_carries_no_secret(duckdb_adapter: Any) -> None:
         "dsn",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="dsn-connection",
         reconnect=adapter.connect,
         identity={
             "conn_str": ("postgres://ted:hunter2@warehouse:5432/analytics",),
@@ -1129,6 +1132,7 @@ def test_a_busy_session_does_not_ask_its_driver_for_the_mode(
         "tx",
         adapter="duckdb",
         connection=cast(Any, Transacting()),
+        connection_id="tx-connection",
         reconnect=adapter.connect,
     )
     assert session.status()["transaction_mode"] == "Manual"

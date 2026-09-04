@@ -13,16 +13,18 @@ from rich_click.utils import OptionGroupDict
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
+    SHARED_ONLY_KEYS,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    sluggify_option_name,
+    take_history_key,
     take_ssh_keys,
 )
 from harlequin.config_wizard import wizard
@@ -38,6 +40,7 @@ from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
+from harlequin.query_log import connection_id
 from harlequin.redact import hide_secrets_in
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -580,7 +583,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 profile_config,
                 adapter=adapter_name,
                 adapter_options=adapter_cls.ADAPTER_OPTIONS,
-                command_options=harlequin_options | hsql_profile_keys(),
+                command_options=harlequin_options
+                | hsql_profile_keys()
+                | set(SHARED_ONLY_KEYS),
             )
         except HarlequinConfigError as e:
             pretty_print_error(e)
@@ -595,8 +600,24 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # config file pointed it at
         hide_secrets_in(config, adapter_cls.ADAPTER_OPTIONS)
 
-        # detect and install (if necessary) a tzdatabase on Windows
-        if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
+        # One profile serves both commands, so a profile written for hsql has
+        # to work here: its keys come off rather than being handed to an
+        # adapter that never declared them, as hsql drops this command's own.
+        # Which also keeps the two agreeing about a connection's id, since that
+        # is a hash of whatever is left. An option the adapter does declare is
+        # its own, however hsql spells the same word.
+        declared_by_adapter = {
+            sluggify_option_name(option.name)
+            for option in adapter_cls.ADAPTER_OPTIONS or []
+        }
+        for key in hsql_profile_keys() - harlequin_options - declared_by_adapter:
+            config.pop(key, None)
+
+        # detect and install (if necessary) a tzdatabase on Windows. The key
+        # comes off on every platform, because what is left of the config is
+        # the adapter's and is what a connection is keyed by.
+        no_download_tzdata = config.pop("no_download_tzdata", None)
+        if sys.platform == "win32" and not no_download_tzdata:
             try:
                 check_and_install_tzdata()
             except HarlequinTzDataError as e:
@@ -652,6 +673,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # off the config before the adapter is handed the rest of it
         try:
             ssh_config = take_ssh_keys(config, typed=explicitly_set)
+            record_history = take_history_key(config)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -679,15 +701,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             if tunnel is not None:
                 stack.callback(tunnel.stop)
 
-            connection_id = (
-                adapter_instance.connection_id
-                if adapter_instance.connection_id is not None
-                else get_connection_hash(conn_str, config)
+            keyed_connection = connection_id(
+                adapter_instance.connection_id,
+                conn_str,
+                config,
+                through=tunnel.cache_material() if tunnel is not None else (),
             )
-            if tunnel is not None:
-                connection_id = get_connection_hash(
-                    (connection_id,), {}, through=tunnel.cache_material()
-                )
 
             tui = Harlequin(
                 adapter=adapter_instance,
@@ -695,7 +714,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 adapter_name=adapter_name,
                 keymap_names=keymap_names,
                 user_defined_keymaps=user_defined_keymaps,
-                connection_hash=connection_id,
+                connection_hash=keyed_connection,
+                adapter_name=adapter_name,
+                record_history=record_history,
                 viewer_max_rows=viewer_max_rows,
                 query_limit=query_limit,
                 theme=theme,
