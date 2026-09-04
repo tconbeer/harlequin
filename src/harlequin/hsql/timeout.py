@@ -52,9 +52,22 @@ class TimedOut(Exception):
 class Deadline:
     """How long a run may take, and whether its time is up."""
 
-    def __init__(self, seconds: float, *, grace: float | None = None) -> None:
+    def __init__(
+        self,
+        seconds: float,
+        *,
+        grace: float | None = None,
+        abandon: Callable[[], None] | None = None,
+    ) -> None:
         self.seconds = seconds
         self.grace = GRACE_SECONDS if grace is None else grace
+        self.abandon = abandon
+        """What to do when cancelled work outlasts the grace period.
+
+        By default the process ends, with the timeout reported, because a
+        thread still inside a driver aborts an interpreter that exits around
+        it. A session's server ends the request instead and keeps running.
+        """
         self._expired = threading.Event()
 
     @property
@@ -90,13 +103,15 @@ class Deadline:
             # the caller stopped, not one that ran too long
             self._cancel(connection)
             if not finished.wait(self.grace):
-                _halt(ExitCode.INTERRUPT)
+                halt(ExitCode.INTERRUPT)
             raise
         if not in_time:
             self._cancel(connection)
             if not finished.wait(self.grace):
-                diagnostics.report_timeout(self.seconds)
-                _halt(ExitCode.TIMEOUT)
+                if self.abandon is None:
+                    diagnostics.report_timeout(self.seconds)
+                    halt(ExitCode.TIMEOUT)
+                self.abandon()
             raise TimedOut()
         if failure:
             raise failure[0]
@@ -116,7 +131,7 @@ class Deadline:
             connection.cancel()
 
 
-def _halt(code: ExitCode) -> NoReturn:
+def halt(code: ExitCode) -> NoReturn:
     """End the process now, around a worker thread that would abort it."""
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(Exception):

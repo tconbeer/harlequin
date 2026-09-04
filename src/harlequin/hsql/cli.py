@@ -27,6 +27,19 @@ because `CONN_STR` is positional: `hsql catalog` and a DuckDB file named
 `catalog` would have needed a rule, and `--catalog` needs none. They are
 mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
 callback when it is chosen.
+
+A **session** is the fourth shape, and it is two roles of this one command.
+`--serve NAME` connects and then holds the connection, answering invocations
+sent to it over a socket; `--session NAME` is such an invocation, and it is the
+client in `harlequin.hsql.client` that carries it there, forwarding argv
+verbatim. So the server parses every served request with this same command,
+and what tells the callback it is answering for a session is `ctx.obj`. Every
+option here is in exactly one of three groups, decided by when its question
+can be answered: connection-time (`CONN_STR`, `-a`, `-P`, the SSH options,
+every adapter's), per-request (`-c`, `--format`, every mode), and
+server-lifetime (`--queue-timeout`). `--serve` refuses the second group and a
+served request refuses the third, and each refusal names the invocation the
+option belongs on.
 """
 
 from __future__ import annotations
@@ -54,9 +67,11 @@ from typing import (
 import click
 
 from harlequin.config import (
+    CLI_ONLY_SESSION_KEYS,
     CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
     DEFAULT_SSH_TIMEOUT,
+    SSH_KEYS,
     TUI_ONLY_KEYS,
     UNLIMITED,
     merge_profile_with_cli,
@@ -86,6 +101,7 @@ from harlequin.redact import hide_secrets_in
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinAdapter, HarlequinConnection
+    from harlequin.hsql.server import Served
     from harlequin.hsql.timeout import Deadline
     from harlequin.layout import LayoutOptions
     from harlequin.navigate import CatalogPath
@@ -120,6 +136,54 @@ SHORTHANDS = {
 SOURCES = f"{__name__}.sources"
 """Context key under which `-c` and `-f` record themselves, in order."""
 
+CONNECTION_OPTIONS = frozenset(
+    {"conn_str", "adapter", "profile", "config_path", "read_only", *SSH_KEYS}
+)
+"""Answered once, when a connection is opened -- so `--serve` takes them and a
+served request may not. Every adapter option is one too, by
+`_is_connection_option()`: the command declares none of them itself."""
+
+SERVER_OPTIONS = frozenset({"queue_timeout"})
+"""Answered once, and only a server has one to answer."""
+
+ROLE_OPTIONS = frozenset({"serve", "session"})
+"""The two spellings that say which process an invocation is."""
+
+PER_REQUEST_OPTIONS = frozenset(
+    {
+        "command",
+        "file",
+        "output",
+        "format",
+        *SHORTHANDS,
+        "vertical",
+        "tuples_only",
+        "no_align",
+        "no_header",
+        "no_footer",
+        "null_string",
+        "timeout",
+        "config_mode",
+        "catalog",
+        "catalog_search",
+        "path",
+        "spec",
+        "info",
+        "skill",
+        "session_reset",
+        "limit",
+        "display_rows",
+        "result",
+        "on_error",
+        "stats",
+        "color",
+        "version",
+    }
+)
+"""Answered on every invocation, so a session's client sends them and
+`--serve` takes none. `tests/unit_tests/test_hsql_serve.py` pins the four
+groups to the command: every parameter is in exactly one."""
+
 
 def build_cli(argv: Sequence[str]) -> click.Command:
     """Build the hsql command, importing at most one adapter to do it.
@@ -140,6 +204,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             click.Option(["--spec"], is_flag=True),
             click.Option(["--info"], is_flag=True),
             click.Option(["--skill"], is_flag=True),
+            click.Option(["--session-reset"], is_flag=True),
         ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
@@ -148,12 +213,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # about the first file it stumbled on, and `--info` reports one as part
         # of its answer; `--spec` describes the command, which a config file it
         # could not read has no bearing on.
+        # `--session-reset` asks a running session to reconnect with whatever
+        # it connected with, so it takes no profile and no adapter either.
         needs_profile=lambda params: (
             not (
                 params.get("config") is not None
                 or params.get("spec")
                 or params.get("info")
                 or params.get("skill")
+                or params.get("session_reset")
             )
         ),
         # `--config init` is the mode that needs an adapter without a profile:
@@ -166,6 +234,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 or params.get("spec")
                 or params.get("info")
                 or params.get("skill")
+                or params.get("session_reset")
             )
         ),
         # bare `hsql` renders help, so it names no adapter either
@@ -407,6 +476,44 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--serve",
+        metavar="NAME",
+        help=(
+            "Connect, then hold the connection open as the session named NAME "
+            "and answer `--session NAME` invocations from it until stopped. "
+            "Takes connection options only. Not on native Windows."
+        ),
+    )
+    @click.option(
+        "--session",
+        metavar="NAME",
+        help=(
+            "Send this invocation to the running session named NAME, started "
+            "with --serve. HSQL_SESSION=NAME does the same for every "
+            "invocation, and runs without the session, with a warning, when "
+            "none is up."
+        ),
+    )
+    @click.option(
+        "--session-reset",
+        is_flag=True,
+        help=(
+            "Ask the session to close its connection and open a fresh one, "
+            "and exit without running SQL. Temp tables, settings and an open "
+            "transaction are gone. Needs --session."
+        ),
+    )
+    @click.option(
+        "--queue-timeout",
+        metavar="SECONDS",
+        type=click.FloatRange(min=0, min_open=True),
+        help=(
+            "With --serve: a request waits at most SECONDS for the one before "
+            "it, then exits 4 without reaching the database. [default: no "
+            "limit]"
+        ),
+    )
+    @click.option(
         "--limit",
         default=DEFAULT_LIMIT,
         show_default=True,
@@ -459,6 +566,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         catalog: bool,
         catalog_search: str | None,
         path: str | None,
+        serve: str | None,
+        session: str | None,
+        session_reset: bool,
         **kwargs: Any,
     ) -> None:
         """Execute SQL and exit.
@@ -481,6 +591,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             for k in kwargs
             if ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT
         }
+        # the partition refusals reach past `kwargs`, because the mode flags and
+        # the two role flags are named parameters of this callback rather than
+        # keys of it -- so a `--catalog` or a `--serve` the caller typed would
+        # otherwise be invisible to a check that only reads what the merge sees
+        typed_options = {
+            name
+            for name in ctx.params
+            if ctx.get_parameter_source(name) != click.core.ParameterSource.DEFAULT
+        }
         values: dict[str, Any] = dict(
             merge_profile_with_cli(
                 profile=profile_config,
@@ -490,6 +609,42 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         )
         for key in TUI_ONLY_KEYS:
             values.pop(key, None)
+
+        # the session this invocation is answered by, when a server built
+        # this command to answer it
+        served: Served | None = ctx.obj
+        _refuse_session_keys_from_a_profile(ctx, values)
+        # a mode that reads no database is not the session's business: it
+        # runs where the caller is, with the options the caller typed
+        connects = not (skill or info or spec or config_mode is not None)
+        if serve is not None and (session is not None or served is not None):
+            diagnostics.error(
+                "--serve starts a session and --session sends to one; pass one of them."
+            )
+            ctx.exit(ExitCode.USAGE)
+        if session is not None:
+            # `main()` reads this flag before it parses anything, so it only
+            # arrives here when something else built the command
+            diagnostics.error(
+                f"--session {session} is read before hsql parses anything else, "
+                f"so it cannot be answered from here; run '{PROGRAM} --session "
+                f"{session} ...' from a shell."
+            )
+            ctx.exit(ExitCode.USAGE)
+        if serve is not None:
+            _refuse_per_request_options(ctx, name=serve, typed=typed_options)
+            _refuse_unservable_name(ctx, serve)
+        elif served is not None:
+            _refuse_the_sessions_options(
+                ctx, served, typed=typed_options, connects=connects
+            )
+        elif "queue_timeout" in explicitly_set:
+            diagnostics.error(
+                "--queue-timeout is a --serve option: it bounds how long a "
+                "request waits for the one before it."
+            )
+            ctx.exit(ExitCode.USAGE)
+        raw_queue_timeout = values.pop("queue_timeout", None)
 
         # redact secrets in config values and CLI args
         hide_secrets_in(
@@ -510,13 +665,27 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.exit(ExitCode.USAGE)
         on_error: OnError = "continue" if raw_on_error == "continue" else "stop"
         read_only: bool = bool(values.pop("read_only", False))
-        try:
-            # off the config either way: what is left of it is the adapter's
-            ssh_config = take_ssh_keys(values, typed=explicitly_set)
-        except HarlequinConfigError as e:
-            diagnostics.report_error(e)
-            ctx.exit(ExitCode.USAGE)
+        ssh_config: dict[str, Any] = {}
+        if served is not None and connects:
+            # the session connected when it started, through whatever tunnel
+            # it has, as whichever adapter it was given: a profile discovered
+            # where the caller is does not change any of that
+            for key in SSH_KEYS:
+                values.pop(key, None)
+            adapter = served.adapter
+            read_only = False
+        else:
+            try:
+                # off the config either way: what is left of it is the adapter's
+                ssh_config = take_ssh_keys(values, typed=explicitly_set)
+            except HarlequinConfigError as e:
+                diagnostics.report_error(e)
+                ctx.exit(ExitCode.USAGE)
+        # a server runs no SQL of its own, so a --timeout a profile set for the
+        # requests is not one the server counts down
         raw_timeout = values.pop("timeout", None)
+        if serve is not None:
+            raw_timeout = None
         stats: bool = bool(values.pop("stats", False))
         tuples_only: bool = bool(values.pop("tuples_only", False))
         no_align: bool = bool(values.pop("no_align", False))
@@ -541,6 +710,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             spec=spec,
             info=info,
             skill=skill,
+            serve=serve,
+            session_reset=session_reset,
         )
         if path is not None and not catalog and catalog_search is None:
             diagnostics.error("--path must be used with --catalog or --catalog-search.")
@@ -654,6 +825,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
 
         # every mode below this connects to the database
+        if session_reset:
+            if served is None:
+                diagnostics.error(
+                    "--session-reset asks a running session, and this invocation "
+                    "names none. Pass --session NAME, or set HSQL_SESSION."
+                )
+                ctx.exit(ExitCode.USAGE)
+            ctx.exit(_reset_session(ctx, served))
+
         _refuse_undeclared_read_only(
             ctx,
             adapter=adapter,
@@ -667,7 +847,10 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             seconds=timeout_seconds,
             typed="timeout" in explicitly_set,
         )
-        deadline = _deadline(timeout_seconds)
+        deadline = _deadline(
+            timeout_seconds, abandon=None if served is None else served.abandon
+        )
+        queue_timeout = _timeout_seconds(ctx, raw_queue_timeout, key="--queue-timeout")
 
         if ssh_config.get("ssh_host"):
             # entered before the child exists: `start()` blocks for the whole
@@ -683,14 +866,28 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx.call_on_close(tunnel.stop)
             diagnostics.report_tunnel(tunnel.notice(), tunnel.warnings())
 
+        if serve is not None:
+            ctx.exit(
+                _serve(
+                    ctx,
+                    serve,
+                    adapter=adapter,
+                    conn_str=conn_str,
+                    read_only=read_only,
+                    values=values,
+                    queue_timeout=queue_timeout,
+                )
+            )
+
         if catalog:
             catalog_path = _catalog_path(ctx, path)
             if "limit" in explicitly_set:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog")
-            connection = _connect(
+            connection = _connection_for(
                 ctx,
+                served,
                 adapter=adapter,
                 conn_str=conn_str,
                 read_only=read_only,
@@ -731,8 +928,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 # ahead of the connection, so it is said whether or not the
                 # database answers
                 diagnostics.report_limit_ignored("--catalog-search")
-            connection = _connect(
+            connection = _connection_for(
                 ctx,
+                served,
                 adapter=adapter,
                 conn_str=conn_str,
                 read_only=read_only,
@@ -768,6 +966,18 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
             ctx.exit(ExitCode.USAGE)
 
+        if served is not None and served.stdin is None and _names_stdin(sources):
+            # the client's argv scan is a scan, not a parse, and a boolean
+            # short option an adapter declares is not in it: `-zf -` for such
+            # a `-z` reaches here with no stdin, and must not run an empty
+            # script as if that were what was piped
+            diagnostics.error(
+                "-f - reads standard input, and the request the session received "
+                "carried none. Spell it --file -, which the session's client "
+                "always reads."
+            )
+            ctx.exit(ExitCode.USAGE)
+
         try:
             statements = _read_statements(sources)
         except OSError as e:
@@ -796,8 +1006,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             detect_overflow=limit is not None,
         )
 
-        connection = _connect(
-            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+        connection = _connection_for(
+            ctx,
+            served,
+            adapter=adapter,
+            conn_str=conn_str,
+            read_only=read_only,
+            values=values,
         )
 
         run = _Run(deadline=deadline)
@@ -933,6 +1148,8 @@ def _one_mode(
     spec: bool,
     info: bool,
     skill: bool,
+    serve: str | None = None,
+    session_reset: bool = False,
 ) -> str | None:
     """The one mode this invocation chose, or exit having named the two it did.
 
@@ -947,6 +1164,8 @@ def _one_mode(
         ("--spec", spec),
         ("--info", info),
         ("--skill", skill),
+        (f"--serve {serve}", serve is not None),
+        ("--session-reset", session_reset),
     )
     chosen = [name for name, was_asked in asked if was_asked]
     if len(chosen) > 1:
@@ -990,19 +1209,220 @@ def _connect(
     values: Mapping[str, Any],
 ) -> "HarlequinConnection":
     """The connection this invocation runs on, or exit having said why not."""
+    return _connected(
+        ctx,
+        _adapter_instance(
+            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+        ),
+    )
+
+
+def _adapter_instance(
+    ctx: click.Context,
+    *,
+    adapter: str,
+    conn_str: Sequence[str],
+    read_only: bool,
+    values: Mapping[str, Any],
+) -> "HarlequinAdapter":
+    """The adapter this invocation connects with, or exit having said why not."""
     try:
-        adapter_instance = load_adapter(adapter)(
-            conn_str=conn_str, read_only=read_only, **values
-        )
+        return load_adapter(adapter)(conn_str=conn_str, read_only=read_only, **values)
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
 
+
+def _connected(
+    ctx: click.Context, adapter_instance: "HarlequinAdapter"
+) -> "HarlequinConnection":
     try:
         return adapter_instance.connect()
     except HarlequinConnectionError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.CONNECTION)
+
+
+def _connection_for(
+    ctx: click.Context,
+    served: "Served | None",
+    *,
+    adapter: str,
+    conn_str: Sequence[str],
+    read_only: bool,
+    values: Mapping[str, Any],
+) -> "HarlequinConnection":
+    """The session's connection when there is a session, and a new one otherwise."""
+    if served is None:
+        return _connect(
+            ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+        )
+    try:
+        return served.connection()
+    except HarlequinConnectionError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.CONNECTION)
+
+
+def _serve(
+    ctx: click.Context,
+    name: str,
+    *,
+    adapter: str,
+    conn_str: Sequence[str],
+    read_only: bool,
+    values: Mapping[str, Any],
+    queue_timeout: float | None,
+) -> ExitCode:
+    """Connect, and answer for the session called `name` until stopped.
+
+    The server is what `--session-reset` reconnects through, so it is handed
+    the adapter and not just the connection.
+    """
+    # here rather than at module scope: sockets and threads are the one
+    # invocation in many that serves, and every other one would pay for them
+    from harlequin.hsql.server import Server
+
+    adapter_instance = _adapter_instance(
+        ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
+    )
+    connection = _connected(ctx, adapter_instance)
+    return Server(
+        name,
+        adapter=adapter,
+        connection=connection,
+        reconnect=adapter_instance.connect,
+        queue_timeout=queue_timeout,
+    ).serve()
+
+
+def _reset_session(ctx: click.Context, served: "Served") -> ExitCode:
+    """Answer `--session-reset` and return its code, or exit having said why not.
+
+    Exit 3 for a reconnect that failed, since that is what the session now
+    is: one with no connection, which the next request is told about too.
+    """
+    try:
+        served.reset()
+    except HarlequinConnectionError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.CONNECTION)
+    diagnostics.note(f"session {served.name!r} reconnected.")
+    return ExitCode.OK
+
+
+def _is_connection_option(name: str) -> bool:
+    """Whether an option is answered when a connection is opened.
+
+    Every option is in exactly one group, and the command declares no
+    adapter's options itself, so one it does not know is an adapter's -- and
+    an adapter's options are all connection-time.
+    """
+    return name in CONNECTION_OPTIONS or name not in (
+        PER_REQUEST_OPTIONS | SERVER_OPTIONS | ROLE_OPTIONS
+    )
+
+
+def _spelling(ctx: click.Context, name: str) -> str:
+    """How the command line spells a parameter, for an error that names it."""
+    for param in ctx.command.params:
+        if param.name == name:
+            if isinstance(param, click.Argument):
+                return param.human_readable_name
+            return max(param.opts, key=len)
+    return name
+
+
+def _refuse_per_request_options(
+    ctx: click.Context, *, name: str, typed: set[str]
+) -> None:
+    """Exit with an error if `--serve` was given an option a request answers.
+
+    Every flag a server would need for a query is one it cannot answer once
+    for every invocation to come, so the refusal names the invocation the
+    option belongs on rather than only the one it does not.
+    """
+    for key in sorted(typed):
+        if key in PER_REQUEST_OPTIONS:
+            spelling = _spelling(ctx, key)
+            diagnostics.error(
+                f"{spelling} is a per-request option, and --serve takes none. "
+                f"Start the session, then send it the request: "
+                f"'{PROGRAM} --serve {name} ...', then "
+                f"'{PROGRAM} --session {name} {spelling} ...'."
+            )
+            ctx.exit(ExitCode.USAGE)
+
+
+def _refuse_unservable_name(ctx: click.Context, name: str) -> None:
+    """Exit with an error if no client could ever reach a session so named.
+
+    Asked of the name before a connection is paid for, and asked with the
+    client's own check, so the two halves cannot disagree about a name.
+    """
+    from harlequin.hsql.client import cannot_be_served
+    from harlequin.hsql.session import Session
+
+    refusal = cannot_be_served(Session(name, explicit=True), os.environ)
+    if refusal is not None:
+        reason, remedy, code = refusal
+        diagnostics.error(f"{reason}.{remedy}")
+        ctx.exit(code)
+
+
+def _refuse_the_sessions_options(
+    ctx: click.Context, served: "Served", *, typed: set[str], connects: bool
+) -> None:
+    """Exit with an error if a served request typed an option the session owns.
+
+    A connection option describes a connection the session already opened,
+    so a request that typed one either agrees with it, and asked for nothing,
+    or differs, and asked for a different session. A server-lifetime option
+    describes the server, which is up.
+    """
+    for key in sorted(typed):
+        spelling = _spelling(ctx, key)
+        if key in SERVER_OPTIONS:
+            diagnostics.error(
+                f"{spelling} is a --serve option, and the session named "
+                f"{served.name!r} already has one."
+            )
+            ctx.exit(ExitCode.USAGE)
+        if connects and _is_connection_option(key):
+            diagnostics.error(
+                f"{spelling} is a connection option, and the session named "
+                f"{served.name!r} connected when it started. Drop it, or start "
+                f"a session with it: '{PROGRAM} --serve NAME {spelling} ...'."
+            )
+            ctx.exit(ExitCode.USAGE)
+
+
+def _refuse_session_keys_from_a_profile(
+    ctx: click.Context, values: Mapping[str, Any]
+) -> None:
+    """Exit with an error if a config file said which process runs this.
+
+    Only a profile can have put one of these in the merged values: the two
+    flags are named parameters of the callback, so a typed one never reaches
+    the merge.
+    """
+    for key in CLI_ONLY_SESSION_KEYS:
+        if key in values:
+            remedy = (
+                f"Pass --{key}, or set HSQL_SESSION"
+                if key == "session"
+                else f"Pass --{key}"
+            )
+            diagnostics.error(
+                f"{key} says which process runs an invocation, so it is read "
+                f"from the command line and not from a config file. {remedy}."
+            )
+            ctx.exit(ExitCode.USAGE)
+
+
+def _names_stdin(sources: Sequence[tuple[str, tuple[str, ...]]]) -> bool:
+    """Whether any `-f` in the invocation reads standard input."""
+    return any(kind == "file" and "-" in values for kind, values in sources)
 
 
 def _catalog_path(ctx: click.Context, raw: str | None) -> "CatalogPath":
@@ -1103,31 +1523,36 @@ def _refuse_undeclared_timeout(
         ctx.exit(ExitCode.USAGE)
 
 
-def _timeout_seconds(ctx: click.Context, raw: Any) -> float | None:
+def _timeout_seconds(
+    ctx: click.Context, raw: Any, *, key: str = "--timeout"
+) -> float | None:
     """How long this invocation has, or exit having said why that is not a time.
 
     click has already vetted a `--timeout` typed on the command line; a profile
     can say anything.
     """
     try:
-        return parse_seconds(raw, key="--timeout")
+        return parse_seconds(raw, key=key)
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
 
 
-def _deadline(seconds: float | None) -> "Deadline | None":
+def _deadline(
+    seconds: float | None, *, abandon: Callable[[], None] | None = None
+) -> "Deadline | None":
     """The clock this invocation runs under, or None for as long as it takes.
 
     Deferred, and None where nothing asked: a run with no deadline starts no
     worker thread, and the two phases stay on the thread they have always been
-    on.
+    on. `abandon` is a session's answer to a cancel that did not land, in
+    place of ending the process.
     """
     if seconds is None:
         return None
     from harlequin.hsql.timeout import Deadline
 
-    return Deadline(seconds)
+    return Deadline(seconds, abandon=abandon)
 
 
 def _under_deadline(
@@ -1486,6 +1911,30 @@ def _write_config(
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
     return ExitCode.OK
+
+
+def run(argv: Sequence[str], *, served: "Served | None" = None) -> int:
+    """Parse and run one invocation, and return the code it exits with.
+
+    The whole of the cold path, and the whole of one request on a session's
+    server -- which is the point: a served invocation is this function with
+    `served` set, and nothing else. What the callback needs to know about the
+    session travels as `ctx.obj`.
+    """
+    try:
+        # the same arguments to both: which adapter's options the command
+        # carries is decided from them, and then click parses them.
+        code = build_cli(argv).main(
+            args=list(argv), prog_name=PROGRAM, standalone_mode=False, obj=served
+        )
+    except click.ClickException as e:
+        # parse-level failures -- an unknown option, a bad choice. click already
+        # exits 2 for those, which is the code hsql documents for usage errors.
+        e.show()
+        return e.exit_code
+    except (click.Abort, KeyboardInterrupt):
+        return ExitCode.INTERRUPT
+    return code if isinstance(code, int) else ExitCode.OK
 
 
 def bare_command() -> click.Command:
@@ -2038,6 +2487,13 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
             f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns\n"
             f"  {PROGRAM} --catalog-search orders       anything in it named that"
+        ),
+        (
+            "Sessions (not on native Windows):\n"
+            f"  {PROGRAM} --serve NAME [CONN_STR]      hold a connection open\n"
+            f"  {PROGRAM} --session NAME -c ...        send it a query; or "
+            "HSQL_SESSION=NAME\n"
+            f"  {PROGRAM} --session NAME --session-reset   reconnect it"
         ),
         (
             "Exit codes:\n"

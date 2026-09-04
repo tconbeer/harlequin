@@ -243,6 +243,11 @@ markers = [
     "online: requeries internet connection (deselect with '-m \"not online\"')",
     "use_cache: override the autouse fixture the disables the buffer cache",
     "py12: Only run on Python 3.12 or higher",
+    # a test whose invocations are *meant* to see different bytes warm than
+    # cold -- because the session kept state between them -- and which asserts
+    # what the warm behavior is. The set carrying it is the enumerated version
+    # of docs/plans/hsql-warm-sessions-design.md's section 5.
+    "session_divergent: asserts behavior a warm session has and a cold run has not",
 ]
 
 

@@ -23,7 +23,7 @@ import os
 import sys
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TextIO
 
 from harlequin.exception import (
     HarlequinCatalogPathError,
@@ -106,13 +106,13 @@ def exit_code_for(error: BaseException) -> ExitCode:
     return ExitCode.QUERY
 
 
-def error(message: str) -> None:
+def error(message: str, *, stream: TextIO | None = None) -> None:
     """One plain line, prefixed with the program name.
 
     No panel, no ANSI, no box drawing: those are affordances of a full-screen
     app, and here they would be something a caller has to parse around.
     """
-    _write(f"{PROGRAM}: error: {message}")
+    _write(f"{PROGRAM}: error: {message}", stream=stream)
 
 
 def report_error(exception: BaseException) -> None:
@@ -122,8 +122,61 @@ def report_error(exception: BaseException) -> None:
     error(message)
 
 
-def note(message: str) -> None:
-    _write(f"note: {message}")
+def note(message: str, *, stream: TextIO | None = None) -> None:
+    _write(f"note: {message}", stream=stream)
+
+
+def report_session_ready(name: str, adapter: str, *, stream: TextIO) -> None:
+    """Say that a session is up, and how to reach it.
+
+    On the server's own stderr, which is the operator's stream: every other
+    line a request produces goes to the client that sent it.
+    """
+    note(
+        f"session {name!r} is ready ({adapter}). Send it queries with "
+        f"`{PROGRAM} --session {name} -c ...`, or set HSQL_SESSION={name}. "
+        "Ctrl-C stops it.",
+        stream=stream,
+    )
+
+
+def report_session_stopped(name: str, requests: int, *, stream: TextIO) -> None:
+    note(
+        f"session {name!r} stopped after {requests} "
+        f"{'request' if requests == 1 else 'requests'}.",
+        stream=stream,
+    )
+
+
+def report_request(number: int, code: int, elapsed_ms: int, *, stream: TextIO) -> None:
+    """One line per request answered, so a foreground server shows its work."""
+    note(f"request {number}: exit {code} in {elapsed_ms}ms", stream=stream)
+
+
+def report_peer_refused(uid: int, *, stream: TextIO) -> None:
+    note(f"refused a connection from uid {uid}, which is not yours.", stream=stream)
+
+
+def report_bad_request(reason: str, *, stream: TextIO) -> None:
+    note(f"dropped a connection that sent no request: {reason}", stream=stream)
+
+
+def report_client_gone(*, stream: TextIO) -> None:
+    note("a client went away before its answer reached it.", stream=stream)
+
+
+def report_queue_timeout(seconds: float, *, stream: TextIO) -> None:
+    """Say that a request waited its whole `--queue-timeout` for the one ahead.
+
+    Distinct from `report_timeout()` on purpose: this request never reached
+    the database, and a caller retrying a query that ran too long is doing
+    the wrong thing about one that never ran.
+    """
+    error(
+        f"waited {seconds:g}s for the session's previous request and never "
+        "reached the database (--queue-timeout).",
+        stream=stream,
+    )
 
 
 def report_crash(report_path: Path | None) -> None:
@@ -313,7 +366,7 @@ def report_stats(
     _write(json.dumps(payload, separators=(",", ":")))
 
 
-def _write(line: str) -> None:
+def _write(line: str, *, stream: TextIO | None = None) -> None:
     # stdout first, always. It is block-buffered when it is a pipe, and stderr
     # is not, so a diagnostic written now would otherwise overtake the result
     # set it describes -- and the two streams would interleave differently on a
@@ -321,9 +374,13 @@ def _write(line: str) -> None:
     # that true for errors and --stats as well as for notes.
     sys.stdout.flush()
     # sys.stderr is resolved on each call, not bound at import: a test harness
-    # that swaps the stream out has to be able to see what was written.
+    # that swaps the stream out has to be able to see what was written. A
+    # session's server names a stream instead, because while it answers a
+    # request the process's stderr is that request's.
     #
     # Redacting here rather than at each call site is what makes this a
     # promise: an error raised by a driver, a note, a `--stats` payload with a
     # message in it, and whatever is added next all leave through this line.
-    print(redact_text(line), file=sys.stderr)
+    print(redact_text(line), file=sys.stderr if stream is None else stream)
+    if stream is not None:
+        stream.flush()

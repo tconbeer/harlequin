@@ -53,8 +53,12 @@ Alphabetical by name. Flags are off by default.
 | `-o`, `--output` | text | `PATH` |  |  | Write results to PATH instead of stdout. Accepts a file or directory. |
 | `--path` | text | `TEXT` |  |  | Where in the catalog --catalog looks, and what --catalog-search searches under. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters a --catalog listing. |
 | `-P`, `--profile` | text |  |  |  | Load a profile from an available config file. Options passed here take precedence over the profile's. Use the profile named None for Harlequin's defaults instead of the config file's default profile. |
+| `--queue-timeout` | number | `SECONDS` |  |  | With --serve: a request waits at most SECONDS for the one before it, then exits 4 without reaching the database. [default: no limit] |
 | `-r`, `--read-only` | boolean |  |  |  | Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info. |
 | `--result` | text | `all\|last\|N` | `all` |  | Which result set(s) to emit. |
+| `--serve` | text | `NAME` |  |  | Connect, then hold the connection open as the session named NAME and answer `--session NAME` invocations from it until stopped. Takes connection options only. Not on native Windows. |
+| `--session` | text | `NAME` |  |  | Send this invocation to the running session named NAME, started with --serve. HSQL_SESSION=NAME does the same for every invocation, and runs without the session, with a warning, when none is up. |
+| `--session-reset` | boolean |  |  |  | Ask the session to close its connection and open a fresh one, and exit without running SQL. Temp tables, settings and an open transaction are gone. Needs --session. |
 | `--skill` | boolean |  |  |  | Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'. |
 | `--spec` | boolean |  |  |  | Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter. |
 | `--ssh-allow-reuse` | boolean |  |  |  | When the local port is already bound, warn and connect through the listener that has it instead of failing. |
