@@ -96,7 +96,7 @@ def test_updating_a_row_that_was_never_written_does_nothing(
     log: QueryLog, store: Path
 ) -> None:
     log.update(None, rows=7)
-    assert rows(store) == []
+    assert not store.exists(), "it did not even open the store"
 
 
 def test_an_error_keeps_its_message(log: QueryLog, store: Path) -> None:
@@ -154,8 +154,8 @@ def test_migrating_from_zero_runs_every_step(store: Path) -> None:
     store.parent.mkdir(parents=True)
     sqlite3.connect(store).close()
     log = QueryLog(program="hsql", path=store)
-    assert log.enabled
     log.write("select 1")
+    assert log.enabled, log.failure
     assert len(rows(store)) == 1
 
 
@@ -198,9 +198,9 @@ def test_retention_trims_from_the_oldest_end(
 
     # trimming is once per process, so it is the next run that finds them
     assert len(rows(store)) == 8
-    QueryLog(program="hsql", path=store)
+    QueryLog(program="hsql", path=store).write("select 8")
     assert [record["sql"] for record in rows(store)] == [
-        f"select {n}" for n in range(3, 8)
+        f"select {n}" for n in range(3, 9)
     ]
 
 
@@ -208,8 +208,18 @@ def test_retention_keeps_a_store_smaller_than_the_cap_whole(store: Path) -> None
     first = QueryLog(program="hsql", path=store)
     first.write("select 1")
     first.close()
-    QueryLog(program="hsql", path=store)
-    assert len(rows(store)) == 1
+    QueryLog(program="hsql", path=store).write("select 2")
+    assert len(rows(store)) == 2
+
+
+def test_holding_a_log_opens_nothing(store: Path) -> None:
+    """Which is what keeps it off the IDE's start-up path."""
+    log = QueryLog(program="harlequin", path=store)
+    assert not store.exists()
+    assert log.enabled, "it has not tried yet, so nothing has gone wrong"
+
+    log.write("select 1")
+    assert store.exists()
 
 
 def test_the_default_store_is_one_file_under_the_state_dir() -> None:
@@ -226,10 +236,10 @@ def test_a_store_that_cannot_be_opened_disables_logging(tmp_path: Path) -> None:
     blocked = tmp_path / "not-a-directory"
     blocked.write_text("")
     log = QueryLog(program="hsql", path=blocked / "history.db")
+    # the write is what opens it, so the write is what discovers it cannot be
+    assert log.write("select 1") is None
     assert not log.enabled
     assert log.failure is not None
-    # and writing to it is a no-op rather than a raise
-    assert log.write("select 1") is None
     log.update(None)
     log.close()
 
@@ -238,6 +248,7 @@ def test_a_store_that_is_not_a_database_disables_logging(store: Path) -> None:
     store.parent.mkdir(parents=True)
     store.write_bytes(b"this is not a SQLite file, it is a note")
     log = QueryLog(program="hsql", path=store)
+    assert log.write("select 1") is None
     assert not log.enabled
     assert log.failure is not None
 
@@ -296,8 +307,8 @@ def test_the_default_journal_still_works(
         lambda *args, **kwargs: _RefusesWal(connect(*args, **kwargs)),
     )
     log = QueryLog(program="hsql", path=store)
-    assert log.enabled, log.failure
     log.write("select 1")
+    assert log.enabled, log.failure
     log.close()
     monkeypatch.undo()
     assert len(rows(store)) == 1
@@ -305,9 +316,9 @@ def test_the_default_journal_still_works(
 
 def _insert_many(store: str) -> None:
     log = QueryLog(program="hsql", path=Path(store))
-    assert log.enabled, log.failure
     for n in range(100):
         log.write(f"select {n}")
+    assert log.enabled, log.failure
     assert log.failure is None, log.failure
     log.close()
 

@@ -16,7 +16,8 @@ what it does not understand.
 
 **Logging never fails a query.** A store that cannot be opened, migrated or
 written disables itself and records why, in one place instead of at every call
-site; the caller says so once and runs on.
+site; the caller says so once and runs on. The first write is what opens it, so
+holding a log costs nothing until there is something to record.
 """
 
 from __future__ import annotations
@@ -117,8 +118,12 @@ class QueryLog:
     it can change while a process is running.
 
     A disabled log is a real object whose writes do nothing, so that a caller
-    never branches on None: `history = false` in a profile, and a store that
-    could not be opened, are the same object to everything upstream.
+    never branches on None: `--no-write-history`, and a store that could not be
+    opened, are the same object to everything upstream.
+
+    **Constructing one touches no disk.** The store is opened, migrated and
+    trimmed by the first write, so a front end can hold one from the moment it
+    starts and a session that runs no queries pays nothing for it.
     """
 
     def __init__(
@@ -137,12 +142,18 @@ class QueryLog:
         self.adapter = adapter
         self.failure: str | None = None
         """Why nothing is being logged, for a caller to report once."""
-        self._db = self._open(path) if enabled else None
+        self._path = path
+        self._enabled = enabled
+        self._db: sqlite3.Connection | None = None
 
     @property
     def enabled(self) -> bool:
-        """Whether anything written here reaches the store."""
-        return self._db is not None
+        """Whether a write would still reach the store.
+
+        True before the first one, which is what has not been attempted yet:
+        a store that cannot be opened says so when something is written to it.
+        """
+        return self._enabled
 
     def write(
         self,
@@ -219,10 +230,16 @@ class QueryLog:
             with contextlib.suppress(sqlite3.Error):
                 self._db.close()
             self._db = None
+        self._enabled = False
 
-    def _open(self, path: Path | None) -> sqlite3.Connection | None:
-        """The store, configured and migrated, or None having recorded why."""
-        store = path if path is not None else default_path()
+    def _open(self) -> sqlite3.Connection | None:
+        """The store, configured and migrated, or None having recorded why.
+
+        Called by the first write rather than by `__init__`, so that opening a
+        file, migrating it and trimming it is work a session pays for when it
+        runs a query and not while it is starting up.
+        """
+        store = self._path if self._path is not None else default_path()
         db: sqlite3.Connection | None = None
         try:
             store.parent.mkdir(parents=True, exist_ok=True)
@@ -238,17 +255,23 @@ class QueryLog:
                 with contextlib.suppress(sqlite3.Error):
                     db.close()
             self.failure = f"Harlequin could not open its query log at {store}: {e}"
+            self._enabled = False
             return None
         return db
 
     def _run(self, sql: str, values: Sequence[Any]) -> sqlite3.Cursor | None:
         """One statement against the store, or None having disabled logging.
 
-        The single place a write can fail: the query it was recording has
-        already run, so there is nothing here worth raising over.
+        The single place a write can fail -- opening it included, since that is
+        what the first one does. The query being recorded has already run, so
+        there is nothing here worth raising over.
         """
-        if self._db is None:
+        if not self._enabled:
             return None
+        if self._db is None:
+            self._db = self._open()
+            if self._db is None:
+                return None
         try:
             with self._db:
                 return self._db.execute(sql, values)
