@@ -100,7 +100,7 @@ from harlequin.history import History
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
-from harlequin.query_log import QueryLog
+from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 
@@ -300,8 +300,11 @@ class Harlequin(AppBase):
             profile=profile_name,
             adapter=adapter_name,
             enabled=record_history,
+            busy_timeout_ms=UI_BUSY_TIMEOUT_MS,
         )
         self._reported_query_log_failure = False
+        self.logged_rows: dict[str, int | None] = {}
+        """The query log's row for each executed cursor, by the id it is keyed by."""
         self.show_files = show_files
         self.show_s3 = show_s3 or None
         # already started, by the command that built this app: `ssh` prompts for
@@ -437,33 +440,19 @@ class Harlequin(AppBase):
         return new_screen
 
     def append_to_history(
-        self,
-        query_text: str,
-        result_row_count: int,
-        elapsed: float,
-        error: BaseException | None = None,
+        self, query_text: str, result_row_count: int, elapsed: float
     ) -> None:
         if self.history is None:
             self.history = History.blank()
         self.history.append(
             query_text=query_text, result_row_count=result_row_count, elapsed=elapsed
         )
-        # a negative count is how this app has always spelled "that one raised"
-        failed = result_row_count < 0
-        self.query_log.write(
-            query_text,
-            status="error" if failed else "ok",
-            rows=None if failed else result_row_count,
-            elapsed_ms=elapsed * 1000,
-            error=None if error is None else str(error),
-        )
-        self._report_query_log_failure()
 
     def _report_query_log_failure(self) -> None:
-        """Say once that queries are no longer being recorded, and carry on.
+        """Say once that queries are no longer being recorded.
 
-        A store that cannot be written never fails the query it was recording,
-        so a notification is the only way this is visible at all.
+        On the message-handling thread, because the workers that write the rows
+        may not touch the UI.
         """
         if self.query_log.failure is None or self._reported_query_log_failure:
             return
@@ -780,10 +769,7 @@ class Harlequin(AppBase):
     @on(QueryError)
     def handle_query_error(self, message: QueryError) -> None:
         self.append_to_history(
-            query_text=message.query_text,
-            result_row_count=-1,
-            elapsed=0.0,
-            error=message.error,
+            query_text=message.query_text, result_row_count=-1, elapsed=0.0
         )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
@@ -878,12 +864,9 @@ class Harlequin(AppBase):
                 elapsed=message.elapsed,
             )
         if message.errors:
-            for error, query_text in message.errors:
+            for _, query_text in message.errors:
                 self.append_to_history(
-                    query_text=query_text,
-                    result_row_count=-1,
-                    elapsed=0.0,
-                    error=error,
+                    query_text=query_text, result_row_count=-1, elapsed=0.0
                 )
             header = getattr(
                 message.errors[0][0],
@@ -1446,19 +1429,33 @@ class Harlequin(AppBase):
         limit = RowLimit(
             max_rows=message.limit, detect_overflow=message.limit is not None
         )
+        # one row per statement, written as the database is asked to run it,
+        # so a session that dies mid-fetch keeps the query
+        logged: dict[str, int | None] = {}
         for executed in execute(
             connection=connection,
             statements=statements,
             limit=limit,
         ):
             if executed.error is not None:
+                self.query_log.write(
+                    executed.statement.sql,
+                    status="error",
+                    error=str(executed.error),
+                )
                 self.post_message(
                     QueryError(query_text=executed.statement.sql, error=executed.error)
                 )
             elif executed.cursor is not None:
-                cursors[f"t{hash(executed.cursor)}"] = executed
+                id_ = f"t{hash(executed.cursor)}"
+                cursors[id_] = executed
+                # completed by `_fetch_data`, which is where its rows are known
+                logged[id_] = self.query_log.write(executed.statement.sql)
             else:
                 ddl_queries.append(executed.statement.sql)
+                self.query_log.write(executed.statement.sql)
+        # replaced rather than mutated: the handler reads it on another thread
+        self.logged_rows = logged
         self.post_message(
             QueriesExecuted(
                 query_count=len(cursors) + len(ddl_queries),
@@ -1488,6 +1485,12 @@ class Harlequin(AppBase):
                 header="Harlequin could not cancel your queries.",
                 error=e,
             )
+        # whatever the fetch has not completed. A cancelled cursor comes back
+        # empty and error-free, so only this can tell those rows from a query
+        # that matched nothing.
+        while self.logged_rows:
+            _, row = self.logged_rows.popitem()
+            self.query_log.update(row, status="canceled")
         self.post_message(QueriesCanceled())
 
     def _connection_for_worker(
@@ -1579,9 +1582,21 @@ class Harlequin(AppBase):
                 )
             except BaseException as e:
                 errors.append((e, executed.statement.sql))
+                self.query_log.update(
+                    self.logged_rows.pop(id_, None), status="error", error=str(e)
+                )
         # each ResultSet times its own fetch; the app reports the batch,
         # measured from the moment the query was submitted.
         elapsed = time.monotonic() - submitted_at
+        for id_, result in results.items():
+            # taken off as it is completed, so that a later cancel marks only
+            # what was still running
+            self.query_log.update(
+                self.logged_rows.pop(id_, None),
+                rows=result.fetched_row_count,
+                truncated=result.truncated,
+                elapsed_ms=elapsed * 1000,
+            )
         self.post_message(
             ResultsFetched(
                 cursors=cursors, results=results, errors=errors, elapsed=elapsed

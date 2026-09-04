@@ -262,7 +262,7 @@ def test_a_run_that_records_its_queries_does_not_render_one(
     run_python: Callable[[str], subprocess.CompletedProcess[str]],
 ) -> None:
     """The query log writes what the History screen renders, and only one of
-    them may import rich -- which is 39% of a whole `hsql --version`."""
+    them may import rich."""
     proc = run_python(
         "import sys\n"
         "sys.argv = ['hsql', '-c', 'select 1']\n"
