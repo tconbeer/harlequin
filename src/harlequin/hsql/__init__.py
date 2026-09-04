@@ -28,9 +28,12 @@ def main() -> None:
     argv = sys.argv[1:]
     session = requested_session(argv, os.environ)
     if session is not None:
-        from harlequin.hsql.client import run
+        from harlequin.hsql.client import INTERRUPT, run
 
-        code = run(session, argv, os.environ)
+        try:
+            code = run(session, argv, os.environ)
+        except KeyboardInterrupt:
+            sys.exit(INTERRUPT)
         if code is not None:
             sys.exit(code)
         # an ambient session that is not running: warned, and running cold

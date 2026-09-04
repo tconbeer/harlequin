@@ -389,8 +389,9 @@ source_modules = [
     "harlequin.hsql.protocol",
     "harlequin.hsql.session",
 ]
-# every harlequin module that is not one of the three above, plus the
-# third-party packages a headless invocation would otherwise pay for
+# `harlequin` covers its every submodule, so a stdlib-only one added later is
+# on this list without anyone remembering to add it. The two exceptions are the
+# other members of this contract's own source set.
 forbidden_modules = [
     "click",
     "msgspec",
@@ -402,29 +403,11 @@ forbidden_modules = [
     "textual_textarea",
     "tomlkit",
     "wcwidth",
-    "harlequin.adapter",
-    "harlequin.autocomplete",
-    "harlequin.catalog",
-    "harlequin.cli",
-    "harlequin.config",
-    "harlequin.config_schema",
-    "harlequin.exception",
-    "harlequin.export",
-    "harlequin.first_pass",
-    "harlequin.hsql.cli",
-    "harlequin.hsql.diagnostics",
-    "harlequin.hsql.modes",
-    "harlequin.hsql.output",
-    "harlequin.hsql.timeout",
-    "harlequin.layout",
-    "harlequin.navigate",
-    "harlequin.options",
-    "harlequin.plugins",
-    "harlequin.query",
-    "harlequin.redact",
-    "harlequin.ssh",
-    "harlequin.statements",
-    "harlequin.transaction_mode",
+    "harlequin",
+]
+ignore_imports = [
+    "harlequin.hsql.client -> harlequin.hsql.protocol",
+    "harlequin.hsql.client -> harlequin.hsql.session",
 ]
 unmatched_ignore_imports_alerting = "error"
 

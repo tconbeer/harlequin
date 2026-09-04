@@ -13,10 +13,11 @@ path builds. `hsql --session prod --badflag` gets the same message and the same
 exit code as `hsql --badflag`, because it is the same code.
 
 Diagnostics go straight to stderr rather than through
-`harlequin.hsql.diagnostics`, which costs ~68ms to import. Nothing is lost:
-that module exists to redact, and this one holds no secret to redact -- it
-reads no profile, loads no adapter and never sees a connection string. The
-server's own stderr arrives already redacted, and is copied through untouched.
+`harlequin.hsql.diagnostics`, which costs more to import than the round trip it
+would report on. Nothing is lost: that module exists to redact, and this one
+holds no secret to redact -- it reads no profile, loads no adapter and never
+sees a connection string. The server's own stderr arrives already redacted, and
+is copied through untouched.
 """
 
 from __future__ import annotations
@@ -28,13 +29,17 @@ import sys
 from harlequin.hsql import protocol
 from harlequin.hsql.session import (
     MAX_NAME_LENGTH,
+    MAX_SOCKET_PATH,
+    SESSION_OPTION,
+    UnsafeRuntimeDir,
+    check_runtime_dir,
     is_valid_name,
     socket_path,
     without_session_option,
 )
 
 TYPE_CHECKING = False
-"""`typing` costs ~10ms, and every annotation here is a string (PEP 563)."""
+"""Every annotation here is a string (PEP 563), so `typing` stays off this path."""
 
 if TYPE_CHECKING:
     from typing import Mapping, Sequence
@@ -43,17 +48,27 @@ if TYPE_CHECKING:
 
 USAGE = 2
 CONNECTION = 3
-"""`ExitCode.USAGE` and `ExitCode.CONNECTION`, copied rather than imported.
+INTERRUPT = 130
+"""`ExitCode`'s three, copied rather than imported.
 
-Reaching `harlequin.hsql.diagnostics` for them would cost ~68ms, more than twice
-the round trip they report on. `tests/unit_tests/test_hsql_session.py` pins both
-to the enum.
+`harlequin.hsql.diagnostics` costs more to reach than the round trip they
+report on. `tests/unit_tests/test_hsql_session.py` pins all three to the enum.
 """
 
 STDIN_ARGUMENT = "-"
-FILE_OPTIONS = ("-f", "--file")
+FILE_OPTION = "--file"
+FILE_SHORT = "f"
 """The one per-request flag the client has to understand: the server has no
 stdin, so bytes a caller piped in have to travel with the request."""
+
+BOOLEAN_SHORT_FLAGS = "tArx"
+"""hsql's short options that take no value, so a cluster can carry `-f` after
+them: `-tAf -` is one idiom, not three flags.
+
+Any other short option consumes the rest of its cluster as its value, so an `f`
+behind one is that value and not this flag. `tests/unit_tests/test_hsql_session.py`
+pins this against the real command.
+"""
 
 
 def run(
@@ -67,31 +82,21 @@ def run(
     and my temp tables vanished" must not be something a caller has to guess
     at.
     """
-    if not hasattr(socket, "AF_UNIX"):
-        # native Windows has no AF_UNIX in CPython, through 3.14. WSL2 is Linux
-        # and gets the feature, which is why the docs say *native* Windows.
-        #
-        # A usage error rather than a connection one: nothing is down, and a
-        # caller who retries an exit 3 by starting the server would retry here
-        # forever. Same code as a name that could never name a session, for the
-        # same reason -- both say this invocation can never be served.
-        return _no_session(
-            session,
-            "hsql sessions need a unix socket, which native Windows has not",
-            code=USAGE,
-        )
-    if not is_valid_name(session.name):
-        return _no_session(
-            session,
-            f"{session.name!r} is not a session name",
-            remedy=(
-                " A name is letters, digits, underscores and dashes, up to "
-                f"{MAX_NAME_LENGTH} of them."
-            ),
-            code=USAGE,
-        )
+    refusal = _cannot_be_served(session, environ)
+    if refusal is not None:
+        return _no_session(session, refusal[0], remedy=refusal[1], code=refusal[2])
 
-    connection = _connect(socket_path(session.name, environ))
+    path = socket_path(session.name, environ)
+    try:
+        check_runtime_dir(os.path.dirname(path))
+        connection = _connect(path)
+    except FileNotFoundError:
+        # no runtime directory at all, so no session has ever run here
+        connection = None
+    except (UnsafeRuntimeDir, OSError) as e:
+        return _no_session(
+            session, f"a session named {session.name!r} is unreachable: {e}"
+        )
     if connection is None:
         return _no_session(
             session,
@@ -100,6 +105,9 @@ def run(
         )
     try:
         return _exchange(connection, session, argv, environ)
+    except KeyboardInterrupt:
+        # what the cold path exits with, and silently, for the same reason
+        return INTERRUPT
     except (protocol.ProtocolError, OSError) as e:
         _error(f"the session named {session.name!r} did not answer: {e}")
         return CONNECTION
@@ -107,36 +115,68 @@ def run(
         connection.close()
 
 
+def _cannot_be_served(
+    session: "Session", environ: "Mapping[str, str]"
+) -> "tuple[str, str, int] | None":
+    """Why this invocation can never reach a session, before one is looked for.
+
+    A reason, a remedy and an exit code -- all `USAGE`, because none of them is
+    a server that happens to be down, and a caller who answered an exit 3 by
+    starting one would answer it forever.
+    """
+    if not hasattr(socket, "AF_UNIX"):
+        # native Windows has no AF_UNIX in CPython. WSL2 is Linux and gets the
+        # feature, which is why the docs say *native* Windows.
+        return (
+            "hsql sessions need a unix socket, which native Windows has not",
+            "",
+            USAGE,
+        )
+    if not session.name:
+        # only a typed `--session` with nothing after it gets here: an empty
+        # environment variable names no session at all
+        return (
+            f"{SESSION_OPTION} needs a name",
+            f" Pass one: `hsql {SESSION_OPTION} prod ...`.",
+            USAGE,
+        )
+    if not is_valid_name(session.name):
+        return (
+            f"{session.name!r} is not a session name",
+            " A name is letters, digits, underscores and dashes, up to "
+            f"{MAX_NAME_LENGTH} of them.",
+            USAGE,
+        )
+    length = len(os.fsencode(socket_path(session.name, environ)))
+    if length >= MAX_SOCKET_PATH:
+        return (
+            f"the socket path for {session.name!r} is {length} bytes, over the "
+            f"{MAX_SOCKET_PATH} a unix socket takes",
+            " Use a shorter name, or set XDG_RUNTIME_DIR to a shorter directory.",
+            USAGE,
+        )
+    return None
+
+
 def _connect(path: str) -> "socket.socket | None":
     """The session listening at `path`, or None if nothing is listening there.
 
-    A socket file whose server is gone refuses the connection, so this is also
-    where a stale one is unlinked -- by the client, since it is the process
-    that discovered it.
+    A refused connection is reported and not cleaned up. The socket file
+    belongs to the server, which unlinks a stale one when it starts: a running
+    server also refuses between its `bind()` and its `listen()`, and on the
+    BSDs whenever its backlog is full, so a client that deleted the file on one
+    refusal would take a live session away from everyone after it.
     """
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         sock.connect(path)
-    except FileNotFoundError:
+    except (FileNotFoundError, ConnectionRefusedError):
         sock.close()
         return None
-    except ConnectionRefusedError:
-        sock.close()
-        _unlink_stale(path)
-        return None
-    except OSError:
+    except BaseException:
         sock.close()
         raise
     return sock
-
-
-def _unlink_stale(path: str) -> None:
-    try:
-        os.unlink(path)
-    except OSError:
-        # someone else's to clean up, or already gone. Either way nothing is
-        # listening here, which is what the caller is about to be told.
-        pass
 
 
 def _exchange(
@@ -159,6 +199,15 @@ def _exchange(
         )
         return USAGE
 
+    stdin = _stdin_for(argv)
+    if stdin is not None and len(stdin) > protocol.MAX_PAYLOAD:
+        _error(
+            f"the SQL on stdin is {len(stdin)} bytes, over the "
+            f"{protocol.MAX_PAYLOAD} a session request carries. Run it without "
+            "a session."
+        )
+        return USAGE
+
     protocol.send_frame(
         connection,
         protocol.REQUEST,
@@ -166,10 +215,24 @@ def _exchange(
             argv=without_session_option(argv),
             cwd=os.getcwd(),
             environ=protocol.forwarded_environ(environ),
-            stdin=_stdin_for(argv),
+            stdin=stdin,
+            stdout_isatty=_isatty(sys.stdout),
+            stderr_isatty=_isatty(sys.stderr),
         ),
     )
     return _relay(connection)
+
+
+def _isatty(stream: "object") -> bool:
+    """Whether `stream` is a terminal, which only this side can answer.
+
+    `--color auto` reads it, and on the server every stream is a buffer.
+    """
+    try:
+        return bool(stream.isatty())  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        # a closed or replaced stream: not a terminal, which is the safe answer
+        return False
 
 
 def _relay(connection: "socket.socket") -> int:
@@ -199,16 +262,40 @@ def _stdin_for(argv: "Sequence[str]") -> "bytes | None":
 
 
 def _reads_stdin(argv: "Sequence[str]") -> bool:
+    """Whether any `-f`/`--file` in `argv` names stdin, as click would read it."""
     for index, argument in enumerate(argv):
         if argument == "--":
             break
-        # `-f-`, which click reads as a short option and its value
-        if argument == f"-f{STDIN_ARGUMENT}":
+        following = argv[index + 1 : index + 2]
+        if argument == FILE_OPTION:
+            if following == [STDIN_ARGUMENT]:
+                return True
+        elif argument == f"{FILE_OPTION}={STDIN_ARGUMENT}":
             return True
-        if argument in FILE_OPTIONS and argv[index + 1 : index + 2] == [STDIN_ARGUMENT]:
+        elif _short_cluster_reads_stdin(argument, following):
             return True
-        if any(argument == f"{option}={STDIN_ARGUMENT}" for option in FILE_OPTIONS):
-            return True
+    return False
+
+
+def _short_cluster_reads_stdin(argument: str, following: "Sequence[str]") -> bool:
+    """Whether a short-option cluster like `-tAf -` or `-tf-` names stdin.
+
+    click reads a cluster left to right and hands the rest of it to the first
+    option that takes a value, so an `f` behind any option but a boolean flag
+    is that option's value rather than `--file`. There is no `=` form for a
+    short option: click reads `-f=-` as the file named `=-`.
+    """
+    if not argument.startswith("-") or argument.startswith("--"):
+        return False
+    for position, letter in enumerate(argument[1:], start=2):
+        if letter == FILE_SHORT:
+            rest = argument[position:]
+            return rest == STDIN_ARGUMENT or (
+                not rest and list(following) == [STDIN_ARGUMENT]
+            )
+        if letter not in BOOLEAN_SHORT_FLAGS:
+            # an option that takes a value; the rest of the cluster is that value
+            return False
     return False
 
 

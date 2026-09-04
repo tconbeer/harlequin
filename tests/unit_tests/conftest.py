@@ -44,10 +44,11 @@ def run_python(tmp_path: Path) -> Callable[[str], subprocess.CompletedProcess[st
     A clean *machine*, too: `no_discovered_config` cannot reach into a
     subprocess, so the child gets an empty directory as its cwd, its home and
     its config dir. Otherwise it reads the config files of whoever is running
-    the tests.
+    the tests -- or, with `HSQL_SESSION` set, runs every `main()` through the
+    warm-session client and prefixes its stderr with a fallback warning.
     """
     env = {
-        **os.environ,
+        **{key: value for key, value in os.environ.items() if key != "HSQL_SESSION"},
         # where config discovery looks, on every platform platformdirs knows
         "HOME": str(tmp_path),
         "USERPROFILE": str(tmp_path),

@@ -406,7 +406,11 @@ failure mode this design would otherwise be most likely to have. `hsql --session
 will, because it *is* the same code.
 
 The request carries what the server cannot know: **argv, the client's cwd, stdin bytes if
-asked for, and `TERM`/`NO_COLOR`** (which `--color auto` reads). Deliberately *not* the
+asked for, `NO_COLOR`, and whether the caller's stdout and stderr are terminals**
+(the two halves of what `--color auto` reads: it checks `sys.stdout.isatty()` and
+`NO_COLOR`, and on the server every stream is a buffer, so `auto` would otherwise mean
+"never" however the caller's terminal looks). `TERM` is *not* carried — nothing in the
+output path reads it. Deliberately *not* the
 client's whole environment — the server has its own, an adapter option's `envvar` resolves
 against the server's, and shipping the caller's environment across a socket is a credential
 leak with no upside.
@@ -489,6 +493,12 @@ invocation is supposed to cost — so the derivation is a dozen lines of `os.pat
 is also the smaller question than it looks: `XDG_RUNTIME_DIR` is the only path platformdirs
 would resolve differently on Linux, and the fallback branch is the one this design has to
 get right anyway.
+
+**A name that fits is not always a path that fits.** `sun_path` holds 104 bytes on
+macOS (108 on Linux), the directory counts toward it, and the `TMPDIR` macOS supplies is
+itself ~50 bytes — so a name well inside `[A-Za-z0-9_-]{1,64}` can still be one no socket
+can be bound to. The client measures the assembled path and refuses with a message that
+names the limit, rather than letting `connect()` fail with a bare errno.
 
 **No `--session-socket PATH` in v1.** Letting a caller name the socket file directly is the
 obvious escape hatch and the obvious way to end up with a socket on a mode-0777 shared
@@ -575,6 +585,13 @@ is no password on the wire and there does not need to be — the socket *is* the
   created 0600 (bind, then `chmod`, or `umask` around the bind — file permissions on a UDS
   are honored on Linux and macOS but not on every kernel, which is why the *directory* mode
   is the real control).
+- **Both halves `stat` the directory before trusting it.** `XDG_RUNTIME_DIR` is
+  guaranteed by the system; the `TMPDIR` fallback is not, and on a shared host another
+  user can create `/tmp/hsql-<uid>/` first and put a listener at `prod.sock`. What a
+  client sends is argv, the cwd and piped stdin, and argv can carry a `CONN_STR` with a
+  password in it, so the client refuses a directory it does not own privately — and the
+  server does the same, since `os.mkdir(mode=0o700)` does nothing to a directory that
+  already exists.
 - **`SO_PEERCRED` / `LOCAL_PEERCRED` uid check on accept.** Reject and log any peer whose
   uid is not the server's. Belt and braces over the directory mode, and the thing that
   makes a shared `/tmp` misconfiguration fail closed.
@@ -631,7 +648,7 @@ different Python installations on two different filesystems, and the Windows one
 
 | Failure | Detection | Behavior |
 | --- | --- | --- |
-| **Stale socket** (server died, file remains) | `connect()` → `ECONNREFUSED` | client unlinks it, then falls back or fails per §4.1 |
+| **Stale socket** (server died, file remains) | `connect()` → `ECONNREFUSED` | client reports it and falls back or fails per §4.1; the **server** unlinks a stale file when it starts, because a running one also refuses between its `bind()` and its `listen()`, and on the BSDs whenever its backlog is full — a client that deleted the file on one refusal would take a live session away from every caller after it |
 | **Version skew** (server 2.13, client 2.14) | server sends its version in the handshake; the client compares against a literal in `protocol.py` | refuse, exit 2, "restart the session" — never serve, because output bytes are the API and two versions may not agree on them |
 | **Server busy shutting down** | server stops accepting before it closes the connection | client sees a clean refusal, not a truncated frame |
 | **Client dies mid-query** | `EPIPE` on write | server finishes or cancels the request, drops the response, keeps running |

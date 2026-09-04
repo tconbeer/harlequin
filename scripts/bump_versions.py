@@ -1,11 +1,10 @@
 """Set the versions `uv version` cannot reach, the way a release does.
 
-Two of them, and each is a literal for the same reason: the thing that reads it
-cannot afford to ask the package metadata. The plugin manifest is JSON that a
-harness reads without Python at all, and `harlequin.hsql.protocol` is on the
-warm-session client's path, where `importlib.metadata.version()` costs ~43ms
-against a whole invocation of about twenty. So `release.yml` runs this beside
-the two versions `uv version` does bump.
+Two of them, and each is a literal because the thing that reads it cannot
+afford to ask the package metadata: the plugin manifest is JSON that a harness
+reads without Python at all, and `harlequin.hsql.protocol` is on the
+warm-session client's path. So `release.yml` runs this beside the two versions
+`uv version` does bump.
 
 Usage:
     python scripts/bump_versions.py 2.12.0

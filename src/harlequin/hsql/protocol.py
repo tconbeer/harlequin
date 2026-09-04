@@ -6,13 +6,11 @@ does, into a buffer, and the client copies that buffer to its own streams. So
 the client cannot format anything, needs no pyarrow and no `--format`
 knowledge, and cannot disagree with a cold invocation about a timestamp.
 
-Output is **chunked** from the first version -- many `STDOUT` frames, then one
-`EXIT` -- because that is free now and impossible to retrofit without a
-protocol version bump.
+Output is **chunked**: many `STDOUT` frames, then one `EXIT`.
 
 Stdlib only, and cheap, for the reason `client.py` gives: `json` alone would be
-a third of what a warm invocation is meant to cost, so the encoding here is
-lengths and bytes.
+a large fraction of what a warm invocation is meant to cost, so the encoding
+here is lengths and bytes.
 """
 
 from __future__ import annotations
@@ -21,7 +19,7 @@ import os
 import struct
 
 TYPE_CHECKING = False
-"""`typing` costs ~10ms, and every annotation here is a string (PEP 563)."""
+"""Every annotation here is a string (PEP 563), so `typing` stays off this path."""
 
 if TYPE_CHECKING:
     import socket
@@ -32,9 +30,8 @@ VERSION = "2.13.0"
 
 hsql's output bytes are its API, and "frozen" has always meant "across the
 releases we intend" -- a server from a different release serving bytes a caller
-attributes to the installed version is a bug nobody diagnoses quickly. So the
-handshake compares releases rather than a protocol number somebody has to
-remember to bump. `scripts/bump_versions.py` writes this at release time, and
+attributes to the installed version is a bug nobody diagnoses quickly.
+`scripts/bump_versions.py` writes this at release time, and
 `tests/unit_tests/test_hsql_session.py` pins it to the installed version.
 """
 
@@ -42,7 +39,8 @@ HELLO = 1
 """Server to client, first: the server's version, so a skewed client stops."""
 
 REQUEST = 2
-"""Client to server: argv, cwd, the environment it forwards, and stdin."""
+"""Client to server: argv, cwd, the environment it forwards, stdin, and which
+of the caller's streams is a terminal."""
 
 STDOUT = 3
 """Server to client, repeatable: bytes for the client's stdout."""
@@ -55,13 +53,17 @@ EXIT = 5
 
 # Frame kinds are wire values: later ones append rather than renumbering.
 
-FORWARDED_ENV_VARS = ("TERM", "NO_COLOR")
+FORWARDED_ENV_VARS = ("NO_COLOR",)
 """The whole of the environment a request carries.
 
-`--color auto` reads both, and the server cannot know either. Not the caller's
-whole environment: the server has its own, an adapter option's `envvar`
-resolves against that one, and shipping a caller's environment across a socket
-is a credential leak with no upside.
+`--color auto` reads it, and the server cannot know it. Not the caller's whole
+environment: the server has its own, an adapter option's `envvar` resolves
+against that one, and shipping a caller's environment across a socket is a
+credential leak with no upside.
+
+The other half of what `auto` reads is whether the caller's stdout is a
+terminal, which no environment variable answers -- the request carries that as
+its own section.
 """
 
 HEADER = struct.Struct("!BI")
@@ -72,6 +74,10 @@ MAX_PAYLOAD = 64 * 1024 * 1024
 
 CHUNK_SIZE = 64 * 1024
 """How much of a result the server puts in one `STDOUT` frame."""
+
+STDOUT_ISATTY = 0b01
+STDERR_ISATTY = 0b10
+"""Bits of a request's flags byte. Later flags take the bits above them."""
 
 _LENGTH = struct.Struct("!I")
 """How a sequence writes its count, and each of its items its length."""
@@ -87,9 +93,13 @@ class Request:
     The cwd is here because config discovery is cwd-dependent: a client's `-P`
     and `--config-path` resolve against *the client's* directory, or a caller
     running in a project would silently get the server's `pyproject.toml`.
+
+    The two `isatty` flags are here because `--color auto` reads
+    `sys.stdout.isatty()`, and on the server every stream is a buffer: without
+    them `auto` would mean "never" however the caller's terminal looks.
     """
 
-    __slots__ = ("argv", "cwd", "environ", "stdin")
+    __slots__ = ("argv", "cwd", "environ", "stdin", "stdout_isatty", "stderr_isatty")
 
     def __init__(
         self,
@@ -97,11 +107,15 @@ class Request:
         cwd: str,
         environ: "Mapping[str, str]",
         stdin: "bytes | None",
+        stdout_isatty: bool = False,
+        stderr_isatty: bool = False,
     ) -> None:
         self.argv = list(argv)
         self.cwd = cwd
         self.environ = dict(environ)
         self.stdin = stdin
+        self.stdout_isatty = stdout_isatty
+        self.stderr_isatty = stderr_isatty
 
 
 def pack_strings(items: "Sequence[bytes]") -> bytes:
@@ -139,8 +153,10 @@ def pack_request(
     cwd: str,
     environ: "Mapping[str, str]",
     stdin: "bytes | None",
+    stdout_isatty: bool = False,
+    stderr_isatty: bool = False,
 ) -> bytes:
-    """Four sections, each a sequence: argv, cwd, environment, stdin.
+    """Five sections: argv, cwd, environment, stdin, and a flags byte.
 
     Text goes through `os.fsencode`, which is what argv and paths already are:
     a file name the filesystem accepts and UTF-8 does not survives the round
@@ -150,21 +166,25 @@ def pack_request(
     for key, value in environ.items():
         environment.append(os.fsencode(key))
         environment.append(os.fsencode(value))
+    flags = (STDOUT_ISATTY if stdout_isatty else 0) | (
+        STDERR_ISATTY if stderr_isatty else 0
+    )
     return pack_strings(
         [
             pack_strings([os.fsencode(argument) for argument in argv]),
             pack_strings([os.fsencode(cwd)]),
             pack_strings(environment),
             pack_strings([] if stdin is None else [stdin]),
+            pack_strings([bytes([flags])]),
         ]
     )
 
 
 def unpack_request(payload: bytes) -> Request:
     sections = unpack_strings(payload)
-    if len(sections) != 4:
-        raise ProtocolError(f"a request has four sections, not {len(sections)}")
-    raw_argv, raw_cwd, raw_environ, raw_stdin = (
+    if len(sections) != 5:
+        raise ProtocolError(f"a request has five sections, not {len(sections)}")
+    raw_argv, raw_cwd, raw_environ, raw_stdin, raw_flags = (
         unpack_strings(section) for section in sections
     )
     if len(raw_cwd) != 1:
@@ -173,6 +193,9 @@ def unpack_request(payload: bytes) -> Request:
         raise ProtocolError("a request's environment is key/value pairs")
     if len(raw_stdin) > 1:
         raise ProtocolError("a request carries at most one stdin")
+    if len(raw_flags) != 1 or len(raw_flags[0]) != 1:
+        raise ProtocolError("a request carries one flags byte")
+    flags = raw_flags[0][0]
     return Request(
         argv=[os.fsdecode(argument) for argument in raw_argv],
         cwd=os.fsdecode(raw_cwd[0]),
@@ -181,6 +204,8 @@ def unpack_request(payload: bytes) -> Request:
             for index in range(0, len(raw_environ), 2)
         },
         stdin=raw_stdin[0] if raw_stdin else None,
+        stdout_isatty=bool(flags & STDOUT_ISATTY),
+        stderr_isatty=bool(flags & STDERR_ISATTY),
     )
 
 

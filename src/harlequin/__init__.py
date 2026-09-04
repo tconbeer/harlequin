@@ -14,10 +14,10 @@ from __future__ import annotations
 TYPE_CHECKING = False
 """Declared here rather than imported, so that this module imports nothing.
 
-`typing` costs ~10ms, and importing any `harlequin.*` submodule executes this
-file -- which puts that on the path of the warm-session client, whose whole
-budget is about twice it. Every annotation below is a string (PEP 563), so
-nothing needs the name at run time.
+Importing any `harlequin.*` submodule executes this file, which puts whatever
+it imports on the path of the warm-session client, where the budget is a
+fraction of what `typing` costs. Every annotation below is a string (PEP 563),
+so nothing needs the name at run time.
 """
 
 if TYPE_CHECKING:

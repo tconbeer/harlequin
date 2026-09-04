@@ -1,11 +1,10 @@
 """The warm-session client, and the frames it speaks.
 
-There is no server yet, so what is asserted here is the client's half of the
-contract: which invocations belong to a session, what it does when none is
-running, and that a response it is handed arrives on the caller's streams
-byte for byte. The stub server below is built on `protocol` rather than on a
-copy of it, so the frames these tests pin are the ones the real server will
-send.
+What is asserted here is the client's half of the contract: which invocations
+belong to a session, what it does when none is running, and that a response it
+is handed arrives on the caller's streams byte for byte. The stub server below
+is built on `protocol` rather than on a copy of it, so the frames these tests
+pin are the ones the real server sends.
 """
 
 from __future__ import annotations
@@ -50,8 +49,12 @@ needs_unix_sockets = pytest.mark.skipif(
         (["--session=prod", "-c", "x"], {}, ("prod", True)),
         # a typed name beats an ambient one: it is the more specific of the two
         (["--session", "here"], {"HSQL_SESSION": "there"}, ("here", True)),
-        # left for click, which reports a missing argument better than a scan
-        (["--session"], {}, None),
+        # last wins, as it does for every option click parses
+        (["--session", "first", "--session", "last"], {}, ("last", True)),
+        (["--session=first", "--session=last"], {}, ("last", True)),
+        # no value: the client refuses it by name rather than click, which
+        # does not know the option yet
+        (["--session"], {}, ("", True)),
         # after `--` everything is an argument, so this is a connection string
         (["--", "--session", "prod"], {}, None),
     ],
@@ -120,6 +123,35 @@ def test_the_fallback_runtime_dir_is_per_user() -> None:
     assert session.runtime_dir({}) == f"/tmp/hsql-{os.getuid()}"
 
 
+@needs_unix_sockets
+def test_a_directory_only_this_user_can_reach_is_accepted(tmp_path: Path) -> None:
+    private = tmp_path / "run"
+    private.mkdir(mode=0o700)
+    session.check_runtime_dir(str(private))
+
+
+@needs_unix_sockets
+@pytest.mark.parametrize("mode", [0o777, 0o750, 0o701])
+def test_a_directory_someone_else_can_reach_is_refused(
+    mode: int, tmp_path: Path
+) -> None:
+    """What a client sends is argv, the cwd and piped stdin, and argv can carry
+    a password. Under the TMPDIR fallback nothing guarantees the directory, so
+    both halves check it rather than trusting their own mkdir."""
+    shared = tmp_path / "run"
+    shared.mkdir(mode=mode)
+    with pytest.raises(session.UnsafeRuntimeDir):
+        session.check_runtime_dir(str(shared))
+
+
+@needs_unix_sockets
+def test_a_runtime_dir_that_is_not_a_directory_is_refused(tmp_path: Path) -> None:
+    impostor = tmp_path / "run"
+    impostor.write_text("")
+    with pytest.raises(session.UnsafeRuntimeDir):
+        session.check_runtime_dir(str(impostor))
+
+
 # --- the frames --------------------------------------------------------------
 
 
@@ -145,7 +177,7 @@ def test_a_request_survives_the_round_trip(stdin: bytes | None) -> None:
     packed = protocol.pack_request(
         argv=["-c", "select 'ü'", "\udcff"],
         cwd="/some/where",
-        environ={"TERM": "xterm-256color"},
+        environ={"NO_COLOR": ""},
         stdin=stdin,
     )
     request = protocol.unpack_request(packed)
@@ -153,22 +185,47 @@ def test_a_request_survives_the_round_trip(stdin: bytes | None) -> None:
     # which `os.fsencode` carries and a plain encode would refuse
     assert request.argv == ["-c", "select 'ü'", "\udcff"]
     assert request.cwd == "/some/where"
-    assert request.environ == {"TERM": "xterm-256color"}
+    assert request.environ == {"NO_COLOR": ""}
     assert request.stdin == stdin
+
+
+@pytest.mark.parametrize(
+    "stdout_isatty,stderr_isatty",
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_a_request_carries_which_streams_are_terminals(
+    stdout_isatty: bool, stderr_isatty: bool
+) -> None:
+    """`--color auto` reads `sys.stdout.isatty()`, and on the server every
+    stream is a buffer, so only the client can answer this."""
+    request = protocol.unpack_request(
+        protocol.pack_request(
+            argv=[],
+            cwd="/",
+            environ={},
+            stdin=None,
+            stdout_isatty=stdout_isatty,
+            stderr_isatty=stderr_isatty,
+        )
+    )
+    assert request.stdout_isatty is stdout_isatty
+    assert request.stderr_isatty is stderr_isatty
 
 
 def test_a_request_carries_only_the_environment_it_declares() -> None:
     """Not the caller's whole environment: an adapter option's `envvar`
-    resolves against the server's, and forwarding one is a credential leak."""
+    resolves against the server's, and forwarding one is a credential leak.
+
+    `TERM` is not on the list: nothing in the output path reads it."""
     forwarded = protocol.forwarded_environ(
         {"TERM": "dumb", "PGPASSWORD": "hunter2", "NO_COLOR": ""}
     )
-    assert forwarded == {"TERM": "dumb", "NO_COLOR": ""}
+    assert forwarded == {"NO_COLOR": ""}
 
 
 def test_an_absent_no_color_arrives_absent() -> None:
     """It is read for its presence, so an empty one is not the same as none."""
-    assert protocol.forwarded_environ({"TERM": "dumb"}) == {"TERM": "dumb"}
+    assert protocol.forwarded_environ({"TERM": "dumb"}) == {}
 
 
 def test_frames_survive_a_socket() -> None:
@@ -316,7 +373,7 @@ def test_a_response_reaches_the_caller_byte_for_byte(
 ) -> None:
     """The whole reason bytes cross the wire rather than rows: the client
     cannot format anything, so it cannot disagree with a cold invocation."""
-    serve(
+    server = serve(
         frames=[
             (protocol.STDOUT, b" a \n---\n"),
             (protocol.STDERR, b"note: something\n"),
@@ -328,6 +385,9 @@ def test_a_response_reaches_the_caller_byte_for_byte(
     captured = capsysbinary.readouterr()
     assert captured.out == b" a \n---\n 1 \n"
     assert captured.err == b"note: something\n"
+    # the server got a request it could read, rather than nothing at all
+    assert server.request is not None
+    assert server.request.argv == ["-c", "select 1"]
 
 
 @needs_unix_sockets
@@ -335,15 +395,18 @@ def test_the_server_is_sent_the_invocation_and_not_the_clients_flag(
     serve: Serve, environ: dict[str, str]
 ) -> None:
     server = serve(frames=[(protocol.EXIT, b"\x00")])
-    client.run(
-        typed(),
-        ["--session", "prod", "-c", "select 1"],
-        {**environ, "TERM": "xterm", "PGPASSWORD": "hunter2"},
+    assert (
+        client.run(
+            typed(),
+            ["--session", "prod", "-c", "select 1"],
+            {**environ, "NO_COLOR": "1", "PGPASSWORD": "hunter2"},
+        )
+        == ExitCode.OK
     )
     assert server.request is not None
     assert server.request.argv == ["-c", "select 1"]
     assert server.request.cwd == os.getcwd()
-    assert server.request.environ == {"TERM": "xterm"}
+    assert server.request.environ == {"NO_COLOR": "1"}
     assert server.request.stdin is None
 
 
@@ -353,7 +416,7 @@ def test_a_dash_f_sends_the_bytes_the_server_has_no_stdin_for(
 ) -> None:
     server = serve(frames=[(protocol.EXIT, b"\x00")])
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"select 2;\n")))
-    client.run(typed(), ["-f", "-"], environ)
+    assert client.run(typed(), ["-f", "-"], environ) == ExitCode.OK
     assert server.request is not None
     assert server.request.stdin == b"select 2;\n"
 
@@ -367,8 +430,21 @@ def test_a_dash_f_sends_the_bytes_the_server_has_no_stdin_for(
         (["--file", "-"], True),
         (["--file=-"], True),
         (["-f", "script.sql"], False),
+        # a short cluster, which is the `-tAc` idiom the skill teaches
+        (["-tAf", "-"], True),
+        (["-tf", "-"], True),
+        (["-Af", "-"], True),
+        (["-tf-"], True),
+        (["-xrtAf", "-"], True),
+        (["-tAf", "script.sql"], False),
+        # click gives a short option no `=` form: this is a file named `=-`
+        (["-f=-"], False),
+        # `-c` takes a value, so the `f` after it is part of that value
+        (["-cf", "-"], False),
+        (["-of", "-"], False),
         # a connection string called `-` is not a file, and comes after `--`
         (["--", "-"], False),
+        (["--", "-f", "-"], False),
     ],
 )
 def test_which_invocations_need_the_callers_stdin(argv: list[str], reads: bool) -> None:
@@ -434,17 +510,80 @@ def test_a_platform_without_unix_sockets_has_no_sessions(
 
 
 @needs_unix_sockets
-def test_a_stale_socket_is_cleaned_up_by_whoever_finds_it(
-    environ: dict[str, str],
+def test_a_refused_socket_is_reported_and_left_alone(
+    environ: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The file outlives the server that bound it, and refuses connections."""
+    """A running server also refuses between its `bind()` and its `listen()`,
+    and on the BSDs whenever its backlog is full, so a client that deleted the
+    file on one refusal would take a live session away from everyone after it.
+    The server unlinks a stale socket when it starts."""
     path = session.socket_path("prod", environ)
     bound = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     bound.bind(path)
     bound.close()
     assert os.path.exists(path)
     assert client.run(ambient(), [], environ) is None
-    assert not os.path.exists(path)
+    assert "no session named 'prod' is running" in capsys.readouterr().err
+    assert os.path.exists(path)
+
+
+@needs_unix_sockets
+def test_a_runtime_dir_that_cannot_hold_a_socket_is_a_diagnostic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Not a traceback: every errno `connect()` can raise other than "nothing
+    is listening" used to escape `run()` as one, and exit 1."""
+    not_a_directory = tmp_path / "file"
+    not_a_directory.write_text("")
+    environ = {"XDG_RUNTIME_DIR": str(not_a_directory)}
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.CONNECTION
+    assert "is unreachable" in capsys.readouterr().err
+
+
+@needs_unix_sockets
+def test_a_socket_path_too_long_to_bind_is_refused_by_name(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`sun_path` is 104 bytes on macOS, and the TMPDIR it supplies is ~50 of
+    them, so a name well inside MAX_NAME_LENGTH can still be unreachable."""
+    environ = {"XDG_RUNTIME_DIR": "/tmp/" + "d" * 100}
+    assert client.run(typed("x" * 40), ["-c", "select 1"], environ) == ExitCode.USAGE
+    message = capsys.readouterr().err
+    assert "over the" in message and str(session.MAX_SOCKET_PATH) in message
+
+
+@needs_unix_sockets
+def test_a_directory_someone_else_could_reach_is_never_connected_to(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """argv can carry a password, so a socket in a directory another user can
+    write is one this must not send a request to."""
+    shared = tmp_path / "hsql"
+    shared.mkdir(mode=0o777)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(shared / "prod.sock"))
+    listener.listen(1)
+    try:
+        assert (
+            client.run(typed(), ["-c", "select 1"], {"XDG_RUNTIME_DIR": str(tmp_path)})
+            == ExitCode.CONNECTION
+        )
+    finally:
+        listener.close()
+    assert "is unreachable" in capsys.readouterr().err
+
+
+@needs_unix_sockets
+def test_an_interrupt_while_waiting_exits_the_way_the_cold_path_does(
+    serve: Serve, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve(frames=[(protocol.EXIT, b"\x00")])
+
+    def interrupt(_: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(client, "_relay", interrupt)
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
 
 
 @needs_unix_sockets
@@ -462,15 +601,33 @@ def test_a_server_that_stops_mid_response_is_a_connection_failure(
 
 
 def test_the_clients_exit_codes_are_hsqls() -> None:
-    """Copied rather than imported, because `diagnostics` costs ~63ms to reach
-    -- more than the round trip they report on."""
+    """Copied rather than imported, because reaching `diagnostics` costs more
+    than the round trip they report on."""
     assert client.USAGE == ExitCode.USAGE
     assert client.CONNECTION == ExitCode.CONNECTION
+    assert client.INTERRUPT == ExitCode.INTERRUPT
+
+
+def test_the_clients_boolean_short_flags_are_the_commands() -> None:
+    """The client has to know which short options take no value, because those
+    are the ones a `-f` can follow in a cluster. Copied for the same reason as
+    the exit codes, and pinned here against the real command."""
+    from harlequin.hsql.cli import bare_command
+
+    boolean_shorts = {
+        spelling.lstrip("-")
+        for param in bare_command().params
+        for spelling in param.opts
+        if getattr(param, "is_flag", False)
+        and len(spelling) == 2
+        and not spelling.startswith("--")
+    }
+    assert set(client.BOOLEAN_SHORT_FLAGS) == boolean_shorts
 
 
 def test_the_protocol_version_is_the_release_it_ships_with() -> None:
-    """A literal for the same reason: `importlib.metadata.version()` costs
-    ~43ms, and `scripts/bump_versions.py` is what keeps this true."""
+    """A literal because reading the package metadata costs more than the round
+    trip; `scripts/bump_versions.py` is what keeps it true."""
     assert protocol.VERSION == version("harlequin")
 
 
@@ -562,8 +719,7 @@ def hsql_process(tmp_path: Path) -> HsqlProcess:
 def test_an_ambient_session_that_is_down_still_runs_the_query(
     hsql_process: HsqlProcess,
 ) -> None:
-    """The fallback is the client's only reachable behavior until the server
-    lands, and it is the one that must not break a script."""
+    """The fallback is the one behavior that must not break a script."""
     proc = hsql_process(
         ["-c", "select 1", "--no-init", ":memory:"],
         HSQL_SESSION="nobody-started-this",
@@ -583,10 +739,12 @@ def test_a_typed_session_that_is_down_runs_nothing(hsql_process: HsqlProcess) ->
     assert not proc.stdout
 
 
-def test_a_session_flag_with_no_value_is_clicks_to_report(
+def test_a_session_flag_with_no_value_names_itself(
     hsql_process: HsqlProcess,
 ) -> None:
-    """Left to the parser that already has a message for it, which is the same
-    rule the client applies to every other flag."""
+    """The client refuses it rather than click, which does not know the option
+    until PR 2 declares it and would answer "No such option"."""
     proc = hsql_process(["--session"])
     assert proc.returncode == ExitCode.USAGE
+    assert "--session needs a name" in proc.stderr
+    assert not proc.stdout
