@@ -293,8 +293,7 @@ class Harlequin(AppBase):
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
-        # opened here rather than at mount so that a query run before the
-        # catalog cache has loaded is still recorded
+        # holding one costs nothing: the first query is what opens the store
         self.query_log = QueryLog(
             program="harlequin",
             connection=connection_hash,
