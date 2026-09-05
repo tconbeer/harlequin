@@ -13,7 +13,13 @@ A session is one connection, so requests run **one at a time**: the adapter
 contract says nothing about thread-safety, and the IDE has never needed it. A
 second client waits its turn, bounded by `--queue-timeout`, and is told it
 never reached the database if that runs out -- a different fact from a query
-that ran too long.
+that ran too long. `--session-status` is the exception: it arrives as its own
+frame rather than as an invocation, and the server reports from its own
+bookkeeping while a request runs.
+
+The name is the caller's and the **identity is the server's**: the connection
+options it resolved at start-up are what a served request's own connection
+options are compared against. Equal values are served; differing ones exit 2.
 
 A running server is a live, authenticated connection that anything able to
 write its socket can use, so the socket is the credential: `AF_UNIX` only, in
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import signal
 import socket
@@ -42,6 +49,7 @@ from harlequin.exception import HarlequinConnectionError
 from harlequin.hsql import diagnostics, protocol
 from harlequin.hsql.diagnostics import PROGRAM, ExitCode
 from harlequin.hsql.session import (
+    STATUS_OPTION,
     UnsafeRuntimeDir,
     check_runtime_dir,
     socket_path,
@@ -52,6 +60,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from harlequin.adapter import HarlequinConnection
+    from harlequin.options import AbstractOption
 
 ACCEPT_POLL_SECONDS = 0.5
 """How often the accept loop looks up from the socket to see if it was stopped."""
@@ -86,11 +95,13 @@ class Turnstile:
         self._tickets = count()
         self._busy = False
 
-    @property
-    def queued(self) -> int:
-        """How many requests are waiting their turn."""
+    def snapshot(self) -> "tuple[bool, int]":
+        """Whether a request holds the connection, and how many wait.
+
+        One acquisition, so the two values describe the same instant.
+        """
         with self._condition:
-            return len(self._waiting)
+            return self._busy, len(self._waiting)
 
     def enter(self, timeout: float | None) -> bool:
         """Wait for a turn, and return whether one came before `timeout`."""
@@ -189,6 +200,7 @@ class Served:
         self._server = server
         self.name = server.name
         self.adapter = server.adapter
+        self.identity = server.identity
         self.stdin = request.stdin
 
     def connection(self) -> HarlequinConnection:
@@ -224,11 +236,21 @@ class Server:
         adapter: str,
         connection: HarlequinConnection,
         reconnect: Callable[[], HarlequinConnection],
+        identity: Mapping[str, Any] | None = None,
+        options: Sequence[AbstractOption] | None = None,
+        ssh: str | None = None,
         queue_timeout: float | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
         self.adapter = adapter
+        self.identity: Mapping[str, Any] = {"adapter": adapter, **(identity or {})}
+        """The connection options this session resolved at start-up, and what
+        a served request's own are compared against."""
+        self._adapter_options = options
+        """What the adapter declares, so that `secret=` decides what prints."""
+        self._ssh = ssh
+        self._started = time.monotonic()
         self._connection: HarlequinConnection | None = connection
         self._connection_error: str | None = None
         self._reconnect = reconnect
@@ -247,6 +269,63 @@ class Server:
     def requests(self) -> int:
         """How many requests this session has answered."""
         return self._requests
+
+    def status(self) -> "dict[str, Any]":
+        """This session's state, ready to be JSON.
+
+        The connection string is masked by span and every other value by what
+        its adapter declared `secret=`.
+        """
+        from harlequin.redact import redact_conn_str, redact_profile
+
+        identity = dict(self.identity)
+        conn_str = identity.pop("conn_str", ()) or ()
+        if isinstance(conn_str, str):
+            conn_str = (conn_str,)
+        busy, queued = self._turnstile.snapshot()
+        return {
+            "session": self.name,
+            "pid": os.getpid(),
+            "version": protocol.VERSION,
+            "adapter": identity.pop("adapter", self.adapter),
+            "connection": " ".join(redact_conn_str(list(conn_str))) or None,
+            "connection_options": redact_profile(identity, self._adapter_options),
+            "uptime_s": round(time.monotonic() - self._started, 1),
+            "requests": self._requests,
+            "state": self._state(busy),
+            "queued": queued,
+            "transaction_mode": self._transaction_mode(),
+            "ssh": self._ssh,
+            # null until --idle-timeout and --max-lifetime can answer them
+            "idle_timeout_s": None,
+            "expires_in_s": None,
+        }
+
+    def _state(self, busy: bool) -> str:
+        if self._abandoned or self._connection is None:
+            return "unavailable"
+        return "busy" if busy else "idle"
+
+    def _transaction_mode(self) -> "str | None":
+        """The label of the session's transaction mode, or None if it is busy.
+
+        The one field read from the connection, so it takes a turn rather than
+        reading beside a request -- the adapter contract says nothing about
+        thread-safety. `enter(0)` returns immediately when a request holds it.
+        """
+        if not self._turnstile.enter(0):
+            return None
+        try:
+            connection = self._connection
+            if connection is None:
+                return None
+            try:  # adapters are third-party code
+                mode = connection.transaction_mode
+            except Exception:
+                return None
+            return None if mode is None else mode.label
+        finally:
+            self._turnstile.leave()
 
     def stop(self) -> None:
         """Ask the accept loop to finish, from any thread."""
@@ -463,6 +542,9 @@ class Server:
                 if frame is None:
                     # a client that refused to be served by this version
                     return
+                if frame[0] == protocol.STATUS:
+                    self._send_status(connection, protocol.unpack_status(frame[1]))
+                    return
                 if frame[0] != protocol.REQUEST:
                     raise protocol.ProtocolError(f"expected a request, got {frame[0]}")
                 request = protocol.unpack_request(frame[1])
@@ -489,6 +571,53 @@ class Server:
                 self._requests, code, elapsed_ms, stream=self._stderr
             )
 
+    def _send_status(self, connection: socket.socket, argv: Sequence[str]) -> None:
+        """Send the status document, without waiting for the connection.
+
+        A served invocation borrows this process's cwd, environment and
+        streams for its whole run, so this is built here rather than parsed
+        beside one.
+        """
+        recorder = Recorder()
+        try:
+            code = self._status_into(recorder, argv)
+        except Exception as e:  # noqa: BLE001 -- the server outlives a request
+            # what a bug in the request path produces, rather than a traceback
+            # out of this thread and into whichever request's recorder holds
+            # the process's stderr
+            diagnostics.note(
+                f"status failed: {redact_text(traceback.format_exc())}",
+                stream=self._stderr,
+            )
+            diagnostics.report_crash(_crash_report(e, argv), stream=recorder.stderr())
+            code = ExitCode.CRASH
+        self._answer(connection, recorder.segments, code)
+        diagnostics.report_status(code, stream=self._stderr)
+
+    def _status_into(self, recorder: Recorder, argv: Sequence[str]) -> ExitCode:
+        """Write the status document, or refuse a flag typed beside it.
+
+        The request carries the invocation's argv, since no parser sees one.
+        """
+        extra = next((argument for argument in argv if argument != STATUS_OPTION), None)
+        if extra is not None:
+            diagnostics.error(
+                f"{STATUS_OPTION} is a flag and takes no value."
+                if extra.startswith(STATUS_OPTION + "=")
+                else (
+                    f"{STATUS_OPTION} reports on the server and takes no other "
+                    f"options. Drop {extra}, or run it without "
+                    f"{STATUS_OPTION}."
+                ),
+                stream=recorder.stderr(),
+            )
+            return ExitCode.USAGE
+        print(
+            json.dumps(self.status(), separators=(",", ":"), default=str),
+            file=recorder.stdout(),
+        )
+        return ExitCode.OK
+
     def _run(
         self, request: protocol.Request
     ) -> tuple[list[tuple[int, bytearray]], int]:
@@ -513,7 +642,7 @@ class Server:
                 stream=self._stderr,
             )
             diagnostics.report_crash(
-                _crash_report(e, request), stream=recorder.stderr()
+                _crash_report(e, request.argv), stream=recorder.stderr()
             )
             return recorder.segments, ExitCode.CRASH
         return recorder.segments, code
@@ -587,7 +716,7 @@ class Server:
             diagnostics.report_client_gone(stream=self._stderr)
 
 
-def _crash_report(error: BaseException, request: protocol.Request) -> "Path | None":
+def _crash_report(error: BaseException, argv: "Sequence[str]") -> "Path | None":
     """Write a crash report for a bug hit while serving, or None if it could not.
 
     The same report a cold run writes, so a caller who hit the bug through a
@@ -598,7 +727,7 @@ def _crash_report(error: BaseException, request: protocol.Request) -> "Path | No
 
     try:
         context = {
-            "argv": " ".join(redact_conn_str(list(request.argv))),
+            "argv": " ".join(redact_conn_str(list(argv))),
             "session": True,
         }
         return write_crash_report(build_crash_report(error, context, program=PROGRAM))

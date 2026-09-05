@@ -21,6 +21,10 @@ Code for the [harlequin.sh](https://harlequin.sh/) website is hosted in the [`ha
 
 We aim to create a welcoming and inclusive environment for new contributors, whether this is your first open-source contribution or your 1,000th. Please see the [Contributing Guide](https://harlequin.sh/docs/contributing/index) for detailed instructions on local development and testing, including an end-to-end walkthrough [video](https://www.tella.tv/video/cls3nmne700000gl4bcp91arr/view).
 
+## Adding a CLI Option
+
+Harlequin and `hsql` sort every option into a group, and adding one has a checklist. See [`docs/cli-options.md`](docs/cli-options.md).
+
 ## Creating an Adapter
 
 In addition to contributing to Harlequin core, you can contribute to one of Harlequin's many [adapters](https://harlequin.sh/docs/adapters), or create your own. There is a [guide to creating an adapter](https://harlequin.sh/docs/contributing/adapter-guide) on the Harlequin website.

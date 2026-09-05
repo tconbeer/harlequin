@@ -51,15 +51,27 @@ STDERR = 4
 EXIT = 5
 """Server to client, last: the code the client exits with."""
 
+STATUS = 6
+"""Client to server: report the server's status, as its own argv.
+
+Not a request, and so not a turn at the connection: the server reports from
+its own bookkeeping while a request runs.
+"""
+
 # Frame kinds are wire values: later ones append rather than renumbering.
 
-FORWARDED_ENV_VARS = ("NO_COLOR",)
+FORWARDED_ENV_VARS = ("NO_COLOR", "HARLEQUIN_CONFIG_PATH")
 """The whole of the environment a request carries.
 
-`--color auto` reads it, and the server cannot know it. Not the caller's whole
-environment: the server has its own, an adapter option's `envvar` resolves
-against that one, and shipping a caller's environment across a socket is a
-credential leak with no upside.
+`--color auto` reads `NO_COLOR`, and the server cannot know it.
+`HARLEQUIN_CONFIG_PATH` is `--config-path` spelled as an environment variable,
+and it travels for the same reason the client's working directory does: it
+names which config file the run reads.
+
+Not the caller's whole environment: the server has its own, an adapter
+option's `envvar` resolves against that one, and shipping a caller's
+environment across a socket is a credential leak with no upside. Neither of
+these two is a credential.
 
 The other half of what `auto` reads is whether the caller's stdout is a
 terminal, which no environment variable answers -- the request carries that as
@@ -207,6 +219,19 @@ def unpack_request(payload: bytes) -> Request:
         stdout_isatty=bool(flags & STDOUT_ISATTY),
         stderr_isatty=bool(flags & STDERR_ISATTY),
     )
+
+
+def pack_status(argv: "Sequence[str]") -> bytes:
+    """A status request, as the invocation that carried it.
+
+    The argv travels because no parser sees a status request: it is what lets
+    the server refuse anything typed beside the flag.
+    """
+    return pack_strings([os.fsencode(argument) for argument in argv])
+
+
+def unpack_status(payload: bytes) -> "list[str]":
+    return [os.fsdecode(argument) for argument in unpack_strings(payload)]
 
 
 def forwarded_environ(environ: "Mapping[str, str]") -> "dict[str, str]":

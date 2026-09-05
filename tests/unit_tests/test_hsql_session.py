@@ -246,6 +246,38 @@ def test_a_request_carries_only_the_environment_it_declares() -> None:
     assert forwarded == {"NO_COLOR": ""}
 
 
+def test_a_request_carries_the_config_file_the_caller_named() -> None:
+    """`HARLEQUIN_CONFIG_PATH` is `--config-path` spelled as an environment
+    variable, and a session that honored one and ignored the other would read
+    a config file neither of them asked for."""
+    forwarded = protocol.forwarded_environ(
+        {"HARLEQUIN_CONFIG_PATH": "/p/hsql.toml", "HOME": "/home/ted"}
+    )
+    assert forwarded == {"HARLEQUIN_CONFIG_PATH": "/p/hsql.toml"}
+
+
+@pytest.mark.parametrize(
+    "argv,asks",
+    [
+        (["--session-status"], True),
+        # click refuses the `=` form either way; one this missed would reach
+        # the session as a request and wait for a running query to say so
+        (["--session-status=1"], True),
+        (["--session", "prod", "--session-status"], True),
+        (["-c", "select 1"], False),
+        (["--", "--session-status"], False),
+        (["-c", "--session-status"], True),
+    ],
+)
+def test_which_invocations_request_the_servers_status(
+    argv: list[str], asks: bool
+) -> None:
+    """A scan, as everywhere else the client reads argv before click exists.
+    A `--session-status` that is really an option's value reaches the server
+    instead of the parser, and the server refuses it by name."""
+    assert session.requests_status(argv) is asks
+
+
 def test_an_absent_no_color_arrives_absent() -> None:
     """It is read for its presence, so an empty one is not the same as none."""
     assert protocol.forwarded_environ({"TERM": "dumb"}) == {}
@@ -299,6 +331,7 @@ class StubServer:
     ) -> None:
         self.path = path
         self.request: protocol.Request | None = None
+        self.status_ask: list[str] | None = None
         self._version = advertises
         self._frames = list(frames)
         self._closing = False
@@ -330,6 +363,8 @@ class StubServer:
             frame = protocol.recv_frame(connection)
             if frame is not None and frame[0] == protocol.REQUEST:
                 self.request = protocol.unpack_request(frame[1])
+            elif frame is not None and frame[0] == protocol.STATUS:
+                self.status_ask = protocol.unpack_status(frame[1])
             for kind, payload in self._frames:
                 protocol.send_frame(connection, kind, payload)
         except OSError:
@@ -441,6 +476,25 @@ def test_the_server_is_sent_the_invocation_and_not_the_clients_flag(
     assert server.request.cwd == os.getcwd()
     assert server.request.environ == {"NO_COLOR": "1"}
     assert server.request.stdin is None
+
+
+@needs_unix_sockets
+def test_a_status_ask_is_not_a_request(
+    serve: Serve, environ: dict[str, str], capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
+    """It takes no turn at the session's connection, so it is its own frame
+    rather than an invocation the session parses -- and it carries the argv,
+    so the session can refuse anything typed beside it."""
+    server = serve(
+        frames=[(protocol.STDOUT, b'{"state":"busy"}\n'), (protocol.EXIT, b"\x00")]
+    )
+    assert (
+        client.run(typed(), ["--session", "prod", "--session-status"], environ)
+        == ExitCode.OK
+    )
+    assert capsysbinary.readouterr().out == b'{"state":"busy"}\n'
+    assert server.request is None
+    assert server.status_ask == ["--session-status"]
 
 
 @needs_unix_sockets

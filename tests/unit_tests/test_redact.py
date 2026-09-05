@@ -294,3 +294,21 @@ def test_text_given_secrets_uses_those_instead() -> None:
     assert redact_text("saw fifth-secret-value", {"fifth-secret-value"}) == (
         f"saw {REDACTED}"
     )
+
+
+@pytest.mark.parametrize("value", [5, True, None, 3.5])
+def test_a_conn_str_that_is_not_a_string_is_masked_rather_than_parsed(
+    value: object,
+) -> None:
+    """A profile can put anything under a key, and this is the last thing
+    between a value and a terminal -- a crash report calls it -- so it masks
+    what it cannot read for spans rather than raising on the way past."""
+    assert redact_conn_str([value]) == [REDACTED]  # type: ignore[list-item]
+    assert redact_profile({"conn_str": value}) == {"conn_str": [REDACTED]}
+
+
+def test_one_bad_item_does_not_take_the_conn_strs_beside_it() -> None:
+    assert redact_conn_str(["postgres://ted:hunter2@db/x", 5]) == [  # type: ignore[list-item]
+        f"postgres://ted:{REDACTED}@db/x",
+        REDACTED,
+    ]

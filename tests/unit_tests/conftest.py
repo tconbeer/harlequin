@@ -90,6 +90,7 @@ def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
         cwd: Path | None = None,
         stdin: bytes | None = None,
         env: Mapping[str, str] | None = None,
+        timeout: float | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [
@@ -102,6 +103,9 @@ def hsql_subprocess(tmp_path: Path) -> HsqlSubprocess:
             ],
             capture_output=True,
             input=stdin,
+            # a test that names one is asserting the invocation *returns*, and
+            # a regression there would otherwise hang rather than fail
+            timeout=timeout,
             cwd=tmp_path if cwd is None else cwd,
             env={
                 **{
@@ -142,12 +146,14 @@ def serve_session(short_runtime_dir: Path, tmp_path: Path) -> Iterator[ServeSess
         name: str = "test",
         *serve_argv: str,
         wait: bool = True,
+        env: Mapping[str, str] | None = None,
     ) -> WarmSession:
         session = WarmSession(
             name,
             serve_argv or ("-a", "duckdb", "--no-init", ":memory:"),
             runtime_dir=short_runtime_dir,
             home=tmp_path,
+            env=env,
         )
         started.append(session)
         if wait:

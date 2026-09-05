@@ -6,11 +6,12 @@ this process starting. `import click` costs more than the round trip and
 `harlequin.config` more again, so a client that reached for either would spend
 the win before it made the call.
 
-So this module parses nothing. It scans argv for the two things it cannot avoid
-knowing about -- its own `--session`, and a `-f -` whose bytes only it can read
--- and forwards the rest opaquely, to be parsed by the same command the cold
-path builds. `hsql --session prod --badflag` gets the same message and the same
-exit code as `hsql --badflag`, because it is the same code.
+So this module parses nothing. It scans argv for the three things it cannot
+avoid knowing about -- its own `--session`, a `-f -` whose bytes only it can
+read, and a `--session-status`, which the server reports on itself rather
+than running -- and forwards the rest opaquely, to be parsed by the same
+command the cold path builds. `hsql --session prod --badflag` gets the same message
+and the same exit code as `hsql --badflag`, because it is the same code.
 
 Diagnostics go straight to stderr rather than through
 `harlequin.hsql.diagnostics`, which costs more to import than the round trip it
@@ -34,6 +35,7 @@ from harlequin.hsql.session import (
     UnsafeRuntimeDir,
     check_runtime_dir,
     is_valid_name,
+    requests_status,
     socket_path,
     without_session_option,
 )
@@ -205,6 +207,15 @@ def _exchange(
             f"is hsql {protocol.VERSION}. Restart the session."
         )
         return USAGE
+
+    if requests_status(argv):
+        # not a request, so it takes no turn at the session's connection
+        protocol.send_frame(
+            connection,
+            protocol.STATUS,
+            protocol.pack_status(without_session_option(argv)),
+        )
+        return _relay(connection)
 
     stdin = _stdin_for(argv)
     if stdin is not None and len(stdin) > protocol.MAX_PAYLOAD:

@@ -396,6 +396,8 @@ three things it cannot avoid knowing about —
 
 - `--session NAME` (strip it; it is the client's own flag),
 - `-f -` / `--file -` (read stdin and send the bytes, because the server has no stdin),
+- `--session-status` (send it as its own frame; §4.10 is answered by the session rather
+  than by the command, and it must be answerable while a request is running),
 - nothing else —
 
 and forwards the rest opaquely. Every other flag, including `--help`, including a
@@ -677,10 +679,18 @@ release that forgot fails in the release PR rather than in a user's shell.
 
 ```json
 {"session":"prod","pid":8123,"version":"2.13.0","adapter":"duckdb",
- "connection":"/home/ted/warehouse.db","uptime_s":412,"requests":37,
- "state":"idle","queued":0,"transaction_mode":null,"ssh":null,
- "idle_timeout_s":1800,"expires_in_s":26988}
+ "connection":"/home/ted/warehouse.db","connection_options":{"read_only":true},
+ "uptime_s":412,"requests":37,"state":"idle","queued":0,
+ "transaction_mode":null,"ssh":null,"idle_timeout_s":null,"expires_in_s":null}
 ```
+
+`connection_options` is the rest of §4.4's identity — what a request's own
+connection options are compared against — masked by whatever each adapter declared
+`secret=`. It holds what the session was *given*: an option it never named is one
+its adapter defaulted for itself, which core cannot enumerate, so `read_only` appears
+only for a session started with it. `state` is `idle`, `busy`, or `unavailable` for a
+session whose connection a reset has to bring back. `idle_timeout_s` and
+`expires_in_s` are null until PR 5 builds them.
 
 Answerable while a query is running (§4.5), which is what makes "is it hung or is it slow"
 a question with an answer. `transaction_mode` is on it because §5 says it has to be.
@@ -885,14 +895,31 @@ them; everything after is additive and independently revertible.
    **`--session-reset` lands here too**, ahead of the rest of the lifecycle work: §6's
    fixture needs it to give each test a fresh session, so it is a dependency of the suite
    rather than a nicety, and the suite is the thing that proves it works.
-3. **Identity and rejection.** The server's recorded connection identity, the
+3. **Identity and rejection. Shipped.** The server's recorded connection identity, the
    differing-options rejection, client-side profile resolution against the client's cwd
-   (§4.2), `--session-status`. One question this PR settles that the first draft did not
-   ask: **whether `HARLEQUIN_CONFIG_PATH` travels with the request.** It is the caller's
-   intent in the same way `--config-path` is, and it is the one environment variable that
-   changes which config file a run reads — but forwarding it widens
-   `protocol.FORWARDED_ENV_VARS` past "what `--color auto` needs", which is the line PR 1
-   drew. Decide it here, with the rest of config resolution.
+   (§4.2), `--session-status`. One question this PR settled that the first draft did not
+   ask: **whether `HARLEQUIN_CONFIG_PATH` travels with the request.** It does. It is the
+   caller's intent in the same way `--config-path` is, and a session that honored the flag
+   and ignored the variable would read a config file neither of them named — which is the
+   same failure §4.2 forwards the client's cwd to avoid. It widens
+   `protocol.FORWARDED_ENV_VARS` past "what `--color auto` needs", and the line that
+   replaces PR 1's is narrower than it looks: the two variables on it name *where a value
+   comes from* rather than being one, and neither is a credential.
+
+   Two things this PR settled that the plan did not name. **`--session-status` is not a
+   request**, because §4.5 promises it is answerable mid-query and a request cannot be:
+   a served invocation borrows the process's cwd, environment and streams for its whole
+   run, so a second one parsed alongside it would take them out from under a query. So
+   the client sends it as its own frame — a third thing its argv scan knows about — and
+   the server answers it off its own bookkeeping, which is the shape PR 4's cancel wants
+   anyway. It stays a declared click option so that `--help`, `--spec` and the partition
+   still describe it, and so a cold invocation is refused rather than ignored; and it
+   joins `CLI_ONLY_SESSION_KEYS`, because a profile could otherwise set it only for the
+   runs that never reach a session. The status's `transaction_mode` is **null while the
+   session is busy**: reading it means asking a driver a question on a second thread,
+   which is the thread-safety §4.5 refuses to assume. `idle_timeout_s` and `expires_in_s`
+   are null until PR 5 can answer them, rather than absent, so the document's shape does
+   not change under a caller.
 4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
 5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
@@ -932,5 +959,5 @@ the first draft got wrong about the entry point.
   `hsql/timeout.py` is the precedent PR 4's cancellation attribution should follow (§4.6).
 - **The SSH options are in the partition** (§4.1), as connection-time, and the tunnel is
   part of what §4.7 calls a credential held open.
-- **`--session` waits for PR 2 to become a click option** (§9), and PR 3 has one more
-  question to answer about `HARLEQUIN_CONFIG_PATH`.
+- **`--session` waits for PR 2 to become a click option** (§9); PR 3 answered the
+  `HARLEQUIN_CONFIG_PATH` question with "it travels."
