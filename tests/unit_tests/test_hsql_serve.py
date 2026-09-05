@@ -52,6 +52,14 @@ needs_unix_sockets = pytest.mark.skipif(
 
 Hsql = Callable[..., Result]
 
+SESSION_INIT_PATH = Path("/boot.sql")
+"""The `--init-path` the in-process session recorded.
+
+A `Path` because that is what a `PathOption` resolves to, and rendering one
+is what `_shown()` exists for. Shared with the tests that assert on it, so
+they do not spell a separator that is only right on one platform.
+"""
+
 
 @pytest.fixture
 def hsql(no_discovered_config: None) -> Hsql:
@@ -90,7 +98,7 @@ def in_process_server(duckdb_adapter: Any) -> Server:
             "conn_str": (":memory:",),
             "read_only": False,
             "no_init": True,
-            "init_path": Path("/boot.sql"),
+            "init_path": SESSION_INIT_PATH,
         },
     )
 
@@ -296,7 +304,6 @@ def test_session_is_a_profile_key_the_ide_leaves_alone() -> None:
         (["-a", "sqlite"], "--adapter", "'sqlite'", "'duckdb'"),
         (["--read-only"], "--read-only", "True", "False"),
         (["other.db"], "CONN_STR", "['other.db']", "[':memory:']"),
-        (["--init-path", "/other.sql"], "--init-path", "'/other.sql'", "'/boot.sql'"),
     ],
 )
 def test_a_served_request_that_asserts_a_different_connection_is_refused(
@@ -321,6 +328,29 @@ def test_a_served_request_that_asserts_a_different_connection_is_refused(
         f"{spelling} says {asked}, and the session named 'inproc' connected with {has}."
     ) in res.stderr
     assert "--serve NAME" in res.stderr
+
+
+def test_a_refusal_names_an_adapters_own_option_and_spells_a_path_as_one(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path
+) -> None:
+    """An adapter-declared option is compared like one of hsql's own, and a
+    `PathOption` resolves to a `Path` -- which a caller reads as a path and
+    not as `PosixPath('/p/boot.sql')`.
+
+    The asked value is left to click, which resolves it against wherever the
+    test runs; what is pinned is that neither side reaches the caller as a
+    repr."""
+    res = hsql(
+        "--init-path",
+        str(tmp_path / "other.sql"),
+        "-c",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert "--init-path says '" in res.stderr
+    assert f"connected with '{SESSION_INIT_PATH}'." in res.stderr
+    assert "Path(" not in res.stderr
 
 
 @pytest.mark.parametrize("args", [["-a", "duckdb"], ["--no-init"], [":memory:"]])
