@@ -53,6 +53,15 @@ needs_unix_sockets = pytest.mark.skipif(
 
 Hsql = Callable[..., Result]
 
+UNFINISHABLE = "select count(*) from range(200000000000)"
+"""A query no runner finishes inside a test's timeout.
+
+`range()` streams, so this counts rows rather than materializing them, and
+duckdb checks for an interrupt between chunks. Large enough that the fastest
+runner cannot beat a tenth of a second: at 2e9 an arm64 macOS runner did, and
+the timeout test got a result set where it wanted none.
+"""
+
 SESSION_INIT_PATH = Path("boot.sql")
 """The `--init-path` the in-process session recorded.
 
@@ -1156,19 +1165,21 @@ def test_a_status_is_answered_while_a_request_holds_the_connection(
 def test_a_status_is_answered_while_the_database_is_working(
     warm: WarmSession, hsql_subprocess: HsqlSubprocess, tmp_path: Path
 ) -> None:
-    """The stronger half of the claim: not merely while a request holds the
-    turnstile, but while duckdb is executing. A driver call that held the GIL
-    or a process-wide lock would serialize the answer, and a FIFO read -- which
-    releases the GIL -- could not show that it does not.
+    """The stronger half of the claim: the status arrives while duckdb is
+    executing, not merely while a request holds the turnstile. A driver call
+    holding the GIL or a process-wide lock would serialize the status, and a
+    FIFO read releases the GIL.
 
-    `--timeout` bounds the query so the session is free again for teardown."""
+    `--timeout` bounds the query, so the session is free again for teardown.
+    It only has to outlive the poll below, which returns on the first busy
+    status."""
     query = subprocess.Popen(
         [
             sys.executable,
             "-c",
             "import sys\n"
-            f"sys.argv = ['hsql', '--session', {warm.name!r}, '--timeout', '20', "
-            "'-c', 'select count(*) from range(2000000000)']\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '--timeout', "
+            f"'5', '-c', {UNFINISHABLE!r}]\n"
             "from harlequin.hsql import main\n"
             "main()\n",
         ],
@@ -1450,7 +1461,7 @@ def test_a_timeout_stops_the_request_and_leaves_the_session_up(
     after -- DuckDB's cancel lands inside the grace period, so the connection
     is never abandoned. (The grace running out is `Deadline`'s own test: no
     adapter that cancels can reach it.)"""
-    proc = send(["--timeout", "0.1", "-c", "select count(*) from range(2000000000)"])
+    proc = send(["--timeout", "0.1", "-c", UNFINISHABLE])
     assert proc.returncode == ExitCode.TIMEOUT
     assert proc.stdout == b""
     assert b"timed out after 0.1s" in proc.stderr
