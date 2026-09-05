@@ -13,14 +13,13 @@ A session is one connection, so requests run **one at a time**: the adapter
 contract says nothing about thread-safety, and the IDE has never needed it. A
 second client waits its turn, bounded by `--queue-timeout`, and is told it
 never reached the database if that runs out -- a different fact from a query
-that ran too long. `--session-status` is the one thing that does not wait: it
-is its own frame rather than an invocation, and the server answers it off its
-own bookkeeping.
+that ran too long. `--session-status` is the exception: it arrives as its own
+frame rather than as an invocation, and the server reports from its own
+bookkeeping while a request runs.
 
-The name is the caller's and the **identity is the server's**: what it
-resolved its connection options to when it connected is what a served
-request's own connection options are compared against. Identical is served,
-different is refused by name.
+The name is the caller's and the **identity is the server's**: the connection
+options it resolved at start-up are what a served request's own connection
+options are compared against. Equal values are served; differing ones exit 2.
 
 A running server is a live, authenticated connection that anything able to
 write its socket can use, so the socket is the credential: `AF_UNIX` only, in
@@ -97,11 +96,9 @@ class Turnstile:
         self._busy = False
 
     def snapshot(self) -> "tuple[bool, int]":
-        """Whether a request holds the connection, and how many wait, at once.
+        """Whether a request holds the connection, and how many wait.
 
-        One acquisition: sampled separately, a document could report an idle
-        session with requests in line, which is what a monitoring script
-        branches on.
+        One acquisition, so the two values describe the same instant.
         """
         with self._condition:
             return self._busy, len(self._waiting)
@@ -248,8 +245,8 @@ class Server:
         self.name = name
         self.adapter = adapter
         self.identity: Mapping[str, Any] = {"adapter": adapter, **(identity or {})}
-        """What this session resolved its connection options to when it
-        connected, and what a served request's own are compared against."""
+        """The connection options this session resolved at start-up, and what
+        a served request's own are compared against."""
         self._adapter_options = options
         """What the adapter declares, so that `secret=` decides what prints."""
         self._ssh = ssh
@@ -274,10 +271,10 @@ class Server:
         return self._requests
 
     def status(self) -> "dict[str, Any]":
-        """What this session is, and what it is doing, ready to be JSON.
+        """This session's state, ready to be JSON.
 
-        No secrets: the connection string is masked by span and every other
-        value by what its adapter declared `secret=`.
+        The connection string is masked by span and every other value by what
+        its adapter declared `secret=`.
         """
         from harlequin.redact import redact_conn_str, redact_profile
 
@@ -312,10 +309,9 @@ class Server:
     def _transaction_mode(self) -> "str | None":
         """The label of the session's transaction mode, or None if it is busy.
 
-        The one field a status has to ask the connection for, so it takes a
-        turn rather than reading beside one -- the adapter contract says
-        nothing about thread-safety. `enter(0)` never waits for that turn, so
-        a busy session reports nothing here rather than holding the answer.
+        The one field read from the connection, so it takes a turn rather than
+        reading beside a request -- the adapter contract says nothing about
+        thread-safety. `enter(0)` returns immediately when a request holds it.
         """
         if not self._turnstile.enter(0):
             return None
@@ -547,7 +543,7 @@ class Server:
                     # a client that refused to be served by this version
                     return
                 if frame[0] == protocol.STATUS:
-                    self._answer_status(connection, protocol.unpack_status(frame[1]))
+                    self._send_status(connection, protocol.unpack_status(frame[1]))
                     return
                 if frame[0] != protocol.REQUEST:
                     raise protocol.ProtocolError(f"expected a request, got {frame[0]}")
@@ -575,20 +571,20 @@ class Server:
                 self._requests, code, elapsed_ms, stream=self._stderr
             )
 
-    def _answer_status(self, connection: socket.socket, argv: Sequence[str]) -> None:
-        """Answer `--session-status` without waiting for the connection.
+    def _send_status(self, connection: socket.socket, argv: Sequence[str]) -> None:
+        """Send the status document, without waiting for the connection.
 
         A served invocation borrows this process's cwd, environment and
-        streams for its whole run, so this one is answered here rather than
-        parsed beside it.
+        streams for its whole run, so this is built here rather than parsed
+        beside one.
         """
         recorder = Recorder()
         try:
             code = self._status_into(recorder, argv)
-        except Exception as e:  # noqa: BLE001 -- the server outlives an ask
-            # the same answer a bug in the request path gets, rather than a
-            # traceback out of this thread and into whichever request's
-            # recorder happens to hold the process's stderr
+        except Exception as e:  # noqa: BLE001 -- the server outlives a request
+            # what a bug in the request path produces, rather than a traceback
+            # out of this thread and into whichever request's recorder holds
+            # the process's stderr
             diagnostics.note(
                 f"status failed: {redact_text(traceback.format_exc())}",
                 stream=self._stderr,
@@ -596,13 +592,12 @@ class Server:
             diagnostics.report_crash(_crash_report(e, argv), stream=recorder.stderr())
             code = ExitCode.CRASH
         self._answer(connection, recorder.segments, code)
-        diagnostics.report_status_answered(code, stream=self._stderr)
+        diagnostics.report_status(code, stream=self._stderr)
 
     def _status_into(self, recorder: Recorder, argv: Sequence[str]) -> ExitCode:
-        """Write the status document, or say what was typed beside the flag.
+        """Write the status document, or refuse a flag typed beside it.
 
-        The ask carries the invocation's argv, since no parser sees a status:
-        a flag beside one is refused by name rather than silently dropped.
+        The request carries the invocation's argv, since no parser sees one.
         """
         extra = next((argument for argument in argv if argument != STATUS_OPTION), None)
         if extra is not None:
@@ -610,8 +605,9 @@ class Server:
                 f"{STATUS_OPTION} is a flag and takes no value."
                 if extra.startswith(STATUS_OPTION + "=")
                 else (
-                    f"{STATUS_OPTION} asks the session what it is doing, and "
-                    f"takes nothing else; {extra} is for an invocation that runs."
+                    f"{STATUS_OPTION} reports on the server and takes no other "
+                    f"options. Drop {extra}, or run it without "
+                    f"{STATUS_OPTION}."
                 ),
                 stream=recorder.stderr(),
             )

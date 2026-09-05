@@ -269,14 +269,13 @@ def test_a_request_carries_the_config_file_the_caller_named() -> None:
         (["-c", "--session-status"], True),
     ],
 )
-def test_which_invocations_ask_the_session_what_it_is_doing(
+def test_which_invocations_request_the_servers_status(
     argv: list[str], asks: bool
 ) -> None:
-    """A scan, like every other question the client answers before click
-    exists: a `--session-status` that is really an option's value reaches the
-    session instead of the parser, and the session refuses what it cannot read
-    as an ask."""
-    assert session.asks_for_status(argv) is asks
+    """A scan, as everywhere else the client reads argv before click exists.
+    A `--session-status` that is really an option's value reaches the server
+    instead of the parser, and the server refuses it by name."""
+    assert session.requests_status(argv) is asks
 
 
 def test_an_absent_no_color_arrives_absent() -> None:

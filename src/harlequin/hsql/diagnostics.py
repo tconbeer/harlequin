@@ -153,8 +153,8 @@ def report_request(number: int, code: int, elapsed_ms: int, *, stream: TextIO) -
     note(f"request {number}: exit {code} in {elapsed_ms}ms", stream=stream)
 
 
-def report_status_answered(code: int, *, stream: TextIO) -> None:
-    """One line per status answered, beside the one per request."""
+def report_status(code: int, *, stream: TextIO) -> None:
+    """One line per status request, beside the one per request."""
     note(f"--session-status: exit {code}", stream=stream)
 
 

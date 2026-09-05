@@ -52,10 +52,10 @@ EXIT = 5
 """Server to client, last: the code the client exits with."""
 
 STATUS = 6
-"""Client to server: what the session is doing, as its own argv.
+"""Client to server: report the server's status, as its own argv.
 
-Not a request and so not a turn at the connection: the server answers it off
-its own bookkeeping, while a request runs.
+Not a request, and so not a turn at the connection: the server reports from
+its own bookkeeping while a request runs.
 """
 
 # Frame kinds are wire values: later ones append rather than renumbering.
@@ -222,10 +222,10 @@ def unpack_request(payload: bytes) -> Request:
 
 
 def pack_status(argv: "Sequence[str]") -> bytes:
-    """A status ask, as the invocation that carried it.
+    """A status request, as the invocation that carried it.
 
-    The argv travels because no parser sees a status: it is what lets the
-    server refuse anything typed beside the flag rather than ignore it.
+    The argv travels because no parser sees a status request: it is what lets
+    the server refuse anything typed beside the flag.
     """
     return pack_strings([os.fsencode(argument) for argument in argv])
 
