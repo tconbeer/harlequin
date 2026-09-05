@@ -52,12 +52,12 @@ needs_unix_sockets = pytest.mark.skipif(
 
 Hsql = Callable[..., Result]
 
-SESSION_INIT_PATH = Path("/boot.sql")
+SESSION_INIT_PATH = Path("boot.sql")
 """The `--init-path` the in-process session recorded.
 
-A `Path` because that is what a `PathOption` resolves to, and rendering one
-is what `_shown()` exists for. Shared with the tests that assert on it, so
-they do not spell a separator that is only right on one platform.
+A `Path`, because that is what a `PathOption` resolves to and rendering one
+is what `_shown()` exists for -- and a bare name, so that asserting on how it
+prints spells no separator that is right on only one platform.
 """
 
 
@@ -338,8 +338,8 @@ def test_a_refusal_names_an_adapters_own_option_and_spells_a_path_as_one(
     not as `PosixPath('/p/boot.sql')`.
 
     The asked value is left to click, which resolves it against wherever the
-    test runs; what is pinned is that neither side reaches the caller as a
-    repr."""
+    test runs; what is pinned is that both sides reach the caller as paths
+    rather than as reprs."""
     res = hsql(
         "--init-path",
         str(tmp_path / "other.sql"),
@@ -350,6 +350,7 @@ def test_a_refusal_names_an_adapters_own_option_and_spells_a_path_as_one(
     assert res.exit_code == ExitCode.USAGE
     assert "--init-path says '" in res.stderr
     assert f"connected with '{SESSION_INIT_PATH}'." in res.stderr
+    assert "other.sql" in res.stderr
     assert "Path(" not in res.stderr
 
 
