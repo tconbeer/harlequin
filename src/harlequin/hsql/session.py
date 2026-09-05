@@ -28,12 +28,8 @@ SESSION_OPTION = "--session"
 """The typed spelling: an assertion, so an invocation fails without one."""
 
 STATUS_OPTION = "--session-status"
-"""What a running session is doing, which only the session can answer.
-
-The client's own flag in the same way `--session` is: it asks the process
-rather than asking it to run something, and the answer has to arrive while a
-query is running or it answers nothing worth asking.
-"""
+"""The client's own flag in the same way `--session` is: it asks the running
+session a question rather than asking it to run something."""
 
 SERVE_OPTION = "--serve"
 """The other role. An invocation that starts a session is never sent to one,
@@ -140,15 +136,20 @@ def without_session_option(argv: "Sequence[str]") -> "list[str]":
 def asks_for_status(argv: "Sequence[str]") -> bool:
     """Whether this invocation asks the session what it is doing.
 
-    A scan, like every other question the client answers before click exists.
+    A scan, like every other question the client answers before click exists,
+    and it reads the `=` form too: `--session-status=1` is a typo click
+    refuses either way, and one that reached the session as a request would
+    wait for a running query to say so.
+
     An option *value* that is the literal string is the same ambiguity
-    `requested_session()` has, and fails as visibly: the whole argv travels
-    with the ask, and the session refuses one carrying anything else.
+    `requested_session()` has, and fails as visibly: the whole invocation
+    travels with the ask, and the session refuses one carrying anything else.
     """
     for argument in argv:
         if argument == "--":
+            # everything after it is an argument, not an option
             break
-        if argument == STATUS_OPTION:
+        if argument == STATUS_OPTION or argument.startswith(STATUS_OPTION + "="):
             return True
     return False
 

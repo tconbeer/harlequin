@@ -20,12 +20,13 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence, cast
 
 import click
 import pytest
 from click.testing import CliRunner, Result
 
+from harlequin.config import TUI_ONLY_KEYS
 from harlequin.exception import HarlequinConnectionError
 from harlequin.hsql import protocol, server
 from harlequin.hsql.cli import (
@@ -34,6 +35,7 @@ from harlequin.hsql.cli import (
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
     SERVER_OPTIONS,
+    _is_connection_option,
     bare_command,
     build_cli,
     connection_options_in,
@@ -41,6 +43,7 @@ from harlequin.hsql.cli import (
 from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.server import Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
+from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
 
 needs_unix_sockets = pytest.mark.skipif(
@@ -83,7 +86,12 @@ def in_process_server(duckdb_adapter: Any) -> Server:
         reconnect=adapter.connect,
         # what `hsql --serve inproc -P prod` records for a profile that says
         # duckdb, `:memory:`, `no_init` and `read_only = false`
-        identity={"conn_str": (":memory:",), "read_only": False, "no_init": True},
+        identity={
+            "conn_str": (":memory:",),
+            "read_only": False,
+            "no_init": True,
+            "init_path": Path("/boot.sql"),
+        },
     )
 
 
@@ -122,6 +130,12 @@ def test_a_session_records_the_connection_time_group_and_nothing_else() -> None:
     added here."""
     values = {param.name: None for param in bare_command().params if param.name}
     assert set(connection_options_in(values)) == CONNECTION_OPTIONS
+
+
+def test_the_ides_own_profile_keys_are_not_connection_options() -> None:
+    """hsql drops them before it connects, so a session records none of them
+    and a profile that carries one does not thereby name a connection."""
+    assert not {key for key in TUI_ONLY_KEYS if _is_connection_option(key)}
 
 
 def test_an_adapters_options_are_connection_options(hsql: Hsql) -> None:
@@ -277,26 +291,35 @@ def test_session_is_a_profile_key_the_ide_leaves_alone() -> None:
 
 
 @pytest.mark.parametrize(
-    "args,differs",
+    "args,spelling,asked,has",
     [
-        (["-a", "sqlite"], "'sqlite'"),
-        (["--read-only"], "True"),
-        (["other.db"], "['other.db']"),
+        (["-a", "sqlite"], "--adapter", "'sqlite'", "'duckdb'"),
+        (["--read-only"], "--read-only", "True", "False"),
+        (["other.db"], "CONN_STR", "['other.db']", "[':memory:']"),
+        (["--init-path", "/other.sql"], "--init-path", "'/other.sql'", "'/boot.sql'"),
     ],
 )
 def test_a_served_request_that_asserts_a_different_connection_is_refused(
-    hsql: Hsql, in_process_server: Server, args: list[str], differs: str
+    hsql: Hsql,
+    in_process_server: Server,
+    args: list[str],
+    spelling: str,
+    asked: str,
+    has: str,
 ) -> None:
     """The session connected when it started, so its connection is fixed: a
     request that asserted a different one would otherwise run on the session's
-    connection while believing it had changed it. The refusal names both
-    values, because what the session has is the half a caller cannot see."""
+    connection while believing it had changed it.
+
+    Both values are asserted, because what the session has is the half a
+    caller cannot see -- and a message that echoed the asked value back for it
+    would say two identical things differ."""
     res = hsql(*args, "-c", "select 1", obj=served_by(in_process_server))
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
-    assert f"says {differs}, and the session named 'inproc' connected with" in (
-        res.stderr
-    )
+    assert (
+        f"{spelling} says {asked}, and the session named 'inproc' connected with {has}."
+    ) in res.stderr
     assert "--serve NAME" in res.stderr
 
 
@@ -369,11 +392,20 @@ def test_a_served_request_takes_a_profile_of_per_request_options(
 
 
 @pytest.mark.parametrize(
-    "key,value",
-    [("adapter", '"sqlite"'), ("read_only", "true"), ("conn_str", '["other.db"]')],
+    "key,value,has",
+    [
+        ("adapter", '"sqlite"', "'duckdb'"),
+        ("read_only", "true", "False"),
+        ("conn_str", '["other.db"]', "[':memory:']"),
+    ],
 )
 def test_a_served_request_refuses_a_profile_that_names_another_connection(
-    hsql: Hsql, in_process_server: Server, tmp_path: Path, key: str, value: str
+    hsql: Hsql,
+    in_process_server: Server,
+    tmp_path: Path,
+    key: str,
+    value: str,
+    has: str,
 ) -> None:
     """A typed profile is judged by the keys it holds rather than by being one,
     so one that names a different database is refused under the key that names
@@ -392,6 +424,7 @@ def test_a_served_request_refuses_a_profile_that_names_another_connection(
     assert res.exit_code == ExitCode.USAGE
     assert res.stdout == ""
     assert f"the profile 'prod' sets {key} to" in res.stderr
+    assert f"the session named 'inproc' connected with {has}." in res.stderr
     assert "--serve NAME -P prod" in res.stderr
 
 
@@ -417,6 +450,119 @@ def test_a_served_request_takes_a_profile_that_names_the_sessions_connection(
     )
     assert res.exit_code == ExitCode.OK
     assert res.stdout == "1\n"
+
+
+def test_a_served_request_may_not_take_a_server_option_from_a_profile(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path
+) -> None:
+    """A typed profile is judged by the keys it holds on both halves of the
+    rule: a server-lifetime key in one describes a server that is already up,
+    whichever way the caller named it."""
+    path = tmp_path / "hsql.toml"
+    path.write_text("[profiles.slow]\nqueue_timeout = 30\n")
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "slow",
+        "-c",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert "the profile 'slow' sets queue_timeout, which is a --serve option" in (
+        res.stderr
+    )
+
+
+@pytest.mark.parametrize("key", ["theme", "locale", "viewer_max_rows"])
+def test_a_served_request_takes_a_profile_the_ide_also_reads(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path, key: str
+) -> None:
+    """One profile serves both commands, so a profile with a `theme` in it is
+    the normal case -- and hsql drops the IDE's keys before it connects, so a
+    session records none of them and none of them names a connection."""
+    path = tmp_path / "hsql.toml"
+    value = "10" if key == "viewer_max_rows" else '"nord"'
+    path.write_text(f'[profiles.prod]\nadapter = "duckdb"\n{key} = {value}\n')
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "prod",
+        "-tAc",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "1\n"
+
+
+def test_a_profile_that_names_an_option_the_session_never_did_is_refused(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path
+) -> None:
+    """The `did not ask for` refusal, worded for a profile rather than a flag."""
+    path = tmp_path / "hsql.toml"
+    path.write_text('[profiles.other]\nmd_token = "tok_abcdef"\n')
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "other",
+        "-c",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert (
+        "the profile 'other' sets md_token, a connection option the session "
+        "named 'inproc' did not ask for"
+    ) in res.stderr
+    # declared `secret=True`, so the refusal names the key and not the token
+    assert "tok_abcdef" not in res.stderr
+
+
+def test_a_refusal_masks_an_option_its_adapter_declared_secret(
+    hsql: Hsql, duckdb_adapter: Any
+) -> None:
+    """`secret=` is the mechanism, and the name backstop is only the backstop:
+    a differing value is masked because duckdb declared the option, not
+    because the key happens to be spelled like a password."""
+    adapter = duckdb_adapter([":memory:"], no_init=True)
+    session = Server(
+        "md",
+        adapter="duckdb",
+        connection=adapter.connect(),
+        reconnect=adapter.connect,
+        identity={"md_token": "tok_theirs"},
+        options=adapter.ADAPTER_OPTIONS,
+    )
+    res = hsql("--md_token", "tok_mine", "-c", "select 1", obj=served_by(session))
+    assert res.exit_code == ExitCode.USAGE
+    assert "tok_mine" not in res.stderr
+    assert "tok_theirs" not in res.stderr
+    assert "--md_token says '********'" in res.stderr
+    assert "connected with '********'" in res.stderr
+
+
+def test_a_profile_value_of_the_wrong_shape_is_a_usage_error(
+    hsql: Hsql, in_process_server: Server, tmp_path: Path
+) -> None:
+    """A caller who mistyped their own config is owed exit 2 naming the key,
+    not a crash report saying they found a bug in Harlequin."""
+    path = tmp_path / "hsql.toml"
+    path.write_text("[profiles.bad]\nconn_str = 5\n")
+    res = hsql(
+        "--config-path",
+        path,
+        "-P",
+        "bad",
+        "-c",
+        "select 1",
+        obj=served_by(in_process_server),
+    )
+    assert res.exit_code == ExitCode.USAGE
+    assert "the profile 'bad' sets conn_str to" in res.stderr
 
 
 def test_a_served_request_may_not_type_a_server_option(
@@ -617,7 +763,7 @@ def test_the_turnstile_serves_in_arrival_order() -> None:
         threads.append(thread)
         # each ticket is taken before the next thread starts, so the arrival
         # order is this loop's rather than the scheduler's
-        _until(lambda waiting=number: turnstile.queued == waiting)  # type: ignore[misc]
+        _until(lambda waiting=number: turnstile.snapshot()[1] == waiting)  # type: ignore[misc]
 
     turnstile.leave()
     for thread in threads:
@@ -641,7 +787,7 @@ def test_the_turnstile_gives_up_on_a_deadline() -> None:
     started = time.monotonic()
     assert not turnstile.enter(0.05)
     assert time.monotonic() - started < 2
-    assert turnstile.queued == 0
+    assert turnstile.snapshot() == (True, 0)
     turnstile.leave()
     assert turnstile.enter(0.05)
 
@@ -907,21 +1053,117 @@ def test_a_session_says_what_it_is(send: HsqlSubprocess, warm: WarmSession) -> N
     assert status["uptime_s"] >= 0
 
 
-@needs_unix_sockets
-def test_a_status_is_answered_while_a_query_runs(
-    blocked: Blocked, send: HsqlSubprocess
+def test_a_busy_session_does_not_ask_its_driver_for_the_mode(
+    duckdb_adapter: Any,
 ) -> None:
-    """The reason a status is not a request: it takes no turn at the
-    connection, so "is it hung or is it slow" has an answer while the query
-    that raised the question is still running."""
-    proc = send(["--session-status"])
+    """The one field a status has to ask the connection for, so it takes a
+    turn rather than reading beside one -- and reports null instead of
+    waiting for it. DuckDB has no transaction mode, so the label comes from a
+    stand-in; what is pinned is that a held turnstile suppresses the read."""
+    adapter = duckdb_adapter([":memory:"], no_init=True)
+    connection = adapter.connect()
+    reads: list[int] = []
+
+    class Transacting:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(connection, name)
+
+        @property
+        def transaction_mode(self) -> HarlequinTransactionMode:
+            reads.append(1)
+            return HarlequinTransactionMode(label="Manual")
+
+    session = Server(
+        "tx",
+        adapter="duckdb",
+        connection=cast(Any, Transacting()),
+        reconnect=adapter.connect,
+    )
+    assert session.status()["transaction_mode"] == "Manual"
+    assert reads == [1]
+    assert session._turnstile.enter(0)
+    try:
+        busy = session.status()
+    finally:
+        session._turnstile.leave()
+    assert busy["state"] == "busy"
+    assert busy["transaction_mode"] is None
+    # not merely null: the driver was never asked
+    assert reads == [1]
+
+
+@needs_unix_sockets
+def test_a_status_is_answered_while_a_request_holds_the_connection(
+    blocked: Blocked, warm: WarmSession, hsql_subprocess: HsqlSubprocess
+) -> None:
+    """A status takes no turn at the connection. The `blocked` fixture holds
+    one deterministically -- it is inside `_run`, reading its script from a
+    FIFO -- so a status that started queueing would time out here rather than
+    hang the run."""
+    proc = hsql_subprocess(
+        ["--session", warm.name, "--session-status"], env=warm.env, timeout=30
+    )
     assert proc.returncode == ExitCode.OK
-    status = json.loads(proc.stdout)
-    assert status["state"] == "busy"
-    # a busy session does not ask its driver a question on a second thread
-    assert status["transaction_mode"] is None
+    assert json.loads(proc.stdout)["state"] == "busy"
     blocked.release()
     assert blocked.process.wait(30) == ExitCode.OK
+
+
+@needs_unix_sockets
+def test_a_status_is_answered_while_the_database_is_working(
+    warm: WarmSession, hsql_subprocess: HsqlSubprocess, tmp_path: Path
+) -> None:
+    """The stronger half of the claim: not merely while a request holds the
+    turnstile, but while duckdb is executing. A driver call that held the GIL
+    or a process-wide lock would serialize the answer, and a FIFO read -- which
+    releases the GIL -- could not show that it does not.
+
+    `--timeout` bounds the query so the session is free again for teardown."""
+    query = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '--timeout', '20', "
+            "'-c', 'select count(*) from range(2000000000)']\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **warm.env, "HOME": str(tmp_path)},
+    )
+    try:
+        answered = _until_status(
+            lambda: json.loads(
+                hsql_subprocess(
+                    ["--session", warm.name, "--session-status"],
+                    env=warm.env,
+                    timeout=30,
+                ).stdout
+            ),
+            lambda status: status["state"] == "busy",
+        )
+        assert answered["state"] == "busy"
+        assert answered["queued"] == 0
+    finally:
+        query.kill()
+        query.communicate(timeout=30)
+
+
+def _until_status(
+    ask: Callable[[], dict[str, Any]],
+    holds: Callable[[dict[str, Any]], bool],
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Ask until the answer holds, so the test observes rather than sleeps."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = ask()
+        if holds(status):
+            return status
+    raise AssertionError("the session never reported what the test waited for")
 
 
 @needs_unix_sockets
@@ -935,12 +1177,49 @@ def test_a_status_takes_nothing_beside_it(send: HsqlSubprocess) -> None:
 
 
 @needs_unix_sockets
+def test_a_mistyped_status_does_not_wait_for_the_query_it_asks_about(
+    blocked: Blocked, warm: WarmSession, hsql_subprocess: HsqlSubprocess
+) -> None:
+    """`--session-status=1` is a typo click refuses either way, but one the
+    scan missed would reach the session as a request and wait for a running
+    query to say so."""
+    proc = hsql_subprocess(
+        ["--session", warm.name, "--session-status=1"], env=warm.env, timeout=30
+    )
+    assert proc.returncode == ExitCode.USAGE
+    assert proc.stdout == b""
+    assert b"--session-status is a flag and takes no value" in proc.stderr
+    blocked.release()
+    assert blocked.process.wait(30) == ExitCode.OK
+
+
+def test_a_bug_in_the_status_path_is_exit_70_and_not_someone_elses_stderr(
+    in_process_server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An escaping traceback would reach `threading.excepthook`, which writes
+    to the stderr the in-flight *request* has swapped in -- so a bug here
+    would print a server traceback into an unrelated caller's diagnostics."""
+    monkeypatch.setattr(Server, "status", lambda self: 1 / 0, raising=True)
+    left, right = socket.socketpair()
+    with left, right:
+        in_process_server._answer_status(left, ["--session-status"])
+        left.shutdown(socket.SHUT_WR)
+        frames = []
+        while (frame := protocol.recv_frame(right)) is not None:
+            frames.append(frame)
+    assert frames[-1] == (protocol.EXIT, bytes([ExitCode.CRASH]))
+    said = b"".join(payload for kind, payload in frames if kind == protocol.STDERR)
+    assert b"hsql hit a bug in itself" in said
+    assert b"Traceback" not in said
+
+
+@needs_unix_sockets
 def test_a_status_is_not_a_request_the_session_counts(
     send: HsqlSubprocess, warm: WarmSession
 ) -> None:
     send(["--session-status"])
     assert warm.stop() == ExitCode.OK
-    assert "answered --session-status" in warm.stderr()
+    assert "--session-status: exit 0" in warm.stderr()
     assert "session 'warm' stopped after 0 requests" in warm.stderr()
 
 

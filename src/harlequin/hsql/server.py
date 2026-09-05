@@ -13,17 +13,14 @@ A session is one connection, so requests run **one at a time**: the adapter
 contract says nothing about thread-safety, and the IDE has never needed it. A
 second client waits its turn, bounded by `--queue-timeout`, and is told it
 never reached the database if that runs out -- a different fact from a query
-that ran too long. `--session-status` is the one thing that does not wait,
-because a status that answered only once the query it was asked about had
-finished would answer nothing worth asking -- so it is its own frame rather
-than an invocation, and the server answers it off its own bookkeeping.
+that ran too long. `--session-status` is the one thing that does not wait: it
+is its own frame rather than an invocation, and the server answers it off its
+own bookkeeping.
 
 The name is the caller's and the **identity is the server's**: what it
 resolved its connection options to when it connected is what a served
 request's own connection options are compared against. Identical is served,
-different is refused by name. Not a reconnect -- that is a different session
--- and not silence, which lies to a caller who typed `-a postgres` and got
-DuckDB.
+different is refused by name.
 
 A running server is a live, authenticated connection that anything able to
 write its socket can use, so the socket is the credential: `AF_UNIX` only, in
@@ -99,17 +96,15 @@ class Turnstile:
         self._tickets = count()
         self._busy = False
 
-    @property
-    def queued(self) -> int:
-        """How many requests are waiting their turn."""
-        with self._condition:
-            return len(self._waiting)
+    def snapshot(self) -> "tuple[bool, int]":
+        """Whether a request holds the connection, and how many wait, at once.
 
-    @property
-    def busy(self) -> bool:
-        """Whether a request holds the connection right now."""
+        One acquisition: sampled separately, a document could report an idle
+        session with requests in line, which is what a monitoring script
+        branches on.
+        """
         with self._condition:
-            return self._busy
+            return self._busy, len(self._waiting)
 
     def enter(self, timeout: float | None) -> bool:
         """Wait for a turn, and return whether one came before `timeout`."""
@@ -281,13 +276,6 @@ class Server:
     def status(self) -> "dict[str, Any]":
         """What this session is, and what it is doing, ready to be JSON.
 
-        Answered while a request runs, which is what makes "is it hung or is
-        it slow" a question with an answer -- so nothing here may touch the
-        connection while another thread holds it. `transaction_mode` is the
-        one field that would have to: the adapter contract says nothing about
-        thread-safety, so a busy session reports it as null rather than asking
-        a driver a question on a second thread.
-
         No secrets: the connection string is masked by span and every other
         value by what its adapter declared `secret=`.
         """
@@ -297,7 +285,7 @@ class Server:
         conn_str = identity.pop("conn_str", ()) or ()
         if isinstance(conn_str, str):
             conn_str = (conn_str,)
-        busy = self._turnstile.busy
+        busy, queued = self._turnstile.snapshot()
         return {
             "session": self.name,
             "pid": os.getpid(),
@@ -308,12 +296,10 @@ class Server:
             "uptime_s": round(time.monotonic() - self._started, 1),
             "requests": self._requests,
             "state": self._state(busy),
-            "queued": self._turnstile.queued,
-            "transaction_mode": None if busy else self._transaction_mode(),
+            "queued": queued,
+            "transaction_mode": self._transaction_mode(),
             "ssh": self._ssh,
-            # `--idle-timeout` and `--max-lifetime` are not built yet, and a
-            # key that appears in a later release is worse for a caller
-            # reading this than one that is null until it can be answered
+            # null until --idle-timeout and --max-lifetime can answer them
             "idle_timeout_s": None,
             "expires_in_s": None,
         }
@@ -324,20 +310,26 @@ class Server:
         return "busy" if busy else "idle"
 
     def _transaction_mode(self) -> "str | None":
-        """The label of the session's transaction mode, when it has one.
+        """The label of the session's transaction mode, or None if it is busy.
 
-        The sharp edge of a session being state: a caller who ran `BEGIN` and
-        exited left every later request inside that transaction, and nothing
-        rolls it back.
+        The one field a status has to ask the connection for, so it takes a
+        turn rather than reading beside one -- the adapter contract says
+        nothing about thread-safety. `enter(0)` never waits for that turn, so
+        a busy session reports nothing here rather than holding the answer.
         """
-        connection = self._connection
-        if connection is None:
+        if not self._turnstile.enter(0):
             return None
-        try:  # adapters are third-party code
-            mode = connection.transaction_mode
-        except Exception:
-            return None
-        return None if mode is None else mode.label
+        try:
+            connection = self._connection
+            if connection is None:
+                return None
+            try:  # adapters are third-party code
+                mode = connection.transaction_mode
+            except Exception:
+                return None
+            return None if mode is None else mode.label
+        finally:
+            self._turnstile.leave()
 
     def stop(self) -> None:
         """Ask the accept loop to finish, from any thread."""
@@ -584,32 +576,51 @@ class Server:
             )
 
     def _answer_status(self, connection: socket.socket, argv: Sequence[str]) -> None:
-        """Answer `--session-status`, without waiting for the connection.
+        """Answer `--session-status` without waiting for the connection.
 
-        Written here rather than run through the command, because a status
-        that took its turn would answer only once the query it was asked about
-        had finished -- and a served invocation borrows this process's cwd,
-        environment and streams for its whole run, so a second one parsed
-        beside it would take them out from under the query. The ask carries
-        the argv the caller typed, so a flag beside it is refused by name
-        rather than silently dropped.
+        A served invocation borrows this process's cwd, environment and
+        streams for its whole run, so this one is answered here rather than
+        parsed beside it.
         """
         recorder = Recorder()
+        try:
+            code = self._status_into(recorder, argv)
+        except Exception as e:  # noqa: BLE001 -- the server outlives an ask
+            # the same answer a bug in the request path gets, rather than a
+            # traceback out of this thread and into whichever request's
+            # recorder happens to hold the process's stderr
+            diagnostics.note(
+                f"status failed: {redact_text(traceback.format_exc())}",
+                stream=self._stderr,
+            )
+            diagnostics.report_crash(_crash_report(e, argv), stream=recorder.stderr())
+            code = ExitCode.CRASH
+        self._answer(connection, recorder.segments, code)
+        diagnostics.report_status_answered(code, stream=self._stderr)
+
+    def _status_into(self, recorder: Recorder, argv: Sequence[str]) -> ExitCode:
+        """Write the status document, or say what was typed beside the flag.
+
+        The ask carries the invocation's argv, since no parser sees a status:
+        a flag beside one is refused by name rather than silently dropped.
+        """
         extra = next((argument for argument in argv if argument != STATUS_OPTION), None)
         if extra is not None:
             diagnostics.error(
-                f"{STATUS_OPTION} asks the session what it is doing, and takes "
-                f"nothing else; {extra} is for an invocation that runs.",
+                f"{STATUS_OPTION} is a flag and takes no value."
+                if extra.startswith(STATUS_OPTION + "=")
+                else (
+                    f"{STATUS_OPTION} asks the session what it is doing, and "
+                    f"takes nothing else; {extra} is for an invocation that runs."
+                ),
                 stream=recorder.stderr(),
             )
-            self._answer(connection, recorder.segments, ExitCode.USAGE)
-            return
+            return ExitCode.USAGE
         print(
             json.dumps(self.status(), separators=(",", ":"), default=str),
             file=recorder.stdout(),
         )
-        self._answer(connection, recorder.segments, ExitCode.OK)
-        diagnostics.report_status_answered(stream=self._stderr)
+        return ExitCode.OK
 
     def _run(
         self, request: protocol.Request
@@ -635,7 +646,7 @@ class Server:
                 stream=self._stderr,
             )
             diagnostics.report_crash(
-                _crash_report(e, request), stream=recorder.stderr()
+                _crash_report(e, request.argv), stream=recorder.stderr()
             )
             return recorder.segments, ExitCode.CRASH
         return recorder.segments, code
@@ -709,7 +720,7 @@ class Server:
             diagnostics.report_client_gone(stream=self._stderr)
 
 
-def _crash_report(error: BaseException, request: protocol.Request) -> "Path | None":
+def _crash_report(error: BaseException, argv: "Sequence[str]") -> "Path | None":
     """Write a crash report for a bug hit while serving, or None if it could not.
 
     The same report a cold run writes, so a caller who hit the bug through a
@@ -720,7 +731,7 @@ def _crash_report(error: BaseException, request: protocol.Request) -> "Path | No
 
     try:
         context = {
-            "argv": " ".join(redact_conn_str(list(request.argv))),
+            "argv": " ".join(redact_conn_str(list(argv))),
             "session": True,
         }
         return write_crash_report(build_crash_report(error, context, program=PROGRAM))

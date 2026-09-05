@@ -260,6 +260,9 @@ def test_a_request_carries_the_config_file_the_caller_named() -> None:
     "argv,asks",
     [
         (["--session-status"], True),
+        # click refuses the `=` form either way; one this missed would reach
+        # the session as a request and wait for a running query to say so
+        (["--session-status=1"], True),
         (["--session", "prod", "--session-status"], True),
         (["-c", "select 1"], False),
         (["--", "--session-status"], False),

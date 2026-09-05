@@ -54,11 +54,8 @@ EXIT = 5
 STATUS = 6
 """Client to server: what the session is doing, as its own argv.
 
-Not a request, and so not a turn at the connection: a status answered by the
-same command the cold path builds would have to wait for the query it is being
-asked about, and "is it hung or is it slow" is a question with no use once the
-query is over. So the server answers this one off its own bookkeeping, while a
-request runs.
+Not a request and so not a turn at the connection: the server answers it off
+its own bookkeeping, while a request runs.
 """
 
 # Frame kinds are wire values: later ones append rather than renumbering.
@@ -68,16 +65,13 @@ FORWARDED_ENV_VARS = ("NO_COLOR", "HARLEQUIN_CONFIG_PATH")
 
 `--color auto` reads `NO_COLOR`, and the server cannot know it.
 `HARLEQUIN_CONFIG_PATH` is `--config-path` spelled as an environment variable,
-and a caller who typed the flag and a caller who exported the variable named
-the same file for the same reason: a session that honored one and ignored the
-other would read a config file neither of them asked for. It travels for the
-same reason the client's working directory does.
+and it travels for the same reason the client's working directory does: it
+names which config file the run reads.
 
 Not the caller's whole environment: the server has its own, an adapter
 option's `envvar` resolves against that one, and shipping a caller's
 environment across a socket is a credential leak with no upside. Neither of
-these two is a credential, and both name where a value comes from rather than
-being one.
+these two is a credential.
 
 The other half of what `auto` reads is whether the caller's stdout is a
 terminal, which no environment variable answers -- the request carries that as
@@ -228,11 +222,10 @@ def unpack_request(payload: bytes) -> Request:
 
 
 def pack_status(argv: "Sequence[str]") -> bytes:
-    """A status ask, as the argv the caller typed.
+    """A status ask, as the invocation that carried it.
 
-    The argv travels so that the server can refuse anything typed beside
-    `--session-status` rather than silently ignoring it -- a status is the one
-    thing here that no parser sees.
+    The argv travels because no parser sees a status: it is what lets the
+    server refuse anything typed beside the flag rather than ignore it.
     """
     return pack_strings([os.fsencode(argument) for argument in argv])
 

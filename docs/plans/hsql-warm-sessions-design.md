@@ -679,15 +679,18 @@ release that forgot fails in the release PR rather than in a user's shell.
 
 ```json
 {"session":"prod","pid":8123,"version":"2.13.0","adapter":"duckdb",
- "connection":"/home/ted/warehouse.db","connection_options":{"read_only":false},
+ "connection":"/home/ted/warehouse.db","connection_options":{"read_only":true},
  "uptime_s":412,"requests":37,"state":"idle","queued":0,
- "transaction_mode":null,"ssh":null,"idle_timeout_s":1800,"expires_in_s":26988}
+ "transaction_mode":null,"ssh":null,"idle_timeout_s":null,"expires_in_s":null}
 ```
 
 `connection_options` is the rest of §4.4's identity — what a request's own
 connection options are compared against — masked by whatever each adapter declared
-`secret=`. `state` is `idle`, `busy`, or `unavailable` for a session whose connection
-a reset has to bring back.
+`secret=`. It holds what the session was *given*: an option it never named is one
+its adapter defaulted for itself, which core cannot enumerate, so `read_only` appears
+only for a session started with it. `state` is `idle`, `busy`, or `unavailable` for a
+session whose connection a reset has to bring back. `idle_timeout_s` and
+`expires_in_s` are null until PR 5 builds them.
 
 Answerable while a query is running (§4.5), which is what makes "is it hung or is it slow"
 a question with an answer. `transaction_mode` is on it because §5 says it has to be.

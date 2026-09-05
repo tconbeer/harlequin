@@ -1374,6 +1374,22 @@ def _reset_session(ctx: click.Context, served: "Served") -> ExitCode:
     return ExitCode.OK
 
 
+NOT_AN_ADAPTERS_OPTION = frozenset(
+    PER_REQUEST_OPTIONS
+    | SERVER_OPTIONS
+    | ROLE_OPTIONS
+    | CONFIG_OPTIONS
+    | set(TUI_ONLY_KEYS)
+)
+"""Every key that reaches a profile and is not an adapter's.
+
+`TUI_ONLY_KEYS` are here because one profile serves both commands: they are
+the IDE's, hsql drops them before it connects, and a session records none of
+them -- so reading one as a connection option would refuse a request over a
+`theme`.
+"""
+
+
 def _is_connection_option(name: str) -> bool:
     """Whether an option is answered when a connection is opened.
 
@@ -1381,9 +1397,7 @@ def _is_connection_option(name: str) -> bool:
     adapter's options itself, so one it does not know is an adapter's -- and
     an adapter's options are all connection-time.
     """
-    return name in CONNECTION_OPTIONS or name not in (
-        PER_REQUEST_OPTIONS | SERVER_OPTIONS | ROLE_OPTIONS | CONFIG_OPTIONS
-    )
+    return name in CONNECTION_OPTIONS or name not in NOT_AN_ADAPTERS_OPTION
 
 
 def _spelling(ctx: click.Context, name: str) -> str:
@@ -1434,7 +1448,7 @@ def _refuse_unservable_name(ctx: click.Context, name: str) -> None:
 
 
 def connection_options_in(values: Mapping[str, Any]) -> dict[str, Any]:
-    """The connection-time half of what an invocation asked for.
+    """The connection-time half of what an invocation asked for, normalized.
 
     A session records this when it connects and a served request builds the
     same thing from its own values, so the two can be compared key by key.
@@ -1444,16 +1458,24 @@ def connection_options_in(values: Mapping[str, Any]) -> dict[str, Any]:
     from one snapshot on both sides, because every key hsql owns comes off
     that dict as the run goes on.
     """
-    return {key: value for key, value in values.items() if _is_connection_option(key)}
+    return {
+        key: _comparable(key, value)
+        for key, value in values.items()
+        if _is_connection_option(key)
+    }
 
 
-def _comparable(value: Any) -> Any:
+def _comparable(key: str, value: Any) -> Any:
     """One connection option's value, in the shape both sides spell it.
 
-    A profile writes `conn_str = ["f1.db"]` and a command line produces a
-    tuple; nothing else about a connection option's value differs by where it
-    came from, since both sides parsed it with the same adapter's options.
+    A profile may write `conn_str` as a string or a list where a command line
+    produces a tuple, and the callback folds all three to a tuple before it
+    connects; a repeatable adapter option is a list from one and a tuple from
+    the other. Everything else was parsed by the same adapter's options
+    whichever side read it.
     """
+    if key == "conn_str":
+        return tuple(value) if isinstance(value, (list, tuple)) else (value,)
     return tuple(value) if isinstance(value, list) else value
 
 
@@ -1471,53 +1493,69 @@ def _refuse_the_sessions_options(
     """Exit with an error if a served request asked for what the session owns.
 
     A server-lifetime option describes a server that is up, and is refused
-    outright. A connection option is *compared*: the name is the caller's and
-    the identity is the server's, so a request that asserts what the session
-    already connected with is served, and one that asserts anything else is
-    told what it would have changed. Not a reconnect -- that is a different
-    session -- and not silence, which lies to a caller who typed `-a postgres`
-    and got DuckDB.
+    outright. A connection option is *compared*: a request that asserts what
+    the session already connected with is served, and one that asserts
+    anything else is told what it would have changed.
 
     A typed `-P` is judged by the keys its profile holds rather than by being
-    one: a profile of per-request keys applies, and one that names a database
-    is compared under the key that names it. Only a *typed* profile, because
-    that is the caller asserting this profile for this invocation -- the rule
-    `merge_profile_with_cli()` reads a command line by. One discovered in the
-    caller's directory says nothing about the session, so its connection-time
-    keys are moot rather than wrong.
+    one, on both halves of that: a profile of per-request keys applies, and
+    one that names a database is compared under the key that names it. Only a
+    *typed* profile, because that is the caller asserting this profile for
+    this invocation -- the rule `merge_profile_with_cli()` reads a command
+    line by. One discovered in the caller's directory says nothing about the
+    session, so its connection-time keys are moot rather than wrong.
     """
-    for key in sorted(typed):
-        if key in SERVER_OPTIONS:
-            diagnostics.error(
-                f"{_spelling(ctx, key)} is a --serve option, and the session "
-                f"named {served.name!r} already has one."
-            )
-            ctx.exit(ExitCode.USAGE)
+    from_profile = (
+        set(profile_config) if profile is not None and "profile" in typed else set()
+    )
+    for key in sorted(typed & SERVER_OPTIONS):
+        diagnostics.error(
+            f"{_spelling(ctx, key)} is a --serve option, and the session named "
+            f"{served.name!r} already has one."
+        )
+        ctx.exit(ExitCode.USAGE)
+    for key in sorted(from_profile & SERVER_OPTIONS):
+        diagnostics.error(
+            f"the profile {profile!r} sets {key}, which is a --serve option, and "
+            f"the session named {served.name!r} already has one. Use a profile of "
+            f"per-request options here, or start a session with this one: "
+            f"'{PROGRAM} --serve NAME -P {profile}'."
+        )
+        ctx.exit(ExitCode.USAGE)
     if not connects:
         # a mode that reads no database is not the session's business: it runs
         # where the caller is, with the options the caller typed
         return
+    # normalized the same way on both sides, so the values the message prints
+    # cannot disagree with the comparison that produced it
+    asked = connection_options_in(values)
     typed_keys = {key for key in typed if _is_connection_option(key)}
-    profile_keys: set[str] = set()
-    if profile is not None and "profile" in typed:
-        profile_keys = {
-            key for key in profile_config if _is_connection_option(key)
-        } - typed_keys
+    profile_keys = {
+        key for key in from_profile if _is_connection_option(key)
+    } - typed_keys
     identity = served.identity
     for key in sorted(typed_keys | profile_keys):
-        asked = _comparable(values.get(key))
-        if key in identity and asked == _comparable(identity[key]):
+        if key in identity and asked.get(key) == identity[key]:
             continue
         _refuse_a_differing_option(
             ctx,
             served,
             key=key,
-            asked=values.get(key),
+            asked=asked.get(key),
             has=identity.get(key),
             known=key in identity,
             profile=None if key in typed_keys else profile,
             options=options,
         )
+
+
+def _shown(value: Any) -> Any:
+    """One value as a message prints it, rather than as Python repr()s it.
+
+    A `PathOption` resolves to a `Path` against the directory the invocation
+    ran in, and `PosixPath('/p/boot.sql')` is not how a caller spelled it.
+    """
+    return str(value) if isinstance(value, Path) else value
 
 
 def _refuse_a_differing_option(
@@ -1539,9 +1577,8 @@ def _refuse_a_differing_option(
     """
     spelling = _spelling(ctx, key)
     if not known:
-        # the session never named this one, so it connected with whatever its
-        # adapter defaults to -- which core cannot enumerate, and so cannot
-        # tell apart from what this request asks for
+        # the session named this one nowhere, so it connected with whatever its
+        # adapter defaults to, which core cannot enumerate
         if profile is None:
             diagnostics.error(
                 f"{spelling} is a connection option the session named "
@@ -1557,8 +1594,8 @@ def _refuse_a_differing_option(
                 f"one: '{PROGRAM} --serve NAME -P {profile}'."
             )
         ctx.exit(ExitCode.USAGE)
-    mine = redact_profile({key: asked}, options)[key]
-    theirs = redact_profile({key: has}, options)[key]
+    mine = _shown(redact_profile({key: asked}, options)[key])
+    theirs = _shown(redact_profile({key: has}, options)[key])
     if profile is None:
         diagnostics.error(
             f"{spelling} says {mine!r}, and the session named {served.name!r} "

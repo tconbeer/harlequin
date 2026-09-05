@@ -8,11 +8,10 @@ the win before it made the call.
 
 So this module parses nothing. It scans argv for the three things it cannot
 avoid knowing about -- its own `--session`, a `-f -` whose bytes only it can
-read, and a `--session-status`, which asks the session rather than asking it to
-run something -- and forwards the rest opaquely, to be parsed by the same
-command the cold path builds. `hsql --session prod --badflag` gets the same
-message and the same exit code as `hsql --badflag`, because it is the same
-code.
+read, and a `--session-status`, which the session answers rather than the
+command -- and forwards the rest opaquely, to be parsed by the same command
+the cold path builds. `hsql --session prod --badflag` gets the same message
+and the same exit code as `hsql --badflag`, because it is the same code.
 
 Diagnostics go straight to stderr rather than through
 `harlequin.hsql.diagnostics`, which costs more to import than the round trip it
@@ -210,9 +209,7 @@ def _exchange(
         return USAGE
 
     if asks_for_status(argv):
-        # not a request, so it takes no turn at the session's connection: the
-        # answer has to arrive while a query is running, which is the whole of
-        # what it is for
+        # not a request, so it takes no turn at the session's connection
         protocol.send_frame(
             connection,
             protocol.STATUS,
