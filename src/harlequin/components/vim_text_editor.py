@@ -19,7 +19,6 @@ from textual.widgets import Label
 from textual_textarea import TextEditor
 from textual_textarea.autocomplete import CompletionList
 from textual_textarea.containers import FooterContainer, TextContainer
-
 from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 
 

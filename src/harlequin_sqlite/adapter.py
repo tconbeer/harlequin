@@ -4,14 +4,17 @@ import sqlite3
 from contextlib import suppress
 from itertools import cycle, zip_longest
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 from urllib.parse import unquote, urlparse
-
-from textual_fastdatatable.backend import AutoBackendType
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog, CatalogItem
+from harlequin.catalog import (
+    Catalog,
+    CatalogItem,
+    CatalogSearchKind,
+    CatalogSearchResult,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinConnectionError,
@@ -19,11 +22,91 @@ from harlequin.exception import (
 )
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
-from harlequin_sqlite.catalog import DatabaseCatalogItem
+from harlequin_sqlite.catalog import (
+    ColumnCatalogItem,
+    DatabaseCatalogItem,
+    RelationCatalogItem,
+    TableCatalogItem,
+    ViewCatalogItem,
+)
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
 
+if TYPE_CHECKING:
+    from textual_fastdatatable.backend import AutoBackendType
+
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_LIKE_ESCAPE = "\\"
+"""What escapes a LIKE metacharacter in a term the caller typed."""
+
+_SEARCH_DATABASES = """
+select name from pragma_database_list where name like ? escape '\\'
+"""
+"""The attached databases whose name matches, which is SQLite's top level.
+
+Its own query rather than a branch of the one below: the others are per
+database, and this one asks about all of them at once.
+"""
+
+_SEARCH_RELATIONS = """
+select m.name, m.type, null, null
+from {db}.sqlite_schema m
+where m.type in ('table', 'view') and m.name like ? escape '\\'
+"""
+
+_SEARCH_COLUMNS = """
+select m.name, m.type, p.name, p.type
+from {db}.sqlite_schema m
+join pragma_table_info(m.name, ?) p
+where m.type in ('table', 'view') and p.name like ? escape '\\'
+"""
+
+_SEARCH_BRANCHES = {
+    "relations": (_SEARCH_RELATIONS,),
+    "columns": (_SEARCH_COLUMNS,),
+    "all": (_SEARCH_RELATIONS, _SEARCH_COLUMNS),
+}
+"""Which levels each kind unions, both branches in the same four columns.
+
+The database level is not here: it is one query for all of them rather than
+one per database, so `_matched_databases()` asks it separately.
+`_search_parameters()` binds in this order.
+"""
+
+_SEARCH_SQL = {
+    # `nulls first` explicitly rather than on SQLite's default, so that both
+    # bundled adapters promise the same thing about their order.
+    kind: " union all ".join(branches) + " order by 1, 3 nulls first"
+    for kind, branches in _SEARCH_BRANCHES.items()
+}
+"""One query per kind, per attached database, which is what SQLite has.
+
+`pragma_table_info` is the table-valued form of the pragma, so every relation's
+columns come back in one query rather than one per relation. Ordered so that a
+relation arrives before its own columns.
+"""
+
+
+def _search_parameters(kind: CatalogSearchKind, db_name: str, term: str) -> list[str]:
+    """What `_SEARCH_SQL[kind]` binds, in the order it binds them."""
+    pattern = _contains_pattern(term)
+    relation_parameters = [pattern]
+    # the pragma's schema argument sits ahead of the pattern in the query text
+    column_parameters = [db_name, pattern]
+    if kind == "relations":
+        return relation_parameters
+    if kind == "columns":
+        return column_parameters
+    return [*relation_parameters, *column_parameters]
+
+
+def _contains_pattern(term: str) -> str:
+    """A term as the LIKE pattern that matches any label containing it."""
+    escaped = term
+    for character in (_LIKE_ESCAPE, "%", "_"):
+        escaped = escaped.replace(character, f"{_LIKE_ESCAPE}{character}")
+    return f"%{escaped}%"
 
 
 class HarlequinSqliteCursor(HarlequinCursor):
@@ -53,25 +136,40 @@ class HarlequinSqliteCursor(HarlequinCursor):
         return self
 
     def fetchall(self) -> AutoBackendType | None:
-        if self.has_records:
-            try:
-                remaining_rows = (
-                    self.cur.fetchall()
-                    if self._limit is None
-                    else self.cur.fetchmany(self._limit - 1)
-                )
-            except sqlite3.OperationalError:  # maybe canceled here
-                return None
-            except sqlite3.Error as e:
-                raise HarlequinQueryError(
-                    msg=str(e),
-                    title=(
-                        "SQLite raised an error when fetching results for your query:"
-                    ),
-                ) from e
-            return [self._first_row, *remaining_rows]
-        else:
+        if not self.has_records or self._limit == 0:
+            # A result with no rows still has columns, and a caller handed None
+            # has no way to learn what they were -- so an export or a headless
+            # render would lose the header. An Arrow table carries the names,
+            # duplicates included, which a dict of columns would not.
+            #
+            # pyarrow is deferred: it is a guaranteed dependency, but importing
+            # it at module scope would put ~100ms on every `import
+            # harlequin_sqlite`, which the adapter API is careful not to cost.
+            import pyarrow as pa
+
+            names = [col[0] for col in self.cur.description]
+            return pa.Table.from_arrays(
+                [pa.array([], type=pa.string()) for _ in names], names=names
+            )
+
+        try:
+            if self._limit is None:
+                remaining_rows = self.cur.fetchall()
+            elif self._limit > 1:
+                # the first row is already in hand, so one fewer is wanted here
+                remaining_rows = self.cur.fetchmany(self._limit - 1)
+            else:
+                # `fetchmany(0)` reads as "all of them" in sqlite3, so a limit
+                # of one row is a call that must not be made at all.
+                remaining_rows = []
+        except sqlite3.OperationalError:  # maybe canceled here
             return None
+        except sqlite3.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title=("SQLite raised an error when fetching results for your query:"),
+            ) from e
+        return [self._first_row, *remaining_rows]
 
     def fetchone(self) -> tuple | None:
         return self._first_row
@@ -138,6 +236,71 @@ class HarlequinSqliteConnection(HarlequinConnection):
             )
         return Catalog(items=catalog_items)
 
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        results: list[CatalogSearchResult] = []
+        matched_databases = self._matched_databases(term) if kind == "all" else set()
+        for db_name in self._get_databases():
+            database_item = DatabaseCatalogItem.from_label(
+                label=db_name, connection=self
+            )
+            if db_name in matched_databases:
+                results.append(CatalogSearchResult(item=database_item))
+            relations: dict[str, RelationCatalogItem] = {}
+            quoted_db = '"' + db_name.replace('"', '""') + '"'
+            try:
+                found = self.conn.execute(
+                    _SEARCH_SQL[kind].format(db=quoted_db),
+                    _search_parameters(kind, db_name, term),
+                ).fetchall()
+            except sqlite3.Error as e:
+                raise HarlequinQueryError(
+                    msg=str(e),
+                    title="SQLite raised an error searching the catalog:",
+                ) from e
+            for relation, relation_type, column, column_type in found:
+                relation_item = relations.setdefault(
+                    relation,
+                    self._relation_item(database_item, relation, relation_type),
+                )
+                if column is None:
+                    results.append(
+                        CatalogSearchResult(item=relation_item, parents=(db_name,))
+                    )
+                else:
+                    results.append(
+                        CatalogSearchResult(
+                            item=ColumnCatalogItem.from_parent(
+                                parent=relation_item,
+                                label=column,
+                                type_label=self._short_column_type(column_type),
+                                # a column can be declared without a type, and
+                                # an empty string is not one
+                                type_name=column_type or None,
+                            ),
+                            parents=(db_name, relation),
+                        )
+                    )
+        return results
+
+    def _matched_databases(self, term: str) -> set[str]:
+        """The attached databases whose name contains term.
+
+        Asked in SQL rather than compared here, so that the top level matches a
+        term the same way every level below it does.
+        """
+        try:
+            found = self.conn.execute(
+                _SEARCH_DATABASES, [_contains_pattern(term)]
+            ).fetchall()
+        except sqlite3.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title="SQLite raised an error searching the catalog:",
+            ) from e
+        return {name for (name,) in found}
+
     def get_completions(self) -> list[HarlequinCompletion]:
         return get_completion_data(self.conn)
 
@@ -183,6 +346,16 @@ class HarlequinSqliteConnection(HarlequinConnection):
         return self.conn.execute(
             f"pragma {db_name}.table_info('{rel_name}')"
         ).fetchall()
+
+    @staticmethod
+    def _relation_item(
+        parent: DatabaseCatalogItem, label: str, relation_type: str
+    ) -> RelationCatalogItem:
+        """A relation of the class `fetch_children()` would have built for it."""
+        item_class = ViewCatalogItem if relation_type == "view" else TableCatalogItem
+        return item_class.from_parent(
+            parent=parent, label=label, type_name=relation_type
+        )
 
     @staticmethod
     def _short_column_type(raw_type: str) -> str:
@@ -242,6 +415,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS: list[HarlequinAdapterOption] | None = SQLITE_OPTIONS
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     IMPLEMENTS_CANCEL = True
+    IMPLEMENTS_CATALOG_SEARCH = True
+    IMPLEMENTS_READ_ONLY = True
     ADAPTER_DETAILS = "This is an SQLite adapter part of Harlequin core."
 
     def __init__(
@@ -250,8 +425,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         init_path: Path | str | None = None,
         no_init: bool | str = False,
         read_only: bool = False,
-        connection_mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
-        timeout: str | float = 5.0,
+        mode: Literal["ro", "rw", "rwc", "memory"] | None = None,
+        lock_timeout: str | float = 5.0,
         detect_types: str | int = 0,
         isolation_level: Literal["DEFERRED", "EXCLUSIVE", "IMMEDIATE"] = "DEFERRED",
         cached_statements: str | int = 128,
@@ -261,7 +436,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         try:
             self.conn_str = (
                 conn_str
-                if conn_str and conn_str != ("",) and connection_mode != "memory"
+                if conn_str and conn_str != ("",) and mode != "memory"
                 else IN_MEMORY_CONN_STR
             )
             self.init_path = (
@@ -271,8 +446,8 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
             )
             self.no_init = bool(no_init)
             self.read_only = bool(read_only)
-            self.connection_mode = connection_mode
-            self.timeout = float(timeout)
+            self.mode = mode
+            self.lock_timeout = float(lock_timeout)
             self.detect_types = int(detect_types)
             self.isolation_level = isolation_level
             self.cached_statements = int(cached_statements)
@@ -305,18 +480,14 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         )
 
     def connect(self) -> HarlequinSqliteConnection:
-        if (
-            self.read_only
-            and self.connection_mode is not None
-            and self.connection_mode != "ro"
-        ):
+        if self.read_only and self.mode is not None and self.mode != "ro":
             raise HarlequinConnectionError(
                 "Cannot specify readonly flag and a connection mode."
             )
         elif self.read_only:
             mode_str = "?mode=ro"
-        elif self.connection_mode is not None:
-            mode_str = f"?mode={self.connection_mode}"
+        elif self.mode is not None:
+            mode_str = f"?mode={self.mode}"
         else:
             mode_str = ""
 
@@ -345,7 +516,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
         try:
             conn = sqlite3.connect(
                 database=primary_db,
-                timeout=self.timeout,
+                timeout=self.lock_timeout,
                 detect_types=self.detect_types,
                 isolation_level=self.isolation_level,
                 cached_statements=self.cached_statements,

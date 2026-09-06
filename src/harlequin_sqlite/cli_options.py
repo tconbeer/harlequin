@@ -11,11 +11,6 @@ from harlequin.options import (
     TextOption,
 )
 
-read_only = FlagOption(
-    name="read-only",
-    short_decls=["-readonly", "-r"],
-    description="Open the database file in read-only mode.",
-)
 connection_mode = SelectOption(
     name="mode",
     short_decls=["-mode", "-m"],
@@ -46,8 +41,8 @@ def _float_validator(s: str | None) -> tuple[bool, str]:
         return True, ""
 
 
-timeout = TextOption(
-    name="timeout",
+lock_timeout = TextOption(
+    name="lock-timeout",
     description=(
         "How many seconds the connection should wait before raising an "
         "OperationalError when a table is locked. If another connection opens a "
@@ -137,9 +132,8 @@ extensions = ListOption(
 SQLITE_OPTIONS = [
     init,
     no_init,
-    read_only,
     connection_mode,
-    timeout,
+    lock_timeout,
     detect_types,
     cached_statements,
 ]

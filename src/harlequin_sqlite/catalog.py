@@ -27,6 +27,7 @@ class ColumnCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
         parent: "RelationCatalogItem",
         label: str,
         type_label: str,
+        type_name: str | None,
     ) -> "ColumnCatalogItem":
         column_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
         column_query_name = f'"{label}"'
@@ -35,6 +36,7 @@ class ColumnCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
             query_name=column_query_name,
             label=label,
             type_label=type_label,
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
             loaded=True,
@@ -60,6 +62,9 @@ class RelationCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
                 parent=self,
                 label=column_name,
                 type_label=self.connection._short_column_type(column_type),
+                # a column can be declared without a type, and an empty string
+                # is not one
+                type_name=column_type or None,
             )
             for _, column_name, column_type, *_ in result
         ]
@@ -75,6 +80,7 @@ class ViewCatalogItem(RelationCatalogItem):
         cls,
         parent: "DatabaseCatalogItem",
         label: str,
+        type_name: str,
     ) -> "ViewCatalogItem":
         relation_query_name = f'"{parent.label}"."{label}"'
         relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
@@ -83,6 +89,7 @@ class ViewCatalogItem(RelationCatalogItem):
             query_name=relation_query_name,
             label=label,
             type_label="v",
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
         )
@@ -98,6 +105,7 @@ class TableCatalogItem(RelationCatalogItem):
         cls,
         parent: "DatabaseCatalogItem",
         label: str,
+        type_name: str,
     ) -> "TableCatalogItem":
         relation_query_name = f'"{parent.label}"."{label}"'
         relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
@@ -106,6 +114,7 @@ class TableCatalogItem(RelationCatalogItem):
             query_name=relation_query_name,
             label=label,
             type_label="t",
+            type_name=type_name,
             connection=parent.connection,
             parent=parent,
         )
@@ -124,6 +133,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
             query_name=database_identifier,
             label=label,
             type_label="db",
+            type_name="database",
             connection=connection,
         )
 
@@ -138,6 +148,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
                     ViewCatalogItem.from_parent(
                         parent=self,
                         label=table_label,
+                        type_name=table_type,
                     )
                 )
             else:
@@ -145,6 +156,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
                     TableCatalogItem.from_parent(
                         parent=self,
                         label=table_label,
+                        type_name=table_type,
                     )
                 )
 

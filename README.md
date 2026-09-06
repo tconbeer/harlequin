@@ -99,8 +99,6 @@ To open one or more DuckDB database files, pass in relative or absolute paths as
 harlequin "path/to/duck.db" "another_duck.db"
 ```
 
-If you want to control the version of DuckDB that Harlequin uses, see the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/duckdb-version-mismatch) page.
-
 ## Using Harlequin with SQLite and Other Adapters
 
 Harlequin also ships with a SQLite3 adapter. To use that adapter, you specify the `--adapter sqlite` option. Like DuckDB, you can open an in-memory SQLite database by omitting the connection string:
@@ -120,6 +118,27 @@ Other adapters can be installed as plug-ins; for more information, see the [inst
 ## Configuring Harlequin
 
 Harlequin contains a large number of options that allow you to [set the theme](https://harlequin.sh/docs/themes), [customize key bindings](https://harlequin.sh/docs/keymaps/index), [show remote and local files](https://harlequin.sh/docs/files/index), set the locale for number formatting, and much more. These can always be entered at the command line, but it can be convenient to define a configuration as a profile instead. For more information on configuring Harlequin, see [Using Config Files](https://harlequin.sh/docs/config-file/index).
+
+A profile's string values can name environment variables — `password = "${MYPASSWORD}"`, or `${MYHOST:-localhost}` to supply a default — so a config file your team shares holds no credentials, and values an adapter declares as secrets are masked wherever Harlequin prints them. hsql, Harlequin's companion CLI (below), reads the same files and can report on them, with `hsql --config show`, `--config validate` and `--config schema`.
+
+## Using Harlequin with Agents or in Scripts
+
+Harlequin has a companion CLI, hsql, that uses the same adapters and config files, but is optimized for headless use by agents and in automations. hsql is packaged with Harlequin (no additional installation required):
+
+```bash
+$ hsql -P dev -c "select * from users"
+ id | name
+----+---------
+ 1  | Ted
+ 2  | Patrick
+(2 rows)
+```
+
+hsql can also explore the catalog without writing SQL: `hsql --catalog --path mydb.analytics` lists a schema's relations (and `--path mydb.analytics.orders` lists that table's columns), while `hsql --catalog-search customer_id` searches every level at once.
+
+To bound what an agent can do, `--read-only` connects in a mode the database refuses writes in, and `hsql --timeout 30` cancels a run that takes longer than that. Both are also profile keys, and both refuse to start if the adapter cannot enforce them. Harlequin takes `--read-only` too.
+
+For more information on hsql, see the [getting started docs](https://harlequin.sh/docs/getting-started/hsql).
 
 ## Using Harlequin with Django
 
@@ -141,7 +160,7 @@ To view all command-line options for Harlequin and all installed adapters, after
 harlequin --help
 ```
 
-To view a subset of these docs (and a link back here) from within the app, press <Key>F1</Key>.
+To view a subset of these docs (and a link back here) from within the app, press `F1`.
 
 See the [Troubleshooting](https://harlequin.sh/docs/troubleshooting/index) guide for help with key bindings, appearance issues, copy-paste, etc.
 

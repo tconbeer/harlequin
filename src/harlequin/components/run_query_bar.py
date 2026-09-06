@@ -9,6 +9,9 @@ from textual.validation import Integer
 from textual.widget import Widget
 from textual.widgets import Button, Checkbox, Input
 
+DEFAULT_LIMIT = 500
+"""What the limit input offers, unchecked, when nothing configured a limit."""
+
 
 class RunQueryBar(Horizontal):
     def __init__(
@@ -18,10 +21,15 @@ class RunQueryBar(Horizontal):
         id: Union[str, None] = None,  # noqa
         classes: Union[str, None] = None,
         disabled: bool = False,
-        max_results: int = 10_000,
+        query_limit: int | None = None,
         show_cancel_button: bool = False,
     ) -> None:
-        self.max_results = max_results
+        self.query_limit = query_limit
+        """The limit `--limit` configured, in force from the first query.
+
+        None leaves the box unchecked, which is a full fetch.
+        """
+
         self.show_cancel_button = show_cancel_button
         super().__init__(
             *children, name=name, id=id, classes=classes, disabled=disabled
@@ -38,16 +46,11 @@ class RunQueryBar(Horizontal):
         self.rollback_button.tooltip = "Roll back transaction"
         self.limit_checkbox = Checkbox("Limit ", id="limit_checkbox")
         self.limit_input = Input(
-            str(min(500, self.max_results)),
+            str(self.query_limit if self.query_limit is not None else DEFAULT_LIMIT),
             id="limit_input",
             validators=Integer(
                 minimum=0,
-                maximum=self.max_results if self.max_results > 0 else None,
-                failure_description=(
-                    f"Please enter a number between 0 and {self.max_results}."
-                    if self.max_results > 0
-                    else "Please enter a number greater than 0."
-                ),
+                failure_description="Please enter a whole number of rows.",
             ),
         )
         self.run_button = Button("Run Query", id="run_query")
@@ -66,6 +69,16 @@ class RunQueryBar(Horizontal):
     def on_mount(self) -> None:
         if self.app.is_headless:
             self.limit_input.cursor_blink = False
+
+    def apply_configured_limit(self) -> None:
+        """Put the box in the state `--limit` asked for.
+
+        Called by the app once the bar has mounted, and not from `on_mount`:
+        initializing the Input posts a `Changed` message, and the handler below
+        checks the box for any valid value in it -- including the number this
+        widget offers when nothing configured a limit at all.
+        """
+        self.limit_checkbox.value = self.query_limit is not None
 
     @on(Input.Changed, "#limit_input")
     def handle_new_limit_value(self, message: Input.Changed) -> None:

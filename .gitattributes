@@ -1,4 +1,11 @@
-*.svg filter=lfs diff=lfs merge=lfs -text
-*.mp4 filter=lfs diff=lfs merge=lfs -text
-*.gif filter=lfs diff=lfs merge=lfs -text
-harlequin.svg !filter !diff !merge text
+# Snapshots are compared byte for byte, so a CRLF checkout on Windows fails
+# every one of them. Newlines are part of what they assert.
+*.svg text eol=lf
+tests/**/__snapshots__/** text eol=lf
+
+# Generated artifacts, compared to what the generator writes on every platform.
+docs/generated/** text eol=lf
+
+# `hsql --skill` copies these out byte for byte, so a CRLF checkout would ship
+# a CRLF skill and make the same hsql print different bytes on Windows.
+src/harlequin/hsql/skill/** text eol=lf

@@ -1,0 +1,4 @@
+[
+	{"id":1,"label":"ünïcode, \"quoted\"","amount":12345.6789,"approx":1234567.89,"flag":true,"day":"2024-03-01","at":"2024-03-01 12:30:00.123456","at_tz":"2024-03-01 12:30:00+00","span":"1 day 02:00:00","payload":"\\x00\\x01\\xFF","items":[1,2,3],"record":{"a":1,"b":"two"},"lookup":{"1":"one","2":"two"}},
+	{"id":2,"label":"a value considerably wider than its column name","amount":null,"approx":null,"flag":false,"day":null,"at":null,"at_tz":null,"span":null,"payload":null,"items":null,"record":null,"lookup":null}
+]

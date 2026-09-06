@@ -4,6 +4,232 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- `hsql --serve NAME [CONN_STR]` holds a database connection open as a named session, and `hsql --session NAME -c ...` (or `HSQL_SESSION=NAME`) sends queries to it without paying start-up or connection cost again. Temp tables, settings and open transactions persist between invocations; `--session-reset` reconnects. POSIX only.
+- Press `alt+e` in the Query Editor to edit the current buffer in the editor named by `$VISUAL` or `$EDITOR`; quitting the editor with a non-zero status (like `:cq`) discards the changes ([#1102](https://github.com/tconbeer/harlequin/issues/1102)).
+- Harlequin now saves your open buffers every minute, and offers them back the next time you start if it exited without a clean quit ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+- When Harlequin hits a bug in itself, it now exits with a short message instead of a traceback, saves your buffers, and writes a crash report you can attach to an issue ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+- `hsql` now exits `70` and writes a crash report when it hits a bug in itself, instead of printing a traceback and exiting `1`, which is the code for SQL the database rejected ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+
+### Bug Fixes
+
+- `harlequin` now exits non-zero when it fails: 1 after a crash, and 2 for a config or connection error it used to report as success ([#687](https://github.com/tconbeer/harlequin/issues/687)).
+- Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
+
+## [2.13.0] - 2026-09-02
+
+### Features
+
+- Harlequin and hsql can now reach any database through an SSH tunnel: pass `--ssh-host` (and `--ssh-forward`, unless your ssh config already has a `LocalForward`), and configure the adapter's connection options for the local end of the forward. Add `--ssh-batch-mode` in scripts and CI so ssh fails instead of prompting ([#545](https://github.com/tconbeer/harlequin/issues/545)).
+- Data Catalog items that are too wide for the catalog now show their full name and type in a tooltip on hover ([#1104](https://github.com/tconbeer/harlequin/issues/1104)).
+- Harlequin's autocompletion now offers the members of the schemas and tables you type: naming an object in the Query Editor loads its children from the database, without having to first expand it in the Data Catalog ([#752](https://github.com/tconbeer/harlequin/issues/752)).
+
+### Bug Fixes
+
+- The config wizard no longer pre-fills the unset query limit with `-1` or unset adapter options with `None` (`****` for secrets) ([#1105](https://github.com/tconbeer/harlequin/issues/1105)).
+- Harlequin and hsql no longer crash when trying to open a file that isn't text ([#1108](https://github.com/tconbeer/harlequin/issues/1108)).
+- Background task failures can no longer disappear silently or crash Harlequin; they now show an error dialog or warning as appropriate ([#1117](https://github.com/tconbeer/harlequin/issues/1117)).
+
+## [2.12.2] - 2026-08-31
+
+### Bug Fixes
+
+- Harlequin no longer crashes when a query returns a UUID column (or another Arrow extension type), like a Postgres `uuid` ([tconbeer/textual-fastdatatable#176](https://github.com/tconbeer/textual-fastdatatable/issues/176)).
+
+## [2.12.1] - 2026-08-30
+
+### Bug Fixes
+
+- A semicolon inside a dollar-quoted function body (e.g. `create function f() as $$ select 1; $$`) is no longer treated as a statement separator, in the Query Editor or in scripts ([#1019](https://github.com/tconbeer/harlequin/issues/1019)).
+
+## [2.12.0] - 2026-08-29
+
+### Features
+
+- Adds `hsql --skill`, which writes the Agent Skill for driving hsql. `hsql --skill -o ~/.claude/skills/hsql/` installs it — the standing guidance plus four references, on running queries and reading the catalog, config files and profiles, hsql inside a shell script, and what to do about each exit code. It matches the version of hsql you have, and needs no network.
+- The same skill is now a Claude Code plugin: `/plugin marketplace add tconbeer/harlequin`, then `/plugin install hsql@harlequin`.
+
+### Bug Fixes
+
+- `hsql --spec` now reports `--timeout` as a `number` and `--config-path` as a `path`, instead of click's internal names for those types.
+
+## [2.11.0] - 2026-08-27
+
+### Breaking Changes
+
+- The DuckDB and SQLite adapters' single-dash `-readonly` CLI option has been removed. Use `-r` or `--read-only`.
+- The SQLite adapter's `--timeout` option is now called `--lock-timeout`, since `--timeout` is now an hsql option.
+
+### Features
+
+- Adds `hsql --catalog`, which lists the catalog one level below `--path`: `--path mydb.analytics` lists that schema's relations and `--path mydb.analytics.orders` lists that table's columns (a trailing `*`, like `--path mydb.analytics.ord*`, filters). Each row carries the path that lists its own children, the correctly-quoted name to paste into a query, and the database's own name for the object's type (`DECIMAL(18,2)`, `BASE TABLE`, `schema`), and it is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+- Adds `hsql --catalog-search TERM`, which searches every level of the catalog for objects whose name contains TERM instead of listing a level at a time: `hsql --catalog-search customer_id` says which tables have that column, and `--path` narrows the search. It works with the DuckDB and SQLite adapters; `hsql --info` reports which of your adapters can search, and one that cannot says so instead of walking its catalog.
+- Harlequin now accepts an `-o/--output` option to set the default directory or file path for the Data Exporter ([#926](https://github.com/tconbeer/harlequin/issues/926)).
+- `hsql -o` now also accepts a directory, and can write multiple result files in a single invocation.
+- Adds `--read-only` (also `-r`) to both `harlequin` and `hsql`, which connects read-only. If set, Harlequin and hsql will refuse to connect to an adapter that cannot enforce a read-only mode.
+- Adds `hsql --timeout SECONDS`, which cancels the run when it has taken that long and exits `4`. hsql refuses to start if the adapter cannot cancel a query.
+- `hsql --vertical` can now be spelled `-x`, as in psql.
+- Autocompletion now knows about the names in your query: CTEs, aliases, and columns of tables that do not exist yet are offered alongside the catalog, and anything your query already mentions is ranked above everything it does not ([#872](https://github.com/tconbeer/harlequin/issues/872)).
+
+### Bug Fixes
+
+- The SQLite adapter's `--mode` (`-m`) option now has an effect: previously it was silently ignored.
+- The autocomplete menu no longer opens for tokens that start with a number. Fuzzy matching is also improved: it is faster and now more likely to produce useful matches ([#803](https://github.com/tconbeer/harlequin/issues/803)).
+
+### Adapter API Changes
+
+- Adds an optional `HarlequinConnection.search_catalog()`, which returns every catalog item whose label contains a term. Adapters that implement it should set `IMPLEMENTS_CATALOG_SEARCH = True`.
+- `HarlequinAdapter.__init__` now takes a `read_only` argument, which both commands pass to every adapter. Adapters that can enforce read-only should set `IMPLEMENTS_READ_ONLY = True`; adapters no longer need to declare a read-only option of their own, and the DuckDB and SQLite adapters have dropped theirs.
+- Adds `IMPLEMENTS_READ_ONLY` and `IMPLEMENTS_VALIDATE_SQL` to `HarlequinAdapter`, both defaulting to `False`.
+- Adds `CatalogItem.type_name`, the database's own name for an object's type, like `DECIMAL(18,2)`, used by `hsql --catalog`.
+
+## [2.10.0] - 2026-08-25
+
+### Breaking Changes
+
+- Config files now merge profile by profile; higher-priority files that define profiles no longer clobber profiles with different names defined in lower-priority files ([#1040](https://github.com/tconbeer/harlequin/issues/1040)).
+- A profile's adapter options are now validated against what that adapter declares; incorrect configurations may raise errors instead of being silently ignored.
+
+### Features
+
+- Harlequin's Results Viewer can now show a cell's value in a scrollable modal (press `space`) ([#1011](https://github.com/tconbeer/harlequin/issues/1011)).
+- Formatting a query now shows a notification, so it is clear the formatter ran even when it changed little or nothing ([#874](https://github.com/tconbeer/harlequin/issues/874)).
+- Adds `hsql --config MODE`, which provides tools to manage Harlequin and hsql config files. 
+  - `list-profiles` lists every profile, its adapter, and which one is the default. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `show` prints the merged config with the file each value came from. Use `--json` to output JSON instead of TOML.
+  - `validate` reports every problem in every discovered config file. It exits `2` on any validation errors. It is rows, so `--csv`, `-o` and `-t`/`-A` apply.
+  - `schema` writes a JSON Schema for a Harlequin config file, including options for every installed adapter. Point your editor at it for completion and validation as you type in your `harlequin.toml`.
+  - `init` creates a profile from the passed CLI options: `hsql --config init -P prod -a sqlite ./my.db --read-only` writes `[profiles.prod]` with the options you passed.
+- Adds `hsql --spec`, a machine-readable `--help`: hsql's options and every installed adapter's connection options, as JSON. `-a NAME` narrows it to one adapter. 
+- Adds `hsql --info`, a JSON report on your installation: versions, platform, discovered config files, installed adapters, etc. `-a NAME` narrows it to one adapter. 
+- Harlequin and `hsql` now redact secrets instead of showing them in output ([#667](https://github.com/tconbeer/harlequin/issues/667)
+- A profile can now interpolate environment variables: write `password = "${MYPASSWORD}"`, or `host = "${MYHOST:-localhost}"` (to set a default) ([#898](https://github.com/tconbeer/harlequin/issues/898)). Use `$${` for a literal `${`.
+- Errors in Config files now reference the files and keys they originate from.
+- Harlequin now reopens the buffer you were last using, instead of always starting on the first one.
+
+### Bug Fixes
+
+- When Harlequin is invoked with `-P NAME`, it now ignores an invalid `default_profile` configuration.
+- `hsql --format markdown` no longer breaks the table when `--null-string` contains a `|` or a newline.
+- `harlequin --config` and `harlequin --keys` no longer strip the comments you wrote inside a profile or keymap table; a value they did not change now keeps the comments and formatting you gave it ([#1033](https://github.com/tconbeer/harlequin/issues/1033)).
+- `harlequin --config` now removes `default_profile` from your config file when you choose `[No default]`, instead of leaving the old default in place.
+- `harlequin` prints an error naming the missing adapter, and the adapters you do have installed, when a profile's `adapter` names a plug-in that is not installed. It used to fail with a `KeyError` traceback.
+- Multi-line values in Harlequin's Results Viewer are now end in a truncation marker (a dim `…⏎`); the full value is visible in a tooltip (on hover) or by pressing `space` to view in the new cell view modal ([#635](https://github.com/tconbeer/harlequin/issues/635)).
+- Hovering over a cell in Harlequin with content that overflows the screen no longer causes a crash ([#894](https://github.com/tconbeer/harlequin/issues/894)).
+
+### Adapter API Changes
+
+- Adds `AbstractOption.to_dict()` to the adapter API, which serializes an option as plain data.
+- Adds `AbstractOption.secret`, which allows adapter maintainers to flag option values as secrets by setting `secret=True`.
+
+### Performance
+
+- `hsql` and `harlequin` read config files in priority order and stop at the file that defines the requested profile. `hsql -P None` now reads none at all.
+- `harlequin` now imports only the adapter it is about to connect with, instead of every adapter you have installed ([#1047](https://github.com/tconbeer/harlequin/issues/1047)).
+- Harlequin now shares one Query Editor across all buffers, so start-up no longer slows down as you keep more buffers open ([#636](https://github.com/tconbeer/harlequin/issues/636)).
+
+### Dependencies
+
+- Adds `msgspec`.
+- Drops `pandas`. It was declared on Python 3.14 only, but is no longer required, since the DataTable component dropped it.
+
+## [2.9.0] - 2026-08-15
+
+### Breaking Changes
+
+- Harlequin's Results Viewer's row cap is now its own option, `viewer_max_rows` (`harlequin --viewer-max-rows`); the existing `limit` option is now a hard database fetch limit ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+- `-l` is no longer shorthand for `--limit` ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+
+### Features
+
+- **Adds `hsql`, Harlequin's headless CLI**, as a second console script ([#524](https://github.com/tconbeer/harlequin/issues/524)). `hsql -P prod -c "select count(*) from orders"` runs SQL and exits, against any installed adapter, with the same config files, profiles and precedence the IDE uses.
+  - SQL comes from `-c/--command`, `-f/--file`, or `-f -` for stdin. Both are repeatable and run in the order given.
+  - Formats are `table` (the default), `markdown`/`md` and `vertical` for text, `csv`, `tsv`, `json`, `jsonl`/`ndjson`, `parquet`, `orc` and `arrow` for files, and `none`, and can be modified by flags, including `-t` and `-A`, which are the same as psql.
+  - stdout is data; stderr is narration. Truncation notices, errors and `--stats` go to stderr, so `hsql -c ... --csv > out.csv` produces a clean file.
+  - Exit codes are an API: 0 success, 1 query error, 2 usage or config error, 3 is a retryable connection error, 130 interrupted.
+  - `--limit` defaults to 500 and truncation is never silent. It is a _hard_ limit, so fewer rows leave the database. `--display-rows` caps what the text layouts print, but does not limit the data fetched. `--limit -1` fetches all records.
+  - `--result all|last|N` picks which result set a multi-statement script emits, and `--on-error stop|continue` decides whether one failure ends the script.
+  - For more information, see `hsql --help` and `hsql -a my_adapter --help`.
+
+### Bug Fixes
+
+- The Results Viewer no longer reports a truncated fetch as an exact total ([#1026](https://github.com/tconbeer/harlequin/issues/1026)).
+- The SQLite adapter now honors a limit of `1` or `0`.
+- A config file that sets `default_profile` and defines no profiles at all is now reported as a `HarlequinConfigError`, instead of crashing ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
+
+### Dependencies
+
+- Adds `tomli` on Python 3.10 only ([#1032](https://github.com/tconbeer/harlequin/pull/1032)).
+
+## [2.8.1] - 2026-08-09
+
+### Refactoring
+
+- Writing a result set to a file no longer requires a Textual widget ([#524](https://github.com/tconbeer/harlequin/issues/524)).
+
+### Performance
+
+- Importing Harlequin's adapter API no longer imports the TUI ([#524](https://github.com/tconbeer/harlequin/issues/524)). `import harlequin_duckdb` drops from ~770ms to ~120ms, and `import harlequin_sqlite` from ~700ms to ~65ms.
+
+### Bug Fixes
+
+- Exporting a query that returned no rows now writes a file with a header and no rows, instead of refusing with "Cannot export empty table."
+- Exporting a query with duplicate column names now suffixes the repeats the same way the Results Viewer does, so `select 1 as a, 2 as a` writes `a,a0` rather than `a,a_0`.
+- A SQLite query that returns no rows now reports the columns it selected, so the Data Exporter writes their names into the file instead of an empty one.
+- The Timestamp Format option in the Data Exporter's JSON format now has an effect. It was read under the wrong key and silently ignored.
+- The Data Exporter no longer crashes when Arrow rejects an ORC or Feather option, such as a bloom filter column; it shows an error modal.
+- Running a selection no longer splits in the wrong place when a line has non-ASCII text before a semicolon ([#1015](https://github.com/tconbeer/harlequin/issues/1015)).
+- A plug-in that fails to import now reports it on `stderr` instead of `stdout`.
+- Warnings raised while setting the locale or installing the Windows timezone database now go to `stderr`, for the same reason.
+
+### Dependencies
+
+- `wcwidth`, `tree-sitter`, and `tree-sitter-sql` are now direct dependencies of Harlequin. Previously these packages were transitive dependencies.
+
+## [2.8.0] - 2026-08-06
+
+### Features
+
+- The Data Catalog no longer appears to hang while loading large databases ([#838](https://github.com/tconbeer/harlequin/issues/838)). It now builds tree nodes only for objects you can actually see, bounds its background loading to the visible part of the tree instead of eagerly walking every schema, and shows a `loading…` placeholder under a node while its children are fetched.
+
+### Bug Fixes
+
+- Running a buffer that contains several queries no longer merges, skips, or repeats queries, and runs them in the order they appear in the buffer ([#929](https://github.com/tconbeer/harlequin/issues/929)). Selecting queries backwards now runs the same queries as selecting them forwards, and placing the cursor immediately after a semicolon runs only the query it terminates.
+- Harlequin no longer crashes if an adapter raises an exception other than a `HarlequinQueryError` while executing a query, fetching results, canceling queries, or loading completions; it shows an error modal and keeps running ([#982](https://github.com/tconbeer/harlequin/issues/982)).
+- Fixes an intermittent crash (`ValueError: task_done() called too many times`) when the Data Catalog was refreshed — for example by the automatic refresh after running a query — while its background loader was still fetching a node ([#991](https://github.com/tconbeer/harlequin/issues/991)).
+- A Data Catalog node that turns out to have no children no longer keeps a phantom expand arrow.
+- Expanding a node that was already queued for background loading no longer loads it twice, which could collapse a subtree you had opened.
+
+## [2.7.0] - 2026-08-05
+
+### Dependencies
+
+- Upgrades `textual` to 8.2.8 (from 6.4.0).
+- Raises the minimum `duckdb` version to 1.1.1 (from 0.8.0) on Python &lt; 3.14.
+- Declares `pyperclip` as a direct dependency; it was previously installed only as a dependency of `textual-textarea`.
+
+### Bug Fixes
+
+- Copying the text of an error modal, a catalog label, or a data selection now works over ssh and in terminals where `pyperclip` has no backend, and reports a useful message when it fails ([#950](https://github.com/tconbeer/harlequin/issues/950)).
+- Fixes a crash when rendering tooltips for cells containing JSON or other markup-like values in the Results Viewer ([#933](https://github.com/tconbeer/harlequin/issues/933) - thank you [@crossi-dev](https://github.com/crossi-dev)!).
+- Fixes a crash when rendering `bytes` values in the Results Viewer ([#974](https://github.com/tconbeer/harlequin/issues/974) - thank you [@Pawansingh3889](https://github.com/Pawansingh3889)!).
+- Fixes a bug in the Query Editor where double-clicking a word shortly after double-clicking a different word would select the line or the entire query, instead of the second word ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+
+### Refactoring
+
+- The Data Catalog and Query Editor now use Textual's `Click.chain` to detect double-clicks, instead of tracking the previously-clicked line with a timer ([#708](https://github.com/tconbeer/harlequin/issues/708)).
+
+## [2.6.0] - 2026-08-03
+
+### Performance
+
+- Autocomplete no longer re-sorts the full completion list every time the Data Catalog lazy-loads a node's children; new completions are staged and merged at most once per second. This keeps the UI responsive while the catalog loads in the background, especially against high-latency (remote) databases.
+
+### Bug Fixes
+
+- Refreshes the file tree in the Data Catalog after Harlequin writes a file, either by saving from the editor or exporting data, so newly written files appear without a manual refresh ([#871](https://github.com/tconbeer/harlequin/issues/871)).
+
 ## [2.5.2] - 2026-03-25
 
 ### Bug Fixes
@@ -873,7 +1099,18 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.5.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.13.0...HEAD
+[2.13.0]: https://github.com/tconbeer/harlequin/compare/2.12.2...2.13.0
+[2.12.2]: https://github.com/tconbeer/harlequin/compare/2.12.1...2.12.2
+[2.12.1]: https://github.com/tconbeer/harlequin/compare/2.12.0...2.12.1
+[2.12.0]: https://github.com/tconbeer/harlequin/compare/2.11.0...2.12.0
+[2.11.0]: https://github.com/tconbeer/harlequin/compare/2.10.0...2.11.0
+[2.10.0]: https://github.com/tconbeer/harlequin/compare/2.9.0...2.10.0
+[2.9.0]: https://github.com/tconbeer/harlequin/compare/2.8.1...2.9.0
+[2.8.1]: https://github.com/tconbeer/harlequin/compare/2.8.0...2.8.1
+[2.8.0]: https://github.com/tconbeer/harlequin/compare/2.7.0...2.8.0
+[2.7.0]: https://github.com/tconbeer/harlequin/compare/2.6.0...2.7.0
+[2.6.0]: https://github.com/tconbeer/harlequin/compare/2.5.2...2.6.0
 [2.5.2]: https://github.com/tconbeer/harlequin/compare/2.5.1...2.5.2
 [2.5.1]: https://github.com/tconbeer/harlequin/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/tconbeer/harlequin/compare/2.4.1...2.5.0

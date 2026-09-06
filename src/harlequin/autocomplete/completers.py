@@ -3,14 +3,21 @@ from __future__ import annotations
 import itertools
 import re
 from collections.abc import Callable
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from harlequin.autocomplete.completion import HarlequinCompletion
 from harlequin.autocomplete.constants import get_functions, get_keywords
+from harlequin.autocomplete.symbols import NO_SYMBOLS, BufferSymbols
 from harlequin.catalog import Catalog, CatalogItem
 
 SEPARATOR_PROG = re.compile(r"\.|::?")
 ANY_QUOTE_PROG = re.compile(r"\"|'|`")
+LEADING_DIGIT_PROG = re.compile(r"^\d")
+FUZZY_MIN_LENGTH = 2
+"""The shortest prefix that is fuzzy-matched; anything shorter matches too much."""
+
+BUFFER_TYPE_LABEL = "buf"
+BUFFER_PRIORITY = 400
 
 
 class WordCompleter:
@@ -25,12 +32,12 @@ class WordCompleter:
         self._function_completions = function_completions
         self._catalog_completions = catalog_completions
         self._extra_completions = extra_completions or []
-        self.completions: list[HarlequinCompletion] = self._merge_completions(
-            self._keyword_completions,
-            self._function_completions,
-            self._catalog_completions,
-            self._extra_completions,
-        )
+        self._buffer_symbols = NO_SYMBOLS
+        self._buffer_symbol_values: frozenset[str] = frozenset()
+        self._buffer_completions: list[HarlequinCompletion] = []
+        self._known_keys: set[object] = set()
+        self.completions: list[HarlequinCompletion] = []
+        self.merge()
 
     def __call__(self, prefix: str) -> list[tuple[tuple[str, str], str]]:
         """
@@ -40,69 +47,180 @@ class WordCompleter:
         def _label(c: HarlequinCompletion) -> tuple[str, str]:
             return (c.label, c.type_label)
 
-        match_val = prefix.lower()
-        matches: list[tuple[tuple[str, str], str]] = []
+        # An unquoted SQL identifier can't start with a digit, so a token that
+        # does is a number being typed, not a name being completed.
+        if LEADING_DIGIT_PROG.match(prefix):
+            return []
 
-        # Add exact matches
-        matches.extend(
-            (_label(c), c.value) for c in self.completions if c.match_val == match_val
-        )
-        # Add prefix matches
-        matches.extend(
-            (_label(c), c.value)
-            for c in self.completions
-            if c.match_val.startswith(match_val)
-        )
+        match_val = prefix.casefold()
+
+        exact = [c for c in self._candidates(match_val) if c.match_val == match_val]
+        prefixed = [
+            c for c in self._candidates(match_val) if c.match_val.startswith(match_val)
+        ]
         # Only add fuzzy matches if there are not enough exact matches
-        if len(matches) < 20:
-            matches.extend(
-                (_label(c), c.value)
-                for c in self._fuzzy_match(match_val, self.completions)
-            )
+        fuzzy = (
+            self._fuzzy_match(match_val, self._candidates(match_val))
+            if len(exact) + len(prefixed) < 20
+            else []
+        )
+
+        matches = [
+            (_label(c), c.value)
+            for group in (exact, prefixed, fuzzy)
+            for c in self._rank(group)
+        ]
 
         return self._dedupe_labels(matches)
 
     def update_catalog(self, catalog: Catalog) -> None:
         self._catalog_completions = build_catalog_completions(catalog=catalog)
-        self.completions = self._merge_completions(
-            self._keyword_completions,
-            self._function_completions,
-            self._catalog_completions,
-            self._extra_completions,
-        )
+        self.merge()
 
-    def extend_catalog(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
+    def extend_catalog(
+        self,
+        parent: CatalogItem,
+        items: list[CatalogItem],
+        defer_merge: bool = False,
+    ) -> None:
         # TODO: dedupe/merge on the parent's unique key, so we can load items from
         # a cache and update them later when they are lazy-loaded.
         new_completions = _build_children_completions(items=items, context=parent.label)
         self._catalog_completions.extend(new_completions)
+        if not defer_merge:
+            self.merge()
+
+    def update_buffer_symbols(self, symbols: BufferSymbols) -> None:
+        """
+        Replace the buffer state -- the symbols, the values matches are ranked
+        against, and the completions built from the symbols nothing else offers.
+
+        The Query Editor calls this on every edit, so it is O(n) in the number of
+        symbols rather than the number of completions: the index it deduplicates
+        against is the one merge() built.
+        """
+        self._buffer_symbols = symbols
+        self._buffer_symbol_values = frozenset(
+            name.casefold() for name in symbols.names
+        )
+        self._buffer_completions = self._build_buffer_completions(symbols)
+
+    def merge(self) -> None:
+        """
+        Rebuild the merged, sorted completions list. This is O(n log n) in the
+        total number of completions, so callers that extend the catalog many
+        times in quick succession (e.g., the Data Catalog's lazy loader) should
+        pass defer_merge=True to extend_catalog and call this once, on a
+        debounce.
+        """
         self.completions = self._merge_completions(
             self._keyword_completions,
             self._function_completions,
             self._catalog_completions,
             self._extra_completions,
         )
+        self._known_keys = self._build_known_keys()
+        self._buffer_completions = self._build_buffer_completions(self._buffer_symbols)
+
+    def _candidates(self, match_val: str) -> Iterator[HarlequinCompletion]:
+        """
+        Everything to match against: the buffer's own completions, then the merged
+        list. A buffer symbol identical to what the user has typed would complete
+        to itself, so it is dropped.
+
+        This is an iterator, and each pass over the candidates gets its own -- the
+        merged list is the whole catalog, and a copy of it per keystroke is a copy
+        nothing reads twice.
+        """
+        return itertools.chain(
+            (c for c in self._buffer_completions if c.match_val != match_val),
+            self.completions,
+        )
+
+    def _rank(self, matches: list[HarlequinCompletion]) -> list[HarlequinCompletion]:
+        """
+        Order one group of matches by its relationship to the buffer, keeping the
+        (priority, label) order of the merged list within each rank.
+        """
+        if not self._buffer_symbol_values:
+            return matches
+        return sorted(matches, key=self._buffer_rank)
+
+    def _buffer_rank(self, completion: HarlequinCompletion) -> int:
+        if completion.match_val in self._buffer_symbol_values:
+            return 0
+        if completion.match_context in self._buffer_symbol_values:
+            return 1
+        return 2
+
+    def _build_known_keys(self) -> set[object]:
+        """Index the merged completions, so a symbol already offered is not repeated."""
+        return {c.match_val for c in self.completions}
+
+    def _build_buffer_completions(
+        self, symbols: BufferSymbols
+    ) -> list[HarlequinCompletion]:
+        return [
+            HarlequinCompletion(
+                label=name,
+                type_label=BUFFER_TYPE_LABEL,
+                value=name,
+                priority=BUFFER_PRIORITY,
+            )
+            for name in symbols.names
+            if name.casefold() not in self._known_keys
+        ]
 
     @staticmethod
     def _fuzzy_match(
-        match_val: str, completions: list[HarlequinCompletion]
+        match_val: str, completions: Iterable[HarlequinCompletion]
     ) -> list[HarlequinCompletion]:
-        regex_base = ".{0,2}?".join(f"({re.escape(c)})" for c in match_val)
-        regex = "^.*" + regex_base + ".*$"
-        match_regex = re.compile(regex, re.IGNORECASE)
-        matches = [c for c in completions if match_regex.match(c.match_val)]
+        """
+        Matches completions whose name contains the typed characters in order,
+        starting at a word boundary.
 
-        # Sort in ascending length.
-        # I am assuming here that more insertions are less likely to be
-        # the "right" match.
-        matches.sort(key=lambda c: len(c.match_val))
-        return matches
+        Anchoring the first character is what keeps the list relevant: without
+        it, a character that appears anywhere in a name is a match, so typing
+        one letter offers most of the catalog.
+        """
+        if len(match_val) < FUZZY_MIN_LENGTH:
+            return []
+
+        head, rest = match_val[0], match_val[1:]
+        regex = (
+            r"(?:^|(?<=[\W_]))"
+            + re.escape(head)
+            + "".join(f".*?{re.escape(c)}" for c in rest)
+        )
+        match_regex = re.compile(regex, re.IGNORECASE)
+        matches = [
+            (match, completion)
+            for completion in completions
+            if (match := match_regex.search(completion.match_val)) is not None
+        ]
+
+        # The fewer characters a match spans, the more of the name the user
+        # typed; ties go to the earlier match, then to the shorter name.
+        matches.sort(
+            key=lambda pair: (
+                pair[0].end() - pair[0].start(),
+                pair[0].start(),
+                len(pair[1].match_val),
+            )
+        )
+        return [completion for _, completion in matches]
 
     @staticmethod
     def _merge_completions(
         *completion_lists: list[HarlequinCompletion],
     ) -> list[HarlequinCompletion]:
-        return [c for c in sorted(itertools.chain(*completion_lists))]
+        # sorting on an explicit key is ~5x faster than on HarlequinCompletion's
+        # rich comparisons (which build two tuples per comparison), and this runs
+        # over the whole catalog every time the lazy loader delivers more of it.
+        return sorted(
+            itertools.chain(*completion_lists),
+            key=lambda c: (c.priority, c.label),
+        )
 
     @staticmethod
     def _dedupe_labels(
@@ -133,41 +251,38 @@ class MemberCompleter(WordCompleter):
             quote_match = ANY_QUOTE_PROG.match(item_prefix)
             if quote_match is not None:
                 quote_char = quote_match.group(0)
-                match_val = item_prefix[1:].lower()
+                match_val = item_prefix[1:].casefold()
             else:
                 quote_char = ""
-                match_val = item_prefix.lower()
-            match_context = context.strip("'`\"").lower()
+                match_val = item_prefix.casefold()
+                # A member that starts with a digit has to be quoted to be
+                # queried, so an unquoted one is a number, not a name.
+                if LEADING_DIGIT_PROG.match(match_val):
+                    return []
+            match_context = context.strip("'`\"").casefold()
             separators = SEPARATOR_PROG.findall(prefix)
         value_prefix = "".join(
             f"{w}{sep}" for w, sep in zip([*others, context], separators, strict=False)
         )
 
         context_completions = [
-            c for c in self.completions if c.context == match_context
+            c for c in self._candidates(match_val) if c.context == match_context
         ]
 
-        matches: list[tuple[tuple[str, str], str]] = []
-        # Add exact matches
-        matches.extend(
-            self.format_completion(c, quote_char, value_prefix, _label)
-            for c in context_completions
-            if c.match_val == match_val
-        )
-
-        # Add prefix matches
-        matches.extend(
-            self.format_completion(c, quote_char, value_prefix, _label)
-            for c in context_completions
-            if c.match_val.startswith(match_val)
-        )
-
+        exact = [c for c in context_completions if c.match_val == match_val]
+        prefixed = [c for c in context_completions if c.match_val.startswith(match_val)]
         # Only add fuzzy matches if there are not enough exact matches
-        if len(matches) < 20:
-            matches.extend(
-                self.format_completion(c, quote_char, value_prefix, _label)
-                for c in self._fuzzy_match(match_val, context_completions)
-            )
+        fuzzy = (
+            self._fuzzy_match(match_val, context_completions)
+            if len(exact) + len(prefixed) < 20
+            else []
+        )
+
+        matches = [
+            self.format_completion(c, quote_char, value_prefix, _label)
+            for group in (exact, prefixed, fuzzy)
+            for c in self._rank(group)
+        ]
 
         return self._dedupe_labels(matches)
 
@@ -182,6 +297,28 @@ class MemberCompleter(WordCompleter):
             label_fn(completion, value_prefix, quote_char),
             f"{value_prefix}{quote_char}{completion.value}",
         )
+
+    def _build_known_keys(self) -> set[object]:
+        return {(c.match_context, c.match_val) for c in self.completions}
+
+    def _build_buffer_completions(
+        self, symbols: BufferSymbols
+    ) -> list[HarlequinCompletion]:
+        """
+        A buffer's `context.name` pairs, which is how an alias or a CTE gets
+        members at all -- neither is in the catalog.
+        """
+        return [
+            HarlequinCompletion(
+                label=name,
+                type_label=BUFFER_TYPE_LABEL,
+                value=name,
+                priority=BUFFER_PRIORITY,
+                context=context.casefold(),
+            )
+            for context, name in symbols.members
+            if (context.casefold(), name.casefold()) not in self._known_keys
+        ]
 
     @staticmethod
     def _merge_completions(

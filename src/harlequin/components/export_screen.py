@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Sequence, Tuple
 
@@ -10,12 +11,13 @@ from textual.css.query import QueryError
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
+from textual_fastdatatable.backend import ArrowBackend
 from textual_textarea import PathInput
 
-from harlequin.components.error_modal import ErrorModal
 from harlequin.components.results_viewer import ResultsTable
+from harlequin.components.text_modal import ErrorModal
 from harlequin.exception import HarlequinCopyError
-from harlequin.export import copy
+from harlequin.export import names_a_directory, write_file
 from harlequin.options import AbstractOption, HarlequinCopyFormat
 
 ExportOptions = Dict[str, Any]
@@ -27,16 +29,50 @@ def export_callback(
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
 ) -> None:
+    """Write the visible table to the file the export screen collected.
+
+    The dialog exports every row it fetched, not the rows on screen, so the
+    data is `source_data` rather than what the row cap left -- and `source_data`
+    already carries the names the cursor reported, duplicates and all, which
+    `write_file()` makes unique for duckdb.
+
+    Minus the overflow probe row, where there is one: under the Run Query Bar's
+    limit the fetch asks for one row more than the limit, to learn there were
+    more, and a file of 501 rows under a limit of 500 is not what was asked for.
+
+    A result with no rows exports as a file with no rows -- a header and
+    nothing else, or an empty array. That is a true account of what the query
+    returned, and it is what tells a reader "nothing matched" apart from
+    "the query failed".
+    """
+    path, format_name, options = screen_data
     try:
-        copy(
-            table=table,
-            path=screen_data[0],
-            format_name=screen_data[1],
-            options=screen_data[2],
+        assert isinstance(table.backend, ArrowBackend)
+        data = table.backend.source_data
+        if table.fetch_truncated and table.fetched_row_count is not None:
+            data = data.slice(0, table.fetched_row_count)
+        write_file(
+            data=data,
+            path=path,
+            format_name=format_name,
+            options=options,
         )
         success_callback()
     except (OSError, HarlequinCopyError) as e:
         error_callback(e)
+
+
+def _normalize_default_path(default_path: str | None) -> str:
+    """What the path input starts with, for the `-o` the IDE was given.
+
+    A folder gets a trailing separator: what follows it is the file name, and
+    the input's autocomplete offers what is already in there.
+    """
+    if not default_path:
+        return ""
+    if not names_a_directory(default_path):
+        return default_path
+    return f"{default_path.rstrip('/' + os.sep)}{os.sep}"
 
 
 class NoFocusVerticalScroll(VerticalScroll, can_focus=False):
@@ -96,12 +132,14 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
     def __init__(
         self,
         formats: list[HarlequinCopyFormat],
+        default_path: str | None = None,
         name: str | None = None,
         id: str | None = None,  # noqa: A002
         classes: str | None = None,
     ) -> None:
         super().__init__(name, id, classes)
         self.formats = formats
+        self.default_path = _normalize_default_path(default_path)
 
     def compose(self) -> ComposeResult:
         assert self.formats is not None
@@ -142,6 +180,11 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
             "#options_container", NoFocusVerticalScroll
         )
         self.export_button = self.query_one("#export", Button)
+        if self.default_path:
+            # assigning posts Input.Changed, so a path with an extension picks
+            # its format the way a typed one does, and the cursor lands at the
+            # end -- after a folder's separator, ready for a file name
+            self.file_input.value = self.default_path
         self.file_input.focus()
 
     def on_key(self, event: events.Key) -> None:

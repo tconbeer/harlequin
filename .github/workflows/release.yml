@@ -21,14 +21,14 @@ jobs:
           ref: main
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.3"
+          version: "0.12.8"
 
       - name: Create release branch
         run: |
@@ -36,10 +36,25 @@ jobs:
           git push --set-upstream origin release/v${{ github.event.inputs.newVersion }}
 
       - name: Bump version
-        run: uv version ${{ github.event.inputs.newVersion }}
+        # the hsql metapackage ships with this release, carrying the same
+        # version and pinning it. --frozen because the pin it is being given
+        # is a release that does not exist yet: there is nothing to resolve
+        # against until this branch merges and publishes.
+        run: |
+          uv version ${{ github.event.inputs.newVersion }}
+          uv version --project packaging/hsql --frozen ${{ github.event.inputs.newVersion }}
+          uv add --project packaging/hsql --frozen "harlequin==${{ github.event.inputs.newVersion }}"
 
-      - name: Ensure package can be built
-        run: uv build --all-packages
+      - name: Bump the versions uv cannot reach
+        # the plugin manifest, which is the skill for one release of hsql, and
+        # the session protocol's version, which its client cannot afford to
+        # read off the package metadata.
+        run: python scripts/bump_versions.py ${{ github.event.inputs.newVersion }}
+
+      - name: Ensure packages can be built
+        run: |
+          uv build --all-packages
+          uv build packaging/hsql --out-dir dist
 
       - name: Update CHANGELOG
         uses: thomaseizinger/keep-a-changelog-new-release@v3

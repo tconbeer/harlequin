@@ -7,7 +7,20 @@ from .compute import Expression
 from .dataset import Partitioning
 from .fs import FileSystem
 
-class FileMetaData: ...
+class ColumnChunkMetaData:
+    compression: str
+
+class RowGroupMetaData:
+    def column(self, i: int) -> ColumnChunkMetaData: ...
+
+class FileMetaData:
+    def row_group(self, i: int) -> RowGroupMetaData: ...
+
+class ParquetFile:
+    def __init__(self, source: str | NativeFile | BinaryIO) -> None: ...
+    @property
+    def metadata(self) -> FileMetaData: ...
+    def read(self) -> Table: ...
 
 def read_table(
     source: str | NativeFile | BinaryIO,

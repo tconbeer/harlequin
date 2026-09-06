@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Sequence
-
-from textual_fastdatatable.backend import AutoBackendType
+from typing import TYPE_CHECKING, Any, Sequence
 
 from harlequin.autocomplete.completion import HarlequinCompletion
-from harlequin.catalog import Catalog
+from harlequin.catalog import Catalog, CatalogSearchKind, CatalogSearchResult
 from harlequin.options import HarlequinAdapterOption, HarlequinCopyFormat
 from harlequin.transaction_mode import HarlequinTransactionMode
+
+if TYPE_CHECKING:
+    # `AutoBackendType` is an alias for `Any`, and importing it at run time costs
+    # every adapter ~265ms of pyarrow and (before 0.17) Textual.
+    from textual_fastdatatable.backend import AutoBackendType
 
 
 class HarlequinCursor(ABC):
@@ -110,6 +113,31 @@ class HarlequinConnection(ABC):
         """
         pass
 
+    def search_catalog(
+        self, term: str, kind: CatalogSearchKind = "all"
+    ) -> list[CatalogSearchResult]:
+        """
+        Returns every catalog item whose label contains term, matched
+        case-insensitively, without walking the catalog a level at a time.
+
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_CATALOG_SEARCH to True.
+
+        Args:
+            term (str): The substring to match against an item's label.
+            kind (CatalogSearchKind): Which items to match: "relations",
+                "columns", or "all" -- every level the catalog has, including
+                the databases and schemas above a relation.
+
+        Returns: list[CatalogSearchResult], each pairing a matched item with
+            the labels of its ancestors, so that a caller can spell the path
+            that reaches it.
+
+        Raises: NotImplementedError if the adapter does not provide this
+            optional functionality.
+        """
+        raise NotImplementedError
+
     def get_completions(self) -> list[HarlequinCompletion]:
         """
         Returns a list of extra completions to make available to the Query Editor's
@@ -147,6 +175,9 @@ class HarlequinConnection(ABC):
         """
         Parses text as one or more queries; returns text if parsing does not result
         in an error; otherwise returns the empty string ("").
+
+        After implementing this method, set the adapter class variable
+        IMPLEMENTS_VALIDATE_SQL to True.
 
         Args:
             text (str): The text, which may compose one or more queries and partial
@@ -220,16 +251,24 @@ class HarlequinAdapter(ABC):
     COPY_FORMATS: list[HarlequinCopyFormat] | None = None
     """DEPRECATED. Adapter Copy formats are now ignored by Harlequin."""
     IMPLEMENTS_CANCEL = False
+    IMPLEMENTS_CATALOG_SEARCH = False
+    IMPLEMENTS_READ_ONLY = False
+    IMPLEMENTS_VALIDATE_SQL = False
     ADAPTER_DETAILS: str | None = None
     ADAPTER_DRIVER_DETAILS: str | None = None
 
     @abstractmethod
-    def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+    def __init__(
+        self, conn_str: Sequence[str], read_only: bool = False, **options: Any
+    ) -> None:
         """
         Initialize an adapter.
 
         Args:
             - conn_str (Sequence[str]): One or more connection strings. May be empty.
+            - read_only (bool): True if this connection must be read-only.
+                Harlequin passes True only to an adapter that declares
+                IMPLEMENTS_READ_ONLY.
             - **options (Any): Options received from the command line, config file,
                 or env variables. Adapters should be robust to receiving both subsets
                 and supersets of their declared options. They should disregard any

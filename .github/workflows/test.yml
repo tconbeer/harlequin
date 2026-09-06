@@ -42,20 +42,28 @@ jobs:
 
       - name: Set up Python ${{ matrix.py }}
         id: setup-python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.py }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.3"
+          version: "0.12.8"
           python-version: ${{ matrix.py }}
           enable-cache: true
 
       - name: Install python dependencies
         run: |
           uv sync --locked --group test
+
+      # Windows runners ship without a timezone database, so the test session
+      # downloads one into a shared user data directory. Do it once, up front:
+      # xdist workers would otherwise race to download and extract it.
+      - name: Install timezone database
+        if: matrix.os == 'Windows-latest'
+        run: |
+          uv run --no-sync python -c "from harlequin.windows_timezone import check_and_install_tzdata; check_and_install_tzdata()"
 
       - name: Run tests
         run: |

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
+import threading
 import time
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
-    List,
     Optional,
     Sequence,
     Type,
@@ -27,16 +30,17 @@ from textual.lazy import Lazy
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
+from textual.timer import Timer
 from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
-from textual_fastdatatable.backend import AutoBackendType
+from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 
 from harlequin import HarlequinConnection
 from harlequin.actions import HARLEQUIN_ACTIONS
-from harlequin.adapter import HarlequinAdapter, HarlequinCursor
+from harlequin.adapter import HarlequinAdapter
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
 from harlequin.autocomplete.completers import MemberCompleter, WordCompleter
@@ -45,8 +49,6 @@ from harlequin.catalog import (
     Catalog,
     CatalogItem,
     Interaction,
-    NewCatalog,
-    NewCatalogItems,
     TCatalogItem_contra,
 )
 from harlequin.catalog_cache import (
@@ -69,37 +71,45 @@ from harlequin.components import (
     export_callback,
 )
 from harlequin.components.confirm_modal import ConfirmModal
-from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 from harlequin.components.data_catalog import ContextMenu
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
 from harlequin.config import (
-    get_config_for_profile,
     get_highest_priority_existing_config_file,
     load_config,
+    load_profile_and_keymaps,
 )
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
+from harlequin.crash import ACTIVE_BUFFER
 from harlequin.driver import HarlequinDriver
-from harlequin.editor_cache import BufferState, Cache
+from harlequin.editor_cache import (
+    CHECKPOINT_INTERVAL_SECONDS,
+    Cache,
+    clear_recovery,
+    get_recovery_file,
+    write_recovery,
+)
 from harlequin.editor_cache import write_cache as write_editor_cache
 from harlequin.exception import (
     HarlequinBindingError,
     HarlequinConfigError,
     HarlequinConnectionError,
     HarlequinError,
-    HarlequinQueryError,
     pretty_error_message,
     pretty_print_error,
 )
 from harlequin.history import History
-from harlequin.messages import WidgetMounted
+from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
+from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
+from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 
 if TYPE_CHECKING:
     from textual.await_complete import AwaitComplete
 
     from harlequin.keymap import HarlequinKeyMap
+    from harlequin.ssh import SshTunnel
 
 
 class CatalogCacheLoaded(Message):
@@ -133,34 +143,67 @@ class QueriesExecuted(Message):
     def __init__(
         self,
         query_count: int,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
         ddl_queries: list[str],
+        limit: RowLimit,
     ) -> None:
         super().__init__()
         self.query_count = query_count
         self.cursors = cursors
         self.submitted_at = submitted_at
         self.ddl_queries = ddl_queries
+        self.limit = limit
+        """The limit these cursors were executed under; the fetch needs it too."""
 
 
 class QueriesCanceled(Message):
     pass
 
 
+class CatalogRefreshAborted(Message):
+    """The catalog worker stopped without a connection to build a tree on."""
+
+
 class ResultsFetched(Message):
     def __init__(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]],
+        cursors: Dict[str, ExecutedStatement],
+        results: Dict[str, ResultSet],
         errors: list[tuple[BaseException, str]],
         elapsed: float,
     ) -> None:
         super().__init__()
         self.cursors = cursors
-        self.data = data
+        self.results = results
         self.errors = errors
         self.elapsed = elapsed
+
+
+class TunnelClosed(Message):
+    """The SSH tunnel's child exited on its own, and took the forward with it."""
+
+    def __init__(self, notice: str) -> None:
+        super().__init__()
+        self.notice = notice
+
+
+class TunnelReconnected(Message):
+    """The dropped tunnel is back, and what runs through it is a new session."""
+
+    def __init__(self, connection: HarlequinConnection, rebuild_catalog: bool) -> None:
+        super().__init__()
+        self.connection = connection
+        self.rebuild_catalog = rebuild_catalog
+        """Whether this handler is the one that has to rebuild the tree."""
+
+
+class TunnelUnrecoverable(Message):
+    """The tunnel dropped and would not come back, in ssh's own words."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
 
 
 class TransactionModeChanged(Message):
@@ -178,6 +221,36 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
+def _adapter_distribution(adapter_name: str | None) -> str | None:
+    """The distribution an adapter came from, and its version.
+
+    Read off the entry point rather than the class: an adapter's module name
+    is not its distribution name, and both bundled adapters ship inside
+    `harlequin` itself. Importing nothing, which is what makes it safe to ask
+    mid-crash.
+    """
+    from harlequin.plugins import adapter_distributions, adapter_versions
+
+    if adapter_name is None:
+        return None
+    distribution = adapter_distributions().get(adapter_name)
+    if distribution is None:
+        return None
+    return f"{distribution} {adapter_versions().get(adapter_name)}"
+
+
+_PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
+    "_load_catalog_cache": (
+        "Harlequin could not load its cache; your query history may be missing."
+    ),
+    "_extend_and_merge_completers": "Harlequin could not update completions.",
+    "_build_completers": "Harlequin could not build completions.",
+}
+"""Toast text for the workers whose failure is partial: the app stays usable,
+so their errors surface as a notification rather than an error modal.
+"""
+
+
 class Harlequin(AppBase):
     """
     The SQL IDE for your Terminal.
@@ -193,17 +266,21 @@ class Harlequin(AppBase):
         adapter: HarlequinAdapter,
         profile_name: str | None = None,
         *,
+        adapter_name: str | None = None,
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
         connection_hash: str | None = None,
         theme: str = "harlequin",
         show_files: Path | None = None,
         show_s3: str | None = None,
-        max_results: int | str = 100_000,
+        export_path: Path | str | None = None,
+        viewer_max_rows: int | str | None = 100_000,
+        query_limit: int | str | None = None,
+        ssh_tunnel: SshTunnel | None = None,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
-        vim_code_editor: bool = False,
+        code_editor: str = "default",
     ):
         super().__init__(
             theme=theme,
@@ -212,27 +289,70 @@ class Harlequin(AppBase):
             watch_css=watch_css,
         )
         self.adapter = adapter
+        self.adapter_name = adapter_name
         self.profile_name = profile_name
         self.connection_hash = connection_hash
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
-        self.vim_code_editor = vim_code_editor
+        self.code_editor = code_editor
+        # already started, by the command that built this app: `ssh` prompts for
+        # a passphrase on the terminal Textual is about to take.
+        self.ssh_tunnel = ssh_tunnel
+        # kept as text: it is what the Data Exporter's path input starts with
+        self.export_path = str(export_path) if export_path is not None else None
+        # None is no cap: the viewer holds every row that was fetched. So are 0
+        # and -1, which the CLI has already normalized -- a Results Viewer that
+        # holds no rows serves nobody, so neither spelling can mean that here.
         try:
-            self.max_results = int(max_results)
+            rows = None if viewer_max_rows is None else int(viewer_max_rows)
+            self.viewer_max_rows = rows if rows is None or rows > 0 else None
         except ValueError:
+            # assigned anyway: `self.exit()` schedules the exit rather than
+            # taking it, and the rest of __init__ still runs.
+            self.viewer_max_rows = None
             self.exit(
                 return_code=2,
                 message=pretty_error_message(
                     HarlequinConfigError(
-                        f"limit={max_results!r} was set by config file but is not "
-                        "a valid integer."
+                        f"viewer_max_rows={viewer_max_rows!r} was set by config file "
+                        "but is not a valid integer."
+                    )
+                ),
+            )
+        # the hard limit, which the Run Query Bar holds and every query runs
+        # under. None leaves the box unchecked, which is a full fetch; 0 is a
+        # header and no rows, so only a negative number can mean "no limit".
+        try:
+            rows = None if query_limit is None else int(query_limit)
+            self.query_limit = rows if rows is None or rows >= 0 else None
+        except ValueError:
+            self.query_limit = None
+            self.exit(
+                return_code=2,
+                message=pretty_error_message(
+                    HarlequinConfigError(
+                        f"limit={query_limit!r} was set by config file "
+                        "but is not a valid integer."
                     )
                 ),
             )
         self.query_timer: Union[float, None] = None
+        self._last_checkpointed_cache: Cache | None = None
+        """What the recovery file holds, so an idle session stops rewriting it."""
         self.connection: HarlequinConnection | None = None
+        self._recovery_lock = threading.Lock()
+        """Held across reopening the tunnel and the connection through it.
+
+        Two workers reaching recovery at once would otherwise each open a
+        connection, and one of them would be closed out from under the worker
+        still running on it.
+        """
+        self._recovered_connection: HarlequinConnection | None = None
+        """The connection a recovery opened, for a worker that waited on it."""
         self.harlequin_driver = HarlequinDriver(app=self)
+        self._completer_merge_timer: Timer | None = None
+        self._pending_completer_items: list[tuple[CatalogItem, list[CatalogItem]]] = []
 
         if keymap_names is None:
             keymap_names = ("vscode",)
@@ -254,16 +374,16 @@ class Harlequin(AppBase):
             show_s3=self.show_s3,
         )
         self.editor_collection = EditorCollection(
-            language="sql", classes="hide-tabs", vim_code_editor=self.vim_code_editor
+            language="sql", classes="hide-tabs", code_editor=self.code_editor
         ).data_bind(Harlequin.theme)
         self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None
         editor_placeholder = Lazy(widget=self.editor_collection)
         editor_placeholder.border_title = self.editor_collection.border_title
         editor_placeholder.loading = True
-        self.results_viewer = ResultsViewer(max_results=self.max_results)
+        self.results_viewer = ResultsViewer()
         self.run_query_bar = RunQueryBar(
-            max_results=self.max_results,
+            query_limit=self.query_limit,
             classes="non-responsive",
             show_cancel_button=self.adapter.IMPLEMENTS_CANCEL,
         )
@@ -288,12 +408,10 @@ class Harlequin(AppBase):
         callback: ScreenResultCallbackType[ScreenResultType] | None = None,
         wait_for_dismiss: bool = False,
     ) -> AwaitMount | asyncio.Future[ScreenResultType]:
-        if (
-            self.editor is not None
-            and self.editor.text_input is not None
-            and self.editor._has_focus_within
-        ):
-            self.editor.text_input._pause_blink(visible=True)
+        # the editor keeps focus while a modal is up, so its cursor has to be
+        # frozen explicitly.
+        if self.editor is not None and self.editor._has_focus_within:
+            self.editor.pause_blink(visible=True)
 
         ## TODO: PREVENT DUPLICATE SCREENS HERE.
         return super().push_screen(  # type: ignore[no-any-return,call-overload]
@@ -307,10 +425,9 @@ class Harlequin(AppBase):
         if (
             len(self.screen_stack) == 1
             and self.editor is not None
-            and self.editor.text_input is not None
             and self.editor._has_focus_within
         ):
-            self.editor.text_input._restart_blink()
+            self.editor.restart_blink()
         return new_screen
 
     def append_to_history(
@@ -323,11 +440,25 @@ class Harlequin(AppBase):
         )
 
     async def on_mount(self) -> None:
-        self.run_query_bar.limit_checkbox.value = False
+        self.run_query_bar.apply_configured_limit()
+
+        if self.ssh_tunnel is not None:
+            # which database this session is actually looking at
+            warnings = self.ssh_tunnel.warnings()
+            self.notify(
+                "\n\n".join((self.ssh_tunnel.notice(), *warnings)),
+                title="SSH tunnel",
+                severity=(
+                    "warning" if self.ssh_tunnel.reused or warnings else "information"
+                ),
+                markup=False,
+            )
+            self.ssh_tunnel.watch(self._post_tunnel_closed)
 
         self._connect()
         self._load_catalog_cache()
         self.action_bind_keymaps(*self.keymap_names)
+        self.set_interval(CHECKPOINT_INTERVAL_SECONDS, self._checkpoint_editor_cache)
 
     @on(Button.Pressed, "#run_query")
     def submit_query_from_run_query_bar(self, message: Button.Pressed) -> None:
@@ -416,25 +547,31 @@ class Harlequin(AppBase):
         self.editor.insert_text_at_selection(text=message.insert_name)
         self.editor.focus()
 
+    def _recycle_message(self, message: Message) -> None:
+        """Re-post a message we can't handle yet, while we wait for the editor."""
+        callback = partial(self.post_message, message)
+        self.set_timer(delay=0.1, callback=callback)
+
+    def _copy_to_clipboard(self, text: str, success_message: str) -> None:
+        """Copy text to the editor's clipboard, and to the system's if enabled.
+
+        The editor must be loaded; callers handle that by recycling their message.
+        textual-textarea also emits OSC 52, so this works over ssh, and reports
+        failures as TextAreaClipboardError, which CodeEditor turns into a notification.
+        """
+        assert self.editor is not None
+        self.editor.copy_to_clipboard(text)
+        self.notify(success_message)
+
     @on(HarlequinTree.NodeCopied)
     def copy_node_name(self, message: HarlequinTree.NodeCopied) -> None:
         message.stop()
         if self.editor is None or self.editor.text_input is None:
-            # recycle message while we wait for the editor to load
-            callback = partial(self.post_message, message)
-            self.set_timer(delay=0.1, callback=callback)
+            self._recycle_message(message)
             return
-        self.editor.text_input.clipboard = message.copy_name
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(message.copy_name)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected label copied to clipboard.")
+        self._copy_to_clipboard(
+            message.copy_name, "Selected label copied to clipboard."
+        )
 
     @on(HarlequinDriver.InsertTextAtSelection)
     def driver_insert_text_into_editor(
@@ -489,20 +626,7 @@ class Harlequin(AppBase):
     def update_internal_editor_state(
         self, message: EditorCollection.EditorSwitched
     ) -> None:
-        if message.active_editor is not None:
-            self.editor = message.active_editor
-        else:
-            try:
-                self.editor = self.editor_collection.current_editor
-            except NoMatches:
-                # This shouldn't happen, but sometimes on Windows we
-                # get into this state where we receive EditorSwitched
-                # but current_editor raises NoMatches because it
-                # can't find the ContentSwitcher. Recycle the event
-                # to try again.
-                callback = partial(self.post_message, message)
-                self.set_timer(delay=0.1, callback=callback)
-                return
+        self.editor = message.active_editor or self.editor_collection.current_editor
         self.editor.focus()
         self._sync_run_button_disabled()
         self._sync_run_button_text()
@@ -589,23 +713,11 @@ class Harlequin(AppBase):
     def copy_data_to_clipboard(self, message: DataTable.SelectionCopied) -> None:
         message.stop()
         if self.editor is None or self.editor.text_input is None:
-            # recycle the message while we wait for the editor to load
-            callback = partial(self.post_message, message)
-            self.set_timer(delay=0.1, callback=callback)
+            self._recycle_message(message)
             return
         # Excel, sheets, and Snowsight all use a TSV format for copying tabular data
         text = os.linesep.join("\t".join(map(str, row)) for row in message.values)
-        self.editor.text_input.clipboard = text
-        if (
-            self.editor.use_system_clipboard
-            and self.editor.text_input.system_copy is not None
-        ):
-            try:
-                self.editor.text_input.system_copy(text)
-            except Exception:
-                self.notify("Error copying data to system clipboard.", severity="error")
-            else:
-                self.notify("Selected data copied to clipboard.")
+        self._copy_to_clipboard(text, "Selected data copied to clipboard.")
 
     @on(Worker.StateChanged)
     async def handle_worker_error(self, message: Worker.StateChanged) -> None:
@@ -613,30 +725,60 @@ class Harlequin(AppBase):
             await self._handle_worker_error(message)
 
     async def _handle_worker_error(self, message: Worker.StateChanged) -> None:
-        if (
-            message.worker.name == "update_schema_data"
-            and message.worker.error is not None
-        ):
+        worker_name = message.worker.name
+        worker_error = message.worker.error
+        if self._exit or worker_error is None:
+            # an error that lands while the app is exiting is noise, not news.
+            return
+        if worker_name == "update_schema_data":
             self._push_error_modal(
                 title="Catalog Error",
                 header="Could not update data catalog",
-                error=message.worker.error,
+                error=worker_error,
             )
             self.data_catalog.database_tree.loading = False
-        elif message.worker.name == "_connect" and message.worker.error is not None:
+        elif worker_name == "_connect":
             title = getattr(
-                message.worker.error,
+                worker_error,
                 "title",
                 "Harlequin could not connect to your database.",
             )
             error = (
-                message.worker.error
-                if isinstance(message.worker.error, HarlequinError)
-                else HarlequinConnectionError(
-                    msg=str(message.worker.error), title=title
-                )
+                worker_error
+                if isinstance(worker_error, HarlequinError)
+                else HarlequinConnectionError(msg=str(worker_error), title=title)
             )
             self.exit(return_code=2, message=pretty_error_message(error))
+        elif worker_name in ("_execute_query", "_fetch_data"):
+            # the worker died before posting QueriesExecuted or ResultsFetched,
+            # which is what would have restored these.
+            self.run_query_bar.set_responsive()
+            self.results_viewer.show_table()
+            header = getattr(worker_error, "title", worker_error.__class__.__name__)
+            self._push_error_modal(
+                title="Query Error",
+                header=header,
+                error=worker_error,
+            )
+        elif worker_name == "toggle_transaction_mode":
+            self._push_error_modal(
+                title="Transaction Error",
+                header="Harlequin could not change the transaction mode.",
+                error=worker_error,
+            )
+        elif worker_name in _PARTIAL_FAILURE_WORKER_NOTIFICATIONS:
+            self.notify(
+                _PARTIAL_FAILURE_WORKER_NOTIFICATIONS[worker_name],
+                severity="warning",
+            )
+        else:
+            # loud by default: a worker added later is an error modal until
+            # someone decides its failures are benign.
+            self._push_error_modal(
+                title="Unexpected Error",
+                header="A background task failed. Harlequin is still running.",
+                error=worker_error,
+            )
 
     @on(HarlequinTree.CatalogError)
     def handle_catalog_error(self, message: HarlequinTree.CatalogError) -> None:
@@ -684,6 +826,10 @@ class Harlequin(AppBase):
         self.data_catalog.update_database_tree(message.catalog)
         self.update_completers(message.catalog)
 
+    @on(CatalogRefreshAborted)
+    def stop_catalog_loading(self) -> None:
+        self.data_catalog.database_tree.loading = False
+
     @on(NewCatalogItems)
     def handle_new_catalog_item(self, message: NewCatalogItems) -> None:
         if (
@@ -696,10 +842,16 @@ class Harlequin(AppBase):
             callback = partial(self.post_message, message)
             self.set_timer(delay=0.5, callback=callback)
 
+    @on(CodeEditor.SymbolsFound)
+    def load_catalog_items_named_by_buffer(
+        self, message: CodeEditor.SymbolsFound
+    ) -> None:
+        self.data_catalog.database_tree.load_items_named(message.symbols.names)
+
     @on(QueriesExecuted)
     def fetch_data_or_reset_table(self, message: QueriesExecuted) -> None:
         if message.cursors:  # select query
-            self._fetch_data(message.cursors, message.submitted_at)
+            self._fetch_data(message.cursors, message.submitted_at, message.limit)
         else:
             self.run_query_bar.set_responsive()
             self.results_viewer.show_table(did_run=message.query_count > 0)
@@ -725,15 +877,12 @@ class Harlequin(AppBase):
 
     @on(ResultsFetched)
     async def load_tables(self, message: ResultsFetched) -> None:
-        for id_, (cols, data, query_text) in message.data.items():
-            table = await self.results_viewer.push_table(
-                table_id=id_,
-                column_labels=cols,
-                data=data,
-            )
+        for id_, result in message.results.items():
+            await self.results_viewer.push_table(table_id=id_, result=result)
             self.append_to_history(
-                query_text=query_text,
-                result_row_count=table.source_row_count,
+                query_text=result.statement.sql,
+                # the rows the database returned, not the rows the viewer kept
+                result_row_count=result.fetched_row_count,
                 elapsed=message.elapsed,
             )
         if message.errors:
@@ -762,7 +911,7 @@ class Harlequin(AppBase):
             self.results_viewer.show_table(did_run=False)
         else:
             self.results_viewer.show_table(did_run=True)
-            if message.data:
+            if message.results:
                 self.results_viewer.focus()
 
     @on(WidgetMounted)
@@ -834,6 +983,57 @@ class Harlequin(AppBase):
             if self.data_catalog.has_focus and self.editor is not None:
                 self.editor.focus()
         self.data_catalog.disabled = sidebar_hidden
+
+    def _post_tunnel_closed(self, notice: str) -> None:
+        """Called on the tunnel's watcher thread, so it only posts a message.
+
+        A child that dies during shutdown reaches a loop that is already
+        closing, which raises rather than delivering.
+        """
+        with contextlib.suppress(RuntimeError):
+            self.post_message(TunnelClosed(notice))
+
+    @on(TunnelClosed)
+    def notify_tunnel_closed(self, message: TunnelClosed) -> None:
+        message.stop()
+        # ssh quotes a server's own disconnect message and a helper's output,
+        # so the notice is text rather than markup
+        self.notify(message.notice, title="SSH tunnel", severity="error", markup=False)
+
+    @on(TunnelReconnected)
+    def report_tunnel_reconnected(self, message: TunnelReconnected) -> None:
+        message.stop()
+        replaced, self.connection = self.connection, message.connection
+        if replaced is not None and replaced is not message.connection:
+            # its socket died with the forward, but an adapter does real work
+            # here -- thread pools, temp files -- and may raise on the way out
+            with contextlib.suppress(Exception):
+                replaced.close()
+        self.post_message(
+            TransactionModeChanged(new_mode=message.connection.transaction_mode)
+        )
+        if message.rebuild_catalog:
+            # the tree's items load their children on the connection the adapter
+            # captured when it built them, so expanding an unloaded node would
+            # reach the socket that died with the old forward
+            self.data_catalog.database_tree.loading = True
+            self.update_schema_data()
+        self.notify(
+            "The tunnel dropped and has been reopened, so this is a new "
+            "session: an open transaction, a temp table, and anything set with "
+            "SET went with the old one.",
+            title="SSH tunnel",
+            severity="warning",
+        )
+
+    @on(TunnelUnrecoverable)
+    def report_tunnel_unrecoverable(self, message: TunnelUnrecoverable) -> None:
+        message.stop()
+        self._push_error_modal(
+            title="SSH Tunnel Error",
+            header="Harlequin could not reopen the SSH tunnel.",
+            error=message.error,
+        )
 
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
@@ -937,11 +1137,15 @@ class Harlequin(AppBase):
         if table is None:
             show_export_error(error=ValueError("You must execute a query first."))
             return
-        notify = partial(self.notify, "Data exported successfully.")
+
+        def on_export_success() -> None:
+            self.notify("Data exported successfully.")
+            self.data_catalog.update_file_tree()
+
         callback = partial(
             export_callback,
             table=table,
-            success_callback=notify,
+            success_callback=on_export_success,
             error_callback=show_export_error,
         )
         self.app.push_screen(
@@ -951,6 +1155,7 @@ class Harlequin(AppBase):
                     if sys.platform == "win32"
                     else HARLEQUIN_COPY_FORMATS
                 ),
+                default_path=self.export_path,
                 id="export_screen",
             ),
             callback,
@@ -998,13 +1203,113 @@ class Harlequin(AppBase):
     def action_focus_results_viewer(self) -> None:
         self.results_viewer.focus()
 
+    def _build_editor_cache(self) -> Cache | None:
+        """The open buffers, or None when there is nothing worth writing.
+
+        `editor_collection` is assigned in `compose()`, so before the app
+        mounts the attribute does not exist at all -- and a crash before that
+        is one of the crashes the caller runs for.
+
+        Blank buffers are nothing either: writing them over a recovery file
+        would destroy exactly the work this exists to save.
+        """
+        editor_collection = getattr(self, "editor_collection", None)
+        if editor_collection is None or not editor_collection.is_mounted:
+            return None
+        cache = Cache(
+            focus_index=editor_collection.active_buffer_index,
+            buffers=editor_collection.buffers,
+        )
+        if not any(buffer.text.strip() for buffer in cache.buffers):
+            return None
+        return cache
+
+    def _checkpoint_editor_cache(self) -> None:
+        """Write the open buffers to this session's recovery file, if they moved.
+
+        Synchronously, on the message pump: pickling a few SQL buffers is
+        microseconds, and a thread worker would only add the hazard of two
+        checkpoints racing. `Cache` compares by content, so no dirty flag has
+        to stay in sync with tab swaps.
+        """
+        cache = self._build_editor_cache()
+        if cache is None or cache == self._last_checkpointed_cache:
+            return
+        if write_recovery(cache):
+            self._last_checkpointed_cache = cache
+
+    def _save_work_on_crash(self) -> bool:
+        """Save the buffers and the query history a crash would otherwise lose.
+
+        The buffers go to a `recovered-` file rather than this session's
+        recovery file, so the next start adopts them however old they are. The
+        cache the last clean quit wrote is left alone: if the recovered content
+        is itself what crashed, that is still on disk.
+        """
+        saved = False
+        try:
+            # the crash may be *in* the editor, and building this reads it
+            cache = self._build_editor_cache()
+        except Exception:
+            cache = self._last_checkpointed_cache
+        if cache is not None and write_recovery(cache):
+            try:
+                os.replace(get_recovery_file(), self._crash_recovery_file())
+                saved = True
+            except OSError:
+                pass
+        try:
+            update_catalog_cache(
+                connection_hash=self.connection_hash,
+                catalog=None,
+                s3_tree=self.data_catalog.s3_tree,
+                history=self.history,
+            )
+        except Exception:
+            pass
+        return saved
+
+    def _crash_recovery_file(self) -> Path:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return get_recovery_file().with_name(f"recovered-{stamp}-{os.getpid()}.pickle")
+
+    def _crash_context(self) -> dict[str, Any]:
+        """What this session was, for the crash report.
+
+        Every fact is cheap and separately wrapped. It deliberately does not
+        call `adapter_facts()`: importing every installed adapter mid-crash is
+        slow, and a fresh place to crash.
+        """
+        context: dict[str, Any] = {}
+        adapter_cls = type(self.adapter)
+        for key, get_fact in (
+            ("adapter", lambda: self.adapter_name),
+            ("adapter_class", lambda: adapter_cls.__qualname__),
+            ("adapter_module", lambda: adapter_cls.__module__),
+            ("adapter_distribution", lambda: _adapter_distribution(self.adapter_name)),
+            ("profile", lambda: self.profile_name),
+            ("keymaps", lambda: ", ".join(self.keymap_names)),
+            ("theme", lambda: self.theme),
+            ("connected", lambda: self.connection is not None),
+            ("buffers", lambda: self.editor_collection.tab_count),
+            ("size", lambda: str(self.size)),
+            ("recovery_file", lambda: str(self._crash_recovery_file())),
+            (ACTIVE_BUFFER, lambda: self.editor.text if self.editor else None),
+        ):
+            try:
+                context[key] = get_fact()
+            except Exception:
+                context[key] = "unknown"
+        return context
+
     async def action_quit(self) -> None:
-        buffers = []
-        for i, editor in enumerate(self.editor_collection.all_editors):
-            if editor == self.editor_collection.current_editor:
-                focus_index = i
-            buffers.append(BufferState(editor.selection, editor.text))
-        write_editor_cache(Cache(focus_index=focus_index, buffers=buffers))
+        write_editor_cache(
+            Cache(
+                focus_index=self.editor_collection.active_buffer_index,
+                buffers=self.editor_collection.buffers,
+            )
+        )
+        clear_recovery()
         update_catalog_cache(
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.
@@ -1027,19 +1332,23 @@ class Harlequin(AppBase):
         config_path = get_highest_priority_existing_config_file()
         config = load_config(config_path)
         profile_name = self.profile_name
-        active_profile_config, _ = get_config_for_profile(config_path, profile_name)
-        active_profile_name = profile_name or config.get("default_profile")
+        active_profile_config, _ = load_profile_and_keymaps(config_path, profile_name)
+        active_profile_name = profile_name or config.default_profile
         adapter_options = getattr(self.adapter, "ADAPTER_OPTIONS", None)
         adapter_type = type(self.adapter).__name__
 
         harlequin_info = HarlequinDebugInfo(
             active_profile_config=active_profile_config,
             active_profile_name=active_profile_name,
+            adapter_options=adapter_options,
             all_keymaps=list(self.all_keymaps.keys()),
             config=config,
             config_path=config_path,
             keymap_names=self.keymap_names,
             theme=self.theme,
+            ssh_tunnel=(
+                self.ssh_tunnel.describe() if self.ssh_tunnel is not None else None
+            ),
         )
         adapter_info = AdapterDebugInfo(
             adapter_options=adapter_options,
@@ -1121,60 +1430,123 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_runners",
         description="Executing queries.",
     )
     def _execute_query(self, message: QuerySubmitted) -> None:
-        if self.connection is None:
+        # ahead of reading the connection: a tunnel that dropped took it too
+        connection = self._connection_for_worker()
+        if connection is None:
             return
-        cursors: Dict[str, tuple[HarlequinCursor, str]] = {}
-        queries = message.queries
+        cursors: Dict[str, ExecutedStatement] = {}
         ddl_queries: list[str] = []
-        for q in queries:
-            try:
-                cur = self.connection.execute(q)
-            except HarlequinQueryError as e:
-                self.post_message(QueryError(query_text=q, error=e))
-                break
+        statements = [Statement(sql=q, index=i) for i, q in enumerate(message.queries)]
+        # the Run Query Bar's limit is a hard fetch limit, so the true total
+        # stops being knowable and one extra row is what tells the Results
+        # Viewer to say `500 of >500` instead of claiming the 500 was all of it.
+        # `viewer_max_rows` is a soft cap over that fetch and is applied in
+        # _fetch_data, which is why it needs no overflow detection of its own.
+        limit = RowLimit(
+            max_rows=message.limit, detect_overflow=message.limit is not None
+        )
+        for executed in execute(
+            connection=connection,
+            statements=statements,
+            limit=limit,
+        ):
+            if executed.error is not None:
+                self.post_message(
+                    QueryError(query_text=executed.statement.sql, error=executed.error)
+                )
+            elif executed.cursor is not None:
+                cursors[f"t{hash(executed.cursor)}"] = executed
             else:
-                if cur is not None:
-                    if message.limit is not None:
-                        cur = cur.set_limit(message.limit)
-                    table_id = f"t{hash(cur)}"
-                    cursors[table_id] = (cur, q)
-                else:
-                    ddl_queries.append(q)
+                ddl_queries.append(executed.statement.sql)
         self.post_message(
             QueriesExecuted(
                 query_count=len(cursors) + len(ddl_queries),
                 cursors=cursors,
                 submitted_at=message.submitted_at,
                 ddl_queries=ddl_queries,
+                limit=limit,
             )
         )
 
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_cancellers",
         description="Cancelling queries.",
     )
     def _cancel_query(self) -> None:
         if self.connection is None or not self.adapter.IMPLEMENTS_CANCEL:
             return
-        self.connection.cancel()
+        try:
+            self.connection.cancel()
+        except Exception as e:
+            self.call_from_thread(
+                self._push_error_modal,
+                title="Cancel Error",
+                header="Harlequin could not cancel your queries.",
+                error=e,
+            )
         self.post_message(QueriesCanceled())
+
+    def _connection_for_worker(
+        self, rebuilds_catalog: bool = False
+    ) -> HarlequinConnection | None:
+        """The connection to run on, reopening a dropped tunnel first.
+
+        Called on a worker's thread, ahead of the database work it was about to
+        do: restarting `ssh` is not enough on its own, because the adapter's TCP
+        connection ran *through* the old forward. One attempt, and none at all
+        once one has failed -- the user retries by running their query again.
+
+        None is a worker that must not run: a recovery that failed leaves a
+        connection whose socket died with the forward, and running on it would
+        raise a second modal behind the one that said why.
+
+        `rebuilds_catalog` is the caller about to build a tree on the connection
+        it gets back, so a recovery here does not ask for a second one -- two
+        `get_catalog()` calls at once are two threads inside one adapter. It
+        reports the caller's own intent, which the worker that loses the lock
+        below cannot: a query and a refresh that hit the same drop rebuild twice.
+        """
+        tunnel = self.ssh_tunnel
+        if tunnel is None or self.connection is None:
+            return self.connection
+        with self._recovery_lock:
+            # `_execute_query` and `update_schema_data` are exclusive within
+            # their own worker groups and not against each other, so both can
+            # arrive here at once. The second finds the tunnel already back.
+            if not tunnel.needs_restart:
+                if tunnel.dropped:
+                    # a restart already failed and is not tried again, so what
+                    # is left is a connection whose socket went with the forward
+                    return None
+                return self._recovered_connection or self.connection
+            try:
+                tunnel.restart()
+                connection = self.adapter.connect()
+            except BaseException as e:  # adapters are third-party code
+                self.post_message(TunnelUnrecoverable(e))
+                return None
+            # what a worker still inside this method runs on; the handler is
+            # what makes it the app's, once the message lands
+            self._recovered_connection = connection
+        self.post_message(
+            TunnelReconnected(
+                connection=connection, rebuild_catalog=not rebuilds_catalog
+            )
+        )
+        return connection
 
     def _get_selected_queries(self) -> list[str]:
         if self.editor is None:
             return []
         return self.editor.selected_queries()
-
-    @staticmethod
-    def _split_query_text(query_text: str) -> List[str]:
-        return [q for q in query_text.split(";") if q.strip()]
 
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
         self.push_screen(
@@ -1188,40 +1560,78 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="query_runners",
         description="fetching data from adapter.",
     )
     def _fetch_data(
         self,
-        cursors: Dict[str, tuple[HarlequinCursor, str]],
+        cursors: Dict[str, ExecutedStatement],
         submitted_at: float,
+        limit: RowLimit,
     ) -> None:
         errors: list[tuple[BaseException, str]] = []
-        data: Dict[str, tuple[list[tuple[str, str]], AutoBackendType | None, str]] = {}
-        for id_, (cur, q) in cursors.items():
+        results: Dict[str, ResultSet] = {}
+        # `limit` is the hard limit the queries were executed under, passed back
+        # so the overflow probe row is dropped rather than displayed;
+        # `viewer_max_rows` is the soft cap on top of it, which leaves the
+        # number of rows fetched known exactly.
+        for id_, executed in cursors.items():
             try:
-                cur_data = cur.fetchall()
+                results[id_] = fetch(
+                    executed, limit=limit, display_limit=self.viewer_max_rows
+                )
             except BaseException as e:
-                errors.append((e, q))
-            else:
-                data[id_] = (cur.columns(), cur_data, q)
+                errors.append((e, executed.statement.sql))
+        # each ResultSet times its own fetch; the app reports the batch,
+        # measured from the moment the query was submitted.
         elapsed = time.monotonic() - submitted_at
         self.post_message(
-            ResultsFetched(cursors=cursors, data=data, errors=errors, elapsed=elapsed)
+            ResultsFetched(
+                cursors=cursors, results=results, errors=errors, elapsed=elapsed
+            )
         )
 
     def extend_completers(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
-        if (
-            self.editor_collection.word_completer is not None
-            and self.editor_collection.member_completer is not None
-        ):
-            self.editor_collection.word_completer.extend_catalog(
-                parent=parent, items=items
+        # Building completions for a node, and then merging the full completion
+        # list (O(n log n) over the whole catalog), are both too expensive for the
+        # event loop: a schema can hold thousands of relations, and the Data
+        # Catalog's lazy loader delivers one message per node. Batch the arrivals
+        # and do the work in a thread, at most once per second.
+        self._pending_completer_items.append((parent, items))
+        if self._completer_merge_timer is None:
+            self._completer_merge_timer = self.set_timer(1.0, self._merge_completers)
+
+    def _merge_completers(self) -> None:
+        self._completer_merge_timer = None
+        if self._pending_completer_items:
+            batch = self._pending_completer_items
+            self._pending_completer_items = []
+            self._extend_and_merge_completers(batch)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="completer_mergers",
+        description="merging catalog completions",
+    )
+    def _extend_and_merge_completers(
+        self, batch: list[tuple[CatalogItem, list[CatalogItem]]]
+    ) -> None:
+        word_completer = self.editor_collection.word_completer
+        member_completer = self.editor_collection.member_completer
+        if word_completer is None or member_completer is None:
+            return
+        for parent, items in batch:
+            word_completer.extend_catalog(parent=parent, items=items, defer_merge=True)
+            member_completer.extend_catalog(
+                parent=parent, items=items, defer_merge=True
             )
-            self.editor_collection.member_completer.extend_catalog(
-                parent=parent, items=items
-            )
+        # merge() swaps in a freshly built list, so a completer call on the main
+        # thread reads either the old list or the new one, never a partial one.
+        word_completer.merge()
+        member_completer.merge()
 
     def update_completers(self, catalog: Catalog) -> None:
         if self.connection is None:
@@ -1238,13 +1648,21 @@ class Harlequin(AppBase):
     @work(
         thread=True,
         exclusive=True,
-        exit_on_error=True,
+        exit_on_error=False,
         group="completer_builders",
         description="building completers",
     )
     def _build_completers(self, catalog: Catalog) -> None:
         assert self.connection is not None
-        extra_completions = self.connection.get_completions()
+        try:
+            extra_completions = self.connection.get_completions()
+        except Exception:
+            # completions are a nice-to-have; build the rest without them.
+            extra_completions = []
+            self.notify(
+                "Harlequin could not load completions from your adapter.",
+                severity="warning",
+            )
         word_completer, member_completer = completer_factory(
             catalog=catalog,
             extra_completions=extra_completions,
@@ -1257,9 +1675,13 @@ class Harlequin(AppBase):
 
     @work(thread=True, exclusive=True, exit_on_error=False, group="schema_updaters")
     def update_schema_data(self) -> None:
-        if self.connection is None:
+        connection = self._connection_for_worker(rebuilds_catalog=True)
+        if connection is None:
+            # no NewCatalog is coming, and a plain return is not a worker error,
+            # so nothing else stops the spinner a refresh started
+            self.post_message(CatalogRefreshAborted())
             return
-        catalog = self.connection.get_catalog()
+        catalog = connection.get_catalog()
         self.post_message(NewCatalog(catalog=catalog))
 
     def _validate_selection(self) -> str:

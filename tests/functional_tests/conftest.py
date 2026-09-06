@@ -4,10 +4,26 @@ from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
+from textual.pilot import Pilot
+from textual.widgets import Input
+from textual.widgets._tree import TreeNode
 from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 from harlequin.autocomplete import HarlequinCompletion
+from harlequin.catalog import CatalogItem
+
+
+@pytest.fixture(autouse=True)
+def no_cursor_blink(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Freeze every Input's cursor in the visible state.
+
+    Snapshots are captured after a settle delay that is longer than the blink
+    interval, so a blinking cursor makes snapshot tests nondeterministic.
+    Neutering the toggle leaves the pause/restart behavior (and so the blurred
+    state) intact.
+    """
+    monkeypatch.setattr(Input, "_toggle_cursor", lambda _self: None)
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +33,12 @@ def no_use_buffer_cache(
     if "use_cache" in request.keywords:
         return
     monkeypatch.setattr("harlequin.components.code_editor.load_cache", lambda: None)
+    monkeypatch.setattr(
+        "harlequin.components.code_editor.adopt_recovery", lambda: (None, None)
+    )
     monkeypatch.setattr("harlequin.app.write_editor_cache", lambda *_: None)
+    monkeypatch.setattr("harlequin.app.write_recovery", lambda *_: True)
+    monkeypatch.setattr("harlequin.app.clear_recovery", lambda *_: None)
 
 
 @pytest.fixture(autouse=True)
@@ -31,10 +52,8 @@ def no_use_catalog_cache(
 
 
 @pytest.fixture(autouse=True)
-def mock_config_loader(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "harlequin.cli.get_config_for_profile", lambda **_: (dict(), [])
-    )
+def mock_config_loader(no_discovered_config: None) -> None:
+    """Autouse wrapper over the shared fixture. test_keys_app overrides it."""
 
 
 @pytest.fixture(autouse=True)
@@ -173,6 +192,29 @@ def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
                 await app.workers.wait_for_complete(filtered_workers)
 
     return wait_for_filtered_workers
+
+
+@pytest.fixture
+def expand_catalog_node() -> Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[None]]:
+    """Expand a catalog node and wait until its real children are rendered.
+
+    The catalog shows a "loading…" placeholder child as soon as an unloaded node
+    is expanded, so waiting on `node.children` alone returns before the adapter
+    has answered.
+    """
+
+    async def expand(pilot: Pilot, node: TreeNode[CatalogItem]) -> None:
+        node.expand()
+        while True:
+            data = node.data
+            if data is None or (
+                getattr(data, "loaded", True)
+                and len(node.children) == len(data.children)
+            ):
+                return
+            await pilot.pause()
+
+    return expand
 
 
 @pytest.fixture

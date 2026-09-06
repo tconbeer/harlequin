@@ -2,14 +2,11 @@ from pathlib import Path
 
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Markdown, Static
 
-
-class VerticalSuppressClicks(Vertical):
-    def on_click(self, message: events.Click) -> None:
-        message.stop()
+from harlequin.components.text_modal import VerticalSuppressClicks
 
 
 class HelpScreen(ModalScreen):

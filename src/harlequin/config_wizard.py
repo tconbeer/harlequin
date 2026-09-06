@@ -2,28 +2,27 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import questionary
 import tomlkit
 from rich import print as rich_print
 from rich.markup import escape
 from rich.panel import Panel
-from textual.theme import BUILTIN_THEMES
 
 from harlequin.adapter import HarlequinAdapter
-from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, YELLOW
+from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE, VALID_THEMES, YELLOW
 from harlequin.config import (
-    Config,
     ConfigFile,
     Profile,
-    get_config_for_profile,
     get_highest_priority_existing_config_file,
+    load_profile_and_keymaps,
     sluggify_option_name,
 )
 from harlequin.exception import HarlequinWizardError, pretty_print_error
-from harlequin.options import ListOption
+from harlequin.options import AbstractOption, ListOption
 from harlequin.plugins import load_adapter_plugins, load_keymap_plugins
+from harlequin.redact import redact_profile
 
 
 def wizard(config_path: Path | None) -> None:
@@ -58,6 +57,8 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    adapter_cls = adapters[adapter]
+
     conn_str = questionary.text(
         message="What connection string(s) should this profile use?",
         instruction="Separate items by a space. Quote a single item containing spaces.",
@@ -65,17 +66,26 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    # only prompt for read-only if the adapter supports it
+    read_only = False
+    if adapter_cls.IMPLEMENTS_READ_ONLY:
+        read_only = questionary.confirm(
+            message="Should this profile connect read-only?",
+            default=bool(selected_profile.get("read_only", False)),
+            style=HARLEQUIN_QUESTIONARY_STYLE,
+        ).unsafe_ask()
+
     theme = questionary.select(
         message="What theme should this profile use?",
-        choices=sorted(BUILTIN_THEMES.keys()),
+        choices=sorted(VALID_THEMES.keys()),
         default=selected_profile.get("theme", "harlequin"),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    vim_code_choice = questionary.select(
-        message="Enable Vim support in the Code Editor?",
-        choices=["Yes", "No"],
-        default="No",
+    code_editor = questionary.select(
+        message="What code editor should this profile use?",
+        choices=["default", "vim"],
+        default=selected_profile.get("code_editor", "default"),
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
@@ -93,11 +103,23 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    limit = int(
+    # two questions, because they are two limits: what leaves the database,
+    # and what the Results Viewer holds of it.
+    raw_limit = questionary.text(
+        message="How many rows should each query fetch from the database?",
+        instruction="Leave blank for app defaults; enter -1 for no limit.",
+        validate=_validate_int_or_blank,
+        default=str(selected_profile.get("limit", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+    limit = None if raw_limit == "" else int(raw_limit)
+
+    viewer_max_rows = int(
         questionary.text(
-            message="How many rows should the data table show?",
+            message="How many rows should the Results Viewer hold?",
+            instruction="Enter -1 for no limit.",
             validate=_validate_int,
-            default=str(selected_profile.get("limit", 100000)),
+            default=str(selected_profile.get("viewer_max_rows", 100000)),
             style=HARLEQUIN_QUESTIONARY_STYLE,
         ).unsafe_ask()
     )
@@ -127,7 +149,8 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
-    adapter_cls = adapters[adapter]
+    ssh_options = _prompt_for_ssh_options(selected_profile)
+
     adapter_option_choices = (
         [
             questionary.Choice(
@@ -164,10 +187,18 @@ def _wizard(config_path: Path | None) -> None:
     new_profile: Profile = {
         "adapter": adapter,
         "theme": theme,
-        "limit": limit,
+        "viewer_max_rows": viewer_max_rows,
         "keymap_name": keymap_name,
-        "vim_code_editor": True if vim_code_choice == "Yes" else False,
+        "code_editor": code_editor,
     }
+
+    if limit is not None and limit >= 0:
+        # only when there is one: an unlimited fetch is the default, and a key
+        # that says so is a line the reader has to work out the meaning of.
+        new_profile["limit"] = limit
+
+    if read_only:
+        new_profile["read_only"] = read_only
 
     if show_files:
         new_profile["show_files"] = show_files
@@ -178,13 +209,18 @@ def _wizard(config_path: Path | None) -> None:
     if locale:
         new_profile["locale"] = locale
 
-    new_profile.update(adapter_options)  # type: ignore[typeddict-item]
+    new_profile.update(ssh_options)
+    new_profile.update(adapter_options)
 
-    _confirm_profile_generation(default_profile, profile_name, new_profile)
+    _confirm_profile_generation(
+        default_profile, profile_name, new_profile, adapter_cls.ADAPTER_OPTIONS
+    )
 
     config["profiles"][profile_name] = new_profile
 
-    config_file.update(config=config)
+    # the wizard holds the file's whole Harlequin section, so a key it no
+    # longer has -- a `default_profile` turned off -- is one to delete
+    config_file.update(config=config, whole_section=True)
     config_file.write()
 
 
@@ -232,6 +268,71 @@ def _prompt_for_profile_name(profiles: dict[str, Profile]) -> str:
     return profile_name
 
 
+def _prompt_for_ssh_options(selected_profile: Profile) -> dict[str, Any]:
+    """The tunnel's keys, asked for only when there is a tunnel.
+
+    Not `ssh_allow_reuse`: it turns off the check that the local port is not
+    already someone else's, and a run reads that one from the command line only.
+    """
+    tunneled = questionary.confirm(
+        message="Do you connect via SSH?",
+        default=bool(selected_profile.get("ssh_host")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+    if not tunneled:
+        return {}
+
+    ssh_host = questionary.text(
+        message="What SSH destination should this profile tunnel through?",
+        instruction=(
+            "A Host alias from your ssh config, or host, user@host or "
+            "ssh://user@host:port."
+        ),
+        default=str(selected_profile.get("ssh_host", "")),
+        validate=lambda raw: bool(raw.strip()) or "Cannot be empty",
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    existing_forwards = selected_profile.get("ssh_forward", [])
+    if isinstance(existing_forwards, str):
+        existing_forwards = [existing_forwards]
+    ssh_forward = questionary.text(
+        message="What should it forward?",
+        instruction=(
+            "LOCAL:HOST:REMOTE, as ssh -L takes it; separate several by a "
+            "space. Leave blank if your ssh config has a LocalForward. Point "
+            "this profile's connection details at the local end."
+        ),
+        default=" ".join(existing_forwards),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    ssh_batch_mode = questionary.confirm(
+        message="Should ssh fail rather than prompt for a passphrase or password?",
+        default=bool(selected_profile.get("ssh_batch_mode", False)),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    raw_timeout = questionary.text(
+        message="How many seconds should Harlequin wait for the forwards?",
+        instruction="Leave blank for app defaults.",
+        validate=_validate_seconds_or_blank,
+        default=str(selected_profile.get("ssh_timeout", "")),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
+    options: dict[str, Any] = {"ssh_host": ssh_host.strip()}
+    if ssh_forward.strip():
+        options["ssh_forward"] = shlex.split(ssh_forward)
+    if ssh_batch_mode:
+        options["ssh_batch_mode"] = ssh_batch_mode
+    if raw_timeout.strip():
+        seconds = float(raw_timeout)
+        # written the way it was typed: `30`, not `30.0`
+        options["ssh_timeout"] = int(seconds) if seconds.is_integer() else seconds
+    return options
+
+
 def _prompt_to_set_adapter_options(
     adapter_options: dict[str, Any],
     adapter_cls: type[HarlequinAdapter],
@@ -246,15 +347,18 @@ def _prompt_to_set_adapter_options(
             if option.name not in which:
                 continue
             value = option.to_questionary(
-                selected_profile.get(sluggify_option_name(option.name), None)
+                selected_profile.get(sluggify_option_name(option.name))
             ).unsafe_ask()
+            # A blank answer is not a value; False can be an explicit flag value.
+            if value == "":
+                continue
             if isinstance(option, ListOption):
                 value = value.split(" ")
-            adapter_options.update({sluggify_option_name(option.name): value})
+            adapter_options[sluggify_option_name(option.name)] = value
 
 
 def _prompt_to_set_default_profile(
-    profile_name: str, config: Config, profiles: dict[str, Profile]
+    profile_name: str, config: dict[str, Any], profiles: dict[str, Profile]
 ) -> str | None:
     possible_names = set([profile_name, *profiles.keys()])
     NO_DEFAULT_SENTINEL = "[No default]"
@@ -277,12 +381,19 @@ def _prompt_to_set_default_profile(
 
 
 def _confirm_profile_generation(
-    default_profile: str | None, profile_name: str, new_profile: Profile
+    default_profile: str | None,
+    profile_name: str,
+    new_profile: Profile,
+    adapter_options: Sequence[AbstractOption] | None = None,
 ) -> None:
-    new_config: Config = (
+    # raw TOML data, like everything on the write path, rather than a `Config`
+    new_config: dict[str, Any] = (
         {} if default_profile is None else {"default_profile": default_profile}
     )
-    new_config.update({"profiles": {profile_name: new_profile}})
+    # redact secrets from the displayed config preview
+    new_config.update(
+        {"profiles": {profile_name: redact_profile(new_profile, adapter_options)}}
+    )
     new_config_toml = tomlkit.dumps(new_config).rstrip()
 
     rich_print("[italic] We generated the following profile:[/]")
@@ -303,7 +414,7 @@ def _confirm_profile_generation(
 
 
 def _all_keymap_names(config_path: Path | None) -> list[str]:
-    _, user_defined_keymaps = get_config_for_profile(
+    _, user_defined_keymaps = load_profile_and_keymaps(
         config_path=config_path, profile_name=None
     )
     all_keymaps = load_keymap_plugins(user_defined_keymaps=user_defined_keymaps)
@@ -317,6 +428,21 @@ def _validate_int(raw: str) -> bool:
         return False
     else:
         return True
+
+
+def _validate_int_or_blank(raw: str) -> bool:
+    """The limit prompt accepts blank, which means the app's default."""
+    return not raw or _validate_int(raw)
+
+
+def _validate_seconds_or_blank(raw: str) -> bool:
+    """Blank means the app's default; anything else is a positive duration."""
+    if not raw.strip():
+        return True
+    try:
+        return float(raw) > 0
+    except ValueError:
+        return False
 
 
 def _validate_dir_or_blank(raw: str) -> bool:

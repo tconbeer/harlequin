@@ -9,7 +9,13 @@ from harlequin_duckdb import DuckDbAdapter
 
 
 async def load_lots_of_buffers() -> None:
-    with patch("harlequin.components.code_editor.load_cache") as mock_load_cache:
+    with (
+        patch("harlequin.components.code_editor.load_cache") as mock_load_cache,
+        patch(
+            "harlequin.components.code_editor.adopt_recovery",
+            return_value=(None, None),
+        ),
+    ):
         buff = BufferState(
             selection=Selection((0, 0), (0, 0)),
             text="select 1000; ",

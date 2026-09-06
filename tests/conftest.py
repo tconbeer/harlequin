@@ -19,6 +19,40 @@ else:
     from importlib.metadata import entry_points
 
 
+# The committed snapshots are generated on the lowest supported Python. On 3.12+,
+# SQLite grows a transaction button, so the tests that show one render differently
+# and skip their snapshot assertions (see the transaction_button_visible fixture).
+SNAPSHOT_PYTHON = (3, 10)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Stop --snapshot-update on a newer Python from clobbering the baseline.
+
+    A full update run on 3.12+ silently rewrites the committed snapshots with
+    3.12 output, and deletes the ones those tests never take. The py12-only
+    snapshots can't be generated on 3.10 (their tests are skipped there), so
+    updating those on 3.12 is allowed -- but such a run covers a slice of the
+    suite, so it must not prune everything it didn't take.
+    """
+    if not config.option.update_snapshots:
+        return
+    if sys.version_info[:2] == SNAPSHOT_PYTHON:
+        return
+
+    baseline = ".".join(str(v) for v in SNAPSHOT_PYTHON)
+    if "py12" not in (config.option.markexpr or ""):
+        raise pytest.UsageError(
+            f"--snapshot-update must run on Python {baseline}, which is what the "
+            "committed snapshots were generated on:\n"
+            "    uv run pytest --snapshot-update\n"
+            "To update the py12-only snapshots, which can only be generated on "
+            "3.12+, select just those tests:\n"
+            "    uv run --python 3.12 --group test pytest -m 'py12 and not online' "
+            "--snapshot-update"
+        )
+    config.option.no_cleanup = True
+
+
 @pytest.fixture(scope="session", autouse=True)
 def install_tzdata() -> None:
     if sys.platform == "win32":
@@ -30,10 +64,54 @@ def set_locale_to_enUS() -> None:
     set_locale("en_US.UTF-8")
 
 
+@pytest.fixture(autouse=True)
+def crash_reports_go_to_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Every crash a test causes writes here, not into the developer's log dir.
+
+    `run_test` re-raises through `_handle_exception`, so without this every
+    failing functional test in the suite leaves a crash report behind.
+    """
+    report_dir = tmp_path / "crash-reports"
+    monkeypatch.setattr("harlequin.crash.get_crash_report_dir", lambda: report_dir)
+    return report_dir
+
+
+@pytest.fixture(autouse=True)
+def no_discovered_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the machine running the tests out of them.
+
+    Config discovery walks the home directory, the user config dir and the cwd,
+    so without this a developer's own `.harlequin.toml` decides what a test
+    asserts.
+
+    The search is the seam, rather than `load_config()` or a command's own
+    `load_profile()`, because it is the one both commands share *and* that
+    leaves `--config-path` working -- a test that passes an explicit config
+    file still gets it. A test about discovery itself patches the seam back
+    (see `test_discover_config_files`) or replaces it with directories of its
+    own (see the `config_dirs` fixture).
+    """
+    monkeypatch.setattr("harlequin.config._search_directories", list)
+
+
 @pytest.fixture
 def data_dir() -> Path:
     here = Path(__file__)
     return here.parent / "data"
+
+
+@pytest.fixture
+def fake_ssh_client(data_dir: Path) -> Path:
+    """The stand-in for the `ssh` binary, which needs no server to bind a forward."""
+    return data_dir / "unit_tests" / "ssh" / "ssh"
+
+
+@pytest.fixture
+def drop_trigger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Touch the path this returns, and the fake client drops its forwards."""
+    path = tmp_path / "drop"
+    monkeypatch.setenv("FAKE_SSH_DROP_WHEN", str(path))
+    return path
 
 
 @pytest.fixture

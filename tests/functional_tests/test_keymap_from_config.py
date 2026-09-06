@@ -7,7 +7,7 @@ from typing import Awaitable, Callable
 import pytest
 
 from harlequin import Harlequin, HarlequinAdapter
-from harlequin.config import get_config_for_profile
+from harlequin.config import load_profile_and_keymaps
 
 QUERY = dedent(
     """
@@ -36,7 +36,7 @@ async def test_results_viewer_bindings(
     config_path = (
         data_dir / "functional_tests" / "test_keymap_from_config" / "config.toml"
     )
-    profile, my_keymaps = get_config_for_profile(
+    profile, my_keymaps = load_profile_and_keymaps(
         config_path=config_path, profile_name=None
     )
     app = Harlequin(

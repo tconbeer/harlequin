@@ -7,11 +7,14 @@ from typing import Any, List, Optional, Sequence, Union
 import tomlkit
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Collapsible, Markdown, Static
 
+from harlequin.components.text_modal import VerticalSuppressClicks
 from harlequin.config import Config, Profile
+from harlequin.options import AbstractOption
+from harlequin.redact import REDACTED, redact_conn_str, redact_profile
 
 
 class WidgetType(Enum):
@@ -36,11 +39,6 @@ class DebugWidget:
         self.id = id
 
 
-class VerticalSuppressClicks(Vertical):
-    def on_click(self, message: events.Click) -> None:
-        message.stop()
-
-
 class HarlequinDebugInfo:
     def __init__(
         self,
@@ -51,6 +49,8 @@ class HarlequinDebugInfo:
         theme: str | None = None,
         active_profile_name: str | None = None,
         active_profile_config: Profile | None = None,
+        adapter_options: Sequence[AbstractOption] | None = None,
+        ssh_tunnel: str | None = None,
     ) -> None:
         self.all_keymaps = all_keymaps
         self.config = config
@@ -59,16 +59,44 @@ class HarlequinDebugInfo:
         self.theme = theme
         self.active_profile_name = active_profile_name
         self.active_profile_config = active_profile_config or {}
+        self.adapter_options = adapter_options
+        """What the connected adapter declares, so that this screen knows
+        which of the profile's values it must not print."""
+        self.ssh_tunnel = ssh_tunnel
+        """The tunnel this session's connection is reached through."""
 
     def parse_info(self) -> List[DebugWidget]:
+        redacted_config = {
+            **self.config.to_dict(),
+            "profiles": {
+                name: redact_profile(profile, self.adapter_options)
+                for name, profile in self.config.profiles.items()
+            },
+        }
+        redacted_profile = redact_profile(
+            self.active_profile_config, self.adapter_options
+        )
         try:
-            config_toml = tomlkit.dumps(self.config).rstrip()
+            config_toml = tomlkit.dumps(redacted_config).rstrip()
         except Exception:
-            config_toml = str(self.config)
+            config_toml = str(redacted_config)
         try:
-            profile_toml = tomlkit.dumps(self.active_profile_config).rstrip()
+            profile_toml = tomlkit.dumps(redacted_profile).rstrip()
         except Exception:
-            profile_toml = str(self.active_profile_config)
+            profile_toml = str(redacted_profile)
+        # `--ssh-host` takes an `ssh://user:pw@host` nothing else strips, and
+        # this screen's text is written to be pasted into a bug report
+        tunnel_details = (
+            [
+                DebugWidget(
+                    widget_type=WidgetType.MARKDOWN,
+                    title="SSH Tunnel",
+                    content=f"`{redact_conn_str([self.ssh_tunnel])[0]}`",
+                )
+            ]
+            if self.ssh_tunnel
+            else []
+        )
         details = [
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,
@@ -85,6 +113,7 @@ class HarlequinDebugInfo:
                 title="Theme",
                 content=f"`{self.theme}`",
             ),
+            *tunnel_details,
             DebugWidget(
                 widget_type=WidgetType.MARKDOWN,
                 title="Active Keymaps",
@@ -154,10 +183,14 @@ class AdapterDebugInfo:
         if self.adapter_options:
             table = ["| Flag(s) | Value |", "|---|---|"]
             for opt in self.adapter_options:
-                flags = f"--{opt.name}"
-                if getattr(opt, "short_decls", []):
-                    flags += " " + " ".join(opt.short_decls)
-                value = getattr(opt, "default", None)
+                declared = opt.to_dict()
+                flags = " ".join([f"--{declared['name']}", *declared["short_decls"]])
+                # defaults can hold secrets too
+                value = (
+                    REDACTED
+                    if declared["secret"] and declared["default"] is not None
+                    else declared["default"]
+                )
                 table.append(f"| `{flags}` | `{value}` |")
             options_markdown = "\n".join(table)
         else:

@@ -31,7 +31,9 @@ HARLEQUIN_TEXTUAL_THEME = TextualTheme(
 )
 
 VALID_THEMES = BUILTIN_THEMES
-VALID_THEMES.pop("textual-ansi")
+# Harlequin doesn't support ANSI-passthrough themes.
+VALID_THEMES.pop("ansi-dark", None)
+VALID_THEMES.pop("ansi-light", None)
 VALID_THEMES.update({"harlequin": HARLEQUIN_TEXTUAL_THEME})
 
 HARLEQUIN_QUESTIONARY_STYLE = (

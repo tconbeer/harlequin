@@ -1,0 +1,16 @@
+{
+  "name": "harlequin",
+  "owner": {
+    "name": "Ted Conbeer",
+    "url": "https://github.com/tconbeer"
+  },
+  "metadata": {
+    "description": "Plugins for Harlequin, the SQL IDE for your terminal, and hsql, your agent's favorite SQL client."
+  },
+  "plugins": [
+    {
+      "name": "hsql",
+      "source": "./src/harlequin/hsql/skill"
+    }
+  ]
+}

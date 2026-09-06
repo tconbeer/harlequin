@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Type, Union
+import re
+from typing import Any, Type, Union
 
 from textual.app import App, InvalidThemeError
 from textual.binding import ActiveBinding
@@ -9,10 +10,29 @@ from textual.screen import Screen
 from textual.types import CSSPathType
 
 from harlequin.colors import HARLEQUIN_TEXTUAL_THEME
+from harlequin.crash import build_crash_report, crash_message, write_crash_report
 from harlequin.exception import (
+    HarlequinCrashError,
     HarlequinThemeError,
     pretty_error_message,
 )
+
+_URL = re.compile(r"https?://[^\s\]]*[^\s.,;:!?)\]]")
+
+
+def _as_markup(message: str) -> str:
+    """The crash message with its URLs clickable and nothing else interpreted.
+
+    Terminals make an OSC-8 link clickable, which is what `[link=]` renders
+    to. The rest is escaped because the message quotes an exception, and a
+    driver that put brackets in one would otherwise lose them to the markup
+    parser.
+    """
+    from rich.markup import escape
+
+    return _URL.sub(
+        lambda match: f"[link={match.group()}]{match.group()}[/link]", escape(message)
+    )
 
 
 class ScreenBase(Screen):
@@ -41,6 +61,9 @@ class AppBase(App, inherit_bindings=False):
         watch_css: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css)
+        # before the theme below, which can call self.exit() and so reach the
+        # handler that reads it
+        self._crash_handled = False
         self.register_theme(HARLEQUIN_TEXTUAL_THEME)
         try:
             self.theme = theme or "harlequin"
@@ -65,12 +88,72 @@ class AppBase(App, inherit_bindings=False):
         """
         return ScreenBase(id="_default")
 
+    def _save_work_on_crash(self) -> bool:
+        """Persist anything the user would lose. False if there was nothing to save."""
+        return False
+
+    def _crash_context(self) -> dict[str, Any]:
+        """What this app was doing, for the crash report."""
+        return {}
+
     def _handle_exception(self, error: Exception) -> None:
+        """Write a crash report and print a panel, instead of a raw traceback.
+
+        Textual renders an uncaught exception with `show_locals=True`, which
+        puts connection strings, tokens and query results on the terminal, and
+        tells the user nothing about what to do next.
+
+        The order is by value: save the user's work first, report second,
+        render last, each stage wrapped on its own. This runs inside an
+        `except` block, so it must not be able to raise -- raising here is how
+        a fix for crashes becomes the crash. `_exit` is Textual's own guard
+        against exceptions raised after `exit()`
+        (https://github.com/Textualize/textual/issues/5325); a second
+        exception returns without reporting again.
         """
-        Prevents tracebacks from being printed due to exceptions that
-        occur after App.exit() is called.
-        See https://github.com/Textualize/textual/issues/5325
-        """
-        if self._exit:
+        if self._exit or self._crash_handled:
             return
-        return super()._handle_exception(error)
+        self._crash_handled = True
+
+        saved = False
+        try:
+            saved = self._save_work_on_crash()
+        except BaseException:
+            pass
+
+        report_path = None
+        try:
+            report_path = write_crash_report(
+                build_crash_report(error, self._crash_context())
+            )
+        except BaseException:
+            pass
+
+        try:
+            self.bell()
+            # so the command that ran this app can forward a failure
+            self._return_code = 1
+            # `run_test` re-raises from these; a crashing functional test that
+            # did not set them would silently pass
+            if self._exception is None:
+                self._exception = error
+                self._exception_event.set()
+            # panic() closes the message pump, so a modal is unreachable from
+            # here anyway: this lands at _exit_renderables[0] and prints to
+            # stderr once the terminal is restored
+            self.panic(
+                pretty_error_message(
+                    HarlequinCrashError(
+                        _as_markup(crash_message(report_path, error, saved)),
+                        title="Harlequin crashed.",
+                    )
+                )
+            )
+        except BaseException:
+            # last resort: the user gets *something*
+            super()._handle_exception(error)
+            return
+
+        # `textual run --dev`: append the full traceback for whoever is developing
+        if "debug" in self.features:
+            super()._handle_exception(error)

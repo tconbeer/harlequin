@@ -26,12 +26,6 @@ no_init = FlagOption(
     description="Start Harlequin without executing the initialization script.",
 )
 
-read_only = FlagOption(
-    name="read-only",
-    short_decls=["-readonly", "-r"],
-    description="Open the database file in read-only mode.",
-)
-
 unsigned = FlagOption(
     name="allow-unsigned-extensions",
     description="Allow loading unsigned extensions",
@@ -66,6 +60,9 @@ md_token = TextOption(
         "MotherDuck Token. Pass your MotherDuck service token in this option, or "
         "set the `motherduck_token` environment variable."
     ),
+    # a service token, so nothing that reports on a profile may print it back,
+    # and the wizard must not echo it as it is typed
+    secret=True,
 )
 
 md_saas = FlagOption(
@@ -76,7 +73,6 @@ md_saas = FlagOption(
 DUCKDB_OPTIONS = [
     init,
     no_init,
-    read_only,
     unsigned,
     extensions,
     force_extensions,

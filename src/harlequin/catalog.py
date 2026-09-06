@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Generic, Protocol, Sequence, TypeVar
-
-from textual.message import Message
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Generic,
+    Literal,
+    Protocol,
+    Sequence,
+    TypeVar,
+)
 
 if TYPE_CHECKING:
     from harlequin.adapter import HarlequinConnection
@@ -32,6 +38,9 @@ class CatalogItem:
             a list of columns if this is a table.). If the list is empty and
             a CatalogItem subclass implements the `fetch_children()` method,
             Harlequin will attempt to call that method to lazy-load children.
+        type_name (str | None): The full type of this object, spelled the way
+            this database spells it, e.g. "DECIMAL(18,2)" for a column or
+            "BASE TABLE" for a table. None if the adapter does not know it.
     """
 
     qualified_identifier: str
@@ -39,6 +48,30 @@ class CatalogItem:
     label: str
     type_label: str
     children: list["CatalogItem"] = field(default_factory=list)
+    type_name: str | None = None
+
+
+CatalogSearchKind = Literal["relations", "columns", "all"]
+"""Which items a catalog search looks at.
+
+"all" is every level the catalog has, including schemas and databases.
+"""
+
+
+@dataclass
+class CatalogSearchResult:
+    """
+    One item a catalog search found, and where in the catalog it sits.
+
+    Args:
+        item (CatalogItem): The object whose label matched the search term.
+        parents (tuple[str, ...]): The labels of the item's ancestors,
+            outermost first, e.g. ("mydb", "analytics") for a table. Empty for
+            an item at the top of the catalog.
+    """
+
+    item: CatalogItem
+    parents: tuple[str, ...] = ()
 
 
 TCatalogItem_contra = TypeVar(
@@ -102,16 +135,3 @@ class Catalog:
     """
 
     items: list[CatalogItem]
-
-
-class NewCatalog(Message):
-    def __init__(self, catalog: Catalog) -> None:
-        self.catalog = catalog
-        super().__init__()
-
-
-class NewCatalogItems(Message):
-    def __init__(self, parent: CatalogItem, items: list[CatalogItem]) -> None:
-        self.parent = parent
-        self.items = items
-        super().__init__()

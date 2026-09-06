@@ -3,48 +3,53 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterable, Sequence
-
-import click
-import questionary
-from textual.validation import ValidationResult, Validator
-from textual.widget import Widget
-
-from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
-from harlequin.copy_widgets import (
-    Input,
-    NoFocusLabel,
-    PathInput,
-    Select,
-    Switch,
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Generator,
+    Iterable,
+    Sequence,
 )
 
+import click
 
-class _CustomValidator(Validator):
-    def __init__(
-        self,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        failure_description: str | None = None,
-    ) -> None:
-        super().__init__(failure_description)
-        self.validator = validator or (lambda _: (True, ""))
+if TYPE_CHECKING:
+    import questionary
+    from textual.widget import Widget
 
-    def validate(self, value: str) -> ValidationResult:
-        try:
-            is_valid, message = self.validator(value)
-        except Exception as e:
-            return self.failure(str(e))
-
-        if is_valid:
-            return self.success()
-        else:
-            return self.failure(message or "Validation failed.")
+# Declaring an option must stay cheap: every adapter imports this module, and
+# `questionary` (130ms) and Textual (150ms, plus 264ms for the themes that
+# `harlequin.colors` pulls in) are only needed to *render* one. `to_widgets()`
+# and `to_questionary()` import what they need when they are called.
 
 
 def concatenate(first: str, second: str) -> str:
     if first == second:
         return first
     return f"{first}\n----or----\n{second}"
+
+
+def _stringify_or_none(existing_value: Any) -> str | None:
+    """Stringify an existing prompt value without turning `None` into text."""
+    if existing_value is None:
+        return None
+    try:
+        return str(existing_value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _derived_type_name(cls: type) -> str:
+    """A type name for an option class that never declared one.
+
+    `MyCoolOption` becomes `mycool`. Only reached by a subclass that predates
+    `option_type`, which is the case `to_dict()` exists to keep working.
+    """
+    name = cls.__name__
+    stem = name[: -len("Option")] if name.endswith("Option") else name
+    return (stem or name).lower()
 
 
 class AbstractOption(ABC):
@@ -56,6 +61,18 @@ class AbstractOption(ABC):
     Subclasses define options for specific data types, like text or boolean options.
     """
 
+    option_type: ClassVar[str] = ""
+    """The name `to_dict()` reports for this kind of option. e.g., "text".
+
+    A class attribute, so that a subclass of one of the types below inherits
+    the right answer and a new type only has to set it. A subclass that never
+    sets it is reported under its own class name, which is true rather than
+    useful -- and better than claiming a type it is not.
+    """
+
+    secret: bool = False
+    """Whether this option's value must never be printed. e.g., a password."""
+
     def __init__(
         self,
         name: str,
@@ -63,6 +80,7 @@ class AbstractOption(ABC):
         *args: Any,
         label: str | None = None,
         short_decls: Sequence[str] | None = None,
+        secret: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -74,6 +92,8 @@ class AbstractOption(ABC):
             label (str | None): For GUI options, a human-friendly label for this option.
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key. See the class attribute.
         """
         # names should be valid html/css ids
         if re.match(r"[A-Za-z](\w|-)*", name):
@@ -90,6 +110,29 @@ class AbstractOption(ABC):
         self.short_decls = [
             decl if decl.startswith("-") else f"-{decl}" for decl in short_decls
         ]
+        self.secret = bool(secret)
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        This option as plain data, for the consumers that read an option rather
+        than render one: `hsql --spec`, the config schema, the debug screen.
+
+        Concrete rather than abstract, because third-party adapters subclass
+        this: a subclass that predates the method still has to answer, which is
+        what the `getattr` is for. The keys are the same whatever the type --
+        one that does not apply is null rather than missing.
+        """
+        return {
+            "name": self.name,
+            "type": self.option_type or _derived_type_name(type(self)),
+            "label": self.label,
+            "description": self.description,
+            "short_decls": list(self.short_decls),
+            "default": getattr(self, "default", None),
+            "choices": None,
+            "multiple": False,
+            "secret": bool(getattr(self, "secret", False)),
+        }
 
     @abstractmethod
     def merge(self, other: AbstractOption) -> AbstractOption:
@@ -117,6 +160,8 @@ class TextOption(AbstractOption):
     An option for free text input, including optional validation.
     """
 
+    option_type = "text"
+
     def __init__(
         self,
         name: str,
@@ -126,6 +171,7 @@ class TextOption(AbstractOption):
         default: str | None = None,
         placeholder: str | None = None,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -142,8 +188,12 @@ class TextOption(AbstractOption):
                 receives the raw input as a string returns a tuple. The first item of
                 the tuple is either True for valid input or False for invalid input.
                 The second item is a message shown to the user if the validation fails.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.validator = validator
         self.default = default
         self.placeholder = placeholder
@@ -189,6 +239,7 @@ class TextOption(AbstractOption):
             default=default,
             placeholder=placeholder,
             validator=merge_validator if self.validator is not None else None,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -212,15 +263,21 @@ class TextOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import CustomValidator, Input, NoFocusLabel
+
         yield NoFocusLabel(f"{self.label}:", classes="input_label")
         yield Input(
             value=self.default or "",
             placeholder=self.placeholder or "",
             id=self.name,
-            validators=[_CustomValidator(self.validator)],
+            validators=[CustomValidator(self.validator)],
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         def _q_validator(raw: str) -> bool | str | None:
             if self.validator is not None:
                 result = self.validator(raw)
@@ -231,12 +288,11 @@ class TextOption(AbstractOption):
             else:
                 return True
 
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        safe_existing_value = _stringify_or_none(existing_value)
 
-        return questionary.text(
+        # do not echo secrets in questionary prompt
+        ask = questionary.password if self.secret else questionary.text
+        return ask(
             message=self.name,
             default=(
                 safe_existing_value
@@ -249,12 +305,15 @@ class TextOption(AbstractOption):
 
 
 class ListOption(AbstractOption):
+    option_type = "list"
+
     def __init__(
         self,
         name: str,
         description: str,
         label: str | None = None,
         short_decls: list[str] | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -265,8 +324,18 @@ class ListOption(AbstractOption):
             label (str | None): For GUI options, a human-friendly label for this option.
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Repeatable, which is the one thing that separates it from a text
+        option -- `--extension httpfs --extension spatial`, and a list in a
+        profile."""
+        return {**super().to_dict(), "multiple": True}
 
     def merge(self, other: AbstractOption) -> ListOption:
         name = self.name
@@ -278,6 +347,7 @@ class ListOption(AbstractOption):
             description=description,
             label=label,
             short_decls=list(short_decls),
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -292,6 +362,10 @@ class ListOption(AbstractOption):
         raise NotImplementedError("No widget for ListOption.")
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         if isinstance(existing_value, str):
             safe_existing_value = existing_value
         elif isinstance(existing_value, Iterable):
@@ -299,7 +373,9 @@ class ListOption(AbstractOption):
         else:
             safe_existing_value = None
 
-        return questionary.text(
+        # do not echo secrets in questionary prompt
+        ask = questionary.password if self.secret else questionary.text
+        return ask(
             message=self.name,
             instruction="Separate items by a space.",
             default=safe_existing_value if safe_existing_value is not None else "",
@@ -311,6 +387,8 @@ class PathOption(AbstractOption):
     """
     A text input with path validation and autocomplete features.
     """
+
+    option_type = "path"
 
     def __init__(
         self,
@@ -325,6 +403,7 @@ class PathOption(AbstractOption):
         path_type: type | None = Path,
         default: str | None = None,
         placeholder: str | None = None,
+        secret: bool = False,
     ) -> None:
         """
         Args:
@@ -344,8 +423,12 @@ class PathOption(AbstractOption):
                 (usually str or pathlib.Path).
             default (str): The default path.
             placeholder (str): For GUI options, the placeholder text for the input.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.exists = exists
         self.file_okay = file_okay
         self.dir_okay = dir_okay
@@ -389,6 +472,7 @@ class PathOption(AbstractOption):
             path_type=path_type,
             default=default,
             placeholder=placeholder,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -406,6 +490,8 @@ class PathOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, PathInput
+
         yield NoFocusLabel(f"{self.label}:", classes="input_label")
         yield PathInput(
             value=self.default or "",
@@ -418,6 +504,10 @@ class PathOption(AbstractOption):
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         def _path_validator(raw_path: str) -> bool | str:
             try:
                 p = Path(raw_path)
@@ -434,10 +524,20 @@ class PathOption(AbstractOption):
 
             return True
 
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        safe_existing_value = _stringify_or_none(existing_value)
+
+        if self.secret:
+            # do not echo secrets in questionary prompt
+            return questionary.password(
+                message=self.name,
+                default=(
+                    safe_existing_value
+                    if safe_existing_value is not None
+                    else self.default or ""
+                ),
+                validate=_path_validator,
+                style=HARLEQUIN_QUESTIONARY_STYLE,
+            )
 
         return questionary.path(
             message=self.name,
@@ -453,6 +553,8 @@ class PathOption(AbstractOption):
 
 
 class SelectOption(AbstractOption):
+    option_type = "select"
+
     def __init__(
         self,
         name: str,
@@ -461,8 +563,11 @@ class SelectOption(AbstractOption):
         label: str | None = None,
         short_decls: list[str] | None = None,
         default: str | None = None,
+        secret: bool = False,
     ) -> None:
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.choices = choices
         self.default = default
         """
@@ -477,7 +582,19 @@ class SelectOption(AbstractOption):
             short_decls (Sequence[str] | None): For CLI options, a list of short aliases
                 (including the `-` prefix) for this option (e.g., ["-p"]).
             default (str | None): The default value for this option.
+            secret (bool): Set True if this option's value must never be printed
+                back -- a password, a token, a key.
         """
+
+    def to_dict(self) -> dict[str, Any]:
+        """The values, flattened.
+
+        A choice may be declared as a `(value, label)` pair for a GUI to render,
+        and a pair is not something a caller can type. `_flat_choices()` is what
+        `to_click()` passes to `click.Choice`, so this reports what the command
+        line will actually accept.
+        """
+        return {**super().to_dict(), "choices": self._flat_choices()}
 
     def merge(self, other: AbstractOption) -> AbstractOption:
         if isinstance(other, (TextOption, PathOption, ListOption)):
@@ -497,6 +614,7 @@ class SelectOption(AbstractOption):
             label=label,
             short_decls=list(short_decls),
             default=default,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -508,6 +626,8 @@ class SelectOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, Select
+
         choices: list[tuple[str, str]] = []
         for choice in self.choices:
             if isinstance(choice, str):
@@ -523,10 +643,11 @@ class SelectOption(AbstractOption):
         )
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
-        try:
-            safe_existing_value = str(existing_value)
-        except (ValueError, TypeError):
-            safe_existing_value = None
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
+        safe_existing_value = _stringify_or_none(existing_value)
 
         if safe_existing_value not in self._flat_choices():
             safe_existing_value = None
@@ -556,6 +677,8 @@ class FlagOption(AbstractOption):
     for GUI options, not CLI options, which always default to False)
     """
 
+    option_type = "flag"
+
     def __init__(
         self,
         name: str,
@@ -563,8 +686,11 @@ class FlagOption(AbstractOption):
         label: str | None = None,
         short_decls: Sequence[str] | None = None,
         default: bool = False,
+        secret: bool = False,
     ) -> None:
-        super().__init__(name, description, label=label, short_decls=short_decls)
+        super().__init__(
+            name, description, label=label, short_decls=short_decls, secret=secret
+        )
         self.default = default
 
     def merge(self, other: AbstractOption) -> AbstractOption:
@@ -581,6 +707,7 @@ class FlagOption(AbstractOption):
             label=label,
             short_decls=list(short_decls),
             default=default,
+            secret=self.secret or getattr(other, "secret", False),
         )
 
     def to_click(self) -> Callable[[click.Command], click.Command]:
@@ -589,10 +716,16 @@ class FlagOption(AbstractOption):
         )
 
     def to_widgets(self) -> Generator[Widget, None, None]:
+        from harlequin.copy_widgets import NoFocusLabel, Switch
+
         yield NoFocusLabel(f"{self.label}:", classes="switch_label")
         yield Switch(value=self.default, id=self.name)
 
     def to_questionary(self, existing_value: Any | None = None) -> questionary.Question:
+        import questionary
+
+        from harlequin.colors import HARLEQUIN_QUESTIONARY_STYLE
+
         try:
             safe_existing_value = bool(existing_value)
         except (ValueError, TypeError):
