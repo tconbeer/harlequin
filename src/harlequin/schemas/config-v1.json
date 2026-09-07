@@ -323,7 +323,13 @@
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
         "code_editor": {
-          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+          "type": "string",
+          "enum": [
+            "default",
+            "vim"
+          ],
+          "default": "default",
+          "description": "The code editor to use in the query editor (default or vim). Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         }
       }
     },

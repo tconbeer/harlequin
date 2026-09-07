@@ -710,3 +710,27 @@ def test_code_editor_default_with_vim_keymap(
     assert "vim" in mock_harlequin.call_args.kwargs["keymap_names"]
     user_keymaps = mock_harlequin.call_args.kwargs["user_defined_keymaps"]
     assert any(km.name == "vim" for km in user_keymaps)
+
+
+def test_code_editor_invalid_cli_choice(
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = invoke(runner, ["--code-editor", "emacs"])
+    assert res.exit_code == 2
+    assert "Invalid value for '--code-editor'" in res.stderr
+
+
+def test_code_editor_invalid_profile_value(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+) -> None:
+    monkeypatch.setattr(
+        "harlequin.cli.load_profile_and_keymaps",
+        lambda **_: ({"code_editor": "emacs"}, []),
+    )
+    runner = CliRunner()
+    res = invoke(runner, [])
+    assert res.exit_code == 2
+    assert "Invalid value for 'code_editor': 'emacs'" in res.stderr

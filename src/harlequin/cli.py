@@ -17,7 +17,9 @@ from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
+    DEFAULT_CODE_EDITOR,
     DEFAULT_SSH_TIMEOUT,
+    VALID_CODE_EDITORS,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
@@ -50,7 +52,6 @@ DEFAULT_VIEWER_MAX_ROWS = 100_000
 DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())
 DEFAULT_KEYMAP_NAMES = ["vscode"]
-DEFAULT_CODE_EDITOR = "default"
 
 # Auto-applied whenever "vim" is in keymap_names, or when code_editor="vim"
 # (if keymaps were not customized). If a profile already defines its own
@@ -558,7 +559,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         "--code-editor",
         default=DEFAULT_CODE_EDITOR,
         show_default=True,
-        type=click.Choice(["default", "vim"], case_sensitive=False),
+        type=click.Choice(list(VALID_CODE_EDITORS), case_sensitive=False),
         help="The code editor to use in the query editor (default or vim).",
     )
     @click.pass_context
@@ -676,6 +677,17 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # must be popped before it's passed to the adapter below, same as
         # every other harlequin-only option above
         code_editor: str = str(config.pop("code_editor", DEFAULT_CODE_EDITOR)).lower()
+        if code_editor not in VALID_CODE_EDITORS:
+            pretty_print_error(
+                HarlequinConfigError(
+                    msg=(
+                        f"Invalid value for 'code_editor': {code_editor!r}. "
+                        f"Must be one of: {', '.join(VALID_CODE_EDITORS)}."
+                    ),
+                    title="Harlequin Config Error",
+                )
+            )
+            ctx.exit(2)
 
         # If vim is in keymap_names, ensure DEFAULT_VIM_RESULTS_VIEWER_KEYMAP is loaded
         # if not overridden by the user.
