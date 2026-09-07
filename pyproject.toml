@@ -30,7 +30,7 @@ dependencies = [
     # click
     "click==8.5.0",
     # 1.9 is the first release compatible with click 8.2's Parameter.make_metavar()
-    "rich-click==1.9.8",
+    "rich-click==1.9.9",
 
     # statement splitting. Both arrive anyway, transitively, via
     # textual-textarea's `textual[syntax]` -- but `harlequin.statements` drives
@@ -76,7 +76,7 @@ dependencies = [
 
 [project.optional-dependencies]
 
-s3 = ["boto3==1.43.85"]
+s3 = ["boto3==1.43.89"]
 postgres = ["harlequin-postgres"]
 mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
@@ -111,7 +111,7 @@ test = [
     "pytest-asyncio==1.4.0",
     "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@a2c6763b45283f76757a123342900accefcf04e8",
-    "boto3==1.43.85",
+    "boto3==1.43.89",
     # extension tests require consistent version of duckdb.
     "duckdb==1.5.5",
     "flaky>=3.8.1",
