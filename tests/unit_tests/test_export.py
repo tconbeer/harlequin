@@ -179,6 +179,21 @@ class TestJsonOptions:
             data, "json"
         )
 
+    @pytest.mark.parametrize(
+        ("option_name", "value", "expected"),
+        [
+            ("date_format", "'%Y'", b'"d":"\'2024\'"'),
+            ("timestamp_format", "'%H:%M'", b'"ts":"\'12:30\'"'),
+        ],
+        ids=["date_format", "timestamp_format"],
+    )
+    def test_a_quote_in_a_format_string_is_part_of_the_format(
+        self, dated: pa.Table, option_name: str, value: str, expected: bytes
+    ) -> None:
+        """These two are free text the copy dialog sends verbatim, and this is
+        the writer that reaches duckdb as SQL text."""
+        assert expected in to_bytes(dated, "json", {option_name: value})
+
 
 class TestParquetOptions:
     @pytest.mark.parametrize(
@@ -427,6 +442,19 @@ class TestDestinationPaths:
         path = tmp_path / "exports" / "nested" / "out.csv"
         write_file(data, path, "csv")
         assert path.is_file()
+
+    @pytest.mark.parametrize("format_name", TEXT_FORMATS + BINARY_FORMATS)
+    def test_a_quote_in_the_path_is_part_of_the_name(
+        self, data: pa.Table, tmp_path: Path, format_name: str
+    ) -> None:
+        """`Bob's exports` is a folder, and every writer can write into it.
+
+        Every format is here because the path is a value to all of them: what a
+        file may be called is not something two formats get to disagree about.
+        """
+        path = tmp_path / "Bob's exports" / f"out.{format_name}"
+        write_file(data, path, format_name)
+        assert path.stat().st_size > 0
 
 
 class TestSuffixes:

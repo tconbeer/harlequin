@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 - `harlequin` now exits non-zero when it fails: 1 after a crash, and 2 for a config or connection error it used to report as success ([#687](https://github.com/tconbeer/harlequin/issues/687)).
 - Harlequin now refreshes the Data Catalog when an SSH tunnel reconnects, so expanding a node no longer raises a Catalog Error ([#1127](https://github.com/tconbeer/harlequin/issues/1127)).
+- Exporting to JSON no longer fails with a Parser Error when the path holds a single quote (a `Bob's exports` folder, say), or when the Date Format or Timestamp Format option does.
 
 ## [2.13.0] - 2026-09-02
 
