@@ -186,28 +186,26 @@ def _export_json(
 ) -> None:
     import duckdb
 
-    array = ", ARRAY TRUE" if kwargs.get("array") else ""
-    compression = (
-        f", COMPRESSION {kwargs.get('compression')}"
-        if kwargs.get("compression")
-        else ""
-    )
-    date_format = (
-        f", DATEFORMAT '{kwargs.get('''date_format''')}'"
-        if kwargs.get("date_format")
-        else ""
-    )
-    ts_format = (
-        f", TIMESTAMPFORMAT '{kwargs.get('''timestamp_format''')}'"
-        if kwargs.get("timestamp_format")
-        else ""
-    )
+    # the one writer reached as SQL text, so every value in the statement is
+    # bound: a path or a format string holding a single quote would end the
+    # literal it sits in, and duckdb would refuse to parse the rest.
+    array_clause = ", ARRAY TRUE" if kwargs.get("array") else ""
+    option_clauses = ""
+    bound_values: list[str] = [dest_path]
+    for keyword, option_name in (
+        ("COMPRESSION", "compression"),
+        ("DATEFORMAT", "date_format"),
+        ("TIMESTAMPFORMAT", "timestamp_format"),
+    ):
+        value = kwargs.get(option_name)
+        if value:
+            option_clauses += f", {keyword} ?"
+            bound_values.append(str(value))
     try:
         duckdb.execute(
-            f"copy (select * from data) to '{dest_path}' "
-            "(FORMAT JSON"
-            f"{array}{compression}{date_format}{ts_format}"
-            ")"
+            "copy (select * from data) to ? "
+            f"(FORMAT JSON{array_clause}{option_clauses})",
+            bound_values,
         )
     except (duckdb.Error, OSError) as e:
         raise HarlequinCopyError(
