@@ -21,7 +21,7 @@ import threading
 from importlib.metadata import version
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 import pytest
 
@@ -202,6 +202,7 @@ def test_a_request_survives_the_round_trip(stdin: bytes | None) -> None:
         cwd="/some/where",
         environ={"NO_COLOR": ""},
         stdin=stdin,
+        request_id=b"\x00\xff seven",
     )
     request = protocol.unpack_request(packed)
     # the surrogate is a file name the filesystem accepts and UTF-8 does not,
@@ -210,6 +211,14 @@ def test_a_request_survives_the_round_trip(stdin: bytes | None) -> None:
     assert request.cwd == "/some/where"
     assert request.environ == {"NO_COLOR": ""}
     assert request.stdin == stdin
+    assert request.request_id == b"\x00\xff seven"
+
+
+def test_every_request_names_itself_differently() -> None:
+    """A cancel names one request, so two live at once may not share an id."""
+    ids = {protocol.new_request_id() for _ in range(1000)}
+    assert len(ids) == 1000
+    assert all(len(one) == protocol.REQUEST_ID_BYTES for one in ids)
 
 
 @pytest.mark.parametrize(
@@ -316,10 +325,12 @@ def test_a_frame_too_large_to_be_real_is_refused() -> None:
 
 
 class StubServer:
-    """One connection's worth of a session, built on the real frames.
+    """A session's connections, built on the real frames.
 
-    Records the request it was sent, so a test can assert what the client
-    forwarded as well as what it printed.
+    Records what each one carried -- a request, a status ask, or a cancel --
+    so a test can assert what the client forwarded as well as what it printed.
+    Every connection is answered rather than one, because a client that
+    interrupts its query opens a second one to cancel it.
     """
 
     def __init__(
@@ -328,16 +339,21 @@ class StubServer:
         *,
         advertises: str,
         frames: Sequence[tuple[int, bytes]],
+        cancel_frames: Sequence[tuple[int, bytes]] = (),
     ) -> None:
         self.path = path
         self.request: protocol.Request | None = None
         self.status_ask: list[str] | None = None
+        self.cancelled: bytes | None = None
         self._version = advertises
         self._frames = list(frames)
+        self._cancel_frames = list(cancel_frames) or [
+            (protocol.EXIT, bytes([ExitCode.INTERRUPT]))
+        ]
         self._closing = False
         self._listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._listener.bind(path)
-        self._listener.listen(1)
+        self._listener.listen(2)
         # so that `close()` is prompt whether or not anyone ever connected
         self._listener.settimeout(0.05)
         self._thread = threading.Thread(target=self._serve, daemon=True)
@@ -353,7 +369,6 @@ class StubServer:
                 return
             with connection:
                 self._answer(connection)
-            return
 
     def _answer(self, connection: socket.socket) -> None:
         try:
@@ -361,11 +376,15 @@ class StubServer:
                 connection, protocol.HELLO, self._version.encode("utf-8")
             )
             frame = protocol.recv_frame(connection)
+            answer = self._frames
             if frame is not None and frame[0] == protocol.REQUEST:
                 self.request = protocol.unpack_request(frame[1])
             elif frame is not None and frame[0] == protocol.STATUS:
                 self.status_ask = protocol.unpack_status(frame[1])
-            for kind, payload in self._frames:
+            elif frame is not None and frame[0] == protocol.CANCEL:
+                self.cancelled = frame[1]
+                answer = self._cancel_frames
+            for kind, payload in answer:
                 protocol.send_frame(connection, kind, payload)
         except OSError:
             # a client that stopped reading -- a version it refused to be
@@ -415,9 +434,13 @@ def serve(environ: dict[str, str]) -> Iterator[Serve]:
         *,
         advertises: str = protocol.VERSION,
         frames: Sequence[tuple[int, bytes]] = (),
+        cancel_frames: Sequence[tuple[int, bytes]] = (),
     ) -> StubServer:
         server = StubServer(
-            session.socket_path(name, environ), advertises=advertises, frames=frames
+            session.socket_path(name, environ),
+            advertises=advertises,
+            frames=frames,
+            cancel_frames=cancel_frames,
         )
         servers.append(server)
         return server
@@ -666,17 +689,99 @@ def test_a_directory_someone_else_could_reach_is_never_connected_to(
     assert "is unreachable" in capsys.readouterr().err
 
 
+def interrupt_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the first relay raise `KeyboardInterrupt`, as a `Ctrl-C` would.
+
+    The second is the cancel's own answer, which the client copies through
+    like any other, so the whole exchange runs against the stub.
+    """
+    relaying = client._relay
+    relayed: list[object] = []
+
+    def relay(connection: Any) -> int:
+        relayed.append(connection)
+        if len(relayed) == 1:
+            raise KeyboardInterrupt
+        return relaying(connection)
+
+    monkeypatch.setattr(client, "_relay", relay)
+
+
 @needs_unix_sockets
-def test_an_interrupt_while_waiting_exits_the_way_the_cold_path_does(
+def test_an_interrupt_stops_the_query_and_exits_the_way_the_cold_path_does(
+    serve: Serve,
+    environ: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A `Ctrl-C` is a cancel naming the request that sent it, on a second
+    connection, and then the code the cold path exits with -- silently, since
+    this session had something to stop and stopped it."""
+    stub = serve(frames=[(protocol.EXIT, b"\x00")])
+    interrupt_once(monkeypatch)
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
+    assert stub.request is not None
+    assert stub.cancelled == stub.request.request_id
+    assert capsys.readouterr().err == ""
+
+
+@needs_unix_sockets
+def test_a_session_that_could_not_stop_the_query_says_so(
+    serve: Serve,
+    environ: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsysbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    """The cancel's answer is copied to the caller like any other, so an
+    adapter that cannot stop a query reaches the person who interrupted it."""
+    serve(
+        frames=[(protocol.EXIT, b"\x00")],
+        cancel_frames=[
+            (protocol.STDERR, b"note: still running\n"),
+            (protocol.EXIT, bytes([ExitCode.INTERRUPT])),
+        ],
+    )
+    interrupt_once(monkeypatch)
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
+    assert capsysbinary.readouterr().err == b"note: still running\n"
+
+
+@needs_unix_sockets
+def test_an_interrupt_a_session_never_answers_is_still_exit_130(
     serve: Serve, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    serve(frames=[(protocol.EXIT, b"\x00")])
+    """A session that went away between the two connections leaves the run
+    given up on either way: there is nothing left to cancel and nothing to
+    report."""
+    stub = serve(frames=[(protocol.EXIT, b"\x00")])
+    interrupt_once(monkeypatch)
+    connecting = client._connect
+    connected: list[object] = []
 
-    def interrupt(_: object) -> None:
+    def connect(path: str) -> Any:
+        connected.append(path)
+        # the second is the cancel's, by which time the session is gone
+        return None if len(connected) > 1 else connecting(path)
+
+    monkeypatch.setattr(client, "_connect", connect)
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
+    assert stub.cancelled is None
+
+
+@needs_unix_sockets
+def test_an_interrupt_before_the_request_cancels_nothing(
+    serve: Serve, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing has an id until the request is built, so an interrupt while the
+    caller's stdin is still being read has nothing to name."""
+    stub = serve(frames=[(protocol.EXIT, b"\x00")])
+
+    def interrupt(_: object) -> bytes:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(client, "_relay", interrupt)
-    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
+    monkeypatch.setattr(client, "_stdin_for", interrupt)
+    assert client.run(typed(), ["-f", "-"], environ) == ExitCode.INTERRUPT
+    assert stub.cancelled is None
 
 
 @needs_unix_sockets

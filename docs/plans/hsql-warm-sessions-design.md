@@ -920,8 +920,21 @@ them; everything after is additive and independently revertible.
    which is the thread-safety §4.5 refuses to assume. `idle_timeout_s` and `expires_in_s`
    are null until PR 5 can answer them, rather than absent, so the document's shape does
    not change under a caller.
-4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
+4. **Cancellation. Shipped.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
+
+   Two things this PR settled that the plan did not name. **The request id is the
+   client's, not the server's**: a server-assigned one would have to reach the client
+   before its query started, and the only frame ahead of a request is the handshake,
+   whose shape has to stay readable by every release for the §4.9 version check to
+   work — so it is a sixth section of the request, eight bytes from `os.urandom()`.
+   And **a request is cancellable from the moment its argv arrives, not from the moment
+   it takes its turn.** A caller who gives up while their request waits behind the one
+   ahead is cancelling something the session is holding, and nothing else would stop it
+   running when its turn came; the same lock that marks a request started is what keeps
+   the two apart, so a cancel either interrupts a query or stops one before it runs, and
+   never interrupts the database while it is idle — which would land on whichever
+   request holds it instead.
 5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
    reporting, and the secret-on-a-server-command-line warning (§4.1).
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a

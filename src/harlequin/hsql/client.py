@@ -13,6 +13,10 @@ than running -- and forwards the rest opaquely, to be parsed by the same
 command the cold path builds. `hsql --session prod --badflag` gets the same message
 and the same exit code as `hsql --badflag`, because it is the same code.
 
+`Ctrl-C` is the one thing it does more than forward: the request carries an id,
+and an interrupt sends a `CANCEL` naming it on a second connection before this
+exits 130, so the query stops rather than being orphaned on the session.
+
 Diagnostics go straight to stderr rather than through
 `harlequin.hsql.diagnostics`, which costs more to import than the round trip it
 would report on. Nothing is lost: that module exists to redact, and this one
@@ -106,9 +110,11 @@ def run(
             remedy=f" Start one with `hsql --serve {session.name} ...`.",
         )
     try:
-        return _exchange(connection, session, argv, environ)
+        return _exchange(connection, path, session, argv, environ)
     except KeyboardInterrupt:
-        # what the cold path exits with, and silently, for the same reason
+        # an interrupt with no request in flight -- while stdin was still being
+        # read, or before the handshake. Nothing to stop, and silent, which is
+        # what the cold path exits with
         return INTERRUPT
     except (protocol.ProtocolError, OSError) as e:
         _error(f"the session named {session.name!r} did not answer: {e}")
@@ -190,6 +196,7 @@ def _connect(path: str) -> "socket.socket | None":
 
 def _exchange(
     connection: "socket.socket",
+    path: str,
     session: "Session",
     argv: "Sequence[str]",
     environ: "Mapping[str, str]",
@@ -226,6 +233,7 @@ def _exchange(
         )
         return USAGE
 
+    request_id = protocol.new_request_id()
     protocol.send_frame(
         connection,
         protocol.REQUEST,
@@ -236,9 +244,40 @@ def _exchange(
             stdin=stdin,
             stdout_isatty=_isatty(sys.stdout),
             stderr_isatty=_isatty(sys.stderr),
+            request_id=request_id,
         ),
     )
-    return _relay(connection)
+    try:
+        return _relay(connection)
+    except KeyboardInterrupt:
+        return _cancel(path, request_id)
+
+
+def _cancel(path: str, request_id: bytes) -> int:
+    """Stop the request `request_id` names, and exit the way the cold path does.
+
+    On a second connection, because the first is carrying the response, and
+    the session answers this one off its own bookkeeping rather than in its
+    turn -- so the cancel reaches the query rather than queueing behind it.
+    Whatever comes of it, the caller stopped this run: the exit code is 130,
+    and the one thing the session may have to say is that it could not stop
+    the query, which it says on the caller's stderr.
+    """
+    try:
+        connection = _connect(path)
+        if connection is not None:
+            try:
+                greeting = protocol.recv_frame(connection)
+                if greeting is not None and greeting[0] == protocol.HELLO:
+                    protocol.send_frame(connection, protocol.CANCEL, request_id)
+                    _relay(connection)
+            finally:
+                connection.close()
+    except (KeyboardInterrupt, protocol.ProtocolError, OSError):
+        # a second Ctrl-C, or a session that went away between the two
+        # connections: the run is given up on either way
+        pass
+    return INTERRUPT
 
 
 def _isatty(stream: "TextIO") -> bool:

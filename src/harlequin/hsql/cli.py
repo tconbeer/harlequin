@@ -926,6 +926,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     else None,
                     ssh=None if tunnel is None else tunnel.notice(),
                     queue_timeout=queue_timeout,
+                    implements_cancel=(
+                        adapter_cls is not None and adapter_cls.IMPLEMENTS_CANCEL
+                    ),
                 )
             )
 
@@ -1065,7 +1068,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             values=values,
         )
 
-        run = _Run(deadline=deadline)
+        run = _Run(deadline=deadline, served=served)
         layout_options, file_options = _output_options(
             tuples_only=tuples_only,
             no_align=no_align,
@@ -1328,6 +1331,7 @@ def _serve(
     options: "Sequence[AbstractOption] | None",
     ssh: str | None,
     queue_timeout: float | None,
+    implements_cancel: bool,
 ) -> ExitCode:
     """Connect, and serve the session called `name` until the server stops."""
     # here rather than at module scope: sockets and threads are the one
@@ -1347,6 +1351,7 @@ def _serve(
         options=options,
         ssh=ssh,
         queue_timeout=queue_timeout,
+        implements_cancel=implements_cancel,
     ).serve()
 
 
@@ -2173,6 +2178,10 @@ class _Run:
     timed_out: float | None = None
     """The deadline, in seconds, if it ran out on this run."""
 
+    served: "Served | None" = None
+    """The session answering this invocation, whose cancel the run reads
+    between results the way it reads the clock."""
+
     started: float = field(default_factory=time.monotonic)
 
     @property
@@ -2180,18 +2189,30 @@ class _Run:
         return round((time.monotonic() - self.started) * 1000)
 
     @property
+    def cancelled(self) -> bool:
+        """Whether the caller interrupted a served run.
+
+        Cold, a `Ctrl-C` ends the process and there is nothing to read; warm,
+        the caller's process is gone and the session is what noticed.
+        """
+        return self.served is not None and self.served.cancelled
+
+    @property
     def stopped(self) -> bool:
-        """Whether the clock has run out, so nothing more is run or written.
+        """Whether the run is over before its work was, so nothing more is
+        run or written -- the clock ran out, or the caller gave up.
 
         A cancelled query comes back empty and error-free, so a run that kept
         going would print the empty result the cancel produced as if the
         database had returned it.
         """
-        return self.deadline is not None and self.deadline.expired
+        if self.deadline is not None and self.deadline.expired:
+            return True
+        return self.cancelled
 
     @property
     def status(self) -> str:
-        if self.failure is not None or self.timed_out is not None:
+        if self.failure is not None or self.timed_out is not None or self.cancelled:
             return "error"
         return "ok"
 
@@ -2200,12 +2221,16 @@ class _Run:
         """What went wrong, for `--stats`."""
         if self.timed_out is not None:
             return diagnostics.timeout_message(self.timed_out)
+        if self.cancelled:
+            return "cancelled"
         return _message_for(self.failure)
 
     @property
     def exit_code(self) -> ExitCode:
         if self.timed_out is not None:
             return ExitCode.TIMEOUT
+        if self.cancelled:
+            return ExitCode.INTERRUPT
         if self.failure is None:
             return ExitCode.OK
         return diagnostics.exit_code_for(self.failure)

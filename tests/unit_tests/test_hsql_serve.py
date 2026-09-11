@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -717,19 +718,131 @@ def test_a_reset_that_cannot_reconnect_leaves_the_session_without_a_connection(
     assert hsql("-c", "select 1", obj=served).exit_code == ExitCode.OK
 
 
-# --- a cancel that does not land ---------------------------------------------
+# --- stopping a request ------------------------------------------------------
 
 
 class _FakeConnection:
     def __init__(self, label: str) -> None:
         self.label = label
         self.closed = False
+        self.cancels = 0
 
     def cancel(self) -> None:
-        pass
+        self.cancels += 1
 
     def close(self) -> None:
         self.closed = True
+
+
+def cancellable(implements_cancel: bool = True) -> tuple[Server, _FakeConnection]:
+    """A session with nothing but the bookkeeping a cancel reads."""
+    connection = _FakeConnection("held")
+    return (
+        Server(
+            "cancels",
+            adapter="duckdb",
+            connection=cast(Any, connection),
+            reconnect=lambda: cast(Any, connection),
+            implements_cancel=implements_cancel,
+        ),
+        connection,
+    )
+
+
+def test_a_cancel_stops_the_request_that_named_it() -> None:
+    """The id is the client's, so a cancel that arrives after its request
+    finished cannot stop whichever one the session went on to."""
+    session, connection = cancellable()
+    running = session._hold(b"seven")
+    assert session._take_turn(running)
+    assert session.cancel(b"seven") == server.STOPPED
+    assert connection.cancels == 1
+    # set before the database is asked, which is what tells the empty result
+    # the cancel produces from one a query really returned
+    assert running.cancelled
+
+
+def test_a_cancel_for_a_request_the_session_no_longer_holds_stops_nothing() -> None:
+    session, connection = cancellable()
+    finished = session._hold(b"seven")
+    session._release(finished)
+    assert session.cancel(b"seven") == server.UNKNOWN
+    assert session.cancel(b"never-here") == server.UNKNOWN
+    assert connection.cancels == 0
+
+
+def test_a_request_cancelled_while_it_queued_never_runs() -> None:
+    """A caller who gives up while their request waits for the one ahead is
+    cancelling something the session has -- and interrupting the database then
+    would land on whichever request is holding it."""
+    session, connection = cancellable()
+    waiting = session._hold(b"second")
+    assert session.cancel(b"second") == server.WAITING
+    assert connection.cancels == 0
+    assert not session._take_turn(waiting)
+
+
+def test_a_cancel_an_adapter_cannot_honor_leaves_the_query_running() -> None:
+    """`cancel()` is optional on the contract, and a session that has none
+    detaches the caller rather than pretending to have stopped anything. The
+    request is still marked, so the script runs no further statement."""
+    session, connection = cancellable(implements_cancel=False)
+    running = session._hold(b"seven")
+    assert session._take_turn(running)
+    assert session.cancel(b"seven") == server.UNSTOPPABLE
+    assert connection.cancels == 0
+    assert running.cancelled
+
+
+def test_a_served_run_reads_the_sessions_cancel(in_process_server: Server) -> None:
+    """What the command reads between results, where a cold run reads its
+    clock."""
+    running = in_process_server._hold(b"seven")
+    served = Served(
+        in_process_server,
+        protocol.Request(argv=[], cwd=os.getcwd(), environ={}, stdin=None),
+        running,
+    )
+    assert not served.cancelled
+    running.cancel()
+    assert served.cancelled
+
+
+def test_a_cancel_a_session_answers_says_only_what_the_caller_must_act_on() -> None:
+    """Exit 130 whatever came of it -- the caller interrupted the run, which
+    is the code for it cold too -- and a line only when the query outlived
+    them."""
+    session, _ = cancellable(implements_cancel=False)
+    running = session._hold(b"seven")
+    session._take_turn(running)
+    assert _cancel_over_a_socket(session, b"seven") == (
+        b"note: duckdb does not implement query cancellation, so the query is "
+        b"still running on session 'cancels'; it holds the session until it "
+        b"finishes. `hsql --session cancels --session-status` says when.\n",
+        ExitCode.INTERRUPT,
+    )
+    stopping, _ = cancellable()
+    stopping._take_turn(stopping._hold(b"seven"))
+    assert _cancel_over_a_socket(stopping, b"seven") == (b"", ExitCode.INTERRUPT)
+
+
+def _cancel_over_a_socket(session: Server, request_id: bytes) -> tuple[bytes, int]:
+    """What a cancel sends back: the caller's stderr, and the code it exits."""
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        session._send_cancel(ours, request_id)
+        ours.shutdown(socket.SHUT_WR)
+        stderr = bytearray()
+        code = -1
+        while (frame := protocol.recv_frame(theirs)) is not None:
+            if frame[0] == protocol.EXIT:
+                code = int.from_bytes(frame[1], "big")
+            elif frame[0] == protocol.STDERR:
+                stderr.extend(frame[1])
+    return bytes(stderr), code
+
+
+# --- and a cancel that does not land -----------------------------------------
 
 
 def test_a_deadline_a_server_gave_an_abandon_hook_ends_the_run_not_the_process() -> (
@@ -1466,6 +1579,92 @@ def test_a_timeout_stops_the_request_and_leaves_the_session_up(
     assert proc.stdout == b""
     assert b"timed out after 0.1s" in proc.stderr
     assert send(["-tAc", "select 'still up'"]).stdout == b"still up\n"
+
+
+@needs_unix_sockets
+def test_an_interrupted_query_stops_and_leaves_the_session_up(
+    warm: WarmSession,
+    send: HsqlSubprocess,
+    hsql_subprocess: HsqlSubprocess,
+    tmp_path: Path,
+) -> None:
+    """The whole chain a `Ctrl-C` crosses: the client sends a cancel naming
+    its request on a second connection and exits 130, the session interrupts
+    the query, and the connection is free straight after -- rather than held
+    by a query nobody is waiting for."""
+    query = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '-c', {UNFINISHABLE!r}]\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **warm.env, "HOME": str(tmp_path)},
+    )
+    # not before the session has the query: an interrupt during start-up is
+    # one with no request to name, which is a different path
+    _until_status(
+        lambda: json.loads(
+            hsql_subprocess(
+                ["--session", warm.name, "--session-status"], env=warm.env, timeout=30
+            ).stdout
+        ),
+        lambda status: status["state"] == "busy",
+    )
+    query.send_signal(signal.SIGINT)
+    out, err = query.communicate(timeout=30)
+    assert query.returncode == ExitCode.INTERRUPT
+    # the rows the cancel produced are not rows the query returned
+    assert out == b""
+    assert err == b""
+    assert send(["-tAc", "select 'still up'"], timeout=30).stdout == b"still up\n"
+    assert warm.stop() == ExitCode.OK
+    assert "cancel: stopped the query" in warm.stderr()
+
+
+@needs_unix_sockets
+def test_a_client_that_gives_up_while_it_waits_runs_nothing(
+    blocked: Blocked, warm: WarmSession, send: HsqlSubprocess, tmp_path: Path
+) -> None:
+    """A request cancelled in the queue never reaches the database. The one
+    ahead of it finishes and releases the session, and what the caller gave up
+    on does not then run behind them."""
+    queued = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '-c', "
+            "'create temp table gave_up as select 1']\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **warm.env, "HOME": str(tmp_path)},
+    )
+    try:
+        _until_status(
+            lambda: json.loads(send(["--session-status"], timeout=30).stdout),
+            lambda status: status["queued"] == 1,
+        )
+        queued.send_signal(signal.SIGINT)
+        assert queued.wait(30) == ExitCode.INTERRUPT
+    finally:
+        queued.communicate(timeout=30)
+    blocked.release()
+    assert blocked.process.wait(30) == ExitCode.OK
+    counted = send(
+        ["-tAc", "select count(*) from duckdb_tables() where table_name = 'gave_up'"],
+        timeout=30,
+    )
+    assert counted.stdout == b"0\n"
 
 
 @needs_unix_sockets
