@@ -234,20 +234,23 @@ def _exchange(
         return USAGE
 
     request_id = protocol.new_request_id()
-    protocol.send_frame(
-        connection,
-        protocol.REQUEST,
-        protocol.pack_request(
-            argv=without_session_option(argv),
-            cwd=os.getcwd(),
-            environ=protocol.forwarded_environ(environ),
-            stdin=stdin,
-            stdout_isatty=_isatty(sys.stdout),
-            stderr_isatty=_isatty(sys.stderr),
-            request_id=request_id,
-        ),
-    )
     try:
+        # the send is inside, so an interrupt between it and the relay still
+        # cancels: a frame it truncated is one the server never holds, and the
+        # cancel that follows is answered by a session that has nothing to stop
+        protocol.send_frame(
+            connection,
+            protocol.REQUEST,
+            protocol.pack_request(
+                argv=without_session_option(argv),
+                cwd=os.getcwd(),
+                environ=protocol.forwarded_environ(environ),
+                stdin=stdin,
+                request_id=request_id,
+                stdout_isatty=_isatty(sys.stdout),
+                stderr_isatty=_isatty(sys.stderr),
+            ),
+        )
         return _relay(connection)
     except KeyboardInterrupt:
         return _cancel(path, request_id)
@@ -258,10 +261,8 @@ def _cancel(path: str, request_id: bytes) -> int:
 
     On a second connection, because the first is carrying the response, and
     the session answers this one off its own bookkeeping rather than in its
-    turn -- so the cancel reaches the query rather than queueing behind it.
-    Whatever comes of it, the caller stopped this run: the exit code is 130,
-    and the one thing the session may have to say is that it could not stop
-    the query, which it says on the caller's stderr.
+    turn. Exit 130 whatever comes of it; what the session has to say arrives
+    on the caller's stderr like any other answer.
     """
     try:
         connection = _connect(path)

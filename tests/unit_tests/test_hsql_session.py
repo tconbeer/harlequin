@@ -214,6 +214,18 @@ def test_a_request_survives_the_round_trip(stdin: bytes | None) -> None:
     assert request.request_id == b"\x00\xff seven"
 
 
+@pytest.mark.parametrize("request_id", [b"", b"short", b"far too long an id"])
+def test_a_request_whose_id_could_not_name_it_is_refused(request_id: bytes) -> None:
+    """A cancel names a request by its id, and the server keys what it holds
+    by one: an id-less request would be uncancellable, and two of them would
+    cross-wire in its bookkeeping."""
+    packed = protocol.pack_request(
+        argv=[], cwd="/", environ={}, stdin=None, request_id=request_id
+    )
+    with pytest.raises(protocol.ProtocolError, match="8-byte id"):
+        protocol.unpack_request(packed)
+
+
 def test_every_request_names_itself_differently() -> None:
     """A cancel names one request, so two live at once may not share an id."""
     ids = {protocol.new_request_id() for _ in range(1000)}
@@ -236,6 +248,7 @@ def test_a_request_carries_which_streams_are_terminals(
             cwd="/",
             environ={},
             stdin=None,
+            request_id=protocol.new_request_id(),
             stdout_isatty=stdout_isatty,
             stderr_isatty=stderr_isatty,
         )
@@ -723,6 +736,26 @@ def test_an_interrupt_stops_the_query_and_exits_the_way_the_cold_path_does(
     assert stub.request is not None
     assert stub.cancelled == stub.request.request_id
     assert capsys.readouterr().err == ""
+
+
+@needs_unix_sockets
+def test_an_interrupt_while_the_request_is_going_out_still_cancels(
+    serve: Serve, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window between the request leaving and the relay starting: a client
+    that exited there would leave the query it had just sent running."""
+    stub = serve(frames=[(protocol.EXIT, b"\x00")])
+    sending = protocol.send_frame
+
+    def send_frame(connection: Any, kind: int, payload: bytes = b"") -> None:
+        sending(connection, kind, payload)
+        if kind == protocol.REQUEST:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(protocol, "send_frame", send_frame)
+    assert client.run(typed(), ["-c", "select 1"], environ) == ExitCode.INTERRUPT
+    assert stub.request is not None
+    assert stub.cancelled == stub.request.request_id
 
 
 @needs_unix_sockets

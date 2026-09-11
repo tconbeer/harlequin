@@ -101,15 +101,10 @@ class SessionRunning(Exception):
 class InFlight:
     """One request a session is holding, and whether its caller gave up on it.
 
-    `cancelled` is read by the run between results, for the reason a deadline
-    reads its own flag: a cancelled query comes back empty and error-free, so
-    the only thing that can tell it from a query that matched nothing is the
-    bookkeeping of whoever asked for the cancel.
-
-    `started` is whether the request holds the connection, and it is set and
-    read under the server's lock: a cancel that found it unset is one the
-    request has not seen yet, so the request stops before it runs rather than
-    the database being interrupted while it is idle.
+    `cancelled` is what the run reads between results: a cancelled query comes
+    back empty and error-free, so this is the only thing that tells it from a
+    query that matched nothing. `started` is whether the request holds the
+    connection, set and read under the server's lock.
     """
 
     __slots__ = ("request_id", "started", "_cancelled")
@@ -256,12 +251,9 @@ class Served:
 
     @property
     def cancelled(self) -> bool:
-        """Whether the caller gave up on this request, which only a session knows.
+        """Whether the caller gave up on this request.
 
-        The run reads it between results, where the cold path reads its
-        deadline: the cancel that a `Ctrl-C` sent leaves an empty, error-free
-        result behind it, and nothing the adapter says tells that from a query
-        that matched nothing.
+        The run reads it between results, where a cold one reads its deadline.
         """
         return self._in_flight is not None and self._in_flight.cancelled
 
@@ -492,6 +484,10 @@ class Server:
         Called from the thread that accepted the cancel rather than from the
         one running the request, which is inside the driver: `cancel()` is the
         one adapter method the IDE has always called from another thread.
+
+        It is connection-wide, so the whole of this holds the lock a request
+        takes to start: one that started between the check below and the
+        interrupt would be the one interrupted.
         """
         with self._in_flight_lock:
             in_flight = self._in_flight.get(request_id)
@@ -500,26 +496,24 @@ class Server:
             in_flight.cancel()
             if not in_flight.started:
                 # it has not taken its turn, so it will read the flag and stop
-                # rather than run -- and interrupting an idle connection here
-                # would land on whichever request is holding it instead
+                # rather than run
                 return WAITING
-        if not self._implements_cancel:
-            return UNSTOPPABLE
-        connection = self._connection
-        if connection is None:
-            # a reset between its two halves, or a session coming down: the
-            # request is marked either way, so it stops rather than resuming
-            return DETACHED
-        with contextlib.suppress(Exception):  # adapters are third-party code
-            connection.cancel()
-        return STOPPED
+            if not self._implements_cancel:
+                return UNSTOPPABLE
+            connection = self._connection
+            if connection is None:
+                # a reset between its two halves, or a session coming down:
+                # the request is marked either way, so it stops
+                return DETACHED
+            with contextlib.suppress(Exception):  # adapters are third-party code
+                connection.cancel()
+            return STOPPED
 
     def _hold(self, request_id: bytes) -> InFlight:
-        """Take the bookkeeping a cancel reads, from the moment argv arrives.
+        """Register the request, so a cancel naming it finds it.
 
-        Before the turnstile rather than after it: a caller who gives up while
-        their request waits for the one ahead is cancelling something the
-        session has, and nothing else would stop it running when its turn came.
+        From the moment its argv arrives rather than from its turn, so that a
+        request still waiting for the one ahead can be cancelled too.
         """
         in_flight = InFlight(request_id)
         with self._in_flight_lock:
@@ -527,6 +521,12 @@ class Server:
         return in_flight
 
     def _release(self, in_flight: InFlight) -> None:
+        """Forget the request, so a cancel naming it finds nothing.
+
+        Called before the turnstile lets the next request start: `cancel()` is
+        connection-wide, so one still registered here would answer a cancel by
+        interrupting whichever query holds the connection now.
+        """
         with self._in_flight_lock:
             self._in_flight.pop(in_flight.request_id, None)
 
@@ -682,25 +682,25 @@ class Server:
                 return
 
             in_flight = self._hold(request.request_id)
-            try:
-                if not self._turnstile.enter(self._queue_timeout):
-                    recorder = Recorder()
-                    diagnostics.report_queue_timeout(
-                        self._queue_timeout or 0, stream=recorder.stderr()
-                    )
-                    self._answer(connection, recorder.segments, ExitCode.TIMEOUT)
-                    return
-                started = time.monotonic()
-                try:
-                    if self._take_turn(in_flight):
-                        segments, code = self._run(request, in_flight)
-                    else:
-                        # cancelled while it waited for the request ahead of it
-                        segments, code = [], int(ExitCode.INTERRUPT)
-                finally:
-                    self._turnstile.leave()
-            finally:
+            if not self._turnstile.enter(self._queue_timeout):
                 self._release(in_flight)
+                recorder = Recorder()
+                diagnostics.report_queue_timeout(
+                    self._queue_timeout or 0, stream=recorder.stderr()
+                )
+                self._answer(connection, recorder.segments, ExitCode.TIMEOUT)
+                return
+            started = time.monotonic()
+            try:
+                if self._take_turn(in_flight):
+                    segments, code = self._run(request, in_flight)
+                else:
+                    # cancelled while it waited for the request ahead of it
+                    segments, code = [], int(ExitCode.INTERRUPT)
+            finally:
+                # in this order, for the reason `_release()` gives
+                self._release(in_flight)
+                self._turnstile.leave()
             self._requests += 1
             elapsed_ms = round((time.monotonic() - started) * 1000)
             self._answer(connection, segments, code)
@@ -734,13 +734,10 @@ class Server:
     def _send_cancel(self, connection: socket.socket, request_id: bytes) -> None:
         """Stop the request `request_id` names, and answer the client that asked.
 
-        Off the same bookkeeping `_send_status()` reads, and for the same
-        reason: a cancel has to land while the request it stops holds the
-        connection, so it cannot be a request of its own.
-
-        Exit 130 whatever came of it -- the caller interrupted the run, and
-        that is the code for it cold too. The one outcome they hear about is a
-        query nothing could stop, which is still running.
+        Off the server's own bookkeeping, as `_send_status()` is, so it lands
+        while the request it stops holds the connection. Exit 130 whatever
+        came of it; the one outcome the caller hears about is a query nothing
+        could stop.
         """
         recorder = Recorder()
         try:

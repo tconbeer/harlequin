@@ -138,9 +138,9 @@ class Request:
         cwd: str,
         environ: "Mapping[str, str]",
         stdin: "bytes | None",
+        request_id: bytes,
         stdout_isatty: bool = False,
         stderr_isatty: bool = False,
-        request_id: bytes = b"",
     ) -> None:
         self.argv = list(argv)
         self.cwd = cwd
@@ -154,10 +154,8 @@ class Request:
 def new_request_id() -> bytes:
     """An id for one request, unique among the ones a session holds at once.
 
-    The client's rather than the server's, because a server-assigned one would
-    have to reach the client before its query started, and the only frame that
-    precedes a request is the handshake -- which every release has to be able
-    to read the version out of, so its shape cannot grow.
+    Assigned by the client, because a `CANCEL` names it and the client is what
+    sends one.
     """
     return os.urandom(REQUEST_ID_BYTES)
 
@@ -197,9 +195,9 @@ def pack_request(
     cwd: str,
     environ: "Mapping[str, str]",
     stdin: "bytes | None",
+    request_id: bytes,
     stdout_isatty: bool = False,
     stderr_isatty: bool = False,
-    request_id: bytes = b"",
 ) -> bytes:
     """Six sections: argv, cwd, environment, stdin, a flags byte, and an id.
 
@@ -241,8 +239,8 @@ def unpack_request(payload: bytes) -> Request:
         raise ProtocolError("a request carries at most one stdin")
     if len(raw_flags) != 1 or len(raw_flags[0]) != 1:
         raise ProtocolError("a request carries one flags byte")
-    if len(raw_id) != 1:
-        raise ProtocolError("a request carries one id")
+    if len(raw_id) != 1 or len(raw_id[0]) != REQUEST_ID_BYTES:
+        raise ProtocolError(f"a request carries one {REQUEST_ID_BYTES}-byte id")
     flags = raw_flags[0][0]
     return Request(
         argv=[os.fsdecode(argument) for argument in raw_argv],
@@ -252,9 +250,9 @@ def unpack_request(payload: bytes) -> Request:
             for index in range(0, len(raw_environ), 2)
         },
         stdin=raw_stdin[0] if raw_stdin else None,
+        request_id=raw_id[0],
         stdout_isatty=bool(flags & STDOUT_ISATTY),
         stderr_isatty=bool(flags & STDERR_ISATTY),
-        request_id=raw_id[0],
     )
 
 

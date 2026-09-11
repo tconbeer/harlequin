@@ -931,10 +931,20 @@ them; everything after is additive and independently revertible.
    And **a request is cancellable from the moment its argv arrives, not from the moment
    it takes its turn.** A caller who gives up while their request waits behind the one
    ahead is cancelling something the session is holding, and nothing else would stop it
-   running when its turn came; the same lock that marks a request started is what keeps
-   the two apart, so a cancel either interrupts a query or stops one before it runs, and
-   never interrupts the database while it is idle — which would land on whichever
-   request holds it instead.
+   running when its turn came.
+
+   That makes the load-bearing invariant one about *windows*, because
+   `HarlequinConnection.cancel()` is connection-wide: the window in which a request is
+   registered and marked started has to be exactly the window in which it holds the
+   turnstile. Widen it at either end and a cancel naming a request that has already
+   finished interrupts whichever query holds the connection now — and marks *that* one's
+   bookkeeping not at all, so the empty, error-free result the interrupt produces is one
+   nobody can attribute and the caller reads as an empty table. Two things keep the
+   windows equal: the server releases a request from its bookkeeping *before* it leaves
+   the turnstile, and `cancel()` holds the lock a request takes to start across the
+   driver call, so nothing can start between the check and the interrupt. The client's
+   half of the same rule is that the send and the relay are under one `try`, or an
+   interrupt landing between them exits 130 having sent no cancel at all.
 5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
    reporting, and the secret-on-a-server-command-line warning (§4.1).
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
