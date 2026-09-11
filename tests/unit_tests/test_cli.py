@@ -144,6 +144,7 @@ def test_default(
         show_s3=None,
         export_path=None,
         ssh_tunnel=None,
+        code_editor="default",
     )
 
 
@@ -683,3 +684,53 @@ def test_what_this_command_reads_off_the_other_one(mock_empty_config: None) -> N
 
     assert {"format", "stats", "on_error"} <= hsql_profile_keys()
     assert "no_init" not in hsql_profile_keys()
+
+
+def test_code_editor_option(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = invoke(runner, ["--code-editor", "vim"])
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["code_editor"] == "vim"
+    assert "vim" in mock_harlequin.call_args.kwargs["keymap_names"]
+
+
+def test_code_editor_default_with_vim_keymap(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = invoke(runner, ["--code-editor", "default", "--keymap-name", "vim"])
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["code_editor"] == "default"
+    assert "vim" in mock_harlequin.call_args.kwargs["keymap_names"]
+    user_keymaps = mock_harlequin.call_args.kwargs["user_defined_keymaps"]
+    assert any(km.name == "vim" for km in user_keymaps)
+
+
+def test_code_editor_invalid_cli_choice(
+    mock_empty_config: None,
+) -> None:
+    runner = CliRunner()
+    res = invoke(runner, ["--code-editor", "emacs"])
+    assert res.exit_code == 2
+    assert "Invalid value for '--code-editor'" in res.stderr
+
+
+def test_code_editor_invalid_profile_value(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+) -> None:
+    monkeypatch.setattr(
+        "harlequin.cli.load_profile_and_keymaps",
+        lambda **_: ({"code_editor": "emacs"}, []),
+    )
+    runner = CliRunner()
+    res = invoke(runner, [])
+    assert res.exit_code == 2
+    assert "Invalid value for 'code_editor': 'emacs'" in res.stderr

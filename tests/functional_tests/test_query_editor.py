@@ -12,6 +12,7 @@ from textual.widgets.text_area import Selection
 from textual.worker import WorkerFailed
 
 from harlequin import Harlequin
+from harlequin.adapter import HarlequinAdapter
 from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
 from harlequin.components.code_editor import CodeEditor
@@ -789,3 +790,32 @@ async def test_external_editor_clamps_the_cursor_to_a_shorter_buffer(
 
         assert app.editor.text == "select 1\nfrom f"
         assert app.editor.selection == Selection((1, 6), (1, 6))
+
+
+@pytest.mark.asyncio
+async def test_vim_code_editor(
+    duckdb_adapter: type[HarlequinAdapter],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    from textual_vim_textarea.textarea_plus import VimTextAreaPlus
+
+    from harlequin.components.code_editor import VimCodeEditor
+
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        code_editor="vim",
+        connection_hash="foo",
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+        assert isinstance(app.editor, VimCodeEditor)
+        assert isinstance(app.editor.text_input, VimTextAreaPlus)
+        assert "hide" not in app.vim_status_bar.classes
+        assert "NORMAL" in str(app.vim_status_bar.render())
+        app.editor.focus()
+        await pilot.press("i")
+        assert "INSERT" in str(app.vim_status_bar.render())
+        await pilot.press("escape")
+        assert "NORMAL" in str(app.vim_status_bar.render())

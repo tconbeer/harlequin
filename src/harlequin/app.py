@@ -23,7 +23,7 @@ from typing import (
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.css.query import DOMQuery
+from textual.css.query import DOMQuery, NoMatches
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.lazy import Lazy
@@ -36,6 +36,7 @@ from textual.widget import AwaitMount, Widget
 from textual.widgets import Button, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
+from textual_vim_textarea.textarea_plus import VimTextAreaPlus
 
 from harlequin import HarlequinConnection
 from harlequin.actions import HARLEQUIN_ACTIONS
@@ -66,6 +67,7 @@ from harlequin.components import (
     HistoryScreen,
     ResultsViewer,
     RunQueryBar,
+    VimStatusBar,
     export_callback,
 )
 from harlequin.components.confirm_modal import ConfirmModal
@@ -278,6 +280,7 @@ class Harlequin(AppBase):
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
+        code_editor: str = "default",
     ):
         super().__init__(
             theme=theme,
@@ -292,6 +295,7 @@ class Harlequin(AppBase):
         self.history: History | None = None
         self.show_files = show_files
         self.show_s3 = show_s3 or None
+        self.code_editor = code_editor
         # already started, by the command that built this app: `ssh` prompts for
         # a passphrase on the terminal Textual is about to take.
         self.ssh_tunnel = ssh_tunnel
@@ -370,7 +374,7 @@ class Harlequin(AppBase):
             show_s3=self.show_s3,
         )
         self.editor_collection = EditorCollection(
-            language="sql", classes="hide-tabs"
+            language="sql", classes="hide-tabs", code_editor=self.code_editor
         ).data_bind(Harlequin.theme)
         self.editor_collection.add_class("premount")
         self.editor: CodeEditor | None = None
@@ -384,12 +388,14 @@ class Harlequin(AppBase):
             show_cancel_button=self.adapter.IMPLEMENTS_CANCEL,
         )
         self.footer = Footer(show_command_palette=False)
+        self.vim_status_bar = VimStatusBar(id="vim_status_bar", classes="hide")
 
         # lay out the widgets
         with Horizontal():
             yield self.data_catalog
             with Vertical(id="main_panel"):
                 yield editor_placeholder
+                yield self.vim_status_bar
                 yield self.run_query_bar
                 yield self.results_viewer
         yield self.footer
@@ -624,6 +630,48 @@ class Harlequin(AppBase):
         self.editor.focus()
         self._sync_run_button_disabled()
         self._sync_run_button_text()
+
+    @on(EditorCollection.EditorSwitched)
+    def _sync_vim_status_bar_on_switch(
+        self, message: EditorCollection.EditorSwitched
+    ) -> None:
+        # Deliberately reads editor_collection.current_editor directly,
+        # rather than self.editor -- Textual doesn't guarantee this
+        # handler runs after update_internal_editor_state above just
+        # because it's declared later, so this can't depend on that
+        # other handler having already set self.editor.
+        try:
+            editor = self.editor_collection.current_editor
+        except NoMatches:
+            return
+        self._sync_vim_status_bar(editor)
+
+    def on_vim_text_area_plus_mode_changed(
+        self, message: VimTextAreaPlus.ModeChanged
+    ) -> None:
+        # a mode change doesn't carry the full status text, and the
+        # message could in principle come from a buffer that isn't the
+        # currently-focused one -- always resync from whichever editor
+        # is actually current
+        try:
+            editor = self.editor_collection.current_editor
+        except NoMatches:
+            return
+        self._sync_vim_status_bar(editor)
+
+    def on_vim_text_area_plus_status_changed(
+        self, message: VimTextAreaPlus.StatusChanged
+    ) -> None:
+        self.vim_status_bar.update(message.status)
+        self.vim_status_bar.remove_class("hide")
+
+    def _sync_vim_status_bar(self, editor: CodeEditor) -> None:
+        text_input = getattr(editor, "text_input", None)
+        if isinstance(text_input, VimTextAreaPlus):
+            self.vim_status_bar.update(text_input.status_text)
+            self.vim_status_bar.remove_class("hide")
+        else:
+            self.vim_status_bar.add_class("hide")
 
     def on_text_area_changed(self) -> None:
         self._sync_run_button_disabled()

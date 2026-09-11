@@ -34,7 +34,9 @@ from harlequin.config import (
     CLI_ONLY_SESSION_KEYS,
     CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
+    DEFAULT_CODE_EDITOR,
     TUI_ONLY_KEYS,
+    VALID_CODE_EDITORS,
     Config,
     adapter_options_model,
     sluggify_option_name,
@@ -92,6 +94,17 @@ UNKNOWN_ADAPTER_OPTIONS = (
     "This adapter is installed but could not be imported, so the options it "
     "declares are unknown and any key is allowed here."
 )
+
+TUI_ONLY_PROPERTIES: dict[str, dict[str, Any]] = {
+    "code_editor": {
+        "type": "string",
+        "enum": list(VALID_CODE_EDITORS),
+        "default": DEFAULT_CODE_EDITOR,
+        "description": (
+            "The code editor to use in the query editor (default or vim). " + IDE_ONLY
+        ),
+    },
+}
 
 CLICK_TYPES: dict[str, dict[str, Any]] = {
     "boolean": {"type": "boolean"},
@@ -200,7 +213,10 @@ def _profile(
         if param.name is not None
     }
     for key in TUI_ONLY_KEYS:
-        properties.setdefault(key, {"description": IDE_ONLY})
+        if key in TUI_ONLY_PROPERTIES:
+            properties.setdefault(key, dict(TUI_ONLY_PROPERTIES[key]))
+        else:
+            properties.setdefault(key, {"description": IDE_ONLY})
     for key in (*CLI_ONLY_SSH_KEYS, *CLI_ONLY_SESSION_KEYS):
         # refused from a profile at run time, so a file that sets one is wrong
         # however the editor validating it was told to read this document

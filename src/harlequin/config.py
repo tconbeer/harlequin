@@ -143,6 +143,7 @@ TUI_ONLY_KEYS = (
     "locale",
     "no_download_tzdata",
     "viewer_max_rows",
+    "code_editor",
 )
 """Profile keys the IDE reads and a headless caller must drop.
 
@@ -152,6 +153,9 @@ never declared. `locale` in particular is one a headless caller must ignore:
 the IDE sets it to group digits for a human, and output that varied with
 `LC_ALL` would be output a caller could not predict.
 """
+
+DEFAULT_CODE_EDITOR = "default"
+VALID_CODE_EDITORS = ("default", "vim")
 
 Profile = Dict[str, Any]
 """One `[profiles.x]` table: a command's own options, plus its adapter's.

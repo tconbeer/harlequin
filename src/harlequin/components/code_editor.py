@@ -25,6 +25,7 @@ from harlequin.autocomplete import (
     find_symbols,
 )
 from harlequin.components.text_modal import ErrorModal
+from harlequin.components.vim_text_editor import VimTextEditor
 from harlequin.editor_cache import BufferState, adopt_recovery, load_cache
 from harlequin.exception import HarlequinExternalError
 from harlequin.external import launch_external_editor
@@ -298,6 +299,20 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             self.app.action_focus_data_catalog()
 
 
+class VimCodeEditor(CodeEditor, VimTextEditor, inherit_bindings=False):
+    """CodeEditor with vim-modal editing.
+
+    Deliberately not a rewrite -- multiple inheritance here means every
+    CodeEditor method (selected_queries, action_format,
+    on_text_area_saved, etc.) is inherited completely
+    unchanged. The only thing that actually differs is compose(): since
+    CodeEditor itself never overrides compose(), Python's MRO resolves it
+    to VimTextEditor.compose() instead (which mounts VimTextAreaPlus as
+    text_input rather than plain TextAreaPlus) -- so this class needs no
+    body of its own at all.
+    """
+
+
 class EditorCollection(Vertical):
     """
     A row of tabs over a single editor. Switching tabs swaps the loaded buffer's
@@ -320,6 +335,7 @@ class EditorCollection(Vertical):
         disabled: bool = False,
         language: str = "sql",
         theme: str = "harlequin",
+        code_editor: str = "default",
     ):
         super().__init__(
             name=name,
@@ -328,6 +344,7 @@ class EditorCollection(Vertical):
             disabled=disabled,
         )
         self.language = language
+        self.code_editor = code_editor
         self.counter = 0
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
@@ -338,7 +355,8 @@ class EditorCollection(Vertical):
         self.loaded_buffer_id: str | None = None
         self.tabs = Tabs()
         self.tabs.can_focus = False
-        self.editor = CodeEditor(id="buffer", language=language, theme=theme)
+        editor_cls = VimCodeEditor if code_editor == "vim" else CodeEditor
+        self.editor = editor_cls(id="buffer", language=language, theme=theme)
         self.theme = theme
 
     def compose(self) -> ComposeResult:
