@@ -2249,6 +2249,11 @@ def _execute_all(
     from harlequin.query import execute
 
     executed: list[ExecutedStatement] = []
+    if run.stopped:
+        # already over before the first statement: a cancel that arrived
+        # before this request took the connection could not interrupt a query,
+        # so the one thing that stops it is not submitting one
+        return executed
     for item in execute(connection, statements, limit=limit, on_error=on_error):
         if run.stopped:
             # not consuming the rest is what stops the script: a statement

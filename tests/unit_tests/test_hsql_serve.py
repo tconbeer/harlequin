@@ -36,6 +36,7 @@ from harlequin.hsql.cli import (
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
     SERVER_OPTIONS,
+    _execute_all,
     _Run,
     bare_command,
     build_cli,
@@ -46,6 +47,8 @@ from harlequin.hsql.diagnostics import ExitCode
 from harlequin.hsql.server import InFlight, Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
 from harlequin.plugins import load_adapter
+from harlequin.query import RowLimit
+from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
 
@@ -959,6 +962,32 @@ def test_a_served_run_reads_the_sessions_cancel(in_process_server: Server) -> No
     assert served.cancelled
 
 
+def test_a_run_cancelled_before_it_started_submits_nothing(
+    in_process_server: Server,
+) -> None:
+    """A cancel that arrived before its request took the connection could not
+    interrupt a query, so the one thing left that stops the run is submitting
+    none -- checked before the first statement rather than after it."""
+    submitted: list[str] = []
+
+    class Recording:
+        def execute(self, sql: str) -> None:
+            submitted.append(sql)
+
+    in_flight = in_process_server._hold(A_REQUEST)
+    in_flight.cancel()
+    run = _Run(served=served_by(in_process_server, in_flight=in_flight))
+    executed = _execute_all(
+        cast(Any, Recording()),
+        [Statement(sql="select 1", index=0)],
+        limit=RowLimit(),
+        on_error="stop",
+        run=run,
+    )
+    assert executed == []
+    assert submitted == []
+
+
 def test_a_cancelled_run_is_an_error_that_exits_130(
     in_process_server: Server,
 ) -> None:
@@ -1761,9 +1790,16 @@ def test_an_interrupted_query_stops_and_leaves_the_session_up(
     tmp_path: Path,
 ) -> None:
     """The whole chain a `Ctrl-C` crosses: the client sends a cancel naming
-    its request on a second connection and exits 130, the session interrupts
-    the query, and the connection is free straight after -- rather than held
-    by a query nobody is waiting for."""
+    its request on a second connection and exits 130, the session stops the
+    query, and the connection is free straight after -- rather than held by a
+    query nobody is waiting for.
+
+    The next invocation answering is what proves the query stopped: an
+    interrupt that never landed would leave the session counting rows for the
+    rest of the test. Which outcome the session logs is not pinned, because a
+    status of `busy` is a request that has taken its turn and a `Ctrl-C` can
+    beat it to the connection -- and stopping a run before it submits anything
+    is as good as interrupting one that has."""
     query = subprocess.Popen(
         [
             sys.executable,
@@ -1778,16 +1814,26 @@ def test_an_interrupted_query_stops_and_leaves_the_session_up(
         cwd=tmp_path,
         env={**os.environ, **warm.env, "HOME": str(tmp_path)},
     )
+
     # not before the session has the query: an interrupt during start-up is
     # one with no request to name, which is a different path
-    _until_status(
-        lambda: json.loads(
-            hsql_subprocess(
-                ["--session", warm.name, "--session-status"], env=warm.env, timeout=30
-            ).stdout
-        ),
-        lambda status: status["state"] == "busy",
-    )
+    def status() -> dict[str, Any]:
+        return cast(
+            "dict[str, Any]",
+            json.loads(
+                hsql_subprocess(
+                    ["--session", warm.name, "--session-status"],
+                    env=warm.env,
+                    timeout=30,
+                ).stdout
+            ),
+        )
+
+    _until_status(status, lambda reported: reported["state"] == "busy")
+    # `busy` is a request that has taken its turn, which is a moment before it
+    # has parsed its argv and asked for the connection; one more round trip
+    # puts the interrupt inside the query rather than ahead of it
+    assert status()["state"] == "busy"
     query.send_signal(signal.SIGINT)
     out, err = query.communicate(timeout=30)
     assert query.returncode == ExitCode.INTERRUPT
@@ -1796,7 +1842,7 @@ def test_an_interrupted_query_stops_and_leaves_the_session_up(
     assert err == b""
     assert send(["-tAc", "select 'still up'"], timeout=30).stdout == b"still up\n"
     assert warm.stop() == ExitCode.OK
-    assert "cancel: stopped the query" in warm.stderr()
+    assert "cancel: " in warm.stderr()
 
 
 @needs_unix_sockets
