@@ -920,8 +920,31 @@ them; everything after is additive and independently revertible.
    which is the thread-safety §4.5 refuses to assume. `idle_timeout_s` and `expires_in_s`
    are null until PR 5 can answer them, rather than absent, so the document's shape does
    not change under a caller.
-4. **Cancellation.** `SIGINT` → cancel frame → `connection.cancel()`, the
+4. **Cancellation. Shipped.** `SIGINT` → cancel frame → `connection.cancel()`, the
    `IMPLEMENTS_CANCEL = False` path, and the DuckDB `fetchall() -> None` attribution.
+
+   Two things this PR settled that the plan did not name. **The request id is the
+   client's, not the server's**: a server-assigned one would have to reach the client
+   before its query started, and the only frame ahead of a request is the handshake,
+   whose shape has to stay readable by every release for the §4.9 version check to
+   work — so it is a sixth section of the request, eight bytes from `os.urandom()`.
+   And **a request is cancellable from the moment its argv arrives, not from the moment
+   it takes its turn.** A caller who gives up while their request waits behind the one
+   ahead is cancelling something the session is holding, and nothing else would stop it
+   running when its turn came.
+
+   That makes the load-bearing invariant one about *windows*, because
+   `HarlequinConnection.cancel()` is connection-wide: the window in which a request is
+   registered and marked started has to be exactly the window in which it holds the
+   turnstile. Widen it at either end and a cancel naming a request that has already
+   finished interrupts whichever query holds the connection now — and marks *that* one's
+   bookkeeping not at all, so the empty, error-free result the interrupt produces is one
+   nobody can attribute and the caller reads as an empty table. Two things keep the
+   windows equal: the server releases a request from its bookkeeping *before* it leaves
+   the turnstile, and `cancel()` holds the lock a request takes to start across the
+   driver call, so nothing can start between the check and the interrupt. The client's
+   half of the same rule is that the send and the relay are under one `try`, or an
+   interrupt landing between them exits 130 having sent no cancel at all.
 5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
    reporting, and the secret-on-a-server-command-line warning (§4.1).
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a

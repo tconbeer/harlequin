@@ -158,6 +158,26 @@ def report_status(code: int, *, stream: TextIO) -> None:
     note(f"--session-status: exit {code}", stream=stream)
 
 
+def report_cancel(outcome: str, *, stream: TextIO) -> None:
+    """One line per cancel, beside the one per request."""
+    note(f"cancel: {outcome}", stream=stream)
+
+
+def report_cancel_unsupported(adapter: str, session: str, *, stream: TextIO) -> None:
+    """Say that the query outlived the caller who gave up on it.
+
+    On the caller's stderr, because the alternative is someone who pressed
+    Ctrl-C, got their prompt back, and cannot work out why the next
+    invocation waits.
+    """
+    note(
+        f"{adapter} does not implement query cancellation, so the query is "
+        f"still running on session {session!r}; it holds the session until it "
+        f"finishes. `{PROGRAM} --session {session} --session-status` says when.",
+        stream=stream,
+    )
+
+
 def report_peer_refused(uid: int, *, stream: TextIO) -> None:
     note(f"refused a connection from uid {uid}, which is not yours.", stream=stream)
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -35,15 +36,19 @@ from harlequin.hsql.cli import (
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
     SERVER_OPTIONS,
+    _execute_all,
+    _Run,
     bare_command,
     build_cli,
     connection_option_names,
     connection_options_in,
 )
 from harlequin.hsql.diagnostics import ExitCode
-from harlequin.hsql.server import Served, Server
+from harlequin.hsql.server import InFlight, Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
 from harlequin.plugins import load_adapter
+from harlequin.query import RowLimit
+from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
 
@@ -61,6 +66,10 @@ duckdb checks for an interrupt between chunks. Large enough that the fastest
 runner cannot beat a tenth of a second: at 2e9 an arm64 macOS runner did, and
 the timeout test got a result set where it wanted none.
 """
+
+A_REQUEST = b"AAAAAAAA"
+ANOTHER_REQUEST = b"BBBBBBBB"
+"""Request ids, which are `REQUEST_ID_BYTES` long and otherwise arbitrary."""
 
 SESSION_INIT_PATH = Path("boot.sql")
 """The `--init-path` the in-process session recorded.
@@ -113,10 +122,15 @@ def in_process_server(duckdb_adapter: Any) -> Server:
     )
 
 
-def served_by(server: Server, *, stdin: bytes | None = None) -> Served:
+def served_by(
+    server: Server, *, stdin: bytes | None = None, in_flight: InFlight | None = None
+) -> Served:
     return Served(
         server,
-        protocol.Request(argv=[], cwd=os.getcwd(), environ={}, stdin=stdin),
+        protocol.Request(
+            argv=[], cwd=os.getcwd(), environ={}, stdin=stdin, request_id=A_REQUEST
+        ),
+        in_flight,
     )
 
 
@@ -717,19 +731,315 @@ def test_a_reset_that_cannot_reconnect_leaves_the_session_without_a_connection(
     assert hsql("-c", "select 1", obj=served).exit_code == ExitCode.OK
 
 
-# --- a cancel that does not land ---------------------------------------------
+# --- stopping a request ------------------------------------------------------
 
 
 class _FakeConnection:
     def __init__(self, label: str) -> None:
         self.label = label
         self.closed = False
+        self.cancels = 0
 
     def cancel(self) -> None:
-        pass
+        self.cancels += 1
 
     def close(self) -> None:
         self.closed = True
+
+
+def cancellable(implements_cancel: bool = True) -> tuple[Server, _FakeConnection]:
+    """A session with nothing but the bookkeeping a cancel reads."""
+    connection = _FakeConnection("held")
+    return (
+        Server(
+            "cancels",
+            adapter="duckdb",
+            connection=cast(Any, connection),
+            reconnect=lambda: cast(Any, connection),
+            implements_cancel=implements_cancel,
+        ),
+        connection,
+    )
+
+
+def running(session: Server, request_id: bytes) -> InFlight:
+    """A request that took its turn and went on to ask for the connection."""
+    in_flight = session._hold(request_id)
+    assert session._take_turn(in_flight)
+    session.note_connection_held(in_flight)
+    return in_flight
+
+
+def test_a_cancel_stops_the_request_that_named_it() -> None:
+    """The id is the client's, so a cancel that arrives after its request
+    finished cannot stop whichever one the session went on to."""
+    session, connection = cancellable()
+    in_flight = running(session, A_REQUEST)
+    assert session.cancel(A_REQUEST) == server.STOPPED
+    assert connection.cancels == 1
+    # set before the database is asked, which is what tells the empty result
+    # the cancel produces from one a query really returned
+    assert in_flight.cancelled
+
+
+def test_a_cancel_for_a_request_the_session_no_longer_holds_stops_nothing() -> None:
+    session, connection = cancellable()
+    finished = session._hold(A_REQUEST)
+    session._release(finished)
+    assert session.cancel(A_REQUEST) == server.UNKNOWN
+    assert session.cancel(ANOTHER_REQUEST) == server.UNKNOWN
+    assert connection.cancels == 0
+
+
+def test_a_request_cancelled_while_it_queued_never_runs() -> None:
+    """A caller who gives up while their request waits for the one ahead is
+    cancelling something the session has -- and interrupting the database then
+    would land on whichever request is holding it."""
+    session, connection = cancellable()
+    waiting = session._hold(A_REQUEST)
+    assert session.cancel(A_REQUEST) == server.WAITING
+    assert connection.cancels == 0
+    assert not session._take_turn(waiting)
+
+
+def test_a_cancel_an_adapter_cannot_honor_leaves_the_query_running() -> None:
+    """`cancel()` is optional on the contract, and a session that has none
+    detaches the caller rather than pretending to have stopped anything. The
+    request is still marked, so the script runs no further statement."""
+    session, connection = cancellable(implements_cancel=False)
+    in_flight = running(session, A_REQUEST)
+    assert session.cancel(A_REQUEST) == server.UNSTOPPABLE
+    assert connection.cancels == 0
+    assert in_flight.cancelled
+
+
+def test_a_cancel_on_a_request_that_never_took_the_connection_interrupts_nothing() -> (
+    None
+):
+    """`cancel()` is connection-wide, so a served `--info` or `--config show`
+    -- which takes a turn and never asks for the connection -- must not reach
+    past itself into a driver no query is using. It is still marked, so a
+    script that had not got to its first statement runs none of them."""
+    session, connection = cancellable()
+    reporting = session._hold(A_REQUEST)
+    assert session._take_turn(reporting)
+    assert session.cancel(A_REQUEST) == server.IDLE
+    assert connection.cancels == 0
+    assert reporting.cancelled
+
+
+def test_a_cancel_does_not_reach_into_a_connection_a_timed_out_thread_holds() -> None:
+    """`abandon()` leaves the connection to the thread still inside it, so a
+    cancel that called into it would be a second thread in one driver. The
+    session says it has no connection to offer, which is what `--session-reset`
+    is for."""
+    session, connection = cancellable()
+    in_flight = running(session, A_REQUEST)
+    session.abandon()
+    assert session.cancel(A_REQUEST) == server.DETACHED
+    assert connection.cancels == 0
+    assert in_flight.cancelled
+
+
+def test_a_bug_in_the_cancel_path_is_not_someone_elses_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The client exits 130 either way, so a cancel that raised has nothing to
+    tell it -- and the traceback belongs on the operator's stream rather than
+    in whichever request's recorder holds the process's stderr."""
+    session, _ = cancellable()
+    running(session, A_REQUEST)
+
+    def boom(request_id: bytes) -> str:
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setattr(session, "cancel", boom)
+    assert _cancel_over_a_socket(session, A_REQUEST) == (b"", ExitCode.INTERRUPT)
+
+
+def test_a_cancel_never_reaches_the_request_that_took_over_the_connection() -> None:
+    """`HarlequinConnection.cancel()` is connection-wide, so a request the
+    session no longer holds must find nothing: interrupting its successor's
+    query would mark no `InFlight`, and an empty, error-free result nobody
+    attributes is exactly what a caller cannot tell from an empty table."""
+    session, connection = cancellable()
+    first = running(session, A_REQUEST)
+    # what `_attend` does before the turnstile lets the next request start
+    session._release(first)
+    second = running(session, ANOTHER_REQUEST)
+    assert session.cancel(A_REQUEST) == server.UNKNOWN
+    assert connection.cancels == 0
+    assert not second.cancelled
+
+
+def test_a_request_is_released_before_the_turnstile_lets_the_next_one_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The order that makes the guarantee above hold, pinned on `_attend`
+    itself: a request still registered when the next one can start is one
+    whose cancel would interrupt that one's query."""
+    session, _ = cancellable()
+
+    def ran(
+        request: protocol.Request, in_flight: server.InFlight | None = None
+    ) -> tuple[list[tuple[int, bytearray]], int]:
+        return [], int(ExitCode.OK)
+
+    monkeypatch.setattr(session, "_run", ran)
+    registered_when_leaving: list[list[bytes]] = []
+    leaving = session._turnstile.leave
+
+    def leave() -> None:
+        registered_when_leaving.append(list(session._in_flight))
+        leaving()
+
+    monkeypatch.setattr(session._turnstile, "leave", leave)
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        protocol.send_frame(
+            theirs,
+            protocol.REQUEST,
+            protocol.pack_request(
+                argv=["-c", "select 1"],
+                cwd=os.getcwd(),
+                environ={},
+                stdin=None,
+                request_id=A_REQUEST,
+            ),
+        )
+        session._attend(ours)
+    assert registered_when_leaving == [[]]
+
+
+def test_nothing_takes_a_turn_between_a_cancel_and_the_interrupt_it_sends() -> None:
+    """The other half: a request that started after the cancel read the
+    bookkeeping would be the one the connection-wide interrupt reached, so the
+    lock a request takes to start is held across the driver call."""
+    session, _ = cancellable()
+    running(session, A_REQUEST)
+    next_up = session._hold(ANOTHER_REQUEST)
+    trying = threading.Event()
+    turns: list[bool] = []
+    blocked_while_interrupting: list[bool] = []
+
+    def take_turn() -> None:
+        trying.set()
+        turns.append(session._take_turn(next_up))
+
+    def interrupt() -> None:
+        taking = threading.Thread(target=take_turn)
+        taking.start()
+        assert trying.wait(30)
+        taking.join(0.2)
+        blocked_while_interrupting.append(taking.is_alive())
+
+    session._connection = cast(Any, _Interrupting(interrupt))
+    assert session.cancel(A_REQUEST) == server.STOPPED
+    assert blocked_while_interrupting == [True]
+    # and it goes through once the cancel has let the lock go
+    _until(lambda: turns == [True])
+
+
+class _Interrupting(_FakeConnection):
+    """A connection whose `cancel()` is what the test wants to watch."""
+
+    def __init__(self, interrupting: Callable[[], None]) -> None:
+        super().__init__("interrupting")
+        self._interrupting = interrupting
+
+    def cancel(self) -> None:
+        super().cancel()
+        self._interrupting()
+
+
+def test_a_served_run_reads_the_sessions_cancel(in_process_server: Server) -> None:
+    """What the command reads between results, where a cold run reads its
+    clock."""
+    in_flight = in_process_server._hold(A_REQUEST)
+    served = served_by(in_process_server, in_flight=in_flight)
+    assert not served.cancelled
+    in_flight.cancel()
+    assert served.cancelled
+
+
+def test_a_run_cancelled_before_it_started_submits_nothing(
+    in_process_server: Server,
+) -> None:
+    """A cancel that arrived before its request took the connection could not
+    interrupt a query, so the one thing left that stops the run is submitting
+    none -- checked before the first statement rather than after it."""
+    submitted: list[str] = []
+
+    class Recording:
+        def execute(self, sql: str) -> None:
+            submitted.append(sql)
+
+    in_flight = in_process_server._hold(A_REQUEST)
+    in_flight.cancel()
+    run = _Run(served=served_by(in_process_server, in_flight=in_flight))
+    executed = _execute_all(
+        cast(Any, Recording()),
+        [Statement(sql="select 1", index=0)],
+        limit=RowLimit(),
+        on_error="stop",
+        run=run,
+    )
+    assert executed == []
+    assert submitted == []
+
+
+def test_a_cancelled_run_is_an_error_that_exits_130(
+    in_process_server: Server,
+) -> None:
+    """What `--stats` says about a run the caller stopped, and the code the
+    session logs for it."""
+    in_flight = in_process_server._hold(A_REQUEST)
+    run = _Run(served=served_by(in_process_server, in_flight=in_flight))
+    assert not run.stopped
+    assert (run.status, run.message, run.exit_code) == ("ok", None, ExitCode.OK)
+    in_flight.cancel()
+    assert run.stopped
+    assert (run.status, run.message, run.exit_code) == (
+        "error",
+        "cancelled",
+        ExitCode.INTERRUPT,
+    )
+
+
+def test_a_cancel_a_session_answers_says_only_what_the_caller_must_act_on() -> None:
+    """Exit 130 whatever came of it -- the caller interrupted the run, which
+    is the code for it cold too -- and a line only when the query outlived
+    them."""
+    session, _ = cancellable(implements_cancel=False)
+    running(session, A_REQUEST)
+    assert _cancel_over_a_socket(session, A_REQUEST) == (
+        b"note: duckdb does not implement query cancellation, so the query is "
+        b"still running on session 'cancels'; it holds the session until it "
+        b"finishes. `hsql --session cancels --session-status` says when.\n",
+        ExitCode.INTERRUPT,
+    )
+    stopping, _ = cancellable()
+    running(stopping, A_REQUEST)
+    assert _cancel_over_a_socket(stopping, A_REQUEST) == (b"", ExitCode.INTERRUPT)
+
+
+def _cancel_over_a_socket(session: Server, request_id: bytes) -> tuple[bytes, int]:
+    """What a cancel sends back: the caller's stderr, and the code it exits."""
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        session._send_cancel(ours, request_id)
+        ours.shutdown(socket.SHUT_WR)
+        stderr = bytearray()
+        code = -1
+        while (frame := protocol.recv_frame(theirs)) is not None:
+            if frame[0] == protocol.EXIT:
+                code = int.from_bytes(frame[1], "big")
+            elif frame[0] == protocol.STDERR:
+                stderr.extend(frame[1])
+    return bytes(stderr), code
+
+
+# --- and a cancel that does not land -----------------------------------------
 
 
 def test_a_deadline_a_server_gave_an_abandon_hook_ends_the_run_not_the_process() -> (
@@ -761,7 +1071,11 @@ def test_a_bug_in_hsql_is_exit_70_through_a_session_too(
 
     monkeypatch.setattr("harlequin.hsql.cli.run", boom)
     request = protocol.Request(
-        argv=["-c", "select 1"], cwd=os.getcwd(), environ={}, stdin=None
+        argv=["-c", "select 1"],
+        cwd=os.getcwd(),
+        environ={},
+        stdin=None,
+        request_id=A_REQUEST,
     )
     segments, code = in_process_server._run(request)
     assert code == ExitCode.CRASH
@@ -1469,6 +1783,109 @@ def test_a_timeout_stops_the_request_and_leaves_the_session_up(
 
 
 @needs_unix_sockets
+def test_an_interrupted_query_stops_and_leaves_the_session_up(
+    warm: WarmSession,
+    send: HsqlSubprocess,
+    hsql_subprocess: HsqlSubprocess,
+    tmp_path: Path,
+) -> None:
+    """The whole chain a `Ctrl-C` crosses: the client sends a cancel naming
+    its request on a second connection and exits 130, the session stops the
+    query, and the connection is free straight after -- rather than held by a
+    query nobody is waiting for.
+
+    The next invocation answering is what proves the query stopped: an
+    interrupt that never landed would leave the session counting rows for the
+    rest of the test. Which outcome the session logs is not pinned, because a
+    status of `busy` is a request that has taken its turn and a `Ctrl-C` can
+    beat it to the connection -- and stopping a run before it submits anything
+    is as good as interrupting one that has."""
+    query = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '-c', {UNFINISHABLE!r}]\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **warm.env, "HOME": str(tmp_path)},
+    )
+
+    # not before the session has the query: an interrupt during start-up is
+    # one with no request to name, which is a different path
+    def status() -> dict[str, Any]:
+        return cast(
+            "dict[str, Any]",
+            json.loads(
+                hsql_subprocess(
+                    ["--session", warm.name, "--session-status"],
+                    env=warm.env,
+                    timeout=30,
+                ).stdout
+            ),
+        )
+
+    _until_status(status, lambda reported: reported["state"] == "busy")
+    # `busy` is a request that has taken its turn, which is a moment before it
+    # has parsed its argv and asked for the connection; one more round trip
+    # puts the interrupt inside the query rather than ahead of it
+    assert status()["state"] == "busy"
+    query.send_signal(signal.SIGINT)
+    out, err = query.communicate(timeout=30)
+    assert query.returncode == ExitCode.INTERRUPT
+    # the rows the cancel produced are not rows the query returned
+    assert out == b""
+    assert err == b""
+    assert send(["-tAc", "select 'still up'"], timeout=30).stdout == b"still up\n"
+    assert warm.stop() == ExitCode.OK
+    assert "cancel: " in warm.stderr()
+
+
+@needs_unix_sockets
+def test_a_client_that_gives_up_while_it_waits_runs_nothing(
+    blocked: Blocked, warm: WarmSession, send: HsqlSubprocess, tmp_path: Path
+) -> None:
+    """A request cancelled in the queue never reaches the database. The one
+    ahead of it finishes and releases the session, and what the caller gave up
+    on does not then run behind them."""
+    queued = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {warm.name!r}, '-c', "
+            "'create temp table gave_up as select 1']\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **warm.env, "HOME": str(tmp_path)},
+    )
+    try:
+        _until_status(
+            lambda: json.loads(send(["--session-status"], timeout=30).stdout),
+            lambda status: status["queued"] == 1,
+        )
+        queued.send_signal(signal.SIGINT)
+        assert queued.wait(30) == ExitCode.INTERRUPT
+    finally:
+        queued.communicate(timeout=30)
+    blocked.release()
+    assert blocked.process.wait(30) == ExitCode.OK
+    counted = send(
+        ["-tAc", "select count(*) from duckdb_tables() where table_name = 'gave_up'"],
+        timeout=30,
+    )
+    assert counted.stdout == b"0\n"
+
+
+@needs_unix_sockets
 def test_a_queue_timeout_is_not_a_query_timeout(
     serve_session: ServeSession,
     hsql_subprocess: HsqlSubprocess,
@@ -1518,6 +1935,7 @@ def raw_request(
             "cwd": os.getcwd(),
             "environ": {},
             "stdin": None,
+            "request_id": A_REQUEST,
             **fields,
         }
         protocol.send_frame(

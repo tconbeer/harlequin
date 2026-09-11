@@ -13,9 +13,11 @@ A session is one connection, so requests run **one at a time**: the adapter
 contract says nothing about thread-safety, and the IDE has never needed it. A
 second client waits its turn, bounded by `--queue-timeout`, and is told it
 never reached the database if that runs out -- a different fact from a query
-that ran too long. `--session-status` is the exception: it arrives as its own
-frame rather than as an invocation, and the server reports from its own
-bookkeeping while a request runs.
+that ran too long. `--session-status` and a client's cancel are the exceptions:
+each arrives as its own frame rather than as an invocation, and is answered off
+this server's bookkeeping while a request runs. That is what lets a `Ctrl-C`
+reach the query it belongs to rather than queueing behind it, and it is also
+what tells the run it was stopped.
 
 The name is the caller's and the **identity is the server's**: the connection
 options it resolved at start-up are what a served request's own connection
@@ -78,8 +80,42 @@ tells a live session from a stale socket file without racing another server
 starting under the same name."""
 
 
+STOPPED = "stopped the query"
+UNSTOPPABLE = "the adapter cannot stop a query"
+WAITING = "the request had not started"
+IDLE = "the request is not using the connection"
+DETACHED = "the session has no connection"
+UNKNOWN = "no such request"
+FAILED = "the cancel failed"
+"""What a cancel did. Only `UNSTOPPABLE` reaches the caller."""
+
+
 class SessionRunning(Exception):
     """A server is already up under this name."""
+
+
+class InFlight:
+    """One request a session is holding, and whether its caller gave up on it.
+
+    `started` is whether it has taken its turn; `holds_connection` whether it
+    went on to ask for the connection, which is what makes interrupting the
+    database mean anything. Both are set and read under the server's lock.
+    """
+
+    __slots__ = ("request_id", "started", "holds_connection", "_cancelled")
+
+    def __init__(self, request_id: bytes) -> None:
+        self.request_id = request_id
+        self.started = False
+        self.holds_connection = False
+        self._cancelled = threading.Event()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
 
 
 class Turnstile:
@@ -196,19 +232,40 @@ class _Stream(io.RawIOBase):
 class Served:
     """What the command is told about the session answering it."""
 
-    def __init__(self, server: Server, request: protocol.Request) -> None:
+    def __init__(
+        self,
+        server: Server,
+        request: protocol.Request,
+        in_flight: InFlight | None = None,
+    ) -> None:
         self._server = server
+        self._in_flight = in_flight
         self.name = server.name
         self.adapter = server.adapter
         self.identity = server.identity
         self.stdin = request.stdin
 
+    @property
+    def cancelled(self) -> bool:
+        """Whether the caller gave up on this request.
+
+        The run reads it between results, where a cold one reads its deadline.
+        """
+        return self._in_flight is not None and self._in_flight.cancelled
+
     def connection(self) -> HarlequinConnection:
-        """The session's connection.
+        """The session's connection, noted as this request's while it runs.
+
+        The one place a served invocation takes the connection, so it is where
+        a cancel learns that interrupting the database would reach this
+        request rather than nothing.
 
         Raises: HarlequinConnectionError if the session has none to offer.
         """
-        return self._server.connection()
+        connection = self._server.connection()
+        if self._in_flight is not None:
+            self._server.note_connection_held(self._in_flight)
+        return connection
 
     def reset(self) -> None:
         """Close the session's connection and open a fresh one.
@@ -240,6 +297,7 @@ class Server:
         options: Sequence[AbstractOption] | None = None,
         ssh: str | None = None,
         queue_timeout: float | None = None,
+        implements_cancel: bool = False,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
@@ -256,6 +314,11 @@ class Server:
         self._reconnect = reconnect
         self._abandoned = False
         self._queue_timeout = queue_timeout
+        self._implements_cancel = implements_cancel
+        """Whether this adapter's `cancel()` is real, and so whether a caller
+        who interrupts a query is stopping it or only detaching from it."""
+        self._in_flight: dict[bytes, InFlight] = {}
+        self._in_flight_lock = threading.Lock()
         self._environ = dict(os.environ if environ is None else environ)
         self._cwd = os.getcwd()
         self._turnstile = Turnstile()
@@ -416,6 +479,82 @@ class Server:
     def abandon(self) -> None:
         self._abandoned = True
 
+    # --- stopping a request ----------------------------------------------------
+
+    def cancel(self, request_id: bytes) -> str:
+        """Stop the request `request_id` names, and say what that did.
+
+        Called from the thread that accepted the cancel rather than from the
+        one running the request, which is inside the driver: `cancel()` is the
+        one adapter method the IDE has always called from another thread.
+
+        It is connection-wide, so the whole of this holds the lock a request
+        takes to start: one that started between the check below and the
+        interrupt would be the one interrupted.
+        """
+        with self._in_flight_lock:
+            in_flight = self._in_flight.get(request_id)
+            if in_flight is None:
+                return UNKNOWN
+            in_flight.cancel()
+            if not in_flight.started:
+                # it has not taken its turn, so it will read the flag and stop
+                # rather than run
+                return WAITING
+            if not in_flight.holds_connection:
+                # a mode that reports on what is installed or configured, which
+                # `cancel()` would reach past and into nothing
+                return IDLE
+            if not self._implements_cancel:
+                return UNSTOPPABLE
+            connection = self._connection
+            if connection is None or self._abandoned:
+                # a reset between its two halves, a session coming down, or a
+                # connection a timed-out thread is still inside: the request
+                # is marked either way, so it stops
+                return DETACHED
+            with contextlib.suppress(Exception):  # adapters are third-party code
+                connection.cancel()
+            return STOPPED
+
+    def note_connection_held(self, in_flight: InFlight) -> None:
+        """Note that this request has the connection, so a cancel can reach it."""
+        with self._in_flight_lock:
+            in_flight.holds_connection = True
+
+    def _hold(self, request_id: bytes) -> InFlight:
+        """Register the request, so a cancel naming it finds it.
+
+        From the moment its argv arrives rather than from its turn, so that a
+        request still waiting for the one ahead can be cancelled too.
+        """
+        in_flight = InFlight(request_id)
+        with self._in_flight_lock:
+            self._in_flight[request_id] = in_flight
+        return in_flight
+
+    def _release(self, in_flight: InFlight) -> None:
+        """Forget the request, so a cancel naming it finds nothing.
+
+        Called before the turnstile lets the next request start: `cancel()` is
+        connection-wide, so one still registered here would answer a cancel by
+        interrupting whichever query holds the connection now.
+        """
+        with self._in_flight_lock:
+            self._in_flight.pop(in_flight.request_id, None)
+
+    def _take_turn(self, in_flight: InFlight) -> bool:
+        """Mark the request started, or report that it was cancelled waiting.
+
+        Under the lock a cancel takes, so a request either runs and is
+        interrupted or never runs at all.
+        """
+        with self._in_flight_lock:
+            if in_flight.cancelled:
+                return False
+            in_flight.started = True
+            return True
+
     def _close_connection(self) -> None:
         connection, self._connection = self._connection, None
         if connection is None or self._abandoned:
@@ -545,6 +684,9 @@ class Server:
                 if frame[0] == protocol.STATUS:
                     self._send_status(connection, protocol.unpack_status(frame[1]))
                     return
+                if frame[0] == protocol.CANCEL:
+                    self._send_cancel(connection, frame[1])
+                    return
                 if frame[0] != protocol.REQUEST:
                     raise protocol.ProtocolError(f"expected a request, got {frame[0]}")
                 request = protocol.unpack_request(frame[1])
@@ -552,7 +694,9 @@ class Server:
                 diagnostics.report_bad_request(str(e), stream=self._stderr)
                 return
 
+            in_flight = self._hold(request.request_id)
             if not self._turnstile.enter(self._queue_timeout):
+                self._release(in_flight)
                 recorder = Recorder()
                 diagnostics.report_queue_timeout(
                     self._queue_timeout or 0, stream=recorder.stderr()
@@ -561,8 +705,14 @@ class Server:
                 return
             started = time.monotonic()
             try:
-                segments, code = self._run(request)
+                if self._take_turn(in_flight):
+                    segments, code = self._run(request, in_flight)
+                else:
+                    # cancelled while it waited for the request ahead of it
+                    segments, code = [], int(ExitCode.INTERRUPT)
             finally:
+                # in this order, for the reason `_release()` gives
+                self._release(in_flight)
                 self._turnstile.leave()
             self._requests += 1
             elapsed_ms = round((time.monotonic() - started) * 1000)
@@ -594,6 +744,32 @@ class Server:
         self._answer(connection, recorder.segments, code)
         diagnostics.report_status(code, stream=self._stderr)
 
+    def _send_cancel(self, connection: socket.socket, request_id: bytes) -> None:
+        """Stop the request `request_id` names, and answer the client that asked.
+
+        Off the server's own bookkeeping, as `_send_status()` is, so it lands
+        while the request it stops holds the connection. Exit 130 whatever
+        came of it.
+        """
+        recorder = Recorder()
+        try:
+            outcome = self.cancel(request_id)
+        except Exception:  # noqa: BLE001 -- the server outlives a request
+            # the traceback belongs on the operator's stream rather than out
+            # of this thread and into whichever request's recorder holds the
+            # process's stderr; the client is exiting 130 either way
+            diagnostics.note(
+                f"cancel failed: {redact_text(traceback.format_exc())}",
+                stream=self._stderr,
+            )
+            outcome = FAILED
+        if outcome == UNSTOPPABLE:
+            diagnostics.report_cancel_unsupported(
+                self.adapter, self.name, stream=recorder.stderr()
+            )
+        self._answer(connection, recorder.segments, ExitCode.INTERRUPT)
+        diagnostics.report_cancel(outcome, stream=self._stderr)
+
     def _status_into(self, recorder: Recorder, argv: Sequence[str]) -> ExitCode:
         """Write the status document, or refuse a flag typed beside it.
 
@@ -619,7 +795,7 @@ class Server:
         return ExitCode.OK
 
     def _run(
-        self, request: protocol.Request
+        self, request: protocol.Request, in_flight: InFlight | None = None
     ) -> tuple[list[tuple[int, bytearray]], int]:
         """Run one invocation as the cold path would, into a recorder."""
         from harlequin.hsql import cli
@@ -629,7 +805,7 @@ class Server:
         )
         try:
             with self._as(request, recorder):
-                code = cli.run(request.argv, served=Served(self, request))
+                code = cli.run(request.argv, served=Served(self, request, in_flight))
         except NotADirectoryError as e:
             diagnostics.error(str(e), stream=recorder.stderr())
             return recorder.segments, ExitCode.USAGE
