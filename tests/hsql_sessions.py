@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from harlequin.hsql.session import socket_path
 
@@ -31,6 +31,7 @@ class WarmSession:
         *,
         runtime_dir: Path,
         home: Path,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
         self.runtime_dir = runtime_dir
@@ -59,6 +60,8 @@ class WarmSession:
                 "USERPROFILE": str(home),
                 "XDG_CONFIG_HOME": str(home / "xdg"),
                 **self.env,
+                # the server's own, which a request must not inherit
+                **(env or {}),
             },
         )
 

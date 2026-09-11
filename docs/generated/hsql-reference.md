@@ -59,6 +59,7 @@ Alphabetical by name. Flags are off by default.
 | `--serve` | text | `NAME` |  |  | Connect, then hold the connection open as the session named NAME and answer `--session NAME` invocations from it until stopped. Takes connection options only. Not on native Windows. |
 | `--session` | text | `NAME` |  |  | Send this invocation to the running session named NAME, started with --serve. HSQL_SESSION=NAME does the same for every invocation, and runs without the session, with a warning, when none is up. |
 | `--session-reset` | boolean |  |  |  | Ask the session to close its connection and open a fresh one, and exit without running SQL. Temp tables, settings and an open transaction are gone. Needs --session. |
+| `--session-status` | boolean |  |  |  | Poll the server for its status as JSON, and exit. Reports while a query is running. Needs --session. |
 | `--skill` | boolean |  |  |  | Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'. |
 | `--spec` | boolean |  |  |  | Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter. |
 | `--ssh-allow-reuse` | boolean |  |  |  | When the local port is already bound, warn and connect through the listener that has it instead of failing. |

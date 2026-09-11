@@ -111,8 +111,15 @@ def redact_conn_str(conn_str: Sequence[str]) -> list[str]:
     reporting:********@warehouse:5432/analytics` still answers the question a
     reader has, and the password it no longer carries was never part of the
     answer.
+
+    A `conn_str` is whatever a config file put under the key, so an item that
+    is not a string is masked whole rather than parsed for spans: this is the
+    last thing between a value and a terminal, and it may not raise on the way
+    past -- a crash report is one of the things that calls it.
     """
-    return [_mask_spans(item) for item in conn_str]
+    return [
+        _mask_spans(item) if isinstance(item, str) else REDACTED for item in conn_str
+    ]
 
 
 def redact_text(text: str, secrets: Iterable[str] | None = None) -> str:

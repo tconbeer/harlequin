@@ -153,6 +153,11 @@ def report_request(number: int, code: int, elapsed_ms: int, *, stream: TextIO) -
     note(f"request {number}: exit {code} in {elapsed_ms}ms", stream=stream)
 
 
+def report_status(code: int, *, stream: TextIO) -> None:
+    """One line per status request, beside the one per request."""
+    note(f"--session-status: exit {code}", stream=stream)
+
+
 def report_peer_refused(uid: int, *, stream: TextIO) -> None:
     note(f"refused a connection from uid {uid}, which is not yours.", stream=stream)
 
