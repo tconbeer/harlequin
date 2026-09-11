@@ -13,7 +13,6 @@ from rich_click.utils import OptionGroupDict
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.catalog_cache import get_connection_hash
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
@@ -23,6 +22,8 @@ from harlequin.config import (
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
+    sluggify_option_name,
+    take_no_write_history,
     take_ssh_keys,
 )
 from harlequin.config_wizard import wizard
@@ -38,6 +39,7 @@ from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
 from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
+from harlequin.query_log import connection_id
 from harlequin.redact import hide_secrets_in
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -147,6 +149,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
             "--config-path",
             "--locale",
             "--no-download-tzdata",
+            "--no-write-history",
         ],
     },
     {
@@ -429,6 +432,15 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--no-write-history",
+        "no_write_history",
+        is_flag=True,
+        help=(
+            "Do not record this session's queries in the query history that "
+            "Harlequin and hsql share."
+        ),
+    )
+    @click.option(
         "--read-only",
         "-r",
         "read_only",
@@ -595,8 +607,19 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # config file pointed it at
         hide_secrets_in(config, adapter_cls.ADAPTER_OPTIONS)
 
+        # drop hsql's own profile keys before the adapter sees the config; an
+        # option the adapter also declares is the adapter's
+        declared_by_adapter = {
+            sluggify_option_name(option.name)
+            for option in adapter_cls.ADAPTER_OPTIONS or []
+        }
+        for key in hsql_profile_keys() - harlequin_options - declared_by_adapter:
+            config.pop(key, None)
+
         # detect and install (if necessary) a tzdatabase on Windows
-        if sys.platform == "win32" and not config.pop("no_download_tzdata", None):
+        # popped on every platform: the remaining config is the adapter's
+        no_download_tzdata = config.pop("no_download_tzdata", None)
+        if sys.platform == "win32" and not no_download_tzdata:
             try:
                 check_and_install_tzdata()
             except HarlequinTzDataError as e:
@@ -652,6 +675,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # off the config before the adapter is handed the rest of it
         try:
             ssh_config = take_ssh_keys(config, typed=explicitly_set)
+            no_write_history = take_no_write_history(config)
         except HarlequinConfigError as e:
             pretty_print_error(e)
             ctx.exit(2)
@@ -679,15 +703,12 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             if tunnel is not None:
                 stack.callback(tunnel.stop)
 
-            connection_id = (
-                adapter_instance.connection_id
-                if adapter_instance.connection_id is not None
-                else get_connection_hash(conn_str, config)
+            keyed_connection = connection_id(
+                adapter_instance.connection_id,
+                conn_str,
+                config,
+                through=tunnel.cache_material() if tunnel is not None else (),
             )
-            if tunnel is not None:
-                connection_id = get_connection_hash(
-                    (connection_id,), {}, through=tunnel.cache_material()
-                )
 
             tui = Harlequin(
                 adapter=adapter_instance,
@@ -695,7 +716,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 adapter_name=adapter_name,
                 keymap_names=keymap_names,
                 user_defined_keymaps=user_defined_keymaps,
-                connection_hash=connection_id,
+                connection_hash=keyed_connection,
+                record_history=not no_write_history,
                 viewer_max_rows=viewer_max_rows,
                 query_limit=query_limit,
                 theme=theme,

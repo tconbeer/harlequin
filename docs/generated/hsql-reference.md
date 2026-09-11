@@ -48,6 +48,7 @@ Alphabetical by name. Flags are off by default.
 | `-A`, `--no-align` | boolean |  |  |  | Unaligned output. As in psql. |
 | `--no-footer` | boolean |  |  |  | Omit the row-count footer, keeping other chrome. |
 | `--no-header` | boolean |  |  |  | Omit the header row, keeping other chrome. |
+| `--no-write-history` | boolean |  |  |  | Do not record this run's queries in the query history that Harlequin and hsql share. |
 | `--null-string` | text | `TEXT` |  |  | Render NULL as TEXT. Defaults to NULL for text formats, empty for csv. |
 | `--on-error` | choice | `stop`, `continue` | `stop` |  | What to do when a statement fails. |
 | `-o`, `--output` | text | `PATH` |  |  | Write results to PATH instead of stdout. Accepts a file or directory. |
