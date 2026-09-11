@@ -28,16 +28,16 @@ neither declares is an error.
 
 `hsql` runs in two roles — a server (`--serve NAME`) and a client
 (`--session NAME`) — and an option belongs to exactly one group, decided by
-**when the question it answers can be answered**. The groups are frozensets at
-the top of `harlequin/hsql/cli.py`.
+**when its value is read**. The groups are frozensets at the top of
+`harlequin/hsql/cli.py`.
 
-| Group | Answered | `--serve` | Served request |
+| Group | Read | `--serve` | Served request |
 | --- | --- | --- | --- |
 | `CONNECTION_OPTIONS` | once, when the connection opens | accepted | compared against the session's; equal is served, differing exits 2 |
 | `PER_REQUEST_OPTIONS` | on every invocation | refused, exit 2 | accepted |
-| `SERVER_OPTIONS` | once, and only a server has one | accepted | refused, exit 2 |
-| `ROLE_OPTIONS` | which process this invocation is | — | — |
-| `CONFIG_OPTIONS` | which file and profile the rest come from | accepted | accepted |
+| `SERVER_OPTIONS` | once, at start-up; only a server has one | accepted | refused, exit 2 |
+| `ROLE_OPTIONS` | to pick which process runs the invocation | — | — |
+| `CONFIG_OPTIONS` | to pick the file and profile the rest come from | accepted | accepted |
 
 Two of these need a word.
 
@@ -61,8 +61,8 @@ is not compared.
 2. **Write the `@click.option`.** For `hsql`, keep the help one or two
    sentences and name the default.
 
-3. **Put its name in exactly one group** in `harlequin/hsql/cli.py`. Ask when
-   its question can be answered:
+3. **Put its name in exactly one group** in `harlequin/hsql/cli.py`, by when
+   its value is read:
    - once, at connect time → `CONNECTION_OPTIONS`
    - on each invocation, including every mode → `PER_REQUEST_OPTIONS`
    - once, for a server that is up → `SERVER_OPTIONS`
@@ -100,6 +100,5 @@ it, so the two can drift. The partition test is what catches the drift for a
 It cannot catch a profile key that no command declares; that class is handled
 instead by `connection_option_names()` being a positive test.
 
-The alternative — carrying the group on the `click.Parameter` itself, so it
-cannot be declared without one — is a larger change to both commands and has
-not been made.
+[#1145](https://github.com/tconbeer/harlequin/issues/1145) tracks moving the
+group onto the option, so that it cannot be declared without one.

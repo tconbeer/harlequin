@@ -52,11 +52,7 @@ EXIT = 5
 """Server to client, last: the code the client exits with."""
 
 STATUS = 6
-"""Client to server: report the server's status, as its own argv.
-
-Not a request, and so not a turn at the connection: the server reports from
-its own bookkeeping while a request runs.
-"""
+"""Client to server: report the server's status, as its own argv."""
 
 # Frame kinds are wire values: later ones append rather than renumbering.
 
