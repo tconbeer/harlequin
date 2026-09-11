@@ -16,9 +16,8 @@ never reached the database if that runs out -- a different fact from a query
 that ran too long. `--session-status` and a client's cancel are the exceptions:
 each arrives as its own frame rather than as an invocation, and is answered off
 this server's bookkeeping while a request runs. That is what lets a `Ctrl-C`
-reach the query it belongs to rather than queueing behind it -- and, because a
-cancelled query comes back empty and error-free, that bookkeeping is also the
-only thing that can tell the run it was stopped.
+reach the query it belongs to rather than queueing behind it, and it is also
+what tells the run it was stopped.
 
 The name is the caller's and the **identity is the server's**: the connection
 options it resolved at start-up are what a served request's own connection
@@ -84,14 +83,11 @@ starting under the same name."""
 STOPPED = "stopped the query"
 UNSTOPPABLE = "the adapter cannot stop a query"
 WAITING = "the request had not started"
+IDLE = "the request is not using the connection"
 DETACHED = "the session has no connection"
 UNKNOWN = "no such request"
 FAILED = "the cancel failed"
-"""What a cancel did, for the server's log and for what the client is told.
-
-Only `UNSTOPPABLE` reaches the caller: a query that outlives the client that
-gave up on it is the one outcome they have to do something about.
-"""
+"""What a cancel did. Only `UNSTOPPABLE` reaches the caller."""
 
 
 class SessionRunning(Exception):
@@ -101,17 +97,17 @@ class SessionRunning(Exception):
 class InFlight:
     """One request a session is holding, and whether its caller gave up on it.
 
-    `cancelled` is what the run reads between results: a cancelled query comes
-    back empty and error-free, so this is the only thing that tells it from a
-    query that matched nothing. `started` is whether the request holds the
-    connection, set and read under the server's lock.
+    `started` is whether it has taken its turn; `holds_connection` whether it
+    went on to ask for the connection, which is what makes interrupting the
+    database mean anything. Both are set and read under the server's lock.
     """
 
-    __slots__ = ("request_id", "started", "_cancelled")
+    __slots__ = ("request_id", "started", "holds_connection", "_cancelled")
 
     def __init__(self, request_id: bytes) -> None:
         self.request_id = request_id
         self.started = False
+        self.holds_connection = False
         self._cancelled = threading.Event()
 
     @property
@@ -258,11 +254,18 @@ class Served:
         return self._in_flight is not None and self._in_flight.cancelled
 
     def connection(self) -> HarlequinConnection:
-        """The session's connection.
+        """The session's connection, noted as this request's while it runs.
+
+        The one place a served invocation takes the connection, so it is where
+        a cancel learns that interrupting the database would reach this
+        request rather than nothing.
 
         Raises: HarlequinConnectionError if the session has none to offer.
         """
-        return self._server.connection()
+        connection = self._server.connection()
+        if self._in_flight is not None:
+            self._server.note_connection_held(self._in_flight)
+        return connection
 
     def reset(self) -> None:
         """Close the session's connection and open a fresh one.
@@ -498,16 +501,26 @@ class Server:
                 # it has not taken its turn, so it will read the flag and stop
                 # rather than run
                 return WAITING
+            if not in_flight.holds_connection:
+                # a mode that reports on what is installed or configured, which
+                # `cancel()` would reach past and into nothing
+                return IDLE
             if not self._implements_cancel:
                 return UNSTOPPABLE
             connection = self._connection
-            if connection is None:
-                # a reset between its two halves, or a session coming down:
-                # the request is marked either way, so it stops
+            if connection is None or self._abandoned:
+                # a reset between its two halves, a session coming down, or a
+                # connection a timed-out thread is still inside: the request
+                # is marked either way, so it stops
                 return DETACHED
             with contextlib.suppress(Exception):  # adapters are third-party code
                 connection.cancel()
             return STOPPED
+
+    def note_connection_held(self, in_flight: InFlight) -> None:
+        """Note that this request has the connection, so a cancel can reach it."""
+        with self._in_flight_lock:
+            in_flight.holds_connection = True
 
     def _hold(self, request_id: bytes) -> InFlight:
         """Register the request, so a cancel naming it finds it.
@@ -736,8 +749,7 @@ class Server:
 
         Off the server's own bookkeeping, as `_send_status()` is, so it lands
         while the request it stops holds the connection. Exit 130 whatever
-        came of it; the one outcome the caller hears about is a query nothing
-        could stop.
+        came of it.
         """
         recorder = Recorder()
         try:

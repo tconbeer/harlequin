@@ -166,11 +166,9 @@ def report_cancel(outcome: str, *, stream: TextIO) -> None:
 def report_cancel_unsupported(adapter: str, session: str, *, stream: TextIO) -> None:
     """Say that the query outlived the caller who gave up on it.
 
-    `cancel()` is optional on the adapter contract, and a session that could
-    not stop a query has nothing to stop it with: the run holds the session
-    until the database is done with it. Said on the caller's stderr, because
-    the alternative is a caller who pressed Ctrl-C, got their prompt back, and
-    cannot work out why the next invocation waits.
+    On the caller's stderr, because the alternative is someone who pressed
+    Ctrl-C, got their prompt back, and cannot work out why the next
+    invocation waits.
     """
     note(
         f"{adapter} does not implement query cancellation, so the query is "

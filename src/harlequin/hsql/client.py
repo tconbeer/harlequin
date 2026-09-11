@@ -61,6 +61,12 @@ INTERRUPT = 130
 report on. `tests/unit_tests/test_hsql_session.py` pins all three to the enum.
 """
 
+CANCEL_TIMEOUT = 5.0
+"""How long a cancel waits for the session to answer it, in seconds.
+
+The caller has already given up, so nothing here may become a second wait.
+"""
+
 STDIN_ARGUMENT = "-"
 FILE_OPTION = "--file"
 FILE_SHORT = "f"
@@ -259,22 +265,32 @@ def _exchange(
 def _cancel(path: str, request_id: bytes) -> int:
     """Stop the request `request_id` names, and exit the way the cold path does.
 
-    On a second connection, because the first is carrying the response, and
-    the session answers this one off its own bookkeeping rather than in its
-    turn. Exit 130 whatever comes of it; what the session has to say arrives
-    on the caller's stderr like any other answer.
+    On a second connection, because the first is carrying the response. Exit
+    130 whatever comes of it; what the session has to say arrives on the
+    caller's stderr like any other answer.
+
+    Every check the first connection made is made again, because this is a
+    fresh connect to a path that may not hold what it did: the directory is
+    this user's, and the server is this release, or nothing is sent and
+    nothing it writes is relayed to the caller's terminal.
     """
     try:
+        check_runtime_dir(os.path.dirname(path))
         connection = _connect(path)
         if connection is not None:
             try:
+                # the caller has already given up, so this may not become a
+                # second wait: an adapter whose `cancel()` blocks would
+                # otherwise park a caller who cannot press Ctrl-C again
+                connection.settimeout(CANCEL_TIMEOUT)
                 greeting = protocol.recv_frame(connection)
                 if greeting is not None and greeting[0] == protocol.HELLO:
-                    protocol.send_frame(connection, protocol.CANCEL, request_id)
-                    _relay(connection)
+                    if greeting[1].decode("utf-8", "replace") == protocol.VERSION:
+                        protocol.send_frame(connection, protocol.CANCEL, request_id)
+                        _relay(connection)
             finally:
                 connection.close()
-    except (KeyboardInterrupt, protocol.ProtocolError, OSError):
+    except (KeyboardInterrupt, UnsafeRuntimeDir, protocol.ProtocolError, OSError):
         # a second Ctrl-C, or a session that went away between the two
         # connections: the run is given up on either way
         pass

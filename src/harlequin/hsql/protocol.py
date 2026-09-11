@@ -57,9 +57,8 @@ STATUS = 6
 CANCEL = 7
 """Client to server, on a second connection: stop the request this names.
 
-The first connection is busy carrying the response, and the server answers
-this one off its own bookkeeping rather than in its turn, so a cancel reaches
-a query that is running.
+The first is busy carrying the response, and the server answers this one off
+its own bookkeeping, so a cancel reaches a query that is running.
 """
 
 # Frame kinds are wire values: later ones append rather than renumbering.
@@ -96,8 +95,8 @@ STDERR_ISATTY = 0b10
 """Bits of a request's flags byte. Later flags take the bits above them."""
 
 REQUEST_ID_BYTES = 8
-"""How long the id a request carries is, which is only long enough to be
-unique among the handful a session holds at once."""
+"""How long a request's id is: long enough to be unique among the handful a
+session holds at once."""
 
 _LENGTH = struct.Struct("!I")
 """How a sequence writes its count, and each of its items its length."""

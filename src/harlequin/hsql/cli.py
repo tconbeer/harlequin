@@ -2190,11 +2190,7 @@ class _Run:
 
     @property
     def cancelled(self) -> bool:
-        """Whether the caller interrupted a served run.
-
-        Cold, a `Ctrl-C` ends the process and there is nothing to read; warm,
-        the caller's process is gone and the session is what noticed.
-        """
+        """Whether the caller interrupted a served run."""
         return self.served is not None and self.served.cancelled
 
     @property
@@ -2353,14 +2349,14 @@ def _fetched(
 
     for position, item in enumerate(selected, start=1):
         if run.stopped:
-            # the clock ran out between statements
+            # the clock ran out, or the caller did, between statements
             return
         try:
             result = fetch(item, limit=limit)
         except Exception as e:  # noqa: BLE001 -- adapters are third-party code
             if run.stopped:
                 # whatever the cancel raised on the way out is not this run's
-                # error to report; the deadline is
+                # error to report; what stopped it is
                 return
             run.failure = e
             diagnostics.report_error(e)

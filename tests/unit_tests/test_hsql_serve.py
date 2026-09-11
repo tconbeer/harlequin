@@ -36,13 +36,14 @@ from harlequin.hsql.cli import (
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
     SERVER_OPTIONS,
+    _Run,
     bare_command,
     build_cli,
     connection_option_names,
     connection_options_in,
 )
 from harlequin.hsql.diagnostics import ExitCode
-from harlequin.hsql.server import Served, Server
+from harlequin.hsql.server import InFlight, Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
 from harlequin.plugins import load_adapter
 from harlequin.transaction_mode import HarlequinTransactionMode
@@ -118,12 +119,15 @@ def in_process_server(duckdb_adapter: Any) -> Server:
     )
 
 
-def served_by(server: Server, *, stdin: bytes | None = None) -> Served:
+def served_by(
+    server: Server, *, stdin: bytes | None = None, in_flight: InFlight | None = None
+) -> Served:
     return Served(
         server,
         protocol.Request(
             argv=[], cwd=os.getcwd(), environ={}, stdin=stdin, request_id=A_REQUEST
         ),
+        in_flight,
     )
 
 
@@ -755,17 +759,24 @@ def cancellable(implements_cancel: bool = True) -> tuple[Server, _FakeConnection
     )
 
 
+def running(session: Server, request_id: bytes) -> InFlight:
+    """A request that took its turn and went on to ask for the connection."""
+    in_flight = session._hold(request_id)
+    assert session._take_turn(in_flight)
+    session.note_connection_held(in_flight)
+    return in_flight
+
+
 def test_a_cancel_stops_the_request_that_named_it() -> None:
     """The id is the client's, so a cancel that arrives after its request
     finished cannot stop whichever one the session went on to."""
     session, connection = cancellable()
-    running = session._hold(A_REQUEST)
-    assert session._take_turn(running)
+    in_flight = running(session, A_REQUEST)
     assert session.cancel(A_REQUEST) == server.STOPPED
     assert connection.cancels == 1
     # set before the database is asked, which is what tells the empty result
     # the cancel produces from one a query really returned
-    assert running.cancelled
+    assert in_flight.cancelled
 
 
 def test_a_cancel_for_a_request_the_session_no_longer_holds_stops_nothing() -> None:
@@ -793,11 +804,54 @@ def test_a_cancel_an_adapter_cannot_honor_leaves_the_query_running() -> None:
     detaches the caller rather than pretending to have stopped anything. The
     request is still marked, so the script runs no further statement."""
     session, connection = cancellable(implements_cancel=False)
-    running = session._hold(A_REQUEST)
-    assert session._take_turn(running)
+    in_flight = running(session, A_REQUEST)
     assert session.cancel(A_REQUEST) == server.UNSTOPPABLE
     assert connection.cancels == 0
-    assert running.cancelled
+    assert in_flight.cancelled
+
+
+def test_a_cancel_on_a_request_that_never_took_the_connection_interrupts_nothing() -> (
+    None
+):
+    """`cancel()` is connection-wide, so a served `--info` or `--config show`
+    -- which takes a turn and never asks for the connection -- must not reach
+    past itself into a driver no query is using. It is still marked, so a
+    script that had not got to its first statement runs none of them."""
+    session, connection = cancellable()
+    reporting = session._hold(A_REQUEST)
+    assert session._take_turn(reporting)
+    assert session.cancel(A_REQUEST) == server.IDLE
+    assert connection.cancels == 0
+    assert reporting.cancelled
+
+
+def test_a_cancel_does_not_reach_into_a_connection_a_timed_out_thread_holds() -> None:
+    """`abandon()` leaves the connection to the thread still inside it, so a
+    cancel that called into it would be a second thread in one driver. The
+    session says it has no connection to offer, which is what `--session-reset`
+    is for."""
+    session, connection = cancellable()
+    in_flight = running(session, A_REQUEST)
+    session.abandon()
+    assert session.cancel(A_REQUEST) == server.DETACHED
+    assert connection.cancels == 0
+    assert in_flight.cancelled
+
+
+def test_a_bug_in_the_cancel_path_is_not_someone_elses_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The client exits 130 either way, so a cancel that raised has nothing to
+    tell it -- and the traceback belongs on the operator's stream rather than
+    in whichever request's recorder holds the process's stderr."""
+    session, _ = cancellable()
+    running(session, A_REQUEST)
+
+    def boom(request_id: bytes) -> str:
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setattr(session, "cancel", boom)
+    assert _cancel_over_a_socket(session, A_REQUEST) == (b"", ExitCode.INTERRUPT)
 
 
 def test_a_cancel_never_reaches_the_request_that_took_over_the_connection() -> None:
@@ -806,12 +860,10 @@ def test_a_cancel_never_reaches_the_request_that_took_over_the_connection() -> N
     query would mark no `InFlight`, and an empty, error-free result nobody
     attributes is exactly what a caller cannot tell from an empty table."""
     session, connection = cancellable()
-    first = session._hold(A_REQUEST)
-    assert session._take_turn(first)
+    first = running(session, A_REQUEST)
     # what `_attend` does before the turnstile lets the next request start
     session._release(first)
-    second = session._hold(ANOTHER_REQUEST)
-    assert session._take_turn(second)
+    second = running(session, ANOTHER_REQUEST)
     assert session.cancel(A_REQUEST) == server.UNKNOWN
     assert connection.cancels == 0
     assert not second.cancelled
@@ -861,8 +913,7 @@ def test_nothing_takes_a_turn_between_a_cancel_and_the_interrupt_it_sends() -> N
     bookkeeping would be the one the connection-wide interrupt reached, so the
     lock a request takes to start is held across the driver call."""
     session, _ = cancellable()
-    running = session._hold(A_REQUEST)
-    assert session._take_turn(running)
+    running(session, A_REQUEST)
     next_up = session._hold(ANOTHER_REQUEST)
     trying = threading.Event()
     turns: list[bool] = []
@@ -901,17 +952,29 @@ class _Interrupting(_FakeConnection):
 def test_a_served_run_reads_the_sessions_cancel(in_process_server: Server) -> None:
     """What the command reads between results, where a cold run reads its
     clock."""
-    running = in_process_server._hold(A_REQUEST)
-    served = Served(
-        in_process_server,
-        protocol.Request(
-            argv=[], cwd=os.getcwd(), environ={}, stdin=None, request_id=A_REQUEST
-        ),
-        running,
-    )
+    in_flight = in_process_server._hold(A_REQUEST)
+    served = served_by(in_process_server, in_flight=in_flight)
     assert not served.cancelled
-    running.cancel()
+    in_flight.cancel()
     assert served.cancelled
+
+
+def test_a_cancelled_run_is_an_error_that_exits_130(
+    in_process_server: Server,
+) -> None:
+    """What `--stats` says about a run the caller stopped, and the code the
+    session logs for it."""
+    in_flight = in_process_server._hold(A_REQUEST)
+    run = _Run(served=served_by(in_process_server, in_flight=in_flight))
+    assert not run.stopped
+    assert (run.status, run.message, run.exit_code) == ("ok", None, ExitCode.OK)
+    in_flight.cancel()
+    assert run.stopped
+    assert (run.status, run.message, run.exit_code) == (
+        "error",
+        "cancelled",
+        ExitCode.INTERRUPT,
+    )
 
 
 def test_a_cancel_a_session_answers_says_only_what_the_caller_must_act_on() -> None:
@@ -919,8 +982,7 @@ def test_a_cancel_a_session_answers_says_only_what_the_caller_must_act_on() -> N
     is the code for it cold too -- and a line only when the query outlived
     them."""
     session, _ = cancellable(implements_cancel=False)
-    running = session._hold(A_REQUEST)
-    session._take_turn(running)
+    running(session, A_REQUEST)
     assert _cancel_over_a_socket(session, A_REQUEST) == (
         b"note: duckdb does not implement query cancellation, so the query is "
         b"still running on session 'cancels'; it holds the session until it "
@@ -928,7 +990,7 @@ def test_a_cancel_a_session_answers_says_only_what_the_caller_must_act_on() -> N
         ExitCode.INTERRUPT,
     )
     stopping, _ = cancellable()
-    stopping._take_turn(stopping._hold(A_REQUEST))
+    running(stopping, A_REQUEST)
     assert _cancel_over_a_socket(stopping, A_REQUEST) == (b"", ExitCode.INTERRUPT)
 
 
