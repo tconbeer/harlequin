@@ -20,5 +20,12 @@ keys="d"
 action="results_viewer.cursor_right"
 key_display="➡"
 
+[[keymaps.alt_keys]]
+keys="alt+n"
+action="code_editor.new_buffer"
+
 [profiles.more_keys]
 keymap_name=["vscode", "more_arrows"]
+
+[profiles.alt_keys]
+keymap_name=["vscode", "alt_keys"]
