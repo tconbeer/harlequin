@@ -56,6 +56,8 @@ def check_and_install_tzdata() -> None:
                     f.write(zone_response.read())
                 pa.set_timezone_db_path(str(HARLEQUIN_TZ_DATA_PATH))
             except Exception as e:
+                from rich.markup import escape
+
                 err_msg = (
                     "Harlequin was not able to download a timezone database. Without "
                     "a timezone database, Harlequin may crash if you attempt to load "
@@ -63,8 +65,8 @@ def check_and_install_tzdata() -> None:
                     "anyway, set the --no-download-tzdata option.\n"
                     "For more info, see "
                     "[link]https://harlequin.sh/docs/troubleshooting/timezone-windows[/]"
-                    f"\nDownload failed with the following exception:\n{e}"
+                    f"\nDownload failed with the following exception:\n{escape(str(e))}"
                 )
                 raise HarlequinTzDataError(
-                    msg=err_msg, title="Harlequin Timezone Error"
+                    msg=err_msg, title="Harlequin Timezone Error", markup=True
                 ) from e
