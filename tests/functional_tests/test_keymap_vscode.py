@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from textual.css.query import NoMatches
+from textual.widgets import Input
 
 from harlequin import Harlequin
 
@@ -254,3 +255,38 @@ async def test_results_viewer_bindings(
         await pilot.press("ctrl+c")
         assert app.editor.text_input is not None
         assert app.editor.text_input.clipboard.startswith("1\t2\t3")
+
+
+@pytest.mark.asyncio
+async def test_editor_bindings_do_not_beat_the_find_input(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """ctrl+w and ctrl+k edit the find input, rather than closing or switching a buffer.
+
+    Both are bound to a `code_editor.*` action on `EditorCollection`, an ancestor
+    of the find input, and the input's own editing keys have to win.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        assert app.editor_collection.tab_count == 2
+        assert app.editor_collection.active == "tab-2"
+
+        await pilot.press("ctrl+f")
+        find_input = app.query_one("#textarea__find_input", Input)
+        await pilot.press("f", "o", "o", "space", "b", "a", "r")
+        assert find_input.value == "foo bar"
+
+        await pilot.press("ctrl+w")
+        assert find_input.value == "foo "
+        assert app.editor_collection.tab_count == 2
+
+        await pilot.press("ctrl+k")
+        assert find_input.value == "foo "
+        assert app.editor_collection.active == "tab-2"
