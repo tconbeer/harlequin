@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import csv
+import pickle
 import sqlite3
 import sys
+from collections import deque
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import duckdb
 import pytest
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.catalog_cache import HISTORY_CACHE_VERSION, CatalogCache
+from harlequin.history import History, QueryExecution
 from harlequin.locale_manager import set_locale
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -101,6 +107,48 @@ def query_log_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     store = tmp_path / "history.db"
     monkeypatch.setattr("harlequin.query_log.default_path", lambda: store)
     return store
+
+
+@pytest.fixture(autouse=True)
+def catalog_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the catalog cache -- and the pickled history a migration reads --
+    at a throwaway directory, and return it."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(
+        "harlequin.catalog_cache.user_cache_dir", lambda **_: str(cache_dir)
+    )
+    return cache_dir
+
+
+@pytest.fixture
+def write_legacy_history(
+    catalog_cache_dir: Path,
+) -> Callable[..., None]:
+    """Write a cache of the version that kept the query history in a pickle.
+
+    Each record is the four fields a version-2 one had: (sql, executed_at,
+    result_row_count, elapsed). It predates the status the store keeps, so
+    nothing here writes one.
+    """
+
+    def _write(
+        connection_hash: str, *records: tuple[str, datetime, int, float]
+    ) -> None:
+        queries: deque[QueryExecution] = deque()
+        for sql, executed_at, result_row_count, elapsed in records:
+            record = QueryExecution(sql, executed_at, result_row_count, elapsed)
+            del record.__dict__["status"]
+            queries.append(record)
+        cache = CatalogCache(databases={}, s3={})
+        # the field the class no longer declares, which is what makes this a v2
+        cache.history = {  # type: ignore[attr-defined]
+            connection_hash: History(queries=queries)
+        }
+        catalog_cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = catalog_cache_dir / f"catalog-cache-{HISTORY_CACHE_VERSION}.pickle"
+        cache_file.write_bytes(pickle.dumps(cache))
+
+    return _write
 
 
 @pytest.fixture

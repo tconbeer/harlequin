@@ -53,6 +53,7 @@ from harlequin.catalog import (
 from harlequin.catalog_cache import (
     CatalogCache,
     get_catalog_cache,
+    migrate_pickled_history,
     update_catalog_cache,
 )
 from harlequin.components import (
@@ -179,6 +180,14 @@ class ResultsFetched(Message):
         self.elapsed = elapsed
 
 
+class QueryHistoryLoaded(Message):
+    """The store's rows for this connection, read on a worker."""
+
+    def __init__(self, history: History) -> None:
+        super().__init__()
+        self.history = history
+
+
 class TunnelClosed(Message):
     """The SSH tunnel's child exited on its own, and took the forward with it."""
 
@@ -239,9 +248,8 @@ def _adapter_distribution(adapter_name: str | None) -> str | None:
 
 
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
-    "_load_catalog_cache": (
-        "Harlequin could not load its cache; your query history may be missing."
-    ),
+    "_load_catalog_cache": "Harlequin could not load its cache.",
+    "_load_query_history": "Harlequin could not read your query history.",
     "_extend_and_merge_completers": "Harlequin could not update completions.",
     "_build_completers": "Harlequin could not build completions.",
 }
@@ -291,7 +299,6 @@ class Harlequin(AppBase):
         self.adapter_name = adapter_name
         self.profile_name = profile_name
         self.connection_hash = connection_hash
-        self.history: History | None = None
         # holding one costs nothing: the first query is what opens the store
         self.query_log = QueryLog(
             program="harlequin",
@@ -438,15 +445,6 @@ class Harlequin(AppBase):
             self.editor.restart_blink()
         return new_screen
 
-    def append_to_history(
-        self, query_text: str, result_row_count: int, elapsed: float
-    ) -> None:
-        if self.history is None:
-            self.history = History.blank()
-        self.history.append(
-            query_text=query_text, result_row_count=result_row_count, elapsed=elapsed
-        )
-
     def _report_query_log_failure(self) -> None:
         """Say once that queries are no longer being recorded.
 
@@ -525,9 +523,6 @@ class Harlequin(AppBase):
             self.post_message(NewCatalog(catalog=cached_db))
         if self.show_s3 is not None:
             self.data_catalog.load_s3_tree_from_cache(message.cache)
-        if self.connection_hash:
-            history = message.cache.get_history(self.connection_hash)
-            self.history = history if history is not None else History.blank()
 
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
@@ -767,9 +762,6 @@ class Harlequin(AppBase):
 
     @on(QueryError)
     def handle_query_error(self, message: QueryError) -> None:
-        self.append_to_history(
-            query_text=message.query_text, result_row_count=-1, elapsed=0.0
-        )
         self.run_query_bar.set_responsive()
         self.results_viewer.show_table()
         header = getattr(message.error, "title", message.error.__class__.__name__)
@@ -839,10 +831,6 @@ class Harlequin(AppBase):
             n = len(message.ddl_queries)
             # at least one DDL statement
             elapsed = time.monotonic() - message.submitted_at
-            for query_text in message.ddl_queries:
-                self.append_to_history(
-                    query_text=query_text, result_row_count=0, elapsed=elapsed
-                )
             self.notify(
                 f"{n} DDL/DML {'query' if n == 1 else 'queries'} "
                 f"executed successfully in {elapsed:.2f} seconds."
@@ -860,17 +848,7 @@ class Harlequin(AppBase):
         self._report_query_log_failure()
         for id_, result in message.results.items():
             await self.results_viewer.push_table(table_id=id_, result=result)
-            self.append_to_history(
-                query_text=result.statement.sql,
-                # the rows the database returned, not the rows the viewer kept
-                result_row_count=result.fetched_row_count,
-                elapsed=message.elapsed,
-            )
         if message.errors:
-            for _, query_text in message.errors:
-                self.append_to_history(
-                    query_text=query_text, result_row_count=-1, elapsed=0.0
-                )
             header = getattr(
                 message.errors[0][0],
                 "title",
@@ -1143,6 +1121,11 @@ class Harlequin(AppBase):
         )
 
     def action_show_query_history(self) -> None:
+        if self.screen.id != "history_screen":
+            self._load_query_history()
+
+    @on(QueryHistoryLoaded)
+    def show_query_history(self, message: QueryHistoryLoaded) -> None:
         async def history_callback(screen_data: str | None) -> None:
             """
             Insert the selected query into a new buffer.
@@ -1151,26 +1134,17 @@ class Harlequin(AppBase):
                 return
             await self.editor_collection.insert_buffer_with_text(query_text=screen_data)
 
-        if self.history is None:
-            # This should only happen immediately after start-up, before the cache is
-            # loaded from disk.
-            self._push_error_modal(
-                title="History Not Yet Loaded",
-                header="Harlequin could not load the Query History.",
-                error=ValueError(
-                    "Your Query History has not yet been loaded. "
-                    "Please wait a moment and try again."
-                ),
-            )
-        elif self.screen.id != "history_screen":
-            self.push_screen(
-                HistoryScreen(
-                    history=self.history,
-                    theme=self.theme,
-                    id="history_screen",
-                ),
-                history_callback,
-            )
+        # a second read can land after the first one opened the screen
+        if self.screen.id == "history_screen":
+            return
+        self.push_screen(
+            HistoryScreen(
+                history=message.history,
+                theme=self.theme,
+                id="history_screen",
+            ),
+            history_callback,
+        )
 
     def action_focus_data_catalog(self) -> None:
         if self.sidebar_hidden or self.data_catalog.disabled:
@@ -1220,7 +1194,7 @@ class Harlequin(AppBase):
             self._last_checkpointed_cache = cache
 
     def _save_work_on_crash(self) -> bool:
-        """Save the buffers and the query history a crash would otherwise lose.
+        """Save the buffers a crash would otherwise lose.
 
         The buffers go to a `recovered-` file rather than this session's
         recovery file, so the next start adopts them however old they are. The
@@ -1244,7 +1218,6 @@ class Harlequin(AppBase):
                 connection_hash=self.connection_hash,
                 catalog=None,
                 s3_tree=self.data_catalog.s3_tree,
-                history=self.history,
             )
         except Exception:
             pass
@@ -1295,7 +1268,6 @@ class Harlequin(AppBase):
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.
             s3_tree=self.data_catalog.s3_tree,
-            history=self.history,
         )
         self.query_log.close()
         if self.connection:
@@ -1408,6 +1380,22 @@ class Harlequin(AppBase):
         cache = get_catalog_cache()
         if cache is not None:
             self.post_message(CatalogCacheLoaded(cache=cache))
+        if self.query_log.enabled:
+            # before this session runs anything: the move only happens while
+            # the store holds nothing for this connection
+            migrate_pickled_history(self.connection_hash)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="history_readers",
+        description="Reading the query history.",
+    )
+    def _load_query_history(self) -> None:
+        self.post_message(
+            QueryHistoryLoaded(history=History.recent(connection=self.connection_hash))
+        )
 
     @work(
         thread=True,
