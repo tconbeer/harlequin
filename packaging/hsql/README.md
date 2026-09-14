@@ -384,12 +384,12 @@ Neither connects to a database, both write JSON to stdout, and `-a NAME` narrows
 
 ## Installing the Agent Skill
 
-hsql ships an [Agent Skill](https://agentskills.io) that teaches an agent how to drive it: ask before you assume, keep credentials off the command line, read the catalog before writing SQL, watch the 500-row limit, branch on the exit code, and hand off to `harlequin` when a human should drive. `hsql --skill` installs it, with no network and matched to the version you have:
+hsql ships an [Agent Skill](https://agentskills.io) that teaches an agent how to drive it: ask before you assume, keep credentials off the command line, read the catalog before writing SQL, consider a warm session, watch the 500-row limit, branch on the exit code, and hand off to `harlequin` when a human should drive. `hsql --skill` installs it, with no network and matched to the version you have:
 
 ```bash
 $ hsql --skill -o ~/.claude/skills/hsql/          # for you, in every project
 $ hsql --skill -o .claude/skills/hsql/            # for this repo, committed with it
-note: wrote 5 files to .claude/skills/hsql: SKILL.md, references/config.md, references/queries.md, references/scripting.md, references/troubleshooting.md
+note: wrote 6 files to .claude/skills/hsql: SKILL.md, references/config.md, references/queries.md, references/scripting.md, references/sessions.md, references/troubleshooting.md
 ```
 
 With no `-o`, `hsql --skill` writes `SKILL.md` to stdout, so you can read it before you install it.
