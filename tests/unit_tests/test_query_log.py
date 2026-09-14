@@ -83,6 +83,18 @@ def test_a_row_survives_the_round_trip(log: QueryLog, store: Path) -> None:
     assert datetime.fromisoformat(record["run_at"]).tzinfo is not None
 
 
+def test_a_duration_is_rounded_to_microseconds(log: QueryLog, store: Path) -> None:
+    """A double's sixteen digits are noise in a column a person reads, and the
+    value is written once and printed every time the history is."""
+    row = log.write("select 1", elapsed_ms=0.013326999976470688)
+    (record,) = rows(store)
+    assert record["elapsed_ms"] == 0.013
+
+    log.update(row, elapsed_ms=1234.56789)
+    (record,) = rows(store)
+    assert record["elapsed_ms"] == 1234.568
+
+
 def test_a_statement_is_recorded_before_its_rows_are_known(
     log: QueryLog, store: Path
 ) -> None:

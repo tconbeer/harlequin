@@ -491,7 +491,7 @@ class TestRowsToResult:
 class TestTypedRowsToResult:
     """Rows a database returned to a query this module did not run."""
 
-    COLUMNS = (("sql", "s"), ("rows", "#"), ("elapsed_ms", "#"))
+    COLUMNS = (("sql", "s"), ("rows", "##"), ("elapsed_ms", "#.#"))
 
     def test_the_values_keep_the_types_they_arrived_with(self) -> None:
         """Which is the difference between a count an agent can sum and a

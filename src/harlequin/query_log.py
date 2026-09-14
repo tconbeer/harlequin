@@ -109,6 +109,11 @@ one backslash."""
 
 _SEARCH_CLAUSE = f"\"sql\" like ? escape '{_LIKE_ESCAPE}'"
 
+ELAPSED_PLACES = 3
+"""Decimal places kept on `elapsed_ms`: microseconds, which is finer than any
+statement is and short enough to read in a listing. Rounded once, on the way
+in, because the value is written once and printed every time it is read."""
+
 BUSY_TIMEOUT_MS = 5000
 """How long a writer waits for a lock another process holds."""
 
@@ -196,7 +201,7 @@ class QueryLog:
             status,
             rows,
             None if truncated is None else int(truncated),
-            elapsed_ms,
+            _rounded(elapsed_ms),
             None if error is None else redact_sql(error),
         )
         cursor = self._run(_INSERT, values)
@@ -222,7 +227,7 @@ class QueryLog:
                 status,
                 rows,
                 None if truncated is None else int(truncated),
-                elapsed_ms,
+                _rounded(elapsed_ms),
                 None if error is None else redact_sql(error),
                 row,
             ),
@@ -290,6 +295,11 @@ class QueryLog:
                 self.failure = f"Harlequin could not write to its query log: {e}"
                 self._close()
                 return None
+
+
+def _rounded(elapsed_ms: float | None) -> float | None:
+    """One statement's duration, at the precision the store keeps."""
+    return None if elapsed_ms is None else round(elapsed_ms, ELAPSED_PLACES)
 
 
 def _configure(db: sqlite3.Connection, *, busy_timeout_ms: int) -> None:

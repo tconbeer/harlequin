@@ -20,14 +20,15 @@ COLUMNS: tuple[tuple[str, str], ...] = (
     ("profile", "s"),
     ("adapter", "s"),
     ("status", "s"),
-    ("rows", "#"),
-    ("elapsed_ms", "#"),
+    ("rows", "##"),
+    ("elapsed_ms", "#.#"),
     ("sql", "s"),
 )
 """Each column the store returns, with the short type label it carries.
 
 The names and their order are `query_log.READ_COLUMNS`; the labels are here
-because nothing infers one from a value.
+because nothing infers one from a value, and they are the ones both bundled
+adapters give an int64 and a double.
 """
 
 SQL_COLUMN = "sql"
