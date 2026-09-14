@@ -4973,6 +4973,33 @@ def test_history_folds_a_query_onto_one_line(
     assert sql_column(res.stdout) == ["select 1 as a, 2 as b"]
 
 
+def test_history_folding_does_not_comment_out_the_rest_of_a_query(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    """A `--` comment runs to the end of its line, and the listing has one."""
+    sql = "select\n  1 as a, -- the first column\n  2 as b"
+    written = hsql(*duck, "--format", "none", "-c", sql)
+    assert written.exit_code == ExitCode.OK, written.stderr
+    listed = hsql("--history", "-tA")
+    assert listed.exit_code == ExitCode.OK, listed.stderr
+    assert sql_column(listed.stdout) == ["select 1 as a, 2 as b"]
+    # and the listed query runs, which is the whole promise
+    ran = hsql(*duck, "-tA", "-c", sql_column(listed.stdout)[0])
+    assert ran.exit_code == ExitCode.OK, ran.stderr
+    assert ran.stdout == "1|2\n"
+
+
+def test_history_folding_leaves_a_literal_alone(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    """Collapsing whitespace inside a literal would change what it returns."""
+    written = hsql(*duck, "--format", "none", "-c", "select 'hello  world' as a,\n 2")
+    assert written.exit_code == ExitCode.OK, written.stderr
+    res = hsql("--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 'hello  world' as a, 2"]
+
+
 def test_history_folds_the_same_way_in_every_format(
     hsql: Hsql, duck: list[str], query_log_path: Path
 ) -> None:
@@ -4985,6 +5012,42 @@ def test_history_folds_the_same_way_in_every_format(
     assert sql_column(table.stdout) == [
         row.split(",")[-1] for row in csv.stdout.splitlines()
     ]
+
+
+def test_a_discovered_profile_does_not_narrow_the_history(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], tmp_path: Path
+) -> None:
+    """A config file in the working directory is not a database the caller
+    named, and narrowing to it is the answer this mode exists to not give."""
+    first, _ = two_databases
+    config_file = tmp_path / ".harlequin.toml"
+    config_file.write_text(
+        'default_profile = "first"\n\n[profiles.first]\nadapter = "duckdb"\n'
+        f"conn_str = [{json.dumps(first[-1])}]\nno_init = true\n"
+    )
+    res = hsql("--config-path", str(config_file), "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert len(sql_column(res.stdout)) == 3
+
+
+def test_a_tunneled_profile_is_not_narrowed_and_says_so(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], tmp_path: Path
+) -> None:
+    """Keying a tunneled connection means opening the tunnel, and this mode
+    connects to nothing -- so it reports every connection rather than exiting 3
+    or narrowing to an id no row carries."""
+    first, _ = two_databases
+    config_file = tmp_path / "tunnel.toml"
+    config_file.write_text(
+        '[profiles.tunneled]\nadapter = "duckdb"\n'
+        f"conn_str = [{json.dumps(first[-1])}]\nno_init = true\n"
+        'ssh_host = "bastion.example.invalid"\n'
+        'ssh_forward = [ "15439:db:5439" ]\n'
+    )
+    res = hsql("--config-path", str(config_file), "-P", "tunneled", "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert len(sql_column(res.stdout)) == 3
+    assert "bastion.example.invalid" in res.stderr
 
 
 def test_history_search_matches_the_middle_of_a_query(

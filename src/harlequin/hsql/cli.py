@@ -961,6 +961,69 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 )
             )
 
+        if history or history_search is not None:
+            if history_search is not None and not history_search.strip():
+                # an unset shell variable, far more often than a deliberate ask
+                # for the whole store -- which is what --history is for.
+                diagnostics.error("--history-search needs a term to search for.")
+                ctx.exit(ExitCode.USAGE)
+            try:
+                history_limit = parse_row_count(raw_limit, key="--limit")
+            except HarlequinConfigError as e:
+                diagnostics.report_error(e)
+                ctx.exit(ExitCode.USAGE)
+            # a typed -P, -a or CONN_STR names one database and narrows the
+            # store to it; with none of them the answer is every connection
+            # this machine has used, because "I typed `hsql --history` and got
+            # someone else's idea of the default database" is the surprising
+            # one. All three read the command line rather than the merge, or a
+            # `default_profile` discovered in the working directory would be
+            # that idea.
+            named_a_database = (
+                profile is not None
+                or "adapter" in explicitly_set
+                or bool(kwargs.get("conn_str"))
+            )
+            history_connection: str | None = None
+            if named_a_database and ssh_config.get("ssh_host"):
+                # a tunneled connection is keyed by what its tunnel resolved,
+                # and resolving that means starting ssh. This mode connects to
+                # nothing, so it reports every connection rather than narrowing
+                # to an id that would match no row.
+                diagnostics.report_history_not_narrowed(ssh_config["ssh_host"])
+            elif named_a_database:
+                # built to be asked for its connection id, and never connected
+                # with: this mode opens no database but the store
+                history_connection = _keyed_connection(
+                    _adapter_instance(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
+                    conn_str,
+                    values,
+                    tunnel=None,
+                )
+            ctx.exit(
+                _report_history(
+                    ctx,
+                    connection=history_connection,
+                    search=history_search,
+                    limit=history_limit,
+                    destination=destination,
+                    format_name=format_name,
+                    display_rows=raw_display_rows,
+                    tuples_only=tuples_only,
+                    no_align=no_align,
+                    no_header=no_header,
+                    no_footer=no_footer,
+                    null_string=null_string,
+                    color=_use_color(color_when, destination),
+                )
+            )
+
         # every mode below this connects to the database
         if session_status:
             diagnostics.error(
@@ -1032,58 +1095,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     implements_cancel=(
                         adapter_cls is not None and adapter_cls.IMPLEMENTS_CANCEL
                     ),
-                )
-            )
-
-        if history or history_search is not None:
-            if history_search is not None and not history_search.strip():
-                # an unset shell variable, far more often than a deliberate ask
-                # for the whole store -- which is what --history is for.
-                diagnostics.error("--history-search needs a term to search for.")
-                ctx.exit(ExitCode.USAGE)
-            try:
-                history_limit = parse_row_count(raw_limit, key="--limit")
-            except HarlequinConfigError as e:
-                diagnostics.report_error(e)
-                ctx.exit(ExitCode.USAGE)
-            # -P, -a or a CONN_STR names one database and narrows the store to
-            # it; with none of them the answer is every connection this machine
-            # has used, because "I typed `hsql --history` and got someone
-            # else's idea of the default database" is the surprising one.
-            named_a_database = (
-                profile is not None or "adapter" in explicitly_set or bool(conn_str)
-            )
-            history_connection: str | None = None
-            if named_a_database:
-                # built to be asked for its connection id, and never connected
-                # with: this mode opens no database but the store
-                history_connection = _keyed_connection(
-                    _adapter_instance(
-                        ctx,
-                        adapter=adapter,
-                        conn_str=conn_str,
-                        read_only=read_only,
-                        values=values,
-                    ),
-                    conn_str,
-                    values,
-                    tunnel=tunnel,
-                )
-            ctx.exit(
-                _report_history(
-                    ctx,
-                    connection=history_connection,
-                    search=history_search,
-                    limit=history_limit,
-                    destination=destination,
-                    format_name=format_name,
-                    display_rows=raw_display_rows,
-                    tuples_only=tuples_only,
-                    no_align=no_align,
-                    no_header=no_header,
-                    no_footer=no_footer,
-                    null_string=null_string,
-                    color=_use_color(color_when, destination),
                 )
             )
 

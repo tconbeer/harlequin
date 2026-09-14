@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from harlequin.statements import Statement, find_separators, split
+from harlequin.adapter import HarlequinAdapter
+from harlequin.query import execute
+from harlequin.statements import Statement, find_separators, fold, split
 
 # (name, script, expected statements). The name is the pytest id.
 CORPUS: list[tuple[str, str, list[str]]] = [
@@ -255,3 +257,101 @@ def test_find_separators_after_dollar_quoted_body() -> None:
     """
     script = "create function f() as $$\n select 'café';\n$$;\nselect 2"
     assert find_separators(script) == [(2, 3)]
+
+
+# --- folding a statement onto one line ----------------------------------------
+
+FOLDS: list[tuple[str, str, str]] = [
+    ("already one line", "select 1 as a", "select 1 as a"),
+    ("indented", "select\n  1 as a,\n  2 as b\nfrom t", "select 1 as a, 2 as b from t"),
+    ("tabs", "select\t1\tas\ta", "select 1 as a"),
+    ("leading and trailing space", "  select 1  ", "select 1"),
+    (
+        "a line comment does not swallow the next line",
+        "select 1 as a, -- the first column\n2 as b",
+        "select 1 as a, 2 as b",
+    ),
+    ("a line comment at the end goes", "select 1 -- why\n", "select 1"),
+    ("a comment on its own line goes", "-- why\nselect 1", "select 1"),
+    ("a block comment goes", "select 1 /* block\ncomment */, 2", "select 1 , 2"),
+    (
+        "a dropped comment leaves the tokens apart",
+        "select 1--why\n+2",
+        "select 1 +2",
+    ),
+    (
+        "a comment the grammar reads as part of a literal stays",
+        "select 'a'/*why*/'b',\n  2",
+        "select 'a'/*why*/'b', 2",
+    ),
+    (
+        "a statement already on one line is left alone, comment and all",
+        "select 1 -- why",
+        "select 1 -- why",
+    ),
+    ("a literal keeps its spacing", "select 'hello  world'", "select 'hello  world'"),
+    (
+        "a literal keeps its spacing when the statement is folded",
+        "select 'hello  world' as x,\n  2",
+        "select 'hello  world' as x, 2",
+    ),
+    (
+        "a quoted identifier keeps its spacing",
+        'select "my  col" as a,\n  2',
+        'select "my  col" as a, 2',
+    ),
+    (
+        "a literal that spans lines is joined",
+        "select 'multi\nline' as a,\n 2",
+        "select 'multi line' as a, 2",
+    ),
+    (
+        "a dollar-quoted body keeps its spacing",
+        "select $$a  b$$ as x,\n  2",
+        "select $$a  b$$ as x, 2",
+    ),
+    (
+        "non-ascii is sliced by character",
+        "select '日本語  x',\n  2",
+        "select '日本語  x', 2",
+    ),
+    (
+        "a comment marker inside a literal is not one",
+        "select '-- x',\n  2",
+        "select '-- x', 2",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "sql,expected",
+    [(sql, expected) for _, sql, expected in FOLDS],
+    ids=[name for name, _, _ in FOLDS],
+)
+def test_fold(sql: str, expected: str) -> None:
+    assert fold(sql) == expected
+
+
+@pytest.mark.parametrize("sql", [sql for _, sql, _ in FOLDS])
+def test_a_folded_statement_is_one_line(sql: str) -> None:
+    """The whole point: a listing prints one line per row."""
+    assert "\n" not in fold(sql)
+    assert "\r" not in fold(sql)
+
+
+@pytest.mark.parametrize("sql", [sql for _, sql, _ in FOLDS])
+def test_folding_a_folded_statement_changes_nothing(sql: str) -> None:
+    assert fold(fold(sql)) == fold(sql)
+
+
+def test_a_folded_statement_still_runs(
+    duckdb_adapter: type[HarlequinAdapter],
+) -> None:
+    """The promise the listing makes, against a database rather than a string."""
+    connection = duckdb_adapter([":memory:"], no_init=True).connect()
+    sql = "select\n  1 as a, -- the first column\n  'hello  world' as b\n"
+    (executed,) = execute(connection, split(fold(sql)))
+    assert executed.cursor is not None
+    data = executed.cursor.fetchall()
+    assert data is not None
+    assert data.to_pylist() == [{"a": 1, "b": "hello  world"}]

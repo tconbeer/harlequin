@@ -47,14 +47,19 @@ hsql --history --jsonl               # one JSON object per row, for a pipe
 
 Eight columns: `run_at` (UTC), `program` (`hsql` or `harlequin`), `profile`, `adapter`,
 `status` (`ok`, `error` or `canceled`), `rows`, `elapsed_ms`, and `sql`. The SQL is
-folded onto one line in every format; it still runs.
+folded onto one line, in every format, and still runs — comments are dropped so a `--`
+one cannot comment out the rest of the line, and a literal keeps its own spacing.
 
-`-P`, `-a` or a CONN_STR narrows the listing to that one database. With none of them,
-every database you have used is in it, and the `profile` and `adapter` columns are what
-tell them apart. `--limit` defaults to `500` and means "the most recent N".
+`-P`, `-a` or a CONN_STR narrows the listing to that one database. With none of them —
+including when a config file names a `default_profile` — every database you have used is
+in it, and the `profile` and `adapter` columns are what tell them apart. A profile that
+reaches its database through an SSH tunnel is not narrowed either, and says so on
+stderr: naming that connection would mean opening the tunnel. `--limit` defaults to
+`500` and means "the most recent N".
 
-Neither mode connects to a database, so both work when the warehouse is down or you
-have no credentials for it. `--no-write-history` keeps one run out of the record.
+Neither mode connects to a database or opens a tunnel, so both work when the warehouse
+is down or you have no credentials for it. `--no-write-history` keeps one run out of
+the record.
 
 ## Running statements
 

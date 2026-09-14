@@ -103,7 +103,7 @@ import-linter reads the *static* graph, so it cannot tell a deferred import from
 
 Both front ends run queries through here, and neither may grow its own copy.
 
-`statements.split()` and `statements.find_separators()` are the **only** SQL splitter. They drive `tree-sitter-sql` directly — no Textual, no textual-textarea — through the one-line `(";" @semicolon)` query the Query Editor has always used, so `-f script.sql` and the editor cannot disagree about where a statement ends. Tree-sitter reports **byte** columns; everything this module returns is in characters, and that conversion belongs here and nowhere else.
+`statements.split()` and `statements.find_separators()` are the **only** SQL splitter. They drive `tree-sitter-sql` directly — no Textual, no textual-textarea — through the one-line `(";" @semicolon)` query the Query Editor has always used, so `-f script.sql` and the editor cannot disagree about where a statement ends. Tree-sitter reports **byte** columns; everything this module returns is in characters, and that conversion belongs here and nowhere else. `statements.fold()` puts a statement on one line for a listing that has one line per row, and drives the same grammar for the same reason: collapsing whitespace pulls the code after a `-- comment` into the comment and rewrites the spacing inside a string literal, and only a parse knows where either of those is.
 
 `fetch()` hands `create_backend()` the columns the cursor described, so a result with no rows is an empty table with a header rather than nothing — `ResultSet.backend` is never None.
 

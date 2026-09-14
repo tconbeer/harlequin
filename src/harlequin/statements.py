@@ -21,6 +21,7 @@ it at the call site is what produced the mis-slicing described in
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_right
 from dataclasses import dataclass
 
@@ -38,6 +39,23 @@ those nodes, so they are not captured. A semicolon inside a dollar-quoted body
 is captured -- the grammar parses the body's SQL -- so `_separator_offsets()`
 drops it by pairing the delimiters it also captures here.
 """
+
+FOLD_QUERY = """
+(comment) @comment
+(marginalia) @comment
+(literal) @literal
+(dollar_quote) @dollar_quote
+"""
+"""The comments a fold drops, and the spans it may not touch.
+
+`literal` is every quoted thing the grammar knows -- strings and quoted
+identifiers, and numbers, which hold no whitespace to collapse. A dollar-quoted
+body is the region between a matching pair of delimiters, as in
+`SPLITTER_QUERY`.
+"""
+
+_WHITESPACE = re.compile(r"\s+")
+_LINE_BREAK = re.compile(r"[\r\n\v\f]+")
 
 Point = tuple[int, int]
 """A (row, character column) position in a buffer. Both are 0-indexed."""
@@ -154,6 +172,78 @@ def split(text: str) -> list[Statement]:
             statements.append(Statement(sql=sql, index=len(statements)))
         start = end
     return statements
+
+
+def fold(sql: str) -> str:
+    """One statement on one line, running the same query it ran before.
+
+    A listing prints one line per row, and collapsing every run of whitespace
+    is not the way to get one: it pulls the code after a `-- comment` into the
+    comment, and it rewrites the whitespace inside a string literal. So the
+    comments come out and a literal keeps its own spacing -- which does mean
+    the text a `like` matched is not always the text this returns.
+
+    One line is the promise the layouts need, so a literal that spans lines is
+    the one thing joined rather than kept: standard SQL has no escape to write
+    that newline with.
+    """
+    if _WHITESPACE.sub(" ", sql).strip() == sql:
+        # already one line of single spaces, so it is what was run, and a
+        # comment at the end of it has nothing to swallow. No parse, which is
+        # the path every statement typed at a shell takes.
+        return sql
+
+    matched = captures(sql, FOLD_QUERY)
+    spans = _fold_spans(matched)
+    encoded = sql.encode("utf-8")
+    folded: list[str] = []
+    loose: list[str] = []
+    cursor = 0
+    for start, end, keep in spans:
+        loose.append(encoded[cursor:start].decode("utf-8"))
+        if keep:
+            folded.append(_WHITESPACE.sub(" ", "".join(loose)))
+            loose = []
+            folded.append(_LINE_BREAK.sub(" ", encoded[start:end].decode("utf-8")))
+        elif _would_fuse(encoded, start, end):
+            # what the dropped comment leaves behind, so the tokens it sat
+            # between do not run together
+            loose.append(" ")
+        cursor = end
+    loose.append(encoded[cursor:].decode("utf-8"))
+    folded.append(_WHITESPACE.sub(" ", "".join(loose)))
+    return "".join(folded).strip()
+
+
+def _would_fuse(encoded: bytes, start: int, end: int) -> bool:
+    """Whether dropping this span would leave two tokens touching."""
+    # `start - 1` at the start of the buffer slices nothing, which is what a
+    # comment with no token before it should read as
+    before = encoded[start - 1 : start] if start else b""
+    return bool(before.strip()) and bool(encoded[end : end + 1].strip())
+
+
+def _fold_spans(matched: dict[str, list[Node]]) -> list[tuple[int, int, bool]]:
+    """Every byte span a fold treats specially, in order and never overlapping.
+
+    `True` is kept verbatim and `False` is dropped. A span inside one already
+    taken is skipped: the grammar parses a dollar-quoted body, so a comment in
+    one is body content rather than a comment to drop.
+    """
+    keeps = [(node.start_byte, node.end_byte) for node in matched.get("literal", [])]
+    keeps += _dollar_quoted_regions(matched.get("dollar_quote", []))
+    drops = [(node.start_byte, node.end_byte) for node in matched.get("comment", [])]
+    spans: list[tuple[int, int, bool]] = []
+    reached = 0
+    for start, end, keep in sorted(
+        [(start, end, True) for start, end in keeps]
+        + [(start, end, False) for start, end in drops]
+    ):
+        if start < reached:
+            continue
+        spans.append((start, end, keep))
+        reached = end
+    return spans
 
 
 def find_separators(text: str) -> list[Point]:
