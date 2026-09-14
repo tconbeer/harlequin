@@ -95,16 +95,17 @@ def _report_crash(error: BaseException, argv: Sequence[str]) -> NoReturn:
 def _crash_context(argv: Sequence[str]) -> dict[str, Any]:
     """What the run was, for the crash report.
 
-    The argv is masked by `redact_conn_str()` before the report's own pass: a
+    Each argument is masked by `redact_sql()` before the report's own pass: a
     crash during parsing happens before `hide_secrets_in()` runs, so the
     registered-secret set is empty and span-masking is the only thing that
-    catches a DSN typed on the command line.
+    catches a DSN typed on the command line -- or a credential inside the
+    statement `-c` was given.
     """
-    from harlequin.redact import redact_conn_str
+    from harlequin.redact import redact_sql
 
     context: dict[str, Any] = {}
     try:
-        context["argv"] = " ".join(redact_conn_str(list(argv)))
+        context["argv"] = " ".join(redact_sql(arg) for arg in argv)
     except Exception:
         context["argv"] = "unknown"
     for key, flags in (

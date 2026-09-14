@@ -16,6 +16,7 @@ import json
 import os
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -37,6 +38,7 @@ from harlequin.hsql.cli import (
     ROLE_OPTIONS,
     SERVER_OPTIONS,
     _execute_all,
+    _fetched,
     _Run,
     bare_command,
     build_cli,
@@ -48,6 +50,7 @@ from harlequin.hsql.server import InFlight, Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
 from harlequin.plugins import load_adapter
 from harlequin.query import RowLimit
+from harlequin.query_log import QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
@@ -110,6 +113,7 @@ def in_process_server(duckdb_adapter: Any) -> Server:
         "inproc",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="inproc-connection",
         reconnect=adapter.connect,
         # what `hsql --serve inproc -P prod` records for a profile that says
         # duckdb, `:memory:`, `no_init` and `read_only = false`
@@ -197,6 +201,7 @@ def test_an_adapters_options_are_connection_options(hsql: Hsql) -> None:
         ["--info"],
         ["-o", "out.csv"],
         ["--stats"],
+        ["--no-write-history"],
     ],
 )
 def test_serve_refuses_per_request_options(hsql: Hsql, args: list[str]) -> None:
@@ -430,6 +435,7 @@ def test_a_served_request_is_refused_an_option_the_session_never_named(
         "bare",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="bare-connection",
         reconnect=adapter.connect,
     )
     res = hsql(*args, "-c", "select 1", obj=served_by(session))
@@ -618,6 +624,7 @@ def test_a_refusal_masks_an_option_its_adapter_declared_secret(
         "md",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="md-connection",
         reconnect=adapter.connect,
         identity={"md_token": "tok_theirs"},
         options=adapter.ADAPTER_OPTIONS,
@@ -735,7 +742,11 @@ def test_a_reset_that_cannot_reconnect_leaves_the_session_without_a_connection(
         return adapter.connect()
 
     session = Server(
-        "flaky", adapter="duckdb", connection=adapter.connect(), reconnect=reconnect
+        "flaky",
+        adapter="duckdb",
+        connection=adapter.connect(),
+        connection_id="flaky-connection",
+        reconnect=reconnect,
     )
     served = served_by(session)
     res = hsql("--session-reset", obj=served)
@@ -773,6 +784,7 @@ def cancellable(implements_cancel: bool = True) -> tuple[Server, _FakeConnection
             "cancels",
             adapter="duckdb",
             connection=cast(Any, connection),
+            connection_id="cancels-connection",
             reconnect=lambda: cast(Any, connection),
             implements_cancel=implements_cancel,
         ),
@@ -1113,7 +1125,11 @@ def test_an_abandoned_connection_is_offered_to_nobody_until_a_reset() -> None:
         return opened[-1]
 
     session = Server(
-        "stuck", adapter="duckdb", connection=opened[0], reconnect=reconnect
+        "stuck",
+        adapter="duckdb",
+        connection=opened[0],
+        connection_id="stuck-connection",
+        reconnect=reconnect,
     )
     assert session.connection() is opened[0]
     session.abandon()
@@ -1403,6 +1419,7 @@ def test_a_status_carries_no_secret(duckdb_adapter: Any) -> None:
         "dsn",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="dsn-connection",
         reconnect=adapter.connect,
         identity={
             "conn_str": ("postgres://ted:hunter2@warehouse:5432/analytics",),
@@ -1461,6 +1478,7 @@ def test_a_busy_session_does_not_ask_its_driver_for_the_mode(
         "tx",
         adapter="duckdb",
         connection=cast(Any, Transacting()),
+        connection_id="tx-connection",
         reconnect=adapter.connect,
     )
     # one read at start-up, which is the mode a later one is compared against
@@ -2062,6 +2080,7 @@ def with_clocks(
         "clocked",
         adapter="duckdb",
         connection=adapter.connect(),
+        connection_id="clocked-connection",
         reconnect=adapter.connect,
         idle_timeout=idle_timeout,
         max_lifetime=max_lifetime,
@@ -2329,6 +2348,7 @@ def moody(duckdb_adapter: Any, mode: str | None = "Auto") -> tuple[Server, Moody
             "tx",
             adapter="duckdb",
             connection=cast(Any, connection),
+            connection_id="tx-connection",
             reconnect=lambda: cast(Any, Moody(adapter.connect(), mode)),
         ),
         connection,
@@ -2416,6 +2436,7 @@ def test_an_adapter_that_raises_asking_for_its_mode_has_nothing_to_say(
         "raises",
         adapter="duckdb",
         connection=cast(Any, Raising()),
+        connection_id="raises-connection",
         reconnect=adapter.connect,
     )
     assert noted(session) == ""
@@ -2539,3 +2560,142 @@ def test_a_serve_with_no_secret_on_it_says_nothing(serve_session: ServeSession) 
     )
     assert session.process.wait(30) == ExitCode.OK
     assert "put a secret on this command line" not in session.stderr()
+
+
+# --- the query log -----------------------------------------------------------
+
+
+def recorded(store: Path) -> list[dict[str, Any]]:
+    """Every row written to a query log, oldest first."""
+    db = sqlite3.connect(store)
+    db.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in db.execute("select * from queries order by id")]
+    finally:
+        db.close()
+
+
+def test_a_served_request_logs_under_the_sessions_connection(
+    hsql: Hsql, in_process_server: Server, query_log_path: Path
+) -> None:
+    """A served request is refused every option the id is derived from, so the
+    session is the only thing that can answer what its queries ran against."""
+    res = hsql("-c", "select 1 as a", obj=served_by(in_process_server))
+    assert res.exit_code == ExitCode.OK
+
+    (row,) = recorded(query_log_path)
+    assert row["sql"] == "select 1 as a"
+    assert row["connection"] == in_process_server.connection_id
+
+
+def test_a_served_request_can_opt_out_of_the_history(
+    hsql: Hsql, in_process_server: Server, query_log_path: Path
+) -> None:
+    """Per-request, so one invocation can go unrecorded without the session
+    having decided that for every other one."""
+    served = served_by(in_process_server)
+    assert hsql("-c", "select 1", obj=served).exit_code == ExitCode.OK
+    assert hsql("--no-write-history", "-c", "select 2", obj=served).exit_code == (
+        ExitCode.OK
+    )
+
+    assert [row["sql"] for row in recorded(query_log_path)] == ["select 1"]
+
+
+@needs_unix_sockets
+def test_a_warm_run_and_a_cold_one_are_one_history(
+    serve_session: ServeSession,
+    hsql_subprocess: HsqlSubprocess,
+    tmp_path: Path,
+) -> None:
+    """The point of keying a connection at all: the same database reached two
+    ways is one list, not two."""
+    database = tmp_path / "warehouse.db"
+    session = serve_session("keyed", "-a", "duckdb", "--no-init", str(database))
+    argv = ["-a", "duckdb", "--no-init", str(database)]
+
+    warm = hsql_subprocess(
+        ["--session", session.name, "-c", "select 1 as a"], env=session.env
+    )
+    assert warm.returncode == ExitCode.OK, warm.stderr
+    # the session holds the file, and duckdb locks it -- so the cold run is
+    # the same caller reaching the same database after the session is gone
+    session.stop()
+    cold = hsql_subprocess([*argv, "-c", "select 2 as a"])
+    assert cold.returncode == ExitCode.OK, cold.stderr
+
+    # wherever platformdirs put it on this platform; `clean_env` keeps it here
+    (store,) = tmp_path.rglob("history.db")
+    rows = recorded(store)
+    assert [row["sql"] for row in rows] == ["select 1 as a", "select 2 as a"]
+    assert rows[0]["connection"], "an unset id would make this test vacuous"
+    assert rows[0]["connection"] == rows[1]["connection"]
+
+
+def test_a_run_cancelled_before_it_started_records_nothing(
+    in_process_server: Server, query_log_path: Path
+) -> None:
+    """The statements were never submitted, so the history has nothing to hold.
+
+    Each is written as the database is asked to run it, which is a generator
+    `execute()` draws from -- so the check that stops the run has to come
+    before that generator rather than inside it, or a query the database never
+    saw is in the caller's history.
+    """
+    in_flight = in_process_server._hold(A_REQUEST)
+    in_flight.cancel()
+    served = served_by(in_process_server, in_flight=in_flight)
+    log = QueryLog(program="hsql", connection=served.connection_id, adapter="duckdb")
+    run = _Run(served=served, log=log)
+
+    assert (
+        _execute_all(
+            served.connection(),
+            [Statement(sql="select 1", index=0)],
+            limit=RowLimit(),
+            on_error="stop",
+            run=run,
+        )
+        == []
+    )
+    log.close()
+    # the store opens on the first write, so a run that records nothing does
+    # not even create one
+    assert not query_log_path.exists()
+
+
+def test_every_statement_a_served_cancel_stopped_says_so(
+    in_process_server: Server, query_log_path: Path
+) -> None:
+    """The served half of the cold run's cancel: the run reads the session's
+    cancel where a cold one reads its clock, and both mark the statement in
+    flight and every one after it.
+
+    Cancelled between two fetches rather than under a slow query, because what
+    is asserted is which rows the cancel marks and not how long a runner takes
+    to reach it.
+    """
+    in_flight = in_process_server._hold(A_REQUEST)
+    served = served_by(in_process_server, in_flight=in_flight)
+    log = QueryLog(program="hsql", connection=served.connection_id, adapter="duckdb")
+    run = _Run(served=served, log=log)
+
+    executed = _execute_all(
+        served.connection(),
+        [Statement(sql=f"select {n}", index=n) for n in range(3)],
+        limit=RowLimit(),
+        on_error="stop",
+        run=run,
+    )
+    assert len(executed) == 3
+    results = _fetched(executed, limit=RowLimit(), on_error="stop", run=run)
+    assert next(results)[0] == 1
+    in_flight.cancel()
+    assert list(results) == []
+
+    log.close()
+    rows = recorded(query_log_path)
+    assert [row["sql"] for row in rows] == ["select 0", "select 1", "select 2"]
+    assert [row["status"] for row in rows] == ["ok", "canceled", "canceled"]
+    # the one that did finish keeps what it returned
+    assert rows[0]["rows"] == 1

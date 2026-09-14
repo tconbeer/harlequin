@@ -22,7 +22,7 @@ from typing import Any, Mapping
 from platformdirs import user_log_path
 
 from harlequin.environment import runtime_report
-from harlequin.redact import redact_text
+from harlequin.redact import redact_sql, redact_text
 
 CRASH_REPORT_KEEP = 10
 """How many reports are kept. Distinct filenames, so a crash loop cannot
@@ -71,7 +71,8 @@ def build_crash_report(
     Not markdown: the user pastes this into a fenced block in an issue, and a
     report's own fences would break out of it. Everything goes through
     `redact_text()` once at the end -- one choke point, rather than a
-    redaction each section has to remember.
+    redaction each section has to remember. The SQL is the one section that
+    needs more than that pass can give it, and gets `redact_sql()` first.
     """
     cause = root_cause(error)
     facts = {key: value for key, value in context.items() if key != ACTIVE_BUFFER}
@@ -87,8 +88,13 @@ def build_crash_report(
     if active_buffer:
         # usually what is needed to reproduce a TUI bug. Last, and under a
         # heading that says what it is, because SQL holds table names and
-        # literals: the user decides whether to paste it.
-        sections.append(_section("SQL IN THE ACTIVE BUFFER", str(active_buffer)))
+        # literals: the user decides whether to paste it. `redact_sql()`
+        # because a credential can be written into a statement -- `attach
+        # 'postgres://user:pw@host'`, `create secret (...)` -- and nothing
+        # registered it, so the final pass would not find it.
+        sections.append(
+            _section("SQL IN THE ACTIVE BUFFER", redact_sql(str(active_buffer)))
+        )
     return redact_text("\n".join(sections))
 
 

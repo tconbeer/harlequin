@@ -38,6 +38,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.plugins",
     "import harlequin.redact",
     "import harlequin.query",
+    "import harlequin.query_log",
     "import harlequin.ssh",
     "import harlequin.statements",
     "import harlequin.transaction_mode",
@@ -255,6 +256,31 @@ def test_an_all_ascii_run_defers_the_slow_startup_imports(
     )
     leaked = [m for m in proc.stderr.strip().split(",") if m]
     assert not leaked, f"`hsql -c 'select 1'` imported {leaked}"
+
+
+def test_a_run_that_records_its_queries_does_not_render_one(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """The query log writes what the History screen renders, and only one of
+    them may import rich."""
+    proc = run_python(
+        "import sys\n"
+        "sys.argv = ['hsql', '-c', 'select 1']\n"
+        "from harlequin.hsql import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "import sqlite3, pathlib, platformdirs\n"
+        "state = pathlib.Path(platformdirs.user_state_dir('harlequin'))\n"
+        "db = sqlite3.connect(state / 'history.db')\n"
+        "print(db.execute('select sql from queries').fetchall(), file=sys.stderr)\n"
+        f"print(','.join(m for m in {FORBIDDEN!r} if m in sys.modules), "
+        "file=sys.stderr)\n"
+    )
+    recorded, leaked = proc.stderr.splitlines()
+    assert "select 1" in recorded, "the run recorded nothing, so this proves nothing"
+    assert not [m for m in leaked.split(",") if m], f"a logged run imported {leaked}"
 
 
 def test_non_ascii_output_still_measures_correctly(
