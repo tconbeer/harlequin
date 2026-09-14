@@ -76,7 +76,7 @@ dependencies = [
 
 [project.optional-dependencies]
 
-s3 = ["boto3==1.43.89"]
+s3 = ["boto3==1.43.93"]
 postgres = ["harlequin-postgres"]
 mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
@@ -111,7 +111,7 @@ test = [
     "pytest-asyncio==1.4.0",
     "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@a2c6763b45283f76757a123342900accefcf04e8",
-    "boto3==1.43.89",
+    "boto3==1.43.93",
     # extension tests require consistent version of duckdb.
     "duckdb==1.5.5",
     "flaky>=3.8.1",
