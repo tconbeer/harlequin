@@ -728,6 +728,16 @@ Three responses, and I would take all three:
    already exists on the contract, so this costs nothing and turns the worst failure mode
    into a visible one. A session sitting in an open transaction is a thing the caller
    should be told about every single time, not once.
+
+   **This premise does not hold, and PR 5 shipped the narrower thing instead.**
+   `transaction_mode` is the adapter's Auto/Manual *setting* — a plain attribute that
+   only `toggle_transaction_mode()` moves, which hsql never calls — so it says nothing
+   about whether a transaction is open, and a `begin` left open is silent. The worst
+   failure mode is therefore **not** visible, and `--session-reset` (item 3) is the only
+   thing in this design that answers it. Detecting an open transaction needs a new
+   member on the adapter contract, which is §7's "distinguished cancellation signal"
+   shape of change: additive, ecosystem-wide, and not this feature's to make. §9's PR 5
+   entry has what was shipped in its place.
 3. **`hsql --session prod --session-reset`** rolls back, closes, and reconnects, without
    restarting the process (so the imports are still warm). This is the escape hatch for
    "the agent left the session in a weird state," and it is a much better answer than
@@ -861,6 +871,15 @@ convenience.
 - **It overlaps M6.** §3.3 argues that is a reason to build this first and land MCP on top.
   If M6 is imminent, the sequencing question is real and should be settled before PR 1 —
   building both connection lifecycles would be the expensive mistake.
+- **A lifetime expiry mid-query leaves that query unreachable.** The expiry path is the
+  stop signal's, which closes the listener and unlinks the socket *before* it drains: the
+  request in flight is still answered, but for the rest of its run no cancel and no
+  `--session-status` can reach it, because both open a second connection to a path that
+  is gone. Under `SIGINT` an operator is present and knows what they just did; under
+  `--max-lifetime` it happens by itself, at eight hours, to whoever is mid-query. Draining
+  before the unlink would need care around a client racing in on the still-live socket,
+  so PR 5 left the ordering alone — but the docs should say that a lifetime expiry mid-query
+  leaves the query uninterruptible until it finishes.
 - **Idle servers as an operational nuisance.** Idle timeout defaults to 30m for this
   reason. Expect the first bug report to be "my session died between calls"; the answer is
   `--idle-timeout 0`, and the docs should say so before the report arrives.
@@ -954,16 +973,26 @@ them; everything after is additive and independently revertible.
    Three things this PR settled that the plan did not name. **A status poll is not
    use of a session**, so it does not touch the idle clock: an agent that watches a
    session it has stopped sending queries to would otherwise keep the credential
-   open by watching it, which is the outcome the clock exists to prevent. **The
+   open by watching it, which is the outcome the clock exists to prevent. The clock
+   is therefore *held* while a client is connected rather than *reset* when one
+   arrives — which is also what keeps a session from stopping under a client that
+   has connected and not yet said what it wants, since a `-f -` reads its script
+   after the handshake and nothing else can see such a client. (Review caught that:
+   the first cut counted parsed requests alone, and a slow producer upstream of
+   `-f -` got the socket unlinked under it.) **The
    idle clock does not run while a request does**, and the lifetime clock does —
    the first is about a session nobody wants and the second bounds the credential,
    so a query that takes an hour is not idle and is not exempt either; a lifetime
    that runs out mid-query stops the accept loop and lets the request in flight
-   finish, which is the path a stop signal already took. And **the default a
+   finish, which is the path a stop signal already took, at the cost §8 now records.
+   And **the default a
    transaction mode is compared against is the one the session connected in**,
    re-read on every `--session-reset`, because the contract offers no way to ask an
-   adapter which of its modes is its default — so what is reported is that the
-   session is not where it started, which is the fact a caller has to act on.
+   adapter which of its modes is its default. Review then found the premise above it
+   does not hold either: the mode is a setting nothing hsql runs can move, so what
+   shipped reports a session moved **out of band** and makes no claim about open
+   work — §5 item 2 has the correction. A narrow feature honestly described, rather
+   than a safety net that is not there.
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
    `SessionStart`-hook example and an `hsql --help` mention. Not optional and not last in
    spirit — a feature that must be deliberately adopted is a feature that lives or dies by

@@ -164,16 +164,16 @@ def report_session_expired(
 def report_transaction_mode(name: str, mode: str, *, stream: TextIO) -> None:
     """Say that a session is not in the transaction mode it connected in.
 
-    On the caller's stream, after their request, and every time rather than
-    once: a cold invocation rolled an open transaction back by exiting and a
-    session does not, so every later request runs inside whatever this one
-    left open, and whatever it locked stays locked.
+    The mode is the adapter's own Auto/Manual setting rather than a statement
+    about open work, so this reports the setting and nothing more. On the
+    caller's stream, and every time rather than once, because every request
+    after the change runs under it.
     """
     note(
         f"session {name!r} is in transaction mode {mode!r}, which is not the "
-        f"one it connected in. What it holds open is held until the session is "
-        f"told otherwise: `{PROGRAM} --session {name} -c commit`, the same with "
-        f"`rollback`, or `{PROGRAM} --session {name} --session-reset`.",
+        f"one it connected in. Every request runs under it until the session "
+        f"is told otherwise; `{PROGRAM} --session {name} --session-reset` "
+        f"reconnects it in the mode it started in.",
         stream=stream,
     )
 

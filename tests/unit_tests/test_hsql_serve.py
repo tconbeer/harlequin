@@ -2154,6 +2154,29 @@ def test_a_countdown_that_has_run_out_is_zero_rather_than_negative(
     assert session.status()["expires_in_s"] == 0.0
 
 
+def test_a_client_that_has_not_spoken_yet_is_not_an_idle_session(
+    duckdb_adapter: Any,
+) -> None:
+    """A client is accepted before it says what it wants, and its first frame
+    can be a `-f -` script something upstream is still producing. It is in no
+    turnstile and has sent no request, so this count is the only thing that can
+    see it -- and a session that stopped here would unlink the socket under a
+    client that had already reached it."""
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0)
+    session._active_at -= 31
+    assert session._expired() == ("--idle-timeout", 30.0)
+    with session._attending_lock:
+        session._attending += 1
+    try:
+        assert session._expired() is None
+    finally:
+        with session._attending_lock:
+            session._attending -= 1
+    # and the clock was held rather than reset: it runs out as soon as the
+    # client is gone, which is what keeps a status poll from being use
+    assert session._expired() == ("--idle-timeout", 30.0)
+
+
 def test_a_request_is_what_the_idle_clock_counts(duckdb_adapter: Any) -> None:
     """A status poll asks a session what it is doing; it does not use it. An
     agent watching a session it has stopped sending queries to would otherwise
@@ -2162,6 +2185,49 @@ def test_a_request_is_what_the_idle_clock_counts(duckdb_adapter: Any) -> None:
     session._active_at -= 31
     session.status()
     assert session._expired() == ("--idle-timeout", 30.0)
+
+
+@needs_unix_sockets
+def test_a_session_waits_for_a_client_that_is_still_typing(
+    serve_session: ServeSession, tmp_path: Path
+) -> None:
+    """End to end, and the case the count exists for: a client connects and
+    shakes hands, and only then reads the script off its stdin. A session that
+    counted parsed requests alone would unlink the socket under it, and the
+    caller would get a broken pipe from a session that was up when they
+    reached it."""
+    session = serve_session(
+        "warm",
+        "-a",
+        "duckdb",
+        "--no-init",
+        ":memory:",
+        "--idle-timeout",
+        "1",
+        "--max-lifetime",
+        "0",
+    )
+    client = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {session.name!r}, '-tAf', '-']\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **session.env},
+    )
+    # longer than the idle timeout, and the client is already connected: what
+    # it has not done is say what it wants
+    time.sleep(3)
+    stdout, stderr = client.communicate(b"select 1 as a\n", timeout=30)
+    assert client.returncode == ExitCode.OK, stderr
+    assert stdout == b"1\n"
 
 
 @needs_unix_sockets
@@ -2250,7 +2316,12 @@ class Moody:
 
 
 def moody(duckdb_adapter: Any, mode: str | None = "Auto") -> tuple[Server, Moody]:
-    """A session whose adapter has transaction modes, which DuckDB's does not."""
+    """A session whose transaction mode the test moves, which no adapter does.
+
+    `transaction_mode` is a setting `toggle_transaction_mode()` mutates and
+    hsql never calls, so a session reached only through hsql cannot leave the
+    mode it connected in -- this stands in for one moved out of band.
+    """
     adapter = duckdb_adapter([":memory:"], no_init=True)
     connection = Moody(adapter.connect(), mode)
     return (
@@ -2275,10 +2346,10 @@ def noted(session: Server) -> str:
 def test_a_session_left_in_another_transaction_mode_tells_its_caller(
     duckdb_adapter: Any,
 ) -> None:
-    """A cold invocation rolled an open transaction back by exiting and a
-    session does not, so what one request left open is what every later one
-    runs inside. The caller who is told is whichever one it breaks, so it is
-    said every time rather than on the invocation that changed it."""
+    """The mode is the adapter's Auto/Manual setting, so what is reported is a
+    session moved out of band rather than anything about open work. Said every
+    time rather than once, because every request after the change runs under
+    it, and the caller who needs to know is each of them."""
     session, connection = moody(duckdb_adapter)
     assert noted(session) == ""
     connection.mode = "Manual"

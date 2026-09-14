@@ -330,6 +330,11 @@ class Server:
         self._active_at = self._started
         """When this session last had a request to answer, which is where the
         idle clock counts from."""
+        self._attending = 0
+        self._attending_lock = threading.Lock()
+        """Clients accepted whose connection is still open. A client is
+        accepted before it says what it wants, so this is the only thing that
+        can see one between the two."""
         self._default_transaction_mode = _transaction_mode_of(connection)
         """The mode the session connected in, and so the one a request that
         leaves it in another is worth telling its caller about."""
@@ -431,11 +436,13 @@ class Server:
     def _note_transaction_mode(self, segments: "list[tuple[int, bytearray]]") -> None:
         """Tell the caller that the session is not in the mode it connected in.
 
-        Every time, rather than on the invocation that changed it: a `BEGIN`
-        left open is a session holding locks that every later request runs
-        inside, and the caller who finds that out is whichever one it breaks.
-        On the caller's stream, since the operator's terminal is somewhere
-        else and may have nobody in front of it.
+        The mode is the adapter's Auto/Manual setting, not whether a
+        transaction is open, and nothing hsql runs changes it -- so this
+        reports a session moved out of band, and says nothing about what that
+        session may be holding. Every time rather than once, because the
+        caller who needs to know which mode their statements ran in is every
+        one of them, and on the caller's stream, since the operator's terminal
+        is somewhere else and may have nobody in front of it.
         """
         mode = self._read_transaction_mode()
         if mode is None or mode == self._default_transaction_mode:
@@ -672,8 +679,10 @@ class Server:
         has to be looked at every half second is one fewer thread around a
         connection nothing promises is safe to share. The lifetime bounds the
         credential whatever the session is doing, so it runs out mid-query; the
-        idle clock is about a session nobody is using, so a busy one is not
-        idle however long the query has been going.
+        idle clock is about a session nobody is using, so a session is not idle
+        while a request runs however long it takes, nor while a client is
+        connected and has yet to send one -- a `-f -` reads its script after
+        the handshake, and nothing else can see that client.
         """
         now = time.monotonic()
         if self._max_lifetime is not None and now - self._started >= self._max_lifetime:
@@ -681,7 +690,12 @@ class Server:
         if self._idle_timeout is None:
             return None
         busy, queued = self._turnstile.snapshot()
-        if busy or queued or now - self._active_at < self._idle_timeout:
+        if (
+            busy
+            or queued
+            or self._attending
+            or now - self._active_at < self._idle_timeout
+        ):
             return None
         return "--idle-timeout", self._idle_timeout
 
@@ -706,12 +720,22 @@ class Server:
                 diagnostics.report_peer_refused(uid, stream=self._stderr)
                 connection.close()
                 continue
-            threading.Thread(
-                target=self._attend,
-                args=(connection,),
-                name="hsql-request",
-                daemon=True,
-            ).start()
+            # before the thread exists, so there is no window in which an
+            # accepted client is invisible to the idle clock
+            with self._attending_lock:
+                self._attending += 1
+            try:
+                threading.Thread(
+                    target=self._attend,
+                    args=(connection,),
+                    name="hsql-request",
+                    daemon=True,
+                ).start()
+            except BaseException:
+                with self._attending_lock:
+                    self._attending -= 1
+                connection.close()
+                raise
 
     @contextlib.contextmanager
     def _stopping_on_signal(self) -> Iterator[None]:
@@ -753,6 +777,13 @@ class Server:
 
     def _attend(self, connection: socket.socket) -> None:
         """Answer one client, on its own thread, in its turn."""
+        try:
+            self._attend_client(connection)
+        finally:
+            with self._attending_lock:
+                self._attending -= 1
+
+    def _attend_client(self, connection: socket.socket) -> None:
         with connection:
             try:
                 protocol.send_frame(
