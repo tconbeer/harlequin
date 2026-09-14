@@ -39,8 +39,8 @@ HELLO = 1
 """Server to client, first: the server's version, so a skewed client stops."""
 
 REQUEST = 2
-"""Client to server: argv, cwd, the environment it forwards, stdin, and which
-of the caller's streams is a terminal."""
+"""Client to server: argv, cwd, the environment it forwards, stdin, which of
+the caller's streams is a terminal, and the id a `CANCEL` names it by."""
 
 STDOUT = 3
 """Server to client, repeatable: bytes for the client's stdout."""
@@ -53,6 +53,13 @@ EXIT = 5
 
 STATUS = 6
 """Client to server: report the server's status, as its own argv."""
+
+CANCEL = 7
+"""Client to server, on a second connection: stop the request this names.
+
+The first is busy carrying the response, and the server answers this one off
+its own bookkeeping, so a cancel reaches a query that is running.
+"""
 
 # Frame kinds are wire values: later ones append rather than renumbering.
 
@@ -87,6 +94,10 @@ STDOUT_ISATTY = 0b01
 STDERR_ISATTY = 0b10
 """Bits of a request's flags byte. Later flags take the bits above them."""
 
+REQUEST_ID_BYTES = 8
+"""How long a request's id is: long enough to be unique among the handful a
+session holds at once."""
+
 _LENGTH = struct.Struct("!I")
 """How a sequence writes its count, and each of its items its length."""
 
@@ -105,9 +116,20 @@ class Request:
     The two `isatty` flags are here because `--color auto` reads
     `sys.stdout.isatty()`, and on the server every stream is a buffer: without
     them `auto` would mean "never" however the caller's terminal looks.
+
+    The id is what a later `CANCEL` names, so a cancel stops the request that
+    sent it rather than whichever one the session happens to be holding.
     """
 
-    __slots__ = ("argv", "cwd", "environ", "stdin", "stdout_isatty", "stderr_isatty")
+    __slots__ = (
+        "argv",
+        "cwd",
+        "environ",
+        "stdin",
+        "stdout_isatty",
+        "stderr_isatty",
+        "request_id",
+    )
 
     def __init__(
         self,
@@ -115,6 +137,7 @@ class Request:
         cwd: str,
         environ: "Mapping[str, str]",
         stdin: "bytes | None",
+        request_id: bytes,
         stdout_isatty: bool = False,
         stderr_isatty: bool = False,
     ) -> None:
@@ -124,6 +147,16 @@ class Request:
         self.stdin = stdin
         self.stdout_isatty = stdout_isatty
         self.stderr_isatty = stderr_isatty
+        self.request_id = request_id
+
+
+def new_request_id() -> bytes:
+    """An id for one request, unique among the ones a session holds at once.
+
+    Assigned by the client, because a `CANCEL` names it and the client is what
+    sends one.
+    """
+    return os.urandom(REQUEST_ID_BYTES)
 
 
 def pack_strings(items: "Sequence[bytes]") -> bytes:
@@ -161,10 +194,11 @@ def pack_request(
     cwd: str,
     environ: "Mapping[str, str]",
     stdin: "bytes | None",
+    request_id: bytes,
     stdout_isatty: bool = False,
     stderr_isatty: bool = False,
 ) -> bytes:
-    """Five sections: argv, cwd, environment, stdin, and a flags byte.
+    """Six sections: argv, cwd, environment, stdin, a flags byte, and an id.
 
     Text goes through `os.fsencode`, which is what argv and paths already are:
     a file name the filesystem accepts and UTF-8 does not survives the round
@@ -184,15 +218,16 @@ def pack_request(
             pack_strings(environment),
             pack_strings([] if stdin is None else [stdin]),
             pack_strings([bytes([flags])]),
+            pack_strings([request_id]),
         ]
     )
 
 
 def unpack_request(payload: bytes) -> Request:
     sections = unpack_strings(payload)
-    if len(sections) != 5:
-        raise ProtocolError(f"a request has five sections, not {len(sections)}")
-    raw_argv, raw_cwd, raw_environ, raw_stdin, raw_flags = (
+    if len(sections) != 6:
+        raise ProtocolError(f"a request has six sections, not {len(sections)}")
+    raw_argv, raw_cwd, raw_environ, raw_stdin, raw_flags, raw_id = (
         unpack_strings(section) for section in sections
     )
     if len(raw_cwd) != 1:
@@ -203,6 +238,8 @@ def unpack_request(payload: bytes) -> Request:
         raise ProtocolError("a request carries at most one stdin")
     if len(raw_flags) != 1 or len(raw_flags[0]) != 1:
         raise ProtocolError("a request carries one flags byte")
+    if len(raw_id) != 1 or len(raw_id[0]) != REQUEST_ID_BYTES:
+        raise ProtocolError(f"a request carries one {REQUEST_ID_BYTES}-byte id")
     flags = raw_flags[0][0]
     return Request(
         argv=[os.fsdecode(argument) for argument in raw_argv],
@@ -212,6 +249,7 @@ def unpack_request(payload: bytes) -> Request:
             for index in range(0, len(raw_environ), 2)
         },
         stdin=raw_stdin[0] if raw_stdin else None,
+        request_id=raw_id[0],
         stdout_isatty=bool(flags & STDOUT_ISATTY),
         stderr_isatty=bool(flags & STDERR_ISATTY),
     )

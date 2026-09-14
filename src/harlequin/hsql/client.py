@@ -13,6 +13,10 @@ than running -- and forwards the rest opaquely, to be parsed by the same
 command the cold path builds. `hsql --session prod --badflag` gets the same message
 and the same exit code as `hsql --badflag`, because it is the same code.
 
+`Ctrl-C` is the one thing it does more than forward: the request carries an id,
+and an interrupt sends a `CANCEL` naming it on a second connection before this
+exits 130, so the query stops rather than being orphaned on the session.
+
 Diagnostics go straight to stderr rather than through
 `harlequin.hsql.diagnostics`, which costs more to import than the round trip it
 would report on. Nothing is lost: that module exists to redact, and this one
@@ -55,6 +59,12 @@ INTERRUPT = 130
 
 `harlequin.hsql.diagnostics` costs more to reach than the round trip they
 report on. `tests/unit_tests/test_hsql_session.py` pins all three to the enum.
+"""
+
+CANCEL_TIMEOUT = 5.0
+"""How long a cancel waits for the session to answer it, in seconds.
+
+The caller has already given up, so nothing here may become a second wait.
 """
 
 STDIN_ARGUMENT = "-"
@@ -106,9 +116,11 @@ def run(
             remedy=f" Start one with `hsql --serve {session.name} ...`.",
         )
     try:
-        return _exchange(connection, session, argv, environ)
+        return _exchange(connection, path, session, argv, environ)
     except KeyboardInterrupt:
-        # what the cold path exits with, and silently, for the same reason
+        # an interrupt with no request in flight -- while stdin was still being
+        # read, or before the handshake. Nothing to stop, and silent, which is
+        # what the cold path exits with
         return INTERRUPT
     except (protocol.ProtocolError, OSError) as e:
         _error(f"the session named {session.name!r} did not answer: {e}")
@@ -190,6 +202,7 @@ def _connect(path: str) -> "socket.socket | None":
 
 def _exchange(
     connection: "socket.socket",
+    path: str,
     session: "Session",
     argv: "Sequence[str]",
     environ: "Mapping[str, str]",
@@ -226,19 +239,62 @@ def _exchange(
         )
         return USAGE
 
-    protocol.send_frame(
-        connection,
-        protocol.REQUEST,
-        protocol.pack_request(
-            argv=without_session_option(argv),
-            cwd=os.getcwd(),
-            environ=protocol.forwarded_environ(environ),
-            stdin=stdin,
-            stdout_isatty=_isatty(sys.stdout),
-            stderr_isatty=_isatty(sys.stderr),
-        ),
-    )
-    return _relay(connection)
+    request_id = protocol.new_request_id()
+    try:
+        # the send is inside, so an interrupt between it and the relay still
+        # cancels: a frame it truncated is one the server never holds, and the
+        # cancel that follows is answered by a session that has nothing to stop
+        protocol.send_frame(
+            connection,
+            protocol.REQUEST,
+            protocol.pack_request(
+                argv=without_session_option(argv),
+                cwd=os.getcwd(),
+                environ=protocol.forwarded_environ(environ),
+                stdin=stdin,
+                request_id=request_id,
+                stdout_isatty=_isatty(sys.stdout),
+                stderr_isatty=_isatty(sys.stderr),
+            ),
+        )
+        return _relay(connection)
+    except KeyboardInterrupt:
+        return _cancel(path, request_id)
+
+
+def _cancel(path: str, request_id: bytes) -> int:
+    """Stop the request `request_id` names, and exit the way the cold path does.
+
+    On a second connection, because the first is carrying the response. Exit
+    130 whatever comes of it; what the session has to say arrives on the
+    caller's stderr like any other answer.
+
+    Every check the first connection made is made again, because this is a
+    fresh connect to a path that may not hold what it did: the directory is
+    this user's, and the server is this release, or nothing is sent and
+    nothing it writes is relayed to the caller's terminal.
+    """
+    try:
+        check_runtime_dir(os.path.dirname(path))
+        connection = _connect(path)
+        if connection is not None:
+            try:
+                # the caller has already given up, so this may not become a
+                # second wait: an adapter whose `cancel()` blocks would
+                # otherwise park a caller who cannot press Ctrl-C again
+                connection.settimeout(CANCEL_TIMEOUT)
+                greeting = protocol.recv_frame(connection)
+                if greeting is not None and greeting[0] == protocol.HELLO:
+                    if greeting[1].decode("utf-8", "replace") == protocol.VERSION:
+                        protocol.send_frame(connection, protocol.CANCEL, request_id)
+                        _relay(connection)
+            finally:
+                connection.close()
+    except (KeyboardInterrupt, UnsafeRuntimeDir, protocol.ProtocolError, OSError):
+        # a second Ctrl-C, or a session that went away between the two
+        # connections: the run is given up on either way
+        pass
+    return INTERRUPT
 
 
 def _isatty(stream: "TextIO") -> bool:
