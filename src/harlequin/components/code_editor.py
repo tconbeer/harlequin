@@ -454,6 +454,10 @@ class EditorCollection(Vertical):
     async def action_new_buffer(
         self, state: Union[BufferState, None] = None, activate: bool = True
     ) -> CodeEditor:
+        if self._closing or self._pruning:
+            # a collection on its way out mounts nothing, and `Tabs` raises
+            # when it activates a tab that never reached the DOM.
+            return self.editor
         self.counter += 1
         new_buffer_id = f"tab-{self.counter}"
         self.buffer_states[new_buffer_id] = (
@@ -494,6 +498,9 @@ class EditorCollection(Vertical):
     def _activate_cached_buffer(self, focus_index: int) -> None:
         """Reopens the buffer that was active when the cache was written."""
         buffer_ids = list(self.buffer_states)
+        if not buffer_ids:
+            # a collection on its way out opened none of them
+            return
         if not 0 <= focus_index < len(buffer_ids):
             focus_index = 0
         self.tabs.active = buffer_ids[focus_index]

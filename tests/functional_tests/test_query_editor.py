@@ -179,6 +179,25 @@ async def test_buffers_keep_their_state(
         assert app.editor.text_input.scroll_offset == scrolled_to
 
 
+@pytest.mark.asyncio
+async def test_a_buffer_opened_on_the_way_out_does_not_crash(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The Query Editor mounts lazily, so a quit can land before its first buffer."""
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        while app.editor is None:
+            await pilot.pause()
+
+        collection = app.editor_collection
+        # not awaited: removal marks the subtree, and the buffer opens into it
+        collection.remove()
+        editor = await collection.action_new_buffer()
+
+        assert editor is collection.current_editor
+
+
 @pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_word_autocomplete(
