@@ -239,6 +239,15 @@
           "type": "string",
           "description": "Where in the catalog --catalog looks, and what --catalog-search searches under. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters a --catalog listing."
         },
+        "history": {
+          "type": "boolean",
+          "description": "List the queries harlequin and hsql have run, newest first, and exit without running SQL. --limit says how many; -P, -a or a CONN_STR narrows it to one database.",
+          "default": false
+        },
+        "history_search": {
+          "type": "string",
+          "description": "List the logged queries whose SQL contains TERM, newest first, and exit without running SQL. Scoped like --history."
+        },
         "spec": {
           "type": "boolean",
           "description": "Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter.",

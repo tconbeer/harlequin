@@ -1,6 +1,6 @@
 ---
 name: hsql
-description: Run SQL against any database from the command line with hsql, Harlequin's headless SQL client — execute a query or a .sql file, inspect a database's schemas, tables and columns, export results as CSV/JSON/Parquet, and read or write harlequin.toml profiles. Covers DuckDB, SQLite, Postgres, MySQL and other Harlequin adapters. Use whenever the work involves running SQL, finding out what is in a database, checking a connection string or DSN, a .sql file, or a config file for a database connection — including when the user never says "hsql" or "harlequin".
+description: Run SQL against any database from the command line with hsql, Harlequin's headless SQL client — execute a query or a .sql file, inspect a database's schemas, tables and columns, read the history of queries run against it, export results as CSV/JSON/Parquet, and read or write harlequin.toml profiles. Covers DuckDB, SQLite, Postgres, MySQL and other Harlequin adapters. Use whenever the work involves running SQL, finding out what is in a database, checking a connection string or DSN, a .sql file, or a config file for a database connection — including when the user never says "hsql" or "harlequin".
 license: MIT
 allowed-tools:
   - Bash(hsql --help*)
@@ -9,6 +9,8 @@ allowed-tools:
   - Bash(hsql --spec*)
   - Bash(hsql --catalog*)
   - Bash(hsql --catalog-search*)
+  - Bash(hsql --history*)
+  - Bash(hsql --history-search*)
 metadata:
   project: harlequin
   homepage: https://harlequin.sh
@@ -22,7 +24,7 @@ flags and one output contract.
 These are standing rules, not a checklist to run once.
 
 Five references sit in `references/`; read one when you reach its job:
-`queries.md` (running SQL, reading the catalog), `config.md` (config files and
+`queries.md` (running SQL, catalog, history), `config.md` (config files and
 profiles), `scripting.md` (hsql in a shell script), `sessions.md` (`--serve` and
 `--session`), `troubleshooting.md` (a failed run, by exit code).
 

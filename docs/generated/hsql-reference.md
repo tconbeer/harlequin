@@ -40,6 +40,8 @@ Alphabetical by name. Flags are off by default.
 | `-f`, `--file` | text | `PATH` |  |  | Execute SQL from a file, or from stdin for `-`. Repeatable. |
 | `--format` | choice | `table`, `markdown`, `md`, `vertical`, `csv`, `tsv`, `json`, `jsonl`, `ndjson`, `parquet`, `orc`, `feather`, `arrow`, `none` | `table` |  | Output format. See below for the list. |
 | `--help` | boolean |  |  |  | Show this message and exit. |
+| `--history` | boolean |  |  |  | List the queries harlequin and hsql have run, newest first, and exit without running SQL. --limit says how many; -P, -a or a CONN_STR narrows it to one database. |
+| `--history-search` | text | `TERM` |  |  | List the logged queries whose SQL contains TERM, newest first, and exit without running SQL. Scoped like --history. |
 | `--idle-timeout` | number | `SECONDS` | `1800.0` |  | With --serve: stop the session once it has gone SECONDS with no request. 0 for a session that waits as long as it takes. |
 | `--info` | boolean |  |  |  | Versions, config files, the active profile, and what each installed adapter declares it supports, as JSON. Connects to nothing. -a narrows it to one adapter. |
 | `--json` | boolean |  |  |  | Shorthand for --format json. |

@@ -1,5 +1,7 @@
 """One SQLite store of every query both commands run, written as it runs.
 
+`QueryLog` writes it and `recent()` reads it, and both front ends do both.
+
 Logging never fails a query: a store that cannot be opened, migrated or written
 disables itself and records why in `failure`, for the caller to report once.
 """
@@ -14,7 +16,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence, cast
 
 from platformdirs import user_state_path
 
@@ -78,6 +80,34 @@ _INSERT = "insert into queries ({}) values ({})".format(
     ", ".join(f'"{column}"' for column in COLUMNS),
     ", ".join("?" * len(COLUMNS)),
 )
+
+READ_COLUMNS = (
+    "run_at",
+    "program",
+    "profile",
+    "adapter",
+    "status",
+    "rows",
+    "elapsed_ms",
+    "sql",
+)
+"""What a read of the store returns, in the order `recent()` selects them.
+
+Fewer than a writer supplies: `connection` is what a read filters *by* rather
+than something to report, and `truncated` and `error` describe the run that
+wrote a row rather than the query it ran.
+"""
+
+_SELECT = "select {} from queries".format(
+    ", ".join(f'"{column}"' for column in READ_COLUMNS)
+)
+
+_LIKE_ESCAPE = "\\"
+"""What `_like_literal()` puts in front of a wildcard, and the `escape` clause
+below names. Not a SQLite escape itself: `'\\'` in a SQLite string literal is
+one backslash."""
+
+_SEARCH_CLAUSE = f"\"sql\" like ? escape '{_LIKE_ESCAPE}'"
 
 BUSY_TIMEOUT_MS = 5000
 """How long a writer waits for a lock another process holds."""
@@ -319,6 +349,70 @@ def _trim(db: sqlite3.Connection) -> None:
         (RETENTION_ROWS,),
     )
     db.commit()
+
+
+def recent(
+    *,
+    connection: str | None = None,
+    search: str | None = None,
+    limit: int | None = None,
+    path: Path | None = None,
+    busy_timeout_ms: int = BUSY_TIMEOUT_MS,
+) -> list[tuple[Any, ...]]:
+    """The newest rows of the store first, as `READ_COLUMNS` describes them.
+
+    One indexed read -- a filter on `connection`, a `like` on `sql`, and a
+    limit -- so asking for twenty costs the same on a store of a hundred
+    thousand rows as on a store of twenty. `limit` is a number of rows, or None
+    for all of them.
+
+    A store that is not there yet is a history of nothing rather than an error,
+    and nothing here creates or migrates one: a reader that wrote would be a
+    reader that could fail.
+
+    Raises: sqlite3.Error, for a store that is there and cannot be read.
+    """
+    store = path if path is not None else default_path()
+    if not store.exists():
+        return []
+    db = sqlite3.connect(store)
+    try:
+        db.execute(f"pragma busy_timeout = {int(busy_timeout_ms)}")
+        (version,) = db.execute("pragma user_version").fetchone()
+        if version < 1:
+            # the file is there and the table is not, which is what a store an
+            # opener created and then could not migrate looks like
+            return []
+        clauses = []
+        values: list[Any] = []
+        if connection is not None:
+            clauses.append('"connection" = ?')
+            values.append(connection)
+        if search:
+            clauses.append(_SEARCH_CLAUSE)
+            values.append(f"%{_like_literal(search)}%")
+        where = f" where {' and '.join(clauses)}" if clauses else ""
+        # -1 is SQLite's own spelling of no limit, so one query shape serves
+        # both, and `id desc` is the index the store was built with
+        values.append(-1 if limit is None else limit)
+        rows = db.execute(
+            f'{_SELECT}{where} order by "id" desc limit ?', values
+        ).fetchall()
+    finally:
+        db.close()
+    return cast("list[tuple[Any, ...]]", rows)
+
+
+def _like_literal(term: str) -> str:
+    """One search term as `like` matches it character for character.
+
+    `_` is in half the table names there are, and unescaped it matches any
+    character: a search for `line_items` that also found `lineXitems` would be
+    a filter nobody typed.
+    """
+    for character in (_LIKE_ESCAPE, "%", "_"):
+        term = term.replace(character, _LIKE_ESCAPE + character)
+    return term
 
 
 class PermissiveEncoder(json.JSONEncoder):

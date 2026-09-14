@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Iterator, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Literal, Sequence
 
 import pyarrow as pa
 from textual_fastdatatable.backend import create_backend
@@ -345,6 +345,33 @@ def rows_to_result(
         backend=create_backend(table),
         # a listing is whole: there is no database that held more of it.
         truncated=False,
+        fetched_row_count=len(rows),
+        elapsed=0.0,
+    )
+
+
+def typed_rows_to_result(
+    columns: Sequence[tuple[str, str]],
+    rows: Sequence[Sequence[Any]],
+    *,
+    truncated: bool = False,
+) -> ResultSet:
+    """Rows a database returned to a query this module did not run.
+
+    `hsql --history` reads the query log with stdlib sqlite3, so what it holds
+    is a cursor's rows rather than a listing's: `create_backend()` infers their
+    types, the same call `fetch()` makes, so a row count reaches `--json` as a
+    number a caller can sum instead of a string it has to parse back. The price
+    is that `text_columns()` casts through duckdb, as it does for any query.
+
+    `columns` carries each column's short type label as well as its name,
+    because nothing here can infer one; the caller knows what it selected.
+    """
+    return ResultSet(
+        statement=Statement(sql="", index=0),
+        columns=list(columns),
+        backend=create_backend(rows, column_names=[name for name, _ in columns]),
+        truncated=truncated,
         fetched_row_count=len(rows),
         elapsed=0.0,
     )

@@ -4802,3 +4802,298 @@ def test_the_sql_to_run_is_not_part_of_the_connections_id(
         )
     first, second = logged(query_log_path)
     assert first["connection"] == second["connection"]
+
+
+# --- `--history`, the two modes that read the query log ----------------------
+
+
+@pytest.fixture
+def two_databases(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path
+) -> tuple[list[str], list[str]]:
+    """Two DuckDB files, with three queries between them, interleaved."""
+    first = ["-a", "duckdb", "--no-init", str(tmp_path / "first.db")]
+    second = ["-a", "duckdb", "--no-init", str(tmp_path / "second.db")]
+    for argv, sql in (
+        (first, "select 1 as one"),
+        (second, "select 2 as two"),
+        (first, "select 3 as three"),
+    ):
+        res = hsql(*argv, "--format", "none", "-c", sql)
+        assert res.exit_code == ExitCode.OK, res.stderr
+    return first, second
+
+
+def sql_column(stdout: str) -> list[str]:
+    """The `sql` cell of every row of a `-tA` listing, which is the last one."""
+    return [row.split("|")[-1] for row in stdout.splitlines()]
+
+
+def test_history_reports_every_connection_newest_first(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    """With no database named, the answer is every database this machine used:
+    the alternative is a listing of whichever one the command defaults to."""
+    res = hsql("--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == [
+        "select 3 as three",
+        "select 2 as two",
+        "select 1 as one",
+    ]
+
+
+def test_history_narrows_to_the_database_the_invocation_names(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    first, second = two_databases
+    res = hsql(*first, "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 3 as three", "select 1 as one"]
+
+    res = hsql(*second, "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 2 as two"]
+
+
+def test_history_narrows_to_the_profile_the_invocation_names(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], tmp_path: Path
+) -> None:
+    """A profile names a database as surely as a CONN_STR does."""
+    first, _ = two_databases
+    config_file = tmp_path / "profile.toml"
+    config_file.write_text(
+        '[profiles.first]\nadapter = "duckdb"\n'
+        f"conn_str = [{json.dumps(first[-1])}]\nno_init = true\n"
+    )
+    res = hsql("--config-path", str(config_file), "-P", "first", "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 3 as three", "select 1 as one"]
+
+
+def test_history_opens_no_database_but_the_store(
+    hsql: Hsql, tmp_path: Path, query_log_path: Path
+) -> None:
+    """The adapter is built to name a connection, never to make one: a path
+    that would exit 3 for a query is a listing of no rows here."""
+    missing = str(tmp_path / "nowhere" / "absent.db")
+    assert hsql("-a", "duckdb", "--no-init", missing, "-c", "select 1").exit_code == (
+        ExitCode.CONNECTION
+    )
+    res = hsql("-a", "duckdb", "--no-init", missing, "--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout == ""
+
+
+def test_history_limit_takes_from_the_newest_end(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    res = hsql("--history", "--limit", "1", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 3 as three"]
+
+
+def test_history_limit_says_there_was_more(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    """The store has a row count, so a limit on it is a hard limit like any
+    other -- and one row more than it keeps is what proves there was a fourth."""
+    res = hsql("--history", "--limit", "2")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout.strip().endswith("(2 of >2 rows)")
+
+
+def test_history_limit_of_minus_one_is_every_row(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    res = hsql("--history", "--limit", "-1", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert len(sql_column(res.stdout)) == 3
+
+
+def test_history_reports_what_the_ide_ran_too(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], query_log_path: Path
+) -> None:
+    """One store, two writers: an agent joining a task mid-stream reads the
+    queries the human has been running, and the human reads the agent's."""
+    from harlequin.query_log import QueryLog
+
+    log = QueryLog(program="harlequin", path=query_log_path)
+    log.write("select 4 as four")
+    log.close()
+
+    res = hsql("--history", "--limit", "1", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    (row,) = cells(res.stdout)
+    assert (row[1], row[-1]) == ("harlequin", "select 4 as four")
+
+
+def test_history_records_nothing_of_its_own(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], query_log_path: Path
+) -> None:
+    """Reading a history that listed the reads of it would be a history of
+    itself within a week."""
+    before = len(logged(query_log_path))
+    assert hsql("--history", "--format", "none").exit_code == ExitCode.OK
+    assert len(logged(query_log_path)) == before
+
+
+def test_history_on_a_machine_that_has_run_nothing_is_an_empty_table(
+    hsql: Hsql, query_log_path: Path
+) -> None:
+    """And it does not create the store: a reader that wrote could fail."""
+    res = hsql("--history")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout.splitlines()[0].split("|")[0].strip() == "run_at"
+    assert res.stdout.strip().endswith("(0 rows)")
+    assert not query_log_path.exists()
+
+
+def test_history_keeps_the_types_the_store_gave_it(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    """A count an agent can sum, rather than a string it has to parse back."""
+    res = hsql("--history", "--limit", "1", "--json")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    (record,) = json.loads(res.stdout)
+    assert record["rows"] == 1
+    assert isinstance(record["rows"], int)
+    assert isinstance(record["elapsed_ms"], float)
+
+
+def test_history_folds_a_query_onto_one_line(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    """`layout.py` has no concept of a cell that spans rows, and every format
+    agrees cell for cell, so the folding is the listing's and not the layout's."""
+    written = hsql(*duck, "--format", "none", "-c", "select\n  1 as a,\n  2 as b")
+    assert written.exit_code == ExitCode.OK, written.stderr
+    res = hsql("--history", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 1 as a, 2 as b"]
+
+
+def test_history_folds_the_same_way_in_every_format(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    written = hsql(*duck, "--format", "none", "-c", "select\n  1 as a")
+    assert written.exit_code == ExitCode.OK, written.stderr
+    table = hsql("--history", "-tA")
+    csv = hsql("--history", "--csv", "--no-header")
+    assert table.exit_code == ExitCode.OK, table.stderr
+    assert csv.exit_code == ExitCode.OK, csv.stderr
+    assert sql_column(table.stdout) == [
+        row.split(",")[-1] for row in csv.stdout.splitlines()
+    ]
+
+
+def test_history_search_matches_the_middle_of_a_query(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    res = hsql("--history-search", "2 as", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 2 as two"]
+
+
+def test_history_search_ignores_case(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    """SQLite's `like` is case-insensitive over ASCII, which is the behavior a
+    caller hunting for a table name wants and would not think to ask for."""
+    res = hsql("--history-search", "SELECT 2", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 2 as two"]
+
+
+def test_history_search_takes_an_underscore_literally(
+    hsql: Hsql, duck: list[str], query_log_path: Path
+) -> None:
+    """`_` matches any character in a `like`, and is in half the table names
+    there are."""
+    for sql in ("select 1 as line_items", "select 1 as lineXitems"):
+        assert hsql(*duck, "--format", "none", "-c", sql).exit_code == ExitCode.OK
+    res = hsql("--history-search", "line_items", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 1 as line_items"]
+
+
+def test_history_search_narrows_to_the_database_the_invocation_names(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    first, _ = two_databases
+    res = hsql(*first, "--history-search", "select", "-tA")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert sql_column(res.stdout) == ["select 3 as three", "select 1 as one"]
+
+
+def test_history_search_needs_a_term(hsql: Hsql) -> None:
+    """An unset shell variable, far more often than an ask for everything."""
+    res = hsql("--history-search", "")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "needs a term" in res.stderr
+
+
+def test_history_takes_every_format_a_result_set_does(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]], tmp_path: Path
+) -> None:
+    res = hsql("--history", "--limit", "1", "--markdown")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout.startswith("|")
+
+    destination = tmp_path / "history.csv"
+    res = hsql("--history", "-o", str(destination), "--csv")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout == ""
+    assert destination.read_text().startswith("run_at,")
+
+
+def test_display_rows_caps_a_history_listing(
+    hsql: Hsql, two_databases: tuple[list[str], list[str]]
+) -> None:
+    """The soft cap, over rows already read, so the footer still counts them all."""
+    res = hsql("--history", "--display-rows", "1")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    assert res.stdout.strip().endswith("(1 of 3 rows)")
+
+
+def test_history_does_not_run_sql(hsql: Hsql, duck: list[str]) -> None:
+    res = hsql(*duck, "--history", "-c", "select 1")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "does not run SQL" in res.stderr
+
+
+@pytest.mark.parametrize(
+    "modes",
+    [
+        ["--history", "--catalog"],
+        ["--history", "--history-search", "x"],
+        ["--history-search", "x", "--info"],
+    ],
+)
+def test_two_modes_in_one_invocation_is_a_usage_error(
+    hsql: Hsql, modes: list[str]
+) -> None:
+    res = hsql(*modes)
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "two modes" in res.stderr
+
+
+def test_a_store_that_cannot_be_read_is_reported_rather_than_raised(
+    hsql: Hsql, query_log_path: Path
+) -> None:
+    query_log_path.write_text("this is not a database")
+    res = hsql("--history")
+    assert res.exit_code == ExitCode.USAGE
+    assert res.stdout == ""
+    assert "query history" in res.stderr
+
+
+def test_history_is_in_the_help(hsql: Hsql) -> None:
+    res = hsql("--help")
+    assert res.exit_code == ExitCode.OK
+    assert "--history" in res.output
+    assert "--history-search" in res.output
+    assert f"{PROGRAM} --history" in res.output

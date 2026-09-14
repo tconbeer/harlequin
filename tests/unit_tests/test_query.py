@@ -15,6 +15,7 @@ from harlequin.query import (
     execute,
     fetch,
     rows_to_result,
+    typed_rows_to_result,
 )
 from harlequin.statements import Statement, split
 
@@ -485,3 +486,37 @@ class TestRowsToResult:
         result = rows_to_result(["name", "adapter"], [])
         assert [name for name, _ in result.columns] == ["name", "adapter"]
         assert result.row_count == 0
+
+
+class TestTypedRowsToResult:
+    """Rows a database returned to a query this module did not run."""
+
+    COLUMNS = (("sql", "s"), ("rows", "#"), ("elapsed_ms", "#"))
+
+    def test_the_values_keep_the_types_they_arrived_with(self) -> None:
+        """Which is the difference between a count an agent can sum and a
+        string it has to parse back."""
+        result = typed_rows_to_result(self.COLUMNS, [("select 1", 42, 12.5)])
+        assert result.columns == list(self.COLUMNS)
+        assert result.arrow_table().to_pylist() == [
+            {"sql": "select 1", "rows": 42, "elapsed_ms": 12.5}
+        ]
+        assert result.text_columns().to_pylist() == [
+            {"sql": "select 1", "rows": "42", "elapsed_ms": "12.5"}
+        ]
+
+    def test_no_rows_is_still_a_header(self) -> None:
+        result = typed_rows_to_result(self.COLUMNS, [])
+        assert [name for name, _ in result.columns] == ["sql", "rows", "elapsed_ms"]
+        assert result.row_count == 0
+        assert result.truncated is False
+
+    def test_a_caller_that_probed_for_one_more_row_can_say_so(self) -> None:
+        """The rows it keeps are the rows it was asked for; the probe proves
+        there was another, and the footer says `>`."""
+        result = typed_rows_to_result(
+            self.COLUMNS, [("select 1", 1, 1.0)], truncated=True
+        )
+        assert result.row_count == 1
+        assert result.fetched_row_count == 1
+        assert result.truncated is True

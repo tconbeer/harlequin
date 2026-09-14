@@ -19,12 +19,14 @@ import pytest
 from harlequin import query_log
 from harlequin.query_log import (
     MIGRATIONS,
+    READ_COLUMNS,
     RETENTION_ROWS,
     SCHEMA_VERSION,
     QueryLog,
     connection_id,
     default_path,
     get_connection_hash,
+    recent,
 )
 from harlequin.redact import REDACTED, hide_secrets_in
 
@@ -396,6 +398,93 @@ def test_several_processes_can_write_at_once(store: Path) -> None:
         for future in [pool.submit(_insert_many, str(store)) for _ in range(4)]:
             future.result()
     assert len(rows(store)) == 400
+
+
+# --- reading it back ---------------------------------------------------------
+
+
+def written(store: Path, *records: tuple[str, str | None]) -> None:
+    """One row per (sql, connection) pair, in the order given."""
+    for sql, connection in records:
+        log = QueryLog(program="hsql", connection=connection, path=store)
+        log.write(sql)
+        log.close()
+
+
+def test_recent_returns_the_newest_rows_first(store: Path) -> None:
+    written(store, ("select 1", "a"), ("select 2", "a"), ("select 3", "a"))
+    assert [row[-1] for row in recent(path=store)] == [
+        "select 3",
+        "select 2",
+        "select 1",
+    ]
+
+
+def test_recent_returns_the_columns_the_history_mode_names(store: Path) -> None:
+    """The listing labels its columns out of one of these and reads the other."""
+    from harlequin.hsql.modes.history import COLUMNS
+
+    assert READ_COLUMNS == tuple(name for name, _ in COLUMNS)
+    written(store, ("select 1", "a"))
+    (row,) = recent(path=store)
+    assert len(row) == len(READ_COLUMNS)
+    assert dict(zip(READ_COLUMNS, row, strict=True))["program"] == "hsql"
+
+
+def test_recent_narrows_to_one_connection(store: Path) -> None:
+    written(store, ("select 1", "a"), ("select 2", "b"), ("select 3", "a"))
+    assert [row[-1] for row in recent(connection="a", path=store)] == [
+        "select 3",
+        "select 1",
+    ]
+
+
+def test_recent_takes_its_limit_from_the_newest_end(store: Path) -> None:
+    written(store, ("select 1", "a"), ("select 2", "a"))
+    assert [row[-1] for row in recent(limit=1, path=store)] == ["select 2"]
+    assert recent(limit=0, path=store) == []
+
+
+def test_recent_searches_the_sql_wherever_the_term_falls(store: Path) -> None:
+    written(store, ("select * from orders", "a"), ("select 1", "a"))
+    assert [row[-1] for row in recent(search="ORD", path=store)] == [
+        "select * from orders"
+    ]
+
+
+def test_recent_matches_a_wildcard_in_a_term_literally(store: Path) -> None:
+    """`_` and `%` are `like`'s, and a table name is full of the first."""
+    written(store, ("select line_items", "a"), ("select lineXitems", "a"))
+    assert [row[-1] for row in recent(search="line_items", path=store)] == [
+        "select line_items"
+    ]
+    written(store, ("select '100%'", "a"), ("select '100 pct'", "a"))
+    assert [row[-1] for row in recent(search="100%", path=store)] == ["select '100%'"]
+
+
+def test_recent_reads_a_store_that_is_not_there_as_a_history_of_nothing(
+    store: Path,
+) -> None:
+    assert recent(path=store) == []
+    assert not store.exists()
+
+
+def test_recent_reads_a_store_nothing_was_migrated_into_as_empty(store: Path) -> None:
+    """What a store an opener created and then could not build looks like."""
+    store.parent.mkdir(parents=True)
+    store.touch()
+    assert recent(path=store) == []
+
+
+def test_recent_raises_for_a_store_that_is_there_and_is_not_a_database(
+    store: Path,
+) -> None:
+    """The caller reports it: a history that could not be read is not an empty
+    one, and saying so is the difference between a bug and a blank listing."""
+    store.parent.mkdir(parents=True)
+    store.write_text("this is not a database")
+    with pytest.raises(sqlite3.Error):
+        recent(path=store)
 
 
 # --- what a connection is keyed by -------------------------------------------

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- `hsql --history` lists the queries Harlequin and hsql have run, newest first, and `hsql --history-search TERM` lists the ones whose SQL mentions TERM. Both take every format and layout flag a query does; `-P`, `-a` or a connection string narrows them to one database ([#429](https://github.com/tconbeer/harlequin/issues/429)).
+
 ## [2.14.0] - 2026-09-14
 
 ### Features
