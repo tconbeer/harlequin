@@ -681,7 +681,7 @@ release that forgot fails in the release PR rather than in a user's shell.
 {"session":"prod","pid":8123,"version":"2.13.0","adapter":"duckdb",
  "connection":"/home/ted/warehouse.db","connection_options":{"read_only":true},
  "uptime_s":412,"requests":37,"state":"idle","queued":0,
- "transaction_mode":null,"ssh":null,"idle_timeout_s":null,"expires_in_s":null}
+ "transaction_mode":null,"ssh":null,"idle_timeout_s":1800,"expires_in_s":1788.4}
 ```
 
 `connection_options` is the rest of §4.4's identity — what a request's own
@@ -689,8 +689,11 @@ connection options are compared against — masked by whatever each adapter decl
 `secret=`. It holds what the session was *given*: an option it never named is one
 its adapter defaulted for itself, which core cannot enumerate, so `read_only` appears
 only for a session started with it. `state` is `idle`, `busy`, or `unavailable` for a
-session whose connection a reset has to bring back. `idle_timeout_s` and
-`expires_in_s` are null until PR 5 builds them.
+session whose connection a reset has to bring back. `idle_timeout_s` is the idle
+clock as it was set, and `expires_in_s` the sooner of the two countdowns — with
+the idle one left out while a request holds the connection, since a session in
+the middle of a query is not idle for any length of time yet. Either is null
+where the clock behind it is off.
 
 Answerable while a query is running (§4.5), which is what makes "is it hung or is it slow"
 a question with an answer. `transaction_mode` is on it because §5 says it has to be.
@@ -945,8 +948,22 @@ them; everything after is additive and independently revertible.
    driver call, so nothing can start between the check and the interrupt. The client's
    half of the same rule is that the send and the relay are under one `try`, or an
    interrupt landing between them exits 130 having sent no cancel at all.
-5. **Lifecycle and state hygiene.** `--idle-timeout`, `--max-lifetime`, transaction-mode
-   reporting, and the secret-on-a-server-command-line warning (§4.1).
+5. **Lifecycle and state hygiene. Shipped.** `--idle-timeout`, `--max-lifetime`,
+   transaction-mode reporting, and the secret-on-a-server-command-line warning (§4.1).
+
+   Three things this PR settled that the plan did not name. **A status poll is not
+   use of a session**, so it does not touch the idle clock: an agent that watches a
+   session it has stopped sending queries to would otherwise keep the credential
+   open by watching it, which is the outcome the clock exists to prevent. **The
+   idle clock does not run while a request does**, and the lifetime clock does —
+   the first is about a session nobody wants and the second bounds the credential,
+   so a query that takes an hour is not idle and is not exempt either; a lifetime
+   that runs out mid-query stops the accept loop and lets the request in flight
+   finish, which is the path a stop signal already took. And **the default a
+   transaction mode is compared against is the one the session connected in**,
+   re-read on every `--session-reset`, because the contract offers no way to ask an
+   adapter which of its modes is its default — so what is reported is that the
+   session is not where it started, which is the fact a caller has to act on.
 6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
    `SessionStart`-hook example and an `hsql --help` mention. Not optional and not last in
    spirit — a feature that must be deliberately adopted is a feature that lives or dies by

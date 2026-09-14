@@ -140,6 +140,72 @@ def report_session_ready(name: str, adapter: str, *, stream: TextIO) -> None:
     )
 
 
+def report_session_expired(
+    name: str, flag: str, seconds: float, *, stream: TextIO
+) -> None:
+    """Say that one of a session's own clocks brought it down.
+
+    On the operator's stream and ahead of the stopped line, so that a terminal
+    someone comes back to says why the session is gone rather than only that
+    it is.
+    """
+    ran_out = (
+        f"has had no request for {format_duration(seconds)}"
+        if flag == "--idle-timeout"
+        else f"has been up for {format_duration(seconds)}"
+    )
+    note(
+        f"session {name!r} {ran_out}, so it is stopping ({flag}). "
+        f"Pass `{flag} 0` for a session that runs until something stops it.",
+        stream=stream,
+    )
+
+
+def report_transaction_mode(name: str, mode: str, *, stream: TextIO) -> None:
+    """Say that a session is not in the transaction mode it connected in.
+
+    On the caller's stream, after their request, and every time rather than
+    once: a cold invocation rolled an open transaction back by exiting and a
+    session does not, so every later request runs inside whatever this one
+    left open, and whatever it locked stays locked.
+    """
+    note(
+        f"session {name!r} is in transaction mode {mode!r}, which is not the "
+        f"one it connected in. What it holds open is held until the session is "
+        f"told otherwise: `{PROGRAM} --session {name} -c commit`, the same with "
+        f"`rollback`, or `{PROGRAM} --session {name} --session-reset`.",
+        stream=stream,
+    )
+
+
+def report_secret_on_a_server_command_line(named: Sequence[str], *, name: str) -> None:
+    """Warn that a credential typed beside `--serve` is visible for hours.
+
+    The same flag on a one-shot invocation is in `ps` for a third of a second;
+    on a session it is there for as long as the session runs, which is what
+    makes it worth saying.
+    """
+    note(
+        f"{', '.join(named)} put a secret on this command line, and a session's "
+        f"command line is readable in `ps` by every process on this machine for "
+        f"as long as the session runs. A profile keeps it out of the process "
+        f"table: '{PROGRAM} --serve {name} -P PROFILE'."
+    )
+
+
+def format_duration(seconds: float) -> str:
+    """A number of seconds the way a person writes one: `45s`, `30m`, `8h`.
+
+    Whole units only, and the largest that divides it, because this prints a
+    knob's value back at whoever set it and `0.5h` is not how anyone spells
+    half an hour.
+    """
+    for size, unit in ((3600, "h"), (60, "m")):
+        if seconds >= size and seconds % size == 0:
+            return f"{seconds / size:g}{unit}"
+    return f"{seconds:g}s"
+
+
 def report_session_stopped(name: str, requests: int, *, stream: TextIO) -> None:
     note(
         f"session {name!r} stopped after {requests} "

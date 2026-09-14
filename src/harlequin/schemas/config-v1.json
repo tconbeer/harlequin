@@ -263,6 +263,16 @@
           "type": "number",
           "description": "With --serve: a request waits at most SECONDS for the one before it, then exits 4 without reaching the database. [default: no limit]"
         },
+        "idle_timeout": {
+          "type": "number",
+          "description": "With --serve: stop the session once it has gone SECONDS with no request. 0 for a session that waits as long as it takes.",
+          "default": 1800.0
+        },
+        "max_lifetime": {
+          "type": "number",
+          "description": "With --serve: stop the session SECONDS after it connected, whatever it is doing; a request already running finishes first. 0 for a session that runs until something stops it.",
+          "default": 28800.0
+        },
         "limit": {
           "type": "integer",
           "description": "Maximum rows fetched per result set. -1 for no limit.",

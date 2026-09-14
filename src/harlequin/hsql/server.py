@@ -28,6 +28,13 @@ write its socket can use, so the socket is the credential: `AF_UNIX` only, in
 a directory only this user can reach, and every peer's uid is checked on
 accept. Native Windows has no `AF_UNIX`, so this is POSIX only; WSL2 is Linux
 and gets it.
+
+A credential nobody remembers opening is the predictable bad end of that, so a
+session carries two clocks of its own: `--idle-timeout` on how long it may sit
+unused, and `--max-lifetime` on how long it may run at all. Either one runs out
+the way a stop signal arrives -- stop accepting, answer what is already in,
+close the connection -- so the request in flight when it does still gets its
+answer.
 """
 
 from __future__ import annotations
@@ -297,6 +304,8 @@ class Server:
         options: Sequence[AbstractOption] | None = None,
         ssh: str | None = None,
         queue_timeout: float | None = None,
+        idle_timeout: float | None = None,
+        max_lifetime: float | None = None,
         implements_cancel: bool = False,
         environ: Mapping[str, str] | None = None,
     ) -> None:
@@ -314,6 +323,16 @@ class Server:
         self._reconnect = reconnect
         self._abandoned = False
         self._queue_timeout = queue_timeout
+        self._idle_timeout = idle_timeout
+        self._max_lifetime = max_lifetime
+        """The two clocks that bring a session down on their own. None is a
+        clock switched off, which `--idle-timeout 0` is how a caller asks for."""
+        self._active_at = self._started
+        """When this session last had a request to answer, which is where the
+        idle clock counts from."""
+        self._default_transaction_mode = _transaction_mode_of(connection)
+        """The mode the session connected in, and so the one a request that
+        leaves it in another is worth telling its caller about."""
         self._implements_cancel = implements_cancel
         """Whether this adapter's `cancel()` is real, and so whether a caller
         who interrupts a query is stopping it or only detaching from it."""
@@ -359,10 +378,24 @@ class Server:
             "queued": queued,
             "transaction_mode": self._transaction_mode(),
             "ssh": self._ssh,
-            # null until --idle-timeout and --max-lifetime can answer them
-            "idle_timeout_s": None,
-            "expires_in_s": None,
+            "idle_timeout_s": self._idle_timeout,
+            "expires_in_s": self._expires_in(busy or bool(queued)),
         }
+
+    def _expires_in(self, busy: bool) -> "float | None":
+        """Seconds until this session stops on its own, or None if it will not.
+
+        The sooner of the two clocks, and neither is a promise about work that
+        has not arrived: the idle one counts only while nothing is running, so
+        a busy session is answered by its lifetime alone.
+        """
+        now = time.monotonic()
+        clocks: list[float] = []
+        if self._max_lifetime is not None:
+            clocks.append(self._max_lifetime - (now - self._started))
+        if self._idle_timeout is not None and not busy:
+            clocks.append(self._idle_timeout - (now - self._active_at))
+        return round(max(min(clocks), 0.0), 1) if clocks else None
 
     def _state(self, busy: bool) -> str:
         if self._abandoned or self._connection is None:
@@ -379,16 +412,37 @@ class Server:
         if not self._turnstile.enter(0):
             return None
         try:
-            connection = self._connection
-            if connection is None:
-                return None
-            try:  # adapters are third-party code
-                mode = connection.transaction_mode
-            except Exception:
-                return None
-            return None if mode is None else mode.label
+            return self._read_transaction_mode()
         finally:
             self._turnstile.leave()
+
+    def _read_transaction_mode(self) -> "str | None":
+        """The connection's transaction mode now, for a caller holding the turn.
+
+        None where there is nothing to read: an adapter with no modes, a
+        session without a connection, or one whose connection belongs to a
+        thread that outlasted the cancel that was meant to stop it.
+        """
+        connection = self._connection
+        if connection is None or self._abandoned:
+            return None
+        return _transaction_mode_of(connection)
+
+    def _note_transaction_mode(self, segments: "list[tuple[int, bytearray]]") -> None:
+        """Tell the caller that the session is not in the mode it connected in.
+
+        Every time, rather than on the invocation that changed it: a `BEGIN`
+        left open is a session holding locks that every later request runs
+        inside, and the caller who finds that out is whichever one it breaks.
+        On the caller's stream, since the operator's terminal is somewhere
+        else and may have nobody in front of it.
+        """
+        mode = self._read_transaction_mode()
+        if mode is None or mode == self._default_transaction_mode:
+            return
+        recorder = Recorder()
+        diagnostics.report_transaction_mode(self.name, mode, stream=recorder.stderr())
+        segments.extend(recorder.segments)
 
     def stop(self) -> None:
         """Ask the accept loop to finish, from any thread."""
@@ -475,6 +529,9 @@ class Server:
             except HarlequinConnectionError as e:
                 self._connection_error = e.msg
                 raise
+        # a fresh connection is the mode a session starts in all over again,
+        # which is the whole of what a reset is for
+        self._default_transaction_mode = _transaction_mode_of(self._connection)
 
     def abandon(self) -> None:
         self._abandoned = True
@@ -608,9 +665,36 @@ class Server:
             self._lock.close()
             self._lock = None
 
+    def _expired(self) -> "tuple[str, float] | None":
+        """Which of the session's own clocks has run out, and what it was set to.
+
+        Read between accepts rather than on a timer thread: a clock that only
+        has to be looked at every half second is one fewer thread around a
+        connection nothing promises is safe to share. The lifetime bounds the
+        credential whatever the session is doing, so it runs out mid-query; the
+        idle clock is about a session nobody is using, so a busy one is not
+        idle however long the query has been going.
+        """
+        now = time.monotonic()
+        if self._max_lifetime is not None and now - self._started >= self._max_lifetime:
+            return "--max-lifetime", self._max_lifetime
+        if self._idle_timeout is None:
+            return None
+        busy, queued = self._turnstile.snapshot()
+        if busy or queued or now - self._active_at < self._idle_timeout:
+            return None
+        return "--idle-timeout", self._idle_timeout
+
     def _accept(self, listener: socket.socket) -> None:
         listener.settimeout(ACCEPT_POLL_SECONDS)
         while not self._stopping.is_set():
+            expired = self._expired()
+            if expired is not None:
+                flag, seconds = expired
+                diagnostics.report_session_expired(
+                    self.name, flag, seconds, stream=self._stderr
+                )
+                return
             try:
                 connection, _ = listener.accept()
             except TimeoutError:
@@ -694,6 +778,10 @@ class Server:
                 diagnostics.report_bad_request(str(e), stream=self._stderr)
                 return
 
+            # a request is what the idle clock counts; a status poll or a
+            # cancel is bookkeeping about a session rather than use of one,
+            # and a caller watching a session must not be what keeps it up
+            self._active_at = time.monotonic()
             in_flight = self._hold(request.request_id)
             if not self._turnstile.enter(self._queue_timeout):
                 self._release(in_flight)
@@ -707,6 +795,9 @@ class Server:
             try:
                 if self._take_turn(in_flight):
                     segments, code = self._run(request, in_flight)
+                    # under the turn, because reading it asks the connection a
+                    # question and requests have it one at a time
+                    self._note_transaction_mode(segments)
                 else:
                     # cancelled while it waited for the request ahead of it
                     segments, code = [], int(ExitCode.INTERRUPT)
@@ -715,6 +806,7 @@ class Server:
                 self._release(in_flight)
                 self._turnstile.leave()
             self._requests += 1
+            self._active_at = time.monotonic()
             elapsed_ms = round((time.monotonic() - started) * 1000)
             self._answer(connection, segments, code)
             diagnostics.report_request(
@@ -923,6 +1015,20 @@ def _warm_imports() -> None:
     import harlequin.layout  # noqa: F401
     import harlequin.query  # noqa: F401
     import harlequin.statements  # noqa: F401
+
+
+def _transaction_mode_of(connection: "HarlequinConnection") -> "str | None":
+    """One connection's transaction mode as a label, or None where it has none.
+
+    Adapters are third-party code and this is read on a path that must not
+    fail: an adapter that raises here is one with nothing to say about its
+    transaction state, which is the same answer as an adapter with no modes.
+    """
+    try:
+        mode = connection.transaction_mode
+    except Exception:
+        return None
+    return None if mode is None else mode.label
 
 
 def peer_uid(connection: socket.socket) -> int | None:

@@ -36,10 +36,10 @@ parses every served request with this same command, and `ctx.obj` carries the
 session into the callback. Every option is in exactly one group, decided by
 when its value can be read: connection-time (`CONN_STR`, `-a`, `-P`, the SSH
 options, every adapter's), per-request (`-c`, `--format`, every mode), and
-server-lifetime (`--queue-timeout`). `--serve` refuses the second group and a
-served request refuses the third; each refusal names the invocation the option
-belongs on. `docs/cli-options.md` is the reference, and the checklist for
-adding one.
+server-lifetime (`--queue-timeout`, `--idle-timeout`, `--max-lifetime`).
+`--serve` refuses the second group and every other invocation refuses the
+third; each refusal names the invocation the option belongs on.
+`docs/cli-options.md` is the reference, and the checklist for adding one.
 """
 
 from __future__ import annotations
@@ -152,8 +152,23 @@ one belongs to is decided by what it resolves to. A profile of nothing but
 lets a served `-P` behave the way a discovered `default_profile` does.
 """
 
-SERVER_OPTIONS = frozenset({"queue_timeout"})
+SERVER_OPTIONS = frozenset({"queue_timeout", "idle_timeout", "max_lifetime"})
 """Set once per server, and bound to its lifetime."""
+
+SERVER_OPTION_BOUNDS = {
+    "queue_timeout": "how long a request waits for the one before it",
+    "idle_timeout": "how long a session sits with nothing to do",
+    "max_lifetime": "how long a session runs at all",
+}
+"""What each of them bounds, for the error that refuses it anywhere else."""
+
+DEFAULT_IDLE_TIMEOUT = 1800.0
+DEFAULT_MAX_LIFETIME = 28800.0
+"""How long a session waits with nothing to do, and how long it runs at all.
+
+A session is a live authenticated connection, so it is bounded unless an
+operator says otherwise; `0` is how they say so.
+"""
 
 ROLE_OPTIONS = frozenset({"serve", "session"})
 """The two spellings that say which process an invocation is."""
@@ -495,7 +510,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         help=(
             "Connect, then hold the connection open as the session named NAME "
             "and answer `--session NAME` invocations from it until stopped. "
-            "Takes connection options only. Not on native Windows."
+            "Takes connection and session-lifetime options; no per-request "
+            "ones. Not on native Windows."
         ),
     )
     @click.option(
@@ -533,6 +549,29 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             "With --serve: a request waits at most SECONDS for the one before "
             "it, then exits 4 without reaching the database. [default: no "
             "limit]"
+        ),
+    )
+    @click.option(
+        "--idle-timeout",
+        metavar="SECONDS",
+        default=DEFAULT_IDLE_TIMEOUT,
+        show_default="1800 (30 minutes)",
+        type=click.FloatRange(min=0),
+        help=(
+            "With --serve: stop the session once it has gone SECONDS with no "
+            "request. 0 for a session that waits as long as it takes."
+        ),
+    )
+    @click.option(
+        "--max-lifetime",
+        metavar="SECONDS",
+        default=DEFAULT_MAX_LIFETIME,
+        show_default="28800 (8 hours)",
+        type=click.FloatRange(min=0),
+        help=(
+            "With --serve: stop the session SECONDS after it connected, "
+            "whatever it is doing; a request already running finishes first. "
+            "0 for a session that runs until something stops it."
         ),
     )
     @click.option(
@@ -673,13 +712,11 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 if adapter_cls is not None
                 else None,
             )
-        elif "queue_timeout" in explicitly_set:
-            diagnostics.error(
-                "--queue-timeout is a --serve option: it bounds how long a "
-                "request waits for the one before it."
-            )
-            ctx.exit(ExitCode.USAGE)
+        else:
+            _refuse_server_options(ctx, typed=explicitly_set)
         raw_queue_timeout = values.pop("queue_timeout", None)
+        raw_idle_timeout = values.pop("idle_timeout", DEFAULT_IDLE_TIMEOUT)
+        raw_max_lifetime = values.pop("max_lifetime", DEFAULT_MAX_LIFETIME)
         # what a session records about itself, taken before hsql's own keys
         # come off `values`: the two halves have to read the same snapshot,
         # or a request would be compared against something else
@@ -687,6 +724,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
 
         # redact secrets in config values and CLI args
         hide_secrets_in(values, adapter_options)
+        if serve is not None:
+            _warn_about_a_secret_on_this_command_line(
+                ctx,
+                serve,
+                values=values,
+                typed=typed_options,
+                options=adapter_options,
+            )
 
         # every key hsql owns comes off here; whatever is left is the adapter's
         conn_str: Sequence[str] | str = values.pop("conn_str", tuple())
@@ -896,6 +941,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             timeout_seconds, abandon=None if served is None else served.abandon
         )
         queue_timeout = _timeout_seconds(ctx, raw_queue_timeout, key="--queue-timeout")
+        idle_timeout = _server_seconds(ctx, raw_idle_timeout, key="--idle-timeout")
+        max_lifetime = _server_seconds(ctx, raw_max_lifetime, key="--max-lifetime")
 
         if ssh_config.get("ssh_host"):
             # entered before the child exists: `start()` blocks for the whole
@@ -926,6 +973,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                     else None,
                     ssh=None if tunnel is None else tunnel.notice(),
                     queue_timeout=queue_timeout,
+                    idle_timeout=idle_timeout,
+                    max_lifetime=max_lifetime,
                     implements_cancel=(
                         adapter_cls is not None and adapter_cls.IMPLEMENTS_CANCEL
                     ),
@@ -1331,6 +1380,8 @@ def _serve(
     options: "Sequence[AbstractOption] | None",
     ssh: str | None,
     queue_timeout: float | None,
+    idle_timeout: float | None,
+    max_lifetime: float | None,
     implements_cancel: bool,
 ) -> ExitCode:
     """Connect, and serve the session called `name` until the server stops."""
@@ -1351,6 +1402,8 @@ def _serve(
         options=options,
         ssh=ssh,
         queue_timeout=queue_timeout,
+        idle_timeout=idle_timeout,
+        max_lifetime=max_lifetime,
         implements_cancel=implements_cancel,
     ).serve()
 
@@ -1410,6 +1463,56 @@ def _refuse_per_request_options(
                 f"'{PROGRAM} --session {name} {spelling} ...'."
             )
             ctx.exit(ExitCode.USAGE)
+
+
+def _warn_about_a_secret_on_this_command_line(
+    ctx: click.Context,
+    name: str,
+    *,
+    values: Mapping[str, Any],
+    typed: set[str],
+    options: "Sequence[AbstractOption] | None",
+) -> None:
+    """Warn that this `--serve` typed a credential the process table will hold.
+
+    Only what the caller typed, since a profile is the remedy it points at.
+    What counts as a secret is the adapter's declaration and
+    `harlequin.redact`'s reading of a DSN, which is what masks a status
+    document too.
+    """
+    from harlequin.redact import redact_conn_str, redact_profile
+
+    named: list[str] = []
+    for key in sorted(typed):
+        if key not in values:
+            continue
+        value = values[key]
+        if key == "conn_str":
+            # positional, and so declared by no option: it carries a secret
+            # when one is written inside it, which is what this answers
+            items = list(value) if isinstance(value, (list, tuple)) else [value]
+            carries = redact_conn_str(items) != items
+        else:
+            carries = redact_profile({key: value}, options)[key] != value
+        if carries:
+            named.append(_spelling(ctx, key))
+    if named:
+        diagnostics.report_secret_on_a_server_command_line(named, name=name)
+
+
+def _refuse_server_options(ctx: click.Context, *, typed: set[str]) -> None:
+    """Refuse a cold invocation that carries a server-lifetime option.
+
+    The other half of `--serve` refusing the per-request group: an option only
+    a server has is one a caller who typed it here meant for a session, and
+    silently ignoring it would leave them believing they had set it.
+    """
+    for key in sorted(typed & SERVER_OPTIONS):
+        diagnostics.error(
+            f"{_spelling(ctx, key)} is a --serve option: it bounds "
+            f"{SERVER_OPTION_BOUNDS[key]}."
+        )
+        ctx.exit(ExitCode.USAGE)
 
 
 def _refuse_unservable_name(ctx: click.Context, name: str) -> None:
@@ -1707,6 +1810,18 @@ def _timeout_seconds(
     except HarlequinConfigError as e:
         diagnostics.report_error(e)
         ctx.exit(ExitCode.USAGE)
+
+
+def _server_seconds(ctx: click.Context, raw: Any, *, key: str) -> float | None:
+    """How long a session may idle or live, or None where the clock is off.
+
+    `0` is an off switch these two carry and `--timeout` does not: a run has
+    no deadline until a caller sets one, so there is nothing for zero to turn
+    off there.
+    """
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw == 0:
+        return None
+    return _timeout_seconds(ctx, raw, key=key)
 
 
 def _deadline(

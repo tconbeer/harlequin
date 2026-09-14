@@ -40,11 +40,13 @@ Alphabetical by name. Flags are off by default.
 | `-f`, `--file` | text | `PATH` |  |  | Execute SQL from a file, or from stdin for `-`. Repeatable. |
 | `--format` | choice | `table`, `markdown`, `md`, `vertical`, `csv`, `tsv`, `json`, `jsonl`, `ndjson`, `parquet`, `orc`, `feather`, `arrow`, `none` | `table` |  | Output format. See below for the list. |
 | `--help` | boolean |  |  |  | Show this message and exit. |
+| `--idle-timeout` | number | `SECONDS` | `1800.0` |  | With --serve: stop the session once it has gone SECONDS with no request. 0 for a session that waits as long as it takes. |
 | `--info` | boolean |  |  |  | Versions, config files, the active profile, and what each installed adapter declares it supports, as JSON. Connects to nothing. -a narrows it to one adapter. |
 | `--json` | boolean |  |  |  | Shorthand for --format json. |
 | `--jsonl` | boolean |  |  |  | Shorthand for --format jsonl. |
 | `--limit` | integer | `N` | `500` |  | Maximum rows fetched per result set. -1 for no limit. |
 | `--markdown` | boolean |  |  |  | Shorthand for --format markdown. |
+| `--max-lifetime` | number | `SECONDS` | `28800.0` |  | With --serve: stop the session SECONDS after it connected, whatever it is doing; a request already running finishes first. 0 for a session that runs until something stops it. |
 | `-A`, `--no-align` | boolean |  |  |  | Unaligned output. As in psql. |
 | `--no-footer` | boolean |  |  |  | Omit the row-count footer, keeping other chrome. |
 | `--no-header` | boolean |  |  |  | Omit the header row, keeping other chrome. |
@@ -56,7 +58,7 @@ Alphabetical by name. Flags are off by default.
 | `--queue-timeout` | number | `SECONDS` |  |  | With --serve: a request waits at most SECONDS for the one before it, then exits 4 without reaching the database. [default: no limit] |
 | `-r`, `--read-only` | boolean |  |  |  | Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info. |
 | `--result` | text | `all\|last\|N` | `all` |  | Which result set(s) to emit. |
-| `--serve` | text | `NAME` |  |  | Connect, then hold the connection open as the session named NAME and answer `--session NAME` invocations from it until stopped. Takes connection options only. Not on native Windows. |
+| `--serve` | text | `NAME` |  |  | Connect, then hold the connection open as the session named NAME and answer `--session NAME` invocations from it until stopped. Takes connection and session-lifetime options; no per-request ones. Not on native Windows. |
 | `--session` | text | `NAME` |  |  | Send this invocation to the running session named NAME, started with --serve. HSQL_SESSION=NAME does the same for every invocation, and runs without the session, with a warning, when none is up. |
 | `--session-reset` | boolean |  |  |  | Ask the session to close its connection and open a fresh one, and exit without running SQL. Temp tables, settings and an open transaction are gone. Needs --session. |
 | `--session-status` | boolean |  |  |  | Poll the server for its status as JSON, and exit. Reports while a query is running. Needs --session. |
