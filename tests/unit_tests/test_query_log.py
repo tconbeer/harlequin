@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from harlequin import query_log
 from harlequin.query_log import (
     MIGRATIONS,
     RETENTION_ROWS,
@@ -38,6 +39,11 @@ def store(tmp_path: Path) -> Path:
 @pytest.fixture
 def log(store: Path) -> QueryLog:
     return QueryLog(program="hsql", connection="abc123", path=store)
+
+
+def next_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forget which stores have been trimmed, as starting a process does."""
+    monkeypatch.setattr("harlequin.query_log._trimmed", set())
 
 
 def rows(store: Path, columns: str = "*") -> list[dict[str, Any]]:
@@ -227,18 +233,46 @@ def test_retention_trims_from_the_oldest_end(
 
     # trimming is once per process, so it is the next run that finds them
     assert len(rows(store)) == 8
+    next_process(monkeypatch)
     QueryLog(program="hsql", path=store).write("select 8")
     assert [record["sql"] for record in rows(store)] == [
         f"select {n}" for n in range(3, 9)
     ]
 
 
-def test_retention_keeps_a_store_smaller_than_the_cap_whole(store: Path) -> None:
+def test_retention_keeps_a_store_smaller_than_the_cap_whole(
+    store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     first = QueryLog(program="hsql", path=store)
     first.write("select 1")
     first.close()
+    next_process(monkeypatch)
     QueryLog(program="hsql", path=store).write("select 2")
     assert len(rows(store)) == 2
+
+
+def test_a_second_log_on_one_store_does_not_trim_it_again(
+    store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What keeps retention off a warm session's per-request path: it opens a
+    log for every request it answers, and the walk a trim costs grows with the
+    store."""
+    monkeypatch.setattr("harlequin.query_log.RETENTION_ROWS", 5)
+    QueryLog(program="hsql", path=store).write("select 0")
+    trims = 0
+    real_trim = query_log._trim
+
+    def counted(db: sqlite3.Connection) -> None:
+        nonlocal trims
+        trims += 1
+        real_trim(db)
+
+    monkeypatch.setattr("harlequin.query_log._trim", counted)
+    for n in range(1, 9):
+        QueryLog(program="hsql", path=store).write(f"select {n}")
+    assert trims == 0
+    # and so the rows over the cap are still there for the next process
+    assert len(rows(store)) == 9
 
 
 def test_holding_a_log_opens_nothing(store: Path) -> None:

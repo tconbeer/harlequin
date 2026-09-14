@@ -53,6 +53,12 @@ SCHEMA_VERSION = len(MIGRATIONS)
 RETENTION_ROWS = 100_000
 """How many of the newest rows survive. Trimmed once per process."""
 
+_trimmed: set[Path] = set()
+_trimmed_lock = threading.Lock()
+"""The stores this process has trimmed. A warm session opens a log per request,
+and the walk a trim costs grows with the store -- 10ms of it at the cap -- so a
+session would pay for retention on every query it answered."""
+
 COLUMNS = (
     "run_at",
     "program",
@@ -225,7 +231,7 @@ class QueryLog:
             db = sqlite3.connect(store, check_same_thread=False)
             _configure(db, busy_timeout_ms=self._busy_timeout_ms)
             _migrate(db)
-            _trim(db)
+            _trim_once(db, store)
         except (sqlite3.Error, OSError) as e:
             if db is not None:
                 with contextlib.suppress(sqlite3.Error):
@@ -290,6 +296,19 @@ def _migrate(db: sqlite3.Connection) -> None:
         db.rollback()
         raise
     db.commit()
+
+
+def _trim_once(db: sqlite3.Connection, store: Path) -> None:
+    """Trim this store, unless this process already has.
+
+    Retention is a soft cap, so trimming at the first open of a store is
+    enough: what it bounds is a history kept for months.
+    """
+    with _trimmed_lock:
+        if store in _trimmed:
+            return
+        _trim(db)
+        _trimmed.add(store)
 
 
 def _trim(db: sqlite3.Connection) -> None:
