@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     import socket
     from typing import Mapping, Sequence
 
-VERSION = "2.13.0"
+VERSION = "2.14.0"
 """The release this protocol belongs to; a client refuses a server on another.
 
 hsql's output bytes are its API, and "frozen" has always meant "across the
