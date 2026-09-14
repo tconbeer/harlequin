@@ -320,6 +320,16 @@ You can also use `--stats` and `jq` together to error on a truncated query:
 hsql --limit -1 -c "select 1" --csv -o data.csv --stats 2>&1 | jq -e '.truncated | not' > /dev/null
 ```
 
+> [!TIP]
+> A script or agent that runs many invocations against the same database can
+> hold one connection open instead of reconnecting for each one.
+> `hsql --serve dev -P dev` runs a session named `dev`, and
+> `hsql --session dev -c "..."` (or `HSQL_SESSION=dev`) sends invocations to
+> it, which answer in milliseconds. A session is state rather than a cache:
+> temp tables, settings and open transactions survive from one invocation to
+> the next. POSIX only; see
+> [warm sessions](https://harlequin.sh/docs/hsql/sessions).
+
 ## Running Safely
 
 Two options bound what an invocation can do, and hsql refuses to run at all if the adapter cannot enforce them.
