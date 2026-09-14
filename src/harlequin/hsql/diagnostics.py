@@ -391,6 +391,21 @@ def report_limit_ignored(mode: str) -> None:
     )
 
 
+def report_history_not_narrowed(ssh_host: str) -> None:
+    """Say that a tunneled connection's history is not filtered to it.
+
+    A tunneled database is logged under what its tunnel resolved, which only
+    starting `ssh` can say -- and a history mode that opened a tunnel to read a
+    local file would be connecting after all. Silence would read as a database
+    that had run nothing.
+    """
+    note(
+        f"this connection is reached through {ssh_host}, and naming which "
+        "database that is means opening the tunnel, so the history below is "
+        "every connection rather than that one"
+    )
+
+
 def report_document_format_ignored(mode: str, format_name: str) -> None:
     """Say that `--format` does not reach a mode that writes a document.
 

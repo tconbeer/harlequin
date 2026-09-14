@@ -22,7 +22,9 @@ the profile. None of them names an adapter either, and the command carries no
 connection options at all, except for `--config init`: the
 options it writes into a profile are the ones an adapter declares. `--catalog`
 and `--catalog-search` are the modes that do connect, so they take a profile and an
-adapter exactly as a run does. Modes are options rather than subcommands
+adapter exactly as a run does; `--history` and `--history-search` take both too, and
+connect with neither -- the adapter is built only to name the connection whose logged
+queries to report. Modes are options rather than subcommands
 because `CONN_STR` is positional: `hsql catalog` and a DuckDB file named
 `catalog` would have needed a rule, and `--catalog` needs none. They are
 mutually exclusive, and each lives in `harlequin.hsql.modes`, imported by the
@@ -193,6 +195,8 @@ PER_REQUEST_OPTIONS = frozenset(
         "catalog",
         "catalog_search",
         "path",
+        "history",
+        "history_search",
         "spec",
         "info",
         "skill",
@@ -483,6 +487,23 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
     )
     @click.option(
+        "--history",
+        is_flag=True,
+        help=(
+            "List the queries harlequin and hsql have run, newest first, and "
+            "exit without running SQL. --limit says how many; -P, -a or a "
+            "CONN_STR narrows it to one database."
+        ),
+    )
+    @click.option(
+        "--history-search",
+        metavar="TERM",
+        help=(
+            "List the logged queries whose SQL contains TERM, newest first, "
+            "and exit without running SQL. Scoped like --history."
+        ),
+    )
+    @click.option(
         "--spec",
         is_flag=True,
         help=(
@@ -639,6 +660,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         catalog: bool,
         catalog_search: str | None,
         path: str | None,
+        history: bool,
+        history_search: str | None,
         serve: str | None,
         session: str | None,
         session_reset: bool,
@@ -693,7 +716,14 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         _refuse_session_keys_from_a_profile(ctx, values)
         # a mode that reads no database is not the session's business: it
         # runs where the caller is, with the options the caller typed
-        connects = not (skill or info or spec or config_mode is not None)
+        connects = not (
+            skill
+            or info
+            or spec
+            or config_mode is not None
+            or history
+            or history_search is not None
+        )
         if serve is not None and (session is not None or served is not None):
             diagnostics.error(
                 "--serve starts a session and --session sends to one; pass one of them."
@@ -810,6 +840,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             ctx,
             catalog=catalog,
             catalog_search=catalog_search,
+            history=history,
+            history_search=history_search,
             config_mode=config_mode,
             spec=spec,
             info=info,
@@ -926,6 +958,69 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                         format_chosen=format_chosen,
                     ),
                     config_path=config_path,
+                )
+            )
+
+        if history or history_search is not None:
+            if history_search is not None and not history_search.strip():
+                # an unset shell variable, far more often than a deliberate ask
+                # for the whole store -- which is what --history is for.
+                diagnostics.error("--history-search needs a term to search for.")
+                ctx.exit(ExitCode.USAGE)
+            try:
+                history_limit = parse_row_count(raw_limit, key="--limit")
+            except HarlequinConfigError as e:
+                diagnostics.report_error(e)
+                ctx.exit(ExitCode.USAGE)
+            # a typed -P, -a or CONN_STR names one database and narrows the
+            # store to it; with none of them the answer is every connection
+            # this machine has used, because "I typed `hsql --history` and got
+            # someone else's idea of the default database" is the surprising
+            # one. All three read the command line rather than the merge, or a
+            # `default_profile` discovered in the working directory would be
+            # that idea.
+            named_a_database = (
+                profile is not None
+                or "adapter" in explicitly_set
+                or bool(kwargs.get("conn_str"))
+            )
+            history_connection: str | None = None
+            if named_a_database and ssh_config.get("ssh_host"):
+                # a tunneled connection is keyed by what its tunnel resolved,
+                # and resolving that means starting ssh. This mode connects to
+                # nothing, so it reports every connection rather than narrowing
+                # to an id that would match no row.
+                diagnostics.report_history_not_narrowed(ssh_config["ssh_host"])
+            elif named_a_database:
+                # built to be asked for its connection id, and never connected
+                # with: this mode opens no database but the store
+                history_connection = _keyed_connection(
+                    _adapter_instance(
+                        ctx,
+                        adapter=adapter,
+                        conn_str=conn_str,
+                        read_only=read_only,
+                        values=values,
+                    ),
+                    conn_str,
+                    values,
+                    tunnel=None,
+                )
+            ctx.exit(
+                _report_history(
+                    ctx,
+                    connection=history_connection,
+                    search=history_search,
+                    limit=history_limit,
+                    destination=destination,
+                    format_name=format_name,
+                    display_rows=raw_display_rows,
+                    tuples_only=tuples_only,
+                    no_align=no_align,
+                    no_header=no_header,
+                    no_footer=no_footer,
+                    null_string=null_string,
+                    color=_use_color(color_when, destination),
                 )
             )
 
@@ -1287,6 +1382,8 @@ def _one_mode(
     *,
     catalog: bool,
     catalog_search: str | None,
+    history: bool,
+    history_search: str | None,
     config_mode: str | None,
     spec: bool,
     info: bool,
@@ -1304,6 +1401,8 @@ def _one_mode(
     asked = (
         ("--catalog", catalog),
         ("--catalog-search", catalog_search is not None),
+        ("--history", history),
+        ("--history-search", history_search is not None),
         (f"--config {config_mode}", config_mode is not None),
         ("--spec", spec),
         ("--info", info),
@@ -1940,6 +2039,57 @@ def _under_deadline(
     except TimedOut:
         diagnostics.report_timeout(deadline.seconds)
         ctx.exit(ExitCode.TIMEOUT)
+
+
+def _report_history(
+    ctx: click.Context,
+    *,
+    connection: str | None,
+    search: str | None,
+    limit: int | None,
+    destination: _Destination,
+    format_name: str,
+    display_rows: Any,
+    **output_options: Any,
+) -> ExitCode:
+    """Write the query log and return its code, or exit saying why not."""
+    # here rather than at module scope, for the reason each mode lives in its
+    # own module: this one reaches the store and the row machinery. sqlite3 is
+    # stdlib and cheap to import, and still 4ms on a run that reads no store.
+    import sqlite3
+
+    from harlequin.hsql.modes import history as history_mode
+
+    try:
+        display_limit = _display_limit(display_rows, format_name)
+    except HarlequinConfigError as e:
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    layout_options, file_options = _output_options(
+        format_name=format_name, display_limit=display_limit, **output_options
+    )
+
+    try:
+        with _sink(destination, filename=f"history{output.suffix(format_name)}") as out:
+            result = history_mode.report(
+                out,
+                connection=connection,
+                search=search,
+                limit=limit,
+                format_name=format_name,
+                layout_options=layout_options,
+                file_options=file_options,
+            )
+            out.flush()
+    except OSError as e:
+        # a `-o PATH` it could not write, which is the caller's to fix
+        diagnostics.report_error(e)
+        ctx.exit(ExitCode.USAGE)
+    except sqlite3.Error as e:
+        diagnostics.error(f"could not read the query history: {e}")
+        ctx.exit(ExitCode.USAGE)
+    _report_hidden_rows(result, layout_options)
+    return ExitCode.OK
 
 
 def _report_catalog(
@@ -2945,6 +3095,15 @@ def _epilog(installed: Sequence[str], adapter: str | None) -> str:
             f"  {PROGRAM} --catalog --path db.schema    one level below that\n"
             f"  {PROGRAM} --catalog --path db.sch.tbl   a relation's columns\n"
             f"  {PROGRAM} --catalog-search orders       anything in it named that"
+        ),
+        (
+            "History:\n"
+            f"  {PROGRAM} --history                     the queries this "
+            "machine ran\n"
+            f"  {PROGRAM} -P prod --history             one database's, "
+            "newest first\n"
+            f"  {PROGRAM} --history-search line_items   every one that "
+            "mentions it"
         ),
         (
             "Sessions (not on native Windows):\n"

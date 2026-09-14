@@ -1,6 +1,7 @@
-# Running queries and reading the catalog
+# Running queries, and reading the catalog and the history
 
-Read this when you are about to run SQL, or when you need to know what is in a database.
+Read this when you are about to run SQL, when you need to know what is in a database,
+or when you want to know what has already been run against it.
 
 ## Finding out what is there
 
@@ -28,6 +29,39 @@ hsql --info -a postgres    # look at .adapters.postgres.capabilities
 ```
 
 An adapter that cannot search says so and exits rather than walking its whole catalog.
+
+## Reading the query history
+
+Harlequin and hsql record every statement they run in one local SQLite file, so
+`--history` is what the humans and agents on this machine have already been doing. Read
+it before writing a query from scratch: the query you need has often been written.
+
+```bash
+hsql --history                       # every database, newest first
+hsql --history --limit 20            # just the last twenty
+hsql -P prod --history               # only what ran against that database
+hsql --history-search line_items     # every query that mentions it, any database
+hsql --history -x --limit 1          # the last one, field by field
+hsql --history --jsonl               # one JSON object per row, for a pipe
+```
+
+Eight columns: `run_at` (UTC), `program` (`hsql` or `harlequin`), `profile`, `adapter`,
+`status` (`ok`, `error` or `canceled`), `rows`, `elapsed_ms`, and `sql`. The SQL is
+exactly what ran, so you can run it again: a query written over several lines is printed
+over several, with `+` marking each one that continues. Use `--jsonl` if you are feeding
+it to another program — `-tA` prints those newlines as they are, so one query is more
+than one line.
+
+`-P`, `-a` or a CONN_STR narrows the listing to that one database. With none of them —
+including when a config file names a `default_profile` — every database you have used is
+in it, and the `profile` and `adapter` columns are what tell them apart. A profile that
+reaches its database through an SSH tunnel is not narrowed either, and says so on
+stderr: naming that connection would mean opening the tunnel. `--limit` defaults to
+`500` and means "the most recent N".
+
+Neither mode connects to a database or opens a tunnel, so both work when the warehouse
+is down or you have no credentials for it. `--no-write-history` keeps one run out of
+the record.
 
 ## Running statements
 

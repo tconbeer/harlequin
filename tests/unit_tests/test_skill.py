@@ -153,6 +153,8 @@ def test_the_granted_tools_are_the_ones_that_only_read(
             "--spec",
             "--catalog",
             "--catalog-search",
+            "--history",
+            "--history-search",
         }, f"{grant} pre-approves more than introspection"
 
 

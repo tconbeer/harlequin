@@ -71,9 +71,11 @@ is not compared.
    fails if you skip this, or if you put it in two.
 
 4. **If it is a mode** — one that reports rather than running SQL — also add
-   it to `_one_mode()`, so two modes in one invocation are refused, and to the
-   `extra_options` and the `needs_profile` / `needs_adapter` predicates in
-   `build_cli()`, so the first pass does not read a profile for it.
+   it to `_one_mode()`, so two modes in one invocation are refused. A mode that
+   reports on the installation or the config files goes in the `extra_options`
+   and the `needs_profile` / `needs_adapter` predicates in `build_cli()` too,
+   so the first pass reads no profile for it; a mode that is configured like a
+   run does not (`--catalog`, `--history`).
 
 5. **If a config file may not set it**, add it to `CLI_ONLY_SESSION_KEYS` or
    `CLI_ONLY_SSH_KEYS` in `config.py`. That is for options whose value decides

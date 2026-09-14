@@ -87,6 +87,90 @@ class TestTableLayout:
         )
 
 
+class TestMultiLineValues:
+    """A value holding a newline, laid out the way psql lays one out.
+
+    Asserted against psql 16's own output for the same data, byte for byte
+    inside the table: the cell spans physical lines, `+` in the separator marks
+    each one that continues, and the columns beside it go blank. Flattening it
+    instead would be the layout deciding what a value is.
+    """
+
+    QUERY = (
+        "select * from (values "
+        r"(1, 'ok', E'select\n  o.id,\n  o.total\nfrom orders o'), "
+        "(2, 'err', 'select 1')"
+        ") t(n, status, sql)"
+    )
+
+    def test_the_table_wraps_the_cell(self, result_set: ResultSetFactory) -> None:
+        result = result_set(self.QUERY)
+        assert render(result) == (
+            " n | status | sql\n"
+            "---+--------+---------------\n"
+            " 1 | ok     | select       +\n"
+            "   |        |   o.id,      +\n"
+            "   |        |   o.total    +\n"
+            "   |        | from orders o\n"
+            " 2 | err    | select 1\n"
+            "(2 rows)\n"
+        )
+
+    def test_the_column_is_as_wide_as_its_widest_line(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """Not as wide as the whole value, which would pad every other row to
+        the length of a query nobody can read on one line anyway."""
+        result = result_set(self.QUERY)
+        assert render(result).splitlines()[1] == "---+--------+---------------"
+
+    def test_vertical_wraps_the_field(self, result_set: ResultSetFactory) -> None:
+        result = result_set(self.QUERY)
+        assert render(result, "vertical") == (
+            "-[ RECORD 1 ]---------\n"
+            "n      | 1\n"
+            "status | ok\n"
+            "sql    | select       +\n"
+            "       |   o.id,      +\n"
+            "       |   o.total    +\n"
+            "       | from orders o\n"
+            "-[ RECORD 2 ]---------\n"
+            "n      | 2\n"
+            "status | err\n"
+            "sql    | select 1\n"
+            "(2 rows)\n"
+        )
+
+    def test_unaligned_writes_the_value_as_it_stands(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """psql's answer too: `-tA` is a delimited stream, and a caller whose
+        data holds newlines wants a format that frames them."""
+        result = result_set(self.QUERY)
+        assert render(
+            result, options=LayoutOptions(header=False, footer=False, aligned=False)
+        ) == ("1|ok|select\n  o.id,\n  o.total\nfrom orders o\n2|err|select 1\n")
+
+    def test_markdown_keeps_the_row_on_one_line(
+        self, result_set: ResultSetFactory
+    ) -> None:
+        """A newline would end the row, so the one layout that escapes what it
+        prints escapes this too."""
+        rendered = render(
+            result_set(self.QUERY), "markdown", LayoutOptions(footer=False)
+        )
+        assert "<br>" in rendered
+        assert len(rendered.splitlines()) == 4
+
+    def test_a_value_that_ends_in_a_newline(self, result_set: ResultSetFactory) -> None:
+        """Its last line is empty, and the line before it still says it
+        continues."""
+        result = result_set(r"select E'a\nb\n' as v, 1 as n")
+        assert render(result, options=LayoutOptions(footer=False)) == (
+            " v | n\n---+---\n a+| 1\n b+| \n   | \n"
+        )
+
+
 class TestMarkdownLayout:
     def test_pipe_table(self, result_set: ResultSetFactory) -> None:
         result = result_set(
