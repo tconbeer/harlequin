@@ -993,10 +993,16 @@ them; everything after is additive and independently revertible.
    shipped reports a session moved **out of band** and makes no claim about open
    work — §5 item 2 has the correction. A narrow feature honestly described, rather
    than a safety net that is not there.
-6. **Docs.** The "Headless & Agents" topic gains a session section written per §5.1, plus a
-   `SessionStart`-hook example and an `hsql --help` mention. Not optional and not last in
-   spirit — a feature that must be deliberately adopted is a feature that lives or dies by
-   its docs.
+6. **Docs. Shipped.** `/docs/hsql/sessions` on harlequin.sh, written per §5.1, with the
+   `SessionStart`-hook example on it. Not optional and not last in spirit — a feature that
+   must be deliberately adopted is a feature that lives or dies by its docs.
+
+   One thing this PR settled that the plan did not name: **the `hsql --help` mention was
+   already there**, since the flags became click options in PR 2 and the epilog gained a
+   Sessions block with them. What the docs owed instead was the two things `--help` cannot
+   hold: what a session *remembers* (§5), and the three pages that were true only of a cold
+   invocation — `psql.md`'s "no session variables" and "No Interactive Session", and the
+   tutorial's every-invocation-connects framing.
 
 M2 has shipped, and M3 with it. M4 is in flight in three releases and touches `cli.py`
 elsewhere (`--open`, the hooks, query history), so sequencing against it is a scheduling
