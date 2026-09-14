@@ -47,8 +47,10 @@ hsql --history --jsonl               # one JSON object per row, for a pipe
 
 Eight columns: `run_at` (UTC), `program` (`hsql` or `harlequin`), `profile`, `adapter`,
 `status` (`ok`, `error` or `canceled`), `rows`, `elapsed_ms`, and `sql`. The SQL is
-folded onto one line, in every format, and still runs — comments are dropped so a `--`
-one cannot comment out the rest of the line, and a literal keeps its own spacing.
+exactly what ran, so you can run it again: a query written over several lines is printed
+over several, with `+` marking each one that continues. Use `--jsonl` if you are feeding
+it to another program — `-tA` prints those newlines as they are, so one query is more
+than one line.
 
 `-P`, `-a` or a CONN_STR narrows the listing to that one database. With none of them —
 including when a config file names a `default_profile` — every database you have used is

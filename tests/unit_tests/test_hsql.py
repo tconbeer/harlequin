@@ -8,6 +8,8 @@ same query renders the same bytes wherever it is run.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 import subprocess
@@ -4961,57 +4963,56 @@ def test_history_keeps_the_types_the_store_gave_it(
     assert isinstance(record["elapsed_ms"], float)
 
 
-def test_history_folds_a_query_onto_one_line(
+def test_history_reports_the_query_exactly_as_it_ran(
     hsql: Hsql, duck: list[str], query_log_path: Path
 ) -> None:
-    """`layout.py` has no concept of a cell that spans rows, and every format
-    agrees cell for cell, so the folding is the listing's and not the layout's."""
-    written = hsql(*duck, "--format", "none", "-c", "select\n  1 as a,\n  2 as b")
-    assert written.exit_code == ExitCode.OK, written.stderr
-    res = hsql("--history", "-tA")
-    assert res.exit_code == ExitCode.OK, res.stderr
-    assert sql_column(res.stdout) == ["select 1 as a, 2 as b"]
-
-
-def test_history_folding_does_not_comment_out_the_rest_of_a_query(
-    hsql: Hsql, duck: list[str], query_log_path: Path
-) -> None:
-    """A `--` comment runs to the end of its line, and the listing has one."""
-    sql = "select\n  1 as a, -- the first column\n  2 as b"
+    """The store holds what ran, and the listing hands it back: a comment still
+    only comments out its own line, and a literal keeps its own spacing."""
+    sql = "select\n  1 as a, -- the first column\n  'hello  world' as b"
     written = hsql(*duck, "--format", "none", "-c", sql)
     assert written.exit_code == ExitCode.OK, written.stderr
-    listed = hsql("--history", "-tA")
+
+    listed = hsql("--history", "--json")
     assert listed.exit_code == ExitCode.OK, listed.stderr
-    assert sql_column(listed.stdout) == ["select 1 as a, 2 as b"]
-    # and the listed query runs, which is the whole promise
-    ran = hsql(*duck, "-tA", "-c", sql_column(listed.stdout)[0])
+    (record,) = json.loads(listed.stdout)
+    assert record["sql"] == sql
+
+    # and it runs, which is what reporting it exactly is for
+    ran = hsql(*duck, "-tA", "-c", record["sql"])
     assert ran.exit_code == ExitCode.OK, ran.stderr
-    assert ran.stdout == "1|2\n"
+    assert ran.stdout == "1|hello  world\n"
 
 
-def test_history_folding_leaves_a_literal_alone(
+def test_history_carries_the_same_sql_in_every_format(
     hsql: Hsql, duck: list[str], query_log_path: Path
 ) -> None:
-    """Collapsing whitespace inside a literal would change what it returns."""
-    written = hsql(*duck, "--format", "none", "-c", "select 'hello  world' as a,\n 2")
+    """The layouts wrap it and csv quotes it; neither changes the value."""
+    sql = "select\n  1 as a"
+    written = hsql(*duck, "--format", "none", "-c", sql)
     assert written.exit_code == ExitCode.OK, written.stderr
-    res = hsql("--history", "-tA")
-    assert res.exit_code == ExitCode.OK, res.stderr
-    assert sql_column(res.stdout) == ["select 'hello  world' as a, 2"]
+
+    from_csv = hsql("--history", "--csv", "--no-header")
+    assert from_csv.exit_code == ExitCode.OK, from_csv.stderr
+    # the whole stream, not its lines: a quoted field holds the newlines
+    assert list(csv.reader(io.StringIO(from_csv.stdout)))[0][-1] == sql
+
+    from_json = hsql("--history", "--json")
+    assert json.loads(from_json.stdout)[0]["sql"] == sql
 
 
-def test_history_folds_the_same_way_in_every_format(
+def test_history_wraps_a_multi_line_query_in_the_table(
     hsql: Hsql, duck: list[str], query_log_path: Path
 ) -> None:
+    """One line per physical line, `+` where it continues -- so the columns
+    beside it stay lined up instead of the row running into the next."""
     written = hsql(*duck, "--format", "none", "-c", "select\n  1 as a")
     assert written.exit_code == ExitCode.OK, written.stderr
-    table = hsql("--history", "-tA")
-    csv = hsql("--history", "--csv", "--no-header")
-    assert table.exit_code == ExitCode.OK, table.stderr
-    assert csv.exit_code == ExitCode.OK, csv.stderr
-    assert sql_column(table.stdout) == [
-        row.split(",")[-1] for row in csv.stdout.splitlines()
-    ]
+    res = hsql("--history", "--no-header", "--no-footer")
+    assert res.exit_code == ExitCode.OK, res.stderr
+    lines = res.stdout.splitlines()
+    assert len(lines) == 2
+    assert lines[0].endswith("| select  +")
+    assert lines[1].endswith("|   1 as a")
 
 
 def test_a_discovered_profile_does_not_narrow_the_history(

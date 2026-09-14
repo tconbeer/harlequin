@@ -8,7 +8,7 @@ connection.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, BinaryIO, Mapping
 
 if TYPE_CHECKING:
     from harlequin.layout import LayoutOptions
@@ -31,15 +31,6 @@ because nothing infers one from a value, and they are the ones both bundled
 adapters give an int64 and a double.
 """
 
-SQL_COLUMN = "sql"
-"""The one column a listing cannot print as it was stored.
-
-`layout.py` pads by terminal cells and has no concept of a cell spanning rows,
-and `--format table` and `--format csv` agree cell for cell -- so a column that
-is verbatim in one and folded in the other is not on offer, and
-`statements.fold()` is what puts a statement on one line without breaking it.
-"""
-
 
 def report(
     out: BinaryIO,
@@ -58,12 +49,11 @@ def report(
 
     Raises: sqlite3.Error, for a store that is there and cannot be read.
     """
-    # deferred, all of them: the row machinery is pyarrow, the fold is
-    # tree-sitter, and the store is only read from this mode.
+    # deferred, both of them: the row machinery is pyarrow, and the store is
+    # only read from this mode.
     from harlequin.hsql import output
     from harlequin.query import typed_rows_to_result
     from harlequin.query_log import recent
-    from harlequin.statements import fold
 
     # one row more than we keep is what makes truncation knowable, the same
     # probe a hard limit on a query fetches
@@ -74,7 +64,7 @@ def report(
     )
     truncated = limit is not None and len(rows) > limit
     kept = rows[:limit] if truncated else rows
-    result = typed_rows_to_result(COLUMNS, _folded(kept, fold), truncated=truncated)
+    result = typed_rows_to_result(COLUMNS, kept, truncated=truncated)
     output.write(
         result,
         format_name,
@@ -83,13 +73,3 @@ def report(
         file_options=file_options,
     )
     return result
-
-
-def _folded(
-    rows: Sequence[Sequence[Any]], fold: Callable[[str], str]
-) -> list[tuple[Any, ...]]:
-    """Every row with its `sql` on one line."""
-    position = [name for name, _ in COLUMNS].index(SQL_COLUMN)
-    return [
-        (*row[:position], fold(row[position]), *row[position + 1 :]) for row in rows
-    ]

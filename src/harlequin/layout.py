@@ -8,6 +8,12 @@ as it does in a file.
 `LayoutOptions` is a set of independent switches, following psql: `-t` is
 `header=False, footer=False`, and `-A` is `aligned=False`.
 
+A value holding a newline is laid out the way psql lays one out: the cell spans
+as many physical lines as it has, `+` in the separator marks each one that
+continues, and the other columns go blank beneath. Unaligned output writes the
+value as it stands, newlines and all -- also psql's answer, and the reason a
+script wants `--format jsonl` rather than `-tA` for data that may hold one.
+
 One of them is a row cap, and it is a *soft* one: a layout is something a
 person reads, and a thousand rows scrolled past is neither read nor useful.
 Each layout declares the default that suits its shape -- `DEFAULT_MAX_ROWS`,
@@ -166,6 +172,14 @@ class _BaseLayout:
         text = self.null if value is None else value
         return self._pad(self._style(text, dim=value is None), _width(text), width)
 
+    def _cell_lines(self, value: str | None) -> list[str]:
+        """One cell's text, as the physical lines it occupies.
+
+        Unstyled and unpadded: what a layout does with the lines below the
+        first depends on what sits beside them.
+        """
+        return _lines_of(self.null if value is None else value)
+
     def _pad(self, styled: str, plain_width: int, width: int) -> str:
         if not self.options.aligned:
             return styled
@@ -230,16 +244,49 @@ class _TableLayout(_BaseLayout):
                 out.write("|".join(labels) + "\n")
 
         for row in rows:
-            cells = [
-                self._cell(value, w) for value, w in zip(row, padding, strict=False)
-            ]
             if aligned:
-                out.write(" " + " | ".join(cells) + "\n")
+                for line in self._wrapped(row, padding, widths):
+                    out.write(line + "\n")
             else:
+                # as psql does: the value as it stands, newlines and all
+                cells = [
+                    self._cell(value, w) for value, w in zip(row, padding, strict=False)
+                ]
                 out.write("|".join(cells) + "\n")
 
         if self.options.footer:
             out.write(self._footer(result, shown=len(rows)) + "\n")
+
+    def _wrapped(
+        self, row: Row, padding: Sequence[int], widths: Sequence[int]
+    ) -> list[str]:
+        """One row, over as many physical lines as its tallest cell needs.
+
+        `+` in the separator marks a cell that continues on the next line, as
+        in psql, and the columns that have run out go blank beneath. The last
+        column is padded only while it is carrying a marker, so a row that
+        does not wrap still ends where its value does.
+        """
+        cells = [self._cell_lines(value) for value in row]
+        nulls = [value is None for value in row]
+        last = len(cells) - 1
+        lines: list[str] = []
+        for index in range(max((len(cell) for cell in cells), default=1)):
+            line = " "
+            for position, cell in enumerate(cells):
+                text = cell[index] if index < len(cell) else ""
+                continues = index + 1 < len(cell)
+                width = widths[position] if continues else padding[position]
+                # an empty continuation column has nothing to dim, and styling
+                # it would put escapes around no text at all
+                styled = self._style(text, dim=nulls[position]) if text else text
+                line += self._pad(styled, _width(text), width)
+                if position < last:
+                    line += "+| " if continues else " | "
+                elif continues:
+                    line += "+"
+            lines.append(line)
+        return lines
 
 
 class _MarkdownLayout(_BaseLayout):
@@ -325,11 +372,36 @@ class _VerticalLayout(_BaseLayout):
                 # keeps two records from reading as one.
                 out.write("\n")
             for name, value in zip(headers, row, strict=False):
-                label = self._label(name, name_width)
-                out.write(f"{label}{separator}{self._cell(value, 0)}\n")
+                for line in self._field(name, value, name_width, separator):
+                    out.write(line + "\n")
 
         if self.options.footer:
             out.write(self._footer(result, shown=len(rows)) + "\n")
+
+    def _field(
+        self, name: str, value: str | None, name_width: int, separator: str
+    ) -> list[str]:
+        """One field, over as many physical lines as its value needs.
+
+        `+` marks a line that continues and the label goes blank beneath it, as
+        in psql. The value is padded to its own widest line rather than to the
+        record's, so a marker sits just past the value it belongs to.
+        """
+        cell = self._cell_lines(value)
+        label = self._label(name, name_width)
+        if len(cell) == 1 or not self.options.aligned:
+            return [f"{label}{separator}{self._cell(value, 0)}"]
+        width = max(_width(line) for line in cell)
+        lines = []
+        for index, text in enumerate(cell):
+            continues = index + 1 < len(cell)
+            lines.append(
+                (label if index == 0 else " " * name_width)
+                + separator
+                + self._pad(text, _width(text), width if continues else 0)
+                + ("+" if continues else "")
+            )
+        return lines
 
     def _record_rule(self, index: int, width: int) -> str:
         rule = f"-[ RECORD {index} ]"
@@ -360,20 +432,43 @@ def _width(text: str) -> int:
     return width if width >= 0 else len(text)
 
 
+def _lines_of(text: str) -> list[str]:
+    """One value as the physical lines it occupies."""
+    return text.replace("\r\n", "\n").split("\n")
+
+
+def _cell_width(text: str) -> int:
+    """How many terminal cells the widest line of `text` occupies.
+
+    A column is as wide as the widest line in it, not as the longest value:
+    measuring a multi-line value whole would pad every other row to the length
+    of a query nobody can read on one line anyway.
+    """
+    if "\n" not in text:
+        return _width(text)
+    return max((_width(line) for line in _lines_of(text)), default=0)
+
+
 def _column_widths(headers: Sequence[str], rows: Sequence[Row], null: str) -> list[int]:
     """The width of each column, in terminal cells."""
     widths = [_width(header) for header in headers]
     for row in rows:
         for i, value in enumerate(row):
             if i < len(widths):
-                widths[i] = max(widths[i], _width(null if value is None else value))
+                widths[i] = max(
+                    widths[i], _cell_width(null if value is None else value)
+                )
     return widths
 
 
 def _widest(rows: Sequence[Row], null: str) -> int:
-    """The widest value anywhere in `rows`, in terminal cells."""
+    """The widest line anywhere in `rows`, in terminal cells."""
     return max(
-        (_width(null if value is None else value) for row in rows for value in row),
+        (
+            _cell_width(null if value is None else value)
+            for row in rows
+            for value in row
+        ),
         default=0,
     )
 
