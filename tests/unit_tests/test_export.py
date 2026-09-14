@@ -29,6 +29,17 @@ from harlequin.options import HarlequinCopyFormat, SelectOption
 TEXT_FORMATS = ["csv", "tsv", "json", "jsonl", "ndjson"]
 BINARY_FORMATS = ["parquet", "orc", "feather", "arrow"]
 GZIP_MAGIC = b"\x1f\x8b"
+FEATHER_V1_MAGIC = b"FEA1"
+FEATHER_V2_MAGIC = b"ARROW1"
+
+FEATHER_DIALOG = {
+    option.name: getattr(option, "default", None)
+    for fmt in HARLEQUIN_COPY_FORMATS
+    if fmt.name == "feather"
+    for option in fmt.options
+}
+"""Every Feather option the copy dialog declares, at the value an untouched
+widget holds. The dialog sends all of them, touched or not."""
 
 NEEDS_ORC_READER = pytest.mark.skipif(
     sys.platform == "win32",
@@ -262,6 +273,35 @@ class TestFeatherOptions:
         path = tmp_path / "out.feather"
         write_file(data, path, "feather", {"version": int(version)})
         assert pf.read_table(str(path)).to_pydict() == data.to_pydict()
+
+    @pytest.mark.parametrize(
+        ("version", "magic"), [("1", FEATHER_V1_MAGIC), ("2", FEATHER_V2_MAGIC)]
+    )
+    def test_the_version_the_dialog_sends_is_the_version_written(
+        self, data: pa.Table, tmp_path: Path, version: str, magic: bytes
+    ) -> None:
+        """The dialog's Select holds its choices as text, and pyarrow writes the
+        legacy V1 format for any `version` that is not the integer 2."""
+        path = tmp_path / "out.feather"
+        write_file(data, path, "feather", {**FEATHER_DIALOG, "version": version})
+        assert path.read_bytes().startswith(magic)
+        assert pf.read_table(str(path)).to_pydict() == data.to_pydict()
+
+    @pytest.mark.parametrize("codec", ["lz4", "zstd"])
+    def test_the_compression_the_dialog_sends_changes_the_file(
+        self, data: pa.Table, tmp_path: Path, codec: str
+    ) -> None:
+        """Compression is a V2 feature, so a write that fell back to V1 drops it,
+        and drops it silently: pyarrow only refuses the keyword when it knows it
+        is writing V1."""
+        plain = tmp_path / "plain.feather"
+        compressed = tmp_path / f"{codec}.feather"
+        write_file(data, plain, "feather", FEATHER_DIALOG)
+        write_file(
+            data, compressed, "feather", {**FEATHER_DIALOG, "compression": codec}
+        )
+        assert compressed.read_bytes() != plain.read_bytes()
+        assert pf.read_table(str(compressed)).to_pydict() == data.to_pydict()
 
     def test_a_number_that_is_not_one_is_an_error(
         self, data: pa.Table, tmp_path: Path

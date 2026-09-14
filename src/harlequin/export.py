@@ -291,6 +291,7 @@ def _export_feather(
     compression: str | None = None,
     compression_level: str | int | None = None,
     chunksize: str | int | None = None,
+    version: str | int = 2,
     **kwargs: Any,
 ) -> None:
     import pyarrow.feather as pf
@@ -299,11 +300,20 @@ def _export_feather(
     try:
         compression_level = int(compression_level) if compression_level else None
         chunksize = int(chunksize) if chunksize else None
+        # pyarrow writes V2 only when `version` equals the integer 2, and the
+        # legacy V1 format for anything else, so the string the copy dialog
+        # sends has to be a number before it gets there.
+        version = int(version)
     except (ValueError, TypeError, KeyError) as e:
         raise HarlequinCopyError(
             str(e),
             title=("Arrow raised an error when writing your data to a Feather file."),
         ) from e
+
+    # "uncompressed" is the dialog's way of asking for no compression, which the
+    # V1 writer spells `None`; pyarrow rejects the keyword outright.
+    if version == 1 and compression == "uncompressed":
+        compression = None
 
     try:
         pf.write_feather(
@@ -312,6 +322,7 @@ def _export_feather(
             compression=compression,
             compression_level=compression_level,
             chunksize=chunksize,
+            version=version,
             **kwargs,
         )
     except (pl.ArrowException, OSError, IOError, TypeError, ValueError) as e:
