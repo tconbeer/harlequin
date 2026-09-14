@@ -38,6 +38,7 @@ from harlequin.hsql.cli import (
     ROLE_OPTIONS,
     SERVER_OPTIONS,
     _execute_all,
+    _fetched,
     _Run,
     bare_command,
     build_cli,
@@ -49,6 +50,7 @@ from harlequin.hsql.server import InFlight, Served, Server
 from harlequin.hsql.timeout import Deadline, TimedOut
 from harlequin.plugins import load_adapter
 from harlequin.query import RowLimit
+from harlequin.query_log import QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
@@ -2628,3 +2630,72 @@ def test_a_warm_run_and_a_cold_one_are_one_history(
     assert [row["sql"] for row in rows] == ["select 1 as a", "select 2 as a"]
     assert rows[0]["connection"], "an unset id would make this test vacuous"
     assert rows[0]["connection"] == rows[1]["connection"]
+
+
+def test_a_run_cancelled_before_it_started_records_nothing(
+    in_process_server: Server, query_log_path: Path
+) -> None:
+    """The statements were never submitted, so the history has nothing to hold.
+
+    Each is written as the database is asked to run it, which is a generator
+    `execute()` draws from -- so the check that stops the run has to come
+    before that generator rather than inside it, or a query the database never
+    saw is in the caller's history.
+    """
+    in_flight = in_process_server._hold(A_REQUEST)
+    in_flight.cancel()
+    served = served_by(in_process_server, in_flight=in_flight)
+    log = QueryLog(program="hsql", connection=served.connection_id, adapter="duckdb")
+    run = _Run(served=served, log=log)
+
+    assert (
+        _execute_all(
+            served.connection(),
+            [Statement(sql="select 1", index=0)],
+            limit=RowLimit(),
+            on_error="stop",
+            run=run,
+        )
+        == []
+    )
+    log.close()
+    # the store opens on the first write, so a run that records nothing does
+    # not even create one
+    assert not query_log_path.exists()
+
+
+def test_every_statement_a_served_cancel_stopped_says_so(
+    in_process_server: Server, query_log_path: Path
+) -> None:
+    """The served half of the cold run's cancel: the run reads the session's
+    cancel where a cold one reads its clock, and both mark the statement in
+    flight and every one after it.
+
+    Cancelled between two fetches rather than under a slow query, because what
+    is asserted is which rows the cancel marks and not how long a runner takes
+    to reach it.
+    """
+    in_flight = in_process_server._hold(A_REQUEST)
+    served = served_by(in_process_server, in_flight=in_flight)
+    log = QueryLog(program="hsql", connection=served.connection_id, adapter="duckdb")
+    run = _Run(served=served, log=log)
+
+    executed = _execute_all(
+        served.connection(),
+        [Statement(sql=f"select {n}", index=n) for n in range(3)],
+        limit=RowLimit(),
+        on_error="stop",
+        run=run,
+    )
+    assert len(executed) == 3
+    results = _fetched(executed, limit=RowLimit(), on_error="stop", run=run)
+    assert next(results)[0] == 1
+    in_flight.cancel()
+    assert list(results) == []
+
+    log.close()
+    rows = recorded(query_log_path)
+    assert [row["sql"] for row in rows] == ["select 0", "select 1", "select 2"]
+    assert [row["status"] for row in rows] == ["ok", "canceled", "canceled"]
+    # the one that did finish keeps what it returned
+    assert rows[0]["rows"] == 1
