@@ -50,7 +50,13 @@ The references are not capped the same way: they are read on demand, by the
 agent that needed one, and never enter a context that did not ask for them.
 """
 
-REFERENCE_NAMES = {"config.md", "queries.md", "scripting.md", "troubleshooting.md"}
+REFERENCE_NAMES = {
+    "config.md",
+    "queries.md",
+    "scripting.md",
+    "sessions.md",
+    "troubleshooting.md",
+}
 
 
 @pytest.fixture
@@ -182,7 +188,7 @@ def test_skill_writes_the_packaged_file_verbatim(hsql: Hsql) -> None:
 
 def test_a_file_output_installs_the_whole_skill(hsql: Hsql, tmp_path: Path) -> None:
     """The documented one-liner, and it has to leave a skill rather than a file:
-    `SKILL.md` alone would ship four pointers that resolve to nothing."""
+    `SKILL.md` alone would ship five pointers that resolve to nothing."""
     destination = tmp_path / "skills" / "hsql" / "SKILL.md"
     res = hsql("--skill", "-o", str(destination))
     assert res.exit_code == ExitCode.OK
@@ -205,7 +211,7 @@ def test_a_directory_output_installs_the_whole_skill(
 
 
 def test_the_install_names_every_file_it_wrote(hsql: Hsql, tmp_path: Path) -> None:
-    """The caller named one path and got five files; the other four are the one
+    """The caller named one path and got six files; the other five are the one
     thing about the run that stdout cannot carry."""
     res = hsql("--skill", "-o", f"{tmp_path}/hsql/")
     assert "SKILL.md" in res.stderr

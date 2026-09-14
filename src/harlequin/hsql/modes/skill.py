@@ -7,7 +7,7 @@ in. So the text ships as package data and this mode prints it.
 
 **The skill is a directory, not a file.** `SKILL.md` is the standing guidance
 that enters an agent's context whole, and it is kept small enough to be worth
-that; the four references beside it are the depth, read only when the work
+that; the five references beside it are the depth, read only when the work
 reaches one. So stdout gets `SKILL.md` -- the document, for a caller who wants
 to read or pipe it -- and `-o` installs the whole tree, wherever it names.
 
