@@ -245,10 +245,23 @@ def test_serve_refuses_a_name_no_client_could_reach(
     assert reason in res.stderr
 
 
-def test_queue_timeout_belongs_to_serve(hsql: Hsql, duck: list[str]) -> None:
-    res = hsql(*duck, "--queue-timeout", "2", "-c", "select 1")
+@pytest.mark.parametrize(
+    "flag,bounds",
+    [
+        ("--queue-timeout", "how long a request waits for the one before it"),
+        ("--idle-timeout", "how long a session sits with nothing to do"),
+        ("--max-lifetime", "how long a session runs at all"),
+    ],
+)
+def test_a_server_option_belongs_to_serve(
+    hsql: Hsql, duck: list[str], flag: str, bounds: str
+) -> None:
+    """The other half of `--serve` refusing the per-request group: a caller who
+    typed one of these on a cold invocation meant it for a session, and one
+    silently ignored is one they believe they set."""
+    res = hsql(*duck, flag, "2", "-c", "select 1")
     assert res.exit_code == ExitCode.USAGE
-    assert "--queue-timeout is a --serve option" in res.stderr
+    assert f"{flag} is a --serve option: it bounds {bounds}." in res.stderr
 
 
 def test_session_reset_needs_a_session(hsql: Hsql) -> None:
@@ -316,7 +329,7 @@ def test_a_profiles_session_key_is_not_in_the_schema() -> None:
     assert "serve" not in profile
     assert "session_status" not in profile
     # while the keys a profile may set are
-    assert "queue_timeout" in profile
+    assert {"queue_timeout", "idle_timeout", "max_lifetime"} <= set(profile)
 
 
 def test_session_is_a_profile_key_the_ide_leaves_alone() -> None:
@@ -324,7 +337,14 @@ def test_session_is_a_profile_key_the_ide_leaves_alone() -> None:
     command rather than a copy, so the new ones are there without a change."""
     from harlequin.cli import hsql_profile_keys
 
-    assert {"session", "serve", "session_reset", "queue_timeout"} <= hsql_profile_keys()
+    assert {
+        "session",
+        "serve",
+        "session_reset",
+        "queue_timeout",
+        "idle_timeout",
+        "max_lifetime",
+    } <= hsql_profile_keys()
 
 
 # --- a served request, in process --------------------------------------------
@@ -518,14 +538,15 @@ def test_a_served_request_takes_a_profile_that_names_the_sessions_connection(
     assert res.stdout == "1\n"
 
 
+@pytest.mark.parametrize("key", ["queue_timeout", "idle_timeout", "max_lifetime"])
 def test_a_served_request_may_not_take_a_server_option_from_a_profile(
-    hsql: Hsql, in_process_server: Server, tmp_path: Path
+    hsql: Hsql, in_process_server: Server, tmp_path: Path, key: str
 ) -> None:
     """A typed profile is judged by the keys it holds on both halves of the
     rule: a server-lifetime key in one describes a server that is already up,
     whichever way the caller named it."""
     path = tmp_path / "hsql.toml"
-    path.write_text("[profiles.slow]\nqueue_timeout = 30\n")
+    path.write_text(f"[profiles.slow]\n{key} = 30\n")
     res = hsql(
         "--config-path",
         path,
@@ -536,9 +557,7 @@ def test_a_served_request_may_not_take_a_server_option_from_a_profile(
         obj=served_by(in_process_server),
     )
     assert res.exit_code == ExitCode.USAGE
-    assert "the profile 'slow' sets queue_timeout, which is a --serve option" in (
-        res.stderr
-    )
+    assert f"the profile 'slow' sets {key}, which is a --serve option" in res.stderr
 
 
 @pytest.mark.parametrize("key", ["theme", "locale", "viewer_max_rows"])
@@ -631,16 +650,15 @@ def test_a_profile_value_of_the_wrong_shape_is_a_usage_error(
     assert "the profile 'bad' sets conn_str, which is ['********']" in res.stderr
 
 
+@pytest.mark.parametrize(
+    "flag", ["--queue-timeout", "--idle-timeout", "--max-lifetime"]
+)
 def test_a_served_request_may_not_type_a_server_option(
-    hsql: Hsql, in_process_server: Server
+    hsql: Hsql, in_process_server: Server, flag: str
 ) -> None:
-    res = hsql(
-        "--queue-timeout", "3", "-c", "select 1", obj=served_by(in_process_server)
-    )
+    res = hsql(flag, "3", "-c", "select 1", obj=served_by(in_process_server))
     assert res.exit_code == ExitCode.USAGE
-    assert "--queue-timeout is a --serve option, and the session named 'inproc'" in (
-        res.stderr
-    )
+    assert f"{flag} is a --serve option, and the session named 'inproc'" in res.stderr
 
 
 def test_a_served_request_may_not_serve(hsql: Hsql, in_process_server: Server) -> None:
@@ -1445,8 +1463,10 @@ def test_a_busy_session_does_not_ask_its_driver_for_the_mode(
         connection=cast(Any, Transacting()),
         reconnect=adapter.connect,
     )
-    assert session.status()["transaction_mode"] == "Manual"
+    # one read at start-up, which is the mode a later one is compared against
     assert reads == [1]
+    assert session.status()["transaction_mode"] == "Manual"
+    assert reads == [1, 1]
     assert session._turnstile.enter(0)
     try:
         busy = session.status()
@@ -1455,7 +1475,7 @@ def test_a_busy_session_does_not_ask_its_driver_for_the_mode(
     assert busy["state"] == "busy"
     assert busy["transaction_mode"] is None
     # not merely null: the driver was never asked
-    assert reads == [1]
+    assert reads == [1, 1]
 
 
 @needs_unix_sockets
@@ -2020,3 +2040,502 @@ def test_the_peer_uid_is_ours_on_a_socketpair() -> None:
     with left, right:
         uid = server.peer_uid(right)
     assert uid is None or uid == os.getuid()
+
+
+# --- the session's own clocks -------------------------------------------------
+
+
+def with_clocks(
+    duckdb_adapter: Any,
+    *,
+    idle_timeout: float | None = None,
+    max_lifetime: float | None = None,
+) -> Server:
+    """A session whose two clocks a test can wind on by hand.
+
+    Wound rather than waited out: an expiry these can only reach by sleeping
+    is one CI reaches by flaking, and what is being asserted is which clock
+    answers rather than how fast a runner is.
+    """
+    adapter = duckdb_adapter([":memory:"], no_init=True)
+    return Server(
+        "clocked",
+        adapter="duckdb",
+        connection=adapter.connect(),
+        reconnect=adapter.connect,
+        idle_timeout=idle_timeout,
+        max_lifetime=max_lifetime,
+    )
+
+
+def test_a_session_with_neither_clock_set_never_stops_itself(
+    duckdb_adapter: Any,
+) -> None:
+    """`--idle-timeout 0` and `--max-lifetime 0` are how an operator asks for
+    a session that runs until something stops it, and None is what the command
+    turns a zero into."""
+    session = with_clocks(duckdb_adapter)
+    session._started -= 10_000
+    session._active_at -= 10_000
+    assert session._expired() is None
+    assert session.status()["idle_timeout_s"] is None
+    assert session.status()["expires_in_s"] is None
+
+
+def test_a_session_nobody_has_used_runs_out_of_idle_time(duckdb_adapter: Any) -> None:
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0)
+    assert session._expired() is None
+    session._active_at -= 31
+    assert session._expired() == ("--idle-timeout", 30.0)
+
+
+def test_the_idle_clock_does_not_run_while_a_request_does(
+    duckdb_adapter: Any,
+) -> None:
+    """A query that takes an hour is a session in use, not one nobody wants:
+    the clock is about a session sitting with nothing to do, so a held turn
+    stops it -- and starts it again when the turn is given up."""
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0)
+    session._active_at -= 31
+    assert session._turnstile.enter(0)
+    try:
+        assert session._expired() is None
+    finally:
+        session._turnstile.leave()
+    assert session._expired() == ("--idle-timeout", 30.0)
+
+
+def test_the_lifetime_clock_runs_whatever_the_session_is_doing(
+    duckdb_adapter: Any,
+) -> None:
+    """It bounds the credential rather than the idleness, so a busy session is
+    not exempt -- the request in flight is answered on the way down."""
+    session = with_clocks(duckdb_adapter, max_lifetime=600.0)
+    session._started -= 601
+    assert session._turnstile.enter(0)
+    try:
+        assert session._expired() == ("--max-lifetime", 600.0)
+    finally:
+        session._turnstile.leave()
+
+
+def test_the_sooner_clock_is_the_one_that_answers(duckdb_adapter: Any) -> None:
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0, max_lifetime=600.0)
+    session._started -= 601
+    session._active_at -= 31
+    assert session._expired() == ("--max-lifetime", 600.0)
+
+
+def test_a_status_says_when_the_session_will_go_away(duckdb_adapter: Any) -> None:
+    """`expires_in_s` is the sooner of the two countdowns, and the idle one is
+    not counting while a request holds the connection -- a session in the
+    middle of a query is answered by its lifetime alone."""
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0, max_lifetime=600.0)
+    status = session.status()
+    assert status["idle_timeout_s"] == 30.0
+    assert 29 <= status["expires_in_s"] <= 30
+    assert session._turnstile.enter(0)
+    try:
+        busy = session.status()
+    finally:
+        session._turnstile.leave()
+    assert busy["state"] == "busy"
+    assert busy["idle_timeout_s"] == 30.0
+    assert 599 <= busy["expires_in_s"] <= 600
+
+
+def test_a_countdown_that_has_run_out_is_zero_rather_than_negative(
+    duckdb_adapter: Any,
+) -> None:
+    """The window between the clock running out and the accept loop reading
+    it, which a caller polling should not see as a time in the past."""
+    session = with_clocks(duckdb_adapter, max_lifetime=600.0)
+    session._started -= 900
+    assert session.status()["expires_in_s"] == 0.0
+
+
+def test_a_client_that_has_not_spoken_yet_is_not_an_idle_session(
+    duckdb_adapter: Any,
+) -> None:
+    """A client is accepted before it says what it wants, and its first frame
+    can be a `-f -` script something upstream is still producing. It is in no
+    turnstile and has sent no request, so this count is the only thing that can
+    see it -- and a session that stopped here would unlink the socket under a
+    client that had already reached it."""
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0)
+    session._active_at -= 31
+    assert session._expired() == ("--idle-timeout", 30.0)
+    with session._attending_lock:
+        session._attending += 1
+    try:
+        assert session._expired() is None
+    finally:
+        with session._attending_lock:
+            session._attending -= 1
+    # and the clock was held rather than reset: it runs out as soon as the
+    # client is gone, which is what keeps a status poll from being use
+    assert session._expired() == ("--idle-timeout", 30.0)
+
+
+def test_a_request_is_what_the_idle_clock_counts(duckdb_adapter: Any) -> None:
+    """A status poll asks a session what it is doing; it does not use it. An
+    agent watching a session it has stopped sending queries to would otherwise
+    keep the connection open forever by watching."""
+    session = with_clocks(duckdb_adapter, idle_timeout=30.0)
+    session._active_at -= 31
+    session.status()
+    assert session._expired() == ("--idle-timeout", 30.0)
+
+
+@needs_unix_sockets
+def test_a_session_waits_for_a_client_that_is_still_typing(
+    serve_session: ServeSession, tmp_path: Path
+) -> None:
+    """End to end, and the case the count exists for: a client connects and
+    shakes hands, and only then reads the script off its stdin. A session that
+    counted parsed requests alone would unlink the socket under it, and the
+    caller would get a broken pipe from a session that was up when they
+    reached it."""
+    session = serve_session(
+        "warm",
+        "-a",
+        "duckdb",
+        "--no-init",
+        ":memory:",
+        "--idle-timeout",
+        "1",
+        "--max-lifetime",
+        "0",
+    )
+    client = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            f"sys.argv = ['hsql', '--session', {session.name!r}, '-tAf', '-']\n"
+            "from harlequin.hsql import main\n"
+            "main()\n",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=tmp_path,
+        env={**os.environ, **session.env},
+    )
+    # longer than the idle timeout, and the client is already connected: what
+    # it has not done is say what it wants
+    time.sleep(3)
+    stdout, stderr = client.communicate(b"select 1 as a\n", timeout=30)
+    assert client.returncode == ExitCode.OK, stderr
+    assert stdout == b"1\n"
+
+
+@needs_unix_sockets
+def test_a_session_nobody_uses_stops_itself(serve_session: ServeSession) -> None:
+    """End to end, and the one place the wall clock is the point: the accept
+    loop reads the clocks between accepts, so nothing else has to notice."""
+    session = serve_session(
+        "warm", "-a", "duckdb", "--no-init", ":memory:", "--idle-timeout", "1"
+    )
+    assert session.process.wait(30) == ExitCode.OK
+    log = session.stderr()
+    assert "has had no request for 1s, so it is stopping (--idle-timeout)" in log
+    assert "Pass `--idle-timeout 0`" in log
+    assert "stopped after 0 requests" in log
+    assert not session.socket_path.exists()
+
+
+@needs_unix_sockets
+def test_a_session_that_has_been_up_long_enough_stops_itself(
+    serve_session: ServeSession, hsql_subprocess: HsqlSubprocess
+) -> None:
+    """The lifetime bounds the credential, so it ends a session the idle clock
+    would have kept up -- and the status it answered first says so."""
+    session = serve_session(
+        "warm",
+        "-a",
+        "duckdb",
+        "--no-init",
+        ":memory:",
+        "--idle-timeout",
+        "0",
+        "--max-lifetime",
+        "2",
+    )
+    status = json.loads(
+        hsql_subprocess(
+            ["--session", session.name, "--session-status"], env=session.env, timeout=30
+        ).stdout
+    )
+    assert status["idle_timeout_s"] is None
+    assert 0 < status["expires_in_s"] <= 2
+    assert session.process.wait(30) == ExitCode.OK
+    assert "has been up for 2s, so it is stopping (--max-lifetime)" in session.stderr()
+
+
+@pytest.mark.parametrize(
+    "seconds,written",
+    [
+        (45, "45s"),
+        (0.5, "0.5s"),
+        # not "1m30s": whole units only, and the largest that divides it
+        (90, "90s"),
+        (120, "2m"),
+        (1800, "30m"),
+        (28800, "8h"),
+    ],
+)
+def test_a_duration_prints_the_way_a_person_writes_one(
+    seconds: float, written: str
+) -> None:
+    """These print a knob's value back at whoever set it, and the two defaults
+    are half an hour and eight hours."""
+    from harlequin.hsql.diagnostics import format_duration
+
+    assert format_duration(seconds) == written
+
+
+# --- a transaction the session is holding open --------------------------------
+
+
+class Moody:
+    """A connection whose transaction mode is whatever the test last set."""
+
+    def __init__(self, connection: Any, mode: str | None) -> None:
+        self._connection = connection
+        self.mode = mode
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    @property
+    def transaction_mode(self) -> HarlequinTransactionMode | None:
+        if self.mode is None:
+            return None
+        return HarlequinTransactionMode(label=self.mode)
+
+
+def moody(duckdb_adapter: Any, mode: str | None = "Auto") -> tuple[Server, Moody]:
+    """A session whose transaction mode the test moves, which no adapter does.
+
+    `transaction_mode` is a setting `toggle_transaction_mode()` mutates and
+    hsql never calls, so a session reached only through hsql cannot leave the
+    mode it connected in -- this stands in for one moved out of band.
+    """
+    adapter = duckdb_adapter([":memory:"], no_init=True)
+    connection = Moody(adapter.connect(), mode)
+    return (
+        Server(
+            "tx",
+            adapter="duckdb",
+            connection=cast(Any, connection),
+            reconnect=lambda: cast(Any, Moody(adapter.connect(), mode)),
+        ),
+        connection,
+    )
+
+
+def noted(session: Server) -> str:
+    """What a request's caller is told about the session's transaction mode."""
+    segments: list[tuple[int, bytearray]] = []
+    session._note_transaction_mode(segments)
+    assert all(kind == protocol.STDERR for kind, _ in segments)
+    return b"".join(data for _, data in segments).decode("utf-8")
+
+
+def test_a_session_left_in_another_transaction_mode_tells_its_caller(
+    duckdb_adapter: Any,
+) -> None:
+    """The mode is the adapter's Auto/Manual setting, so what is reported is a
+    session moved out of band rather than anything about open work. Said every
+    time rather than once, because every request after the change runs under
+    it, and the caller who needs to know is each of them."""
+    session, connection = moody(duckdb_adapter)
+    assert noted(session) == ""
+    connection.mode = "Manual"
+    first = noted(session)
+    assert "session 'tx' is in transaction mode 'Manual'" in first
+    assert "not the one it connected in" in first
+    assert "--session-reset" in first
+    # every time, not once
+    assert noted(session) == first
+
+
+def test_a_session_in_the_mode_it_connected_in_says_nothing(
+    duckdb_adapter: Any,
+) -> None:
+    """The default is the mode the session started in, so a session whose
+    adapter has modes is as quiet as one whose adapter has none until
+    something moves it."""
+    quiet, _ = moody(duckdb_adapter, mode="Manual")
+    assert noted(quiet) == ""
+    modeless, _ = moody(duckdb_adapter, mode=None)
+    assert noted(modeless) == ""
+
+
+def test_a_reset_makes_the_new_connections_mode_the_default(
+    duckdb_adapter: Any,
+) -> None:
+    """A reset is a fresh connection, which is a session starting over: the
+    mode it comes back in is the one a later request is compared against."""
+    session, connection = moody(duckdb_adapter)
+    connection.mode = "Manual"
+    assert noted(session) != ""
+    session.reset()
+    assert noted(session) == ""
+
+
+def test_a_session_with_nothing_to_ask_is_not_asked_for_its_mode(
+    duckdb_adapter: Any,
+) -> None:
+    """Reading it takes the connection, and an abandoned one belongs to the
+    thread still inside it -- the one place a request must not touch it."""
+    session, connection = moody(duckdb_adapter)
+    connection.mode = "Manual"
+    session.abandon()
+    assert noted(session) == ""
+    assert session.status()["transaction_mode"] is None
+
+
+def test_an_adapter_that_raises_asking_for_its_mode_has_nothing_to_say(
+    duckdb_adapter: Any,
+) -> None:
+    """Adapters are third-party code and this runs after every request, so one
+    that raises here is answered the way one with no modes is."""
+    adapter = duckdb_adapter([":memory:"], no_init=True)
+
+    class Raising:
+        def __getattr__(self, name: str) -> Any:
+            raise AssertionError(name)
+
+        @property
+        def transaction_mode(self) -> HarlequinTransactionMode:
+            raise RuntimeError("the driver said no")
+
+    session = Server(
+        "raises",
+        adapter="duckdb",
+        connection=cast(Any, Raising()),
+        reconnect=adapter.connect,
+    )
+    assert noted(session) == ""
+    assert session.status()["transaction_mode"] is None
+
+
+@needs_unix_sockets
+def test_a_caller_hears_about_the_transaction_from_the_request_that_ran(
+    monkeypatch: pytest.MonkeyPatch, duckdb_adapter: Any
+) -> None:
+    """Wired to `_attend` rather than only callable: on the request's own
+    stream, after its output, so a caller reading stderr sees it beside
+    whatever else the run had to say."""
+    session, connection = moody(duckdb_adapter)
+
+    def ran(
+        request: protocol.Request, in_flight: server.InFlight | None = None
+    ) -> tuple[list[tuple[int, bytearray]], int]:
+        connection.mode = "Manual"
+        recorder = server.Recorder()
+        print("a row", file=recorder.stdout())
+        return recorder.segments, int(ExitCode.OK)
+
+    monkeypatch.setattr(session, "_run", ran)
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        protocol.send_frame(
+            theirs,
+            protocol.REQUEST,
+            protocol.pack_request(
+                argv=["-c", "select 1"],
+                cwd=os.getcwd(),
+                environ={},
+                stdin=None,
+                request_id=A_REQUEST,
+            ),
+        )
+        session._attend(ours)
+        assert protocol.recv_frame(theirs) == (
+            protocol.HELLO,
+            protocol.VERSION.encode(),
+        )
+        answered: list[tuple[int, bytes]] = []
+        while True:
+            frame = protocol.recv_frame(theirs)
+            assert frame is not None
+            if frame[0] == protocol.EXIT:
+                assert int.from_bytes(frame[1], "big") == ExitCode.OK
+                break
+            answered.append(frame)
+    stream = {kind: data for kind, data in answered}
+    assert stream[protocol.STDOUT] == b"a row\n"
+    assert b"is in transaction mode 'Manual'" in stream[protocol.STDERR]
+
+
+# --- a secret on a session's command line -------------------------------------
+
+
+@needs_unix_sockets
+@pytest.mark.parametrize(
+    "argv,named,code",
+    [
+        (
+            ["-a", "duckdb", "--no-init", ":memory:", "--md_token", "hunter2"],
+            "--md_token",
+            ExitCode.OK,
+        ),
+        # exit 3, which is what says the warning is written before the session
+        # connects: this DSN names a warehouse that is not there
+        (
+            ["-a", "duckdb", "--no-init", "duckdb://ted:hunter2@warehouse/db"],
+            "CONN_STR",
+            ExitCode.CONNECTION,
+        ),
+    ],
+    ids=["declared-option", "dsn"],
+)
+def test_a_secret_typed_beside_serve_is_warned_about(
+    serve_session: ServeSession, argv: list[str], named: str, code: ExitCode
+) -> None:
+    """A password on a one-shot invocation is in `ps` for a third of a second
+    and the same one on a session is there for hours, so the arithmetic is
+    worth saying out loud. A warning and not a refusal: a container with no
+    config file has nowhere else to put it yet.
+
+    What counts as a secret is the adapter's `secret=` and `harlequin.redact`'s
+    reading of a DSN, not a list of flag names kept beside the check."""
+    session = serve_session("warm", *argv, "--idle-timeout", "1", wait=False)
+    assert session.process.wait(30) == code
+    log = session.stderr()
+    assert f"{named} put a secret on this command line" in log
+    assert "hsql --serve warm -P PROFILE" in log
+    # and the warning is not itself the leak
+    assert "hunter2" not in log
+
+
+@needs_unix_sockets
+def test_a_secret_a_profile_holds_is_not_warned_about(
+    serve_session: ServeSession, tmp_path: Path
+) -> None:
+    """A profile is the remedy the warning points at, so a value read out of
+    one is the thing that went right."""
+    path = tmp_path / "hsql.toml"
+    path.write_text(
+        '[profiles.prod]\nadapter = "duckdb"\nconn_str = [":memory:"]\n'
+        'no_init = true\nmd_token = "hunter2"\n'
+    )
+    session = serve_session(
+        "warm", "--config-path", str(path), "-P", "prod", "--idle-timeout", "1"
+    )
+    assert session.process.wait(30) == ExitCode.OK
+    log = session.stderr()
+    assert "put a secret on this command line" not in log
+    assert "session 'warm' is ready (duckdb)" in log
+
+
+@needs_unix_sockets
+def test_a_serve_with_no_secret_on_it_says_nothing(serve_session: ServeSession) -> None:
+    session = serve_session(
+        "warm", "-a", "duckdb", "--no-init", ":memory:", "--idle-timeout", "1"
+    )
+    assert session.process.wait(30) == ExitCode.OK
+    assert "put a secret on this command line" not in session.stderr()

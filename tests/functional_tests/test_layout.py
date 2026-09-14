@@ -128,6 +128,10 @@ async def test_toggle_full_screen(
         )
         app.editor.text = "select 1"
         await pilot.press("ctrl+j")
+        # the query runs on a worker, and the Results Viewer cannot take focus
+        # until it has results: pressing f10 before then full-screens whatever
+        # still has focus, which is the editor
+        await wait_for_workers(app)
 
         app.results_viewer.focus()
         await pilot.press("f10")
