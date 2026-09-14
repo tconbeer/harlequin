@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-09-14
+
 ### Features
 
 - `hsql --serve NAME [CONN_STR]` holds a database connection open as a named session, and `hsql --session NAME -c ...` (or `HSQL_SESSION=NAME`) sends queries to it without paying start-up or connection cost again. Temp tables, settings and open transactions persist between invocations; `--session-reset` reconnects. POSIX only.
@@ -1104,7 +1106,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.13.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.14.0...HEAD
+[2.14.0]: https://github.com/tconbeer/harlequin/compare/2.13.0...2.14.0
 [2.13.0]: https://github.com/tconbeer/harlequin/compare/2.12.2...2.13.0
 [2.12.2]: https://github.com/tconbeer/harlequin/compare/2.12.1...2.12.2
 [2.12.1]: https://github.com/tconbeer/harlequin/compare/2.12.0...2.12.1
