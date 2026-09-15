@@ -9,3 +9,7 @@ docs/generated/** text eol=lf
 # `hsql --skill` copies these out byte for byte, so a CRLF checkout would ship
 # a CRLF skill and make the same hsql print different bytes on Windows.
 src/harlequin/hsql/skill/** text eol=lf
+
+# A pickle a released Harlequin wrote, loaded byte for byte by the migration
+# tests. Text conversion on a Windows checkout would corrupt it.
+tests/data/*.pickle binary

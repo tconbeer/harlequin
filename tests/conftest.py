@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import csv
-import pickle
 import sqlite3
 import sys
-from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 import duckdb
 import pytest
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.catalog_cache import HISTORY_CACHE_VERSION, CatalogCache
-from harlequin.history import History, QueryExecution
+from harlequin.catalog_cache import HISTORY_CACHE_VERSION
 from harlequin.locale_manager import set_locale
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -29,6 +25,18 @@ else:
 # SQLite grows a transaction button, so the tests that show one render differently
 # and skip their snapshot assertions (see the transaction_button_visible fixture).
 SNAPSHOT_PYTHON = (3, 10)
+
+LEGACY_CACHE_FILE = "catalog-cache-2.pickle"
+LEGACY_HISTORY: dict[str, list[tuple[str, datetime, int, float]]] = {
+    "abc123": [
+        ("select 1", datetime(2026, 8, 1, 9, 30), 1, 0.5),
+        ("sel", datetime(2026, 8, 1, 9, 31), -1, 0.0),
+    ],
+    "foo": [("select * from line_items", datetime(2026, 8, 1, 10, 30), 3, 1.25)],
+}
+"""What the committed version-2 cache holds, per connection: the four fields a
+record of that version had -- sql, when it ran in local time, how many rows it
+returned (negative for a failure), and how long it took in seconds."""
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -120,35 +128,24 @@ def catalog_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return cache_dir
 
 
+@pytest.fixture(autouse=True)
+def forget_migrated_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start each test as a new process does, having adopted no connection."""
+    monkeypatch.setattr("harlequin.history._migrated", set())
+
+
 @pytest.fixture
-def write_legacy_history(
-    catalog_cache_dir: Path,
-) -> Callable[..., None]:
-    """Write a cache of the version that kept the query history in a pickle.
+def legacy_history_cache(catalog_cache_dir: Path, data_dir: Path) -> Path:
+    """Put a version-2 catalog cache where Harlequin would find one.
 
-    Each record is the four fields a version-2 one had: (sql, executed_at,
-    result_row_count, elapsed). It predates the status the store keeps, so
-    nothing here writes one.
+    Written by Harlequin 2.14.0 (`scripts/write_legacy_cache.py`), so it names
+    the classes it pickles exactly as a user's own file does. It holds
+    `LEGACY_HISTORY`: two connections, one of whose queries failed.
     """
-
-    def _write(
-        connection_hash: str, *records: tuple[str, datetime, int, float]
-    ) -> None:
-        queries: deque[QueryExecution] = deque()
-        for sql, executed_at, result_row_count, elapsed in records:
-            record = QueryExecution(sql, executed_at, result_row_count, elapsed)
-            del record.__dict__["status"]
-            queries.append(record)
-        cache = CatalogCache(databases={}, s3={})
-        # the field the class no longer declares, which is what makes this a v2
-        cache.history = {  # type: ignore[attr-defined]
-            connection_hash: History(queries=queries)
-        }
-        catalog_cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file = catalog_cache_dir / f"catalog-cache-{HISTORY_CACHE_VERSION}.pickle"
-        cache_file.write_bytes(pickle.dumps(cache))
-
-    return _write
+    catalog_cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = catalog_cache_dir / f"catalog-cache-{HISTORY_CACHE_VERSION}.pickle"
+    cache_file.write_bytes((data_dir / LEGACY_CACHE_FILE).read_bytes())
+    return cache_file
 
 
 @pytest.fixture

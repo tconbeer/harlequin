@@ -14,6 +14,7 @@ import json
 import os
 import sqlite3
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence, cast
@@ -25,6 +26,18 @@ from harlequin.redact import redact_conn_str, redact_sql
 Status = Literal["ok", "error", "canceled"]
 """What became of one statement. Only the caller that cancelled a statement can
 tell it from one that matched nothing, so `canceled` is its own status."""
+
+
+@dataclass(frozen=True)
+class Record:
+    """One statement to insert into the store from outside a run."""
+
+    sql: str
+    run_at: datetime
+    status: Status = "ok"
+    rows: int | None = None
+    elapsed_ms: float | None = None
+
 
 MIGRATIONS: tuple[tuple[str, ...], ...] = (
     (
@@ -45,6 +58,15 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         )
         """,
         "create index queries_connection_at on queries (connection, id desc)",
+    ),
+    (
+        """
+        create table migrated_connections (
+          connection   text primary key,
+          migrated_at  text    not null,
+          records      integer not null
+        )
+        """,
     ),
 )
 """Each entry takes `pragma user_version` from its index to the next, and is a
@@ -359,6 +381,78 @@ def _trim(db: sqlite3.Connection) -> None:
         (RETENTION_ROWS,),
     )
     db.commit()
+
+
+def adopt(
+    connection: str,
+    records: Sequence[Record],
+    *,
+    program: str,
+    path: Path | None = None,
+    busy_timeout_ms: int = BUSY_TIMEOUT_MS,
+) -> int | None:
+    """Insert what a connection ran before it had a store, exactly once.
+
+    The rows and the marker that says this connection has been adopted are one
+    transaction, so two processes starting at once cannot both insert them, and
+    a failure part-way leaves nothing behind for the next attempt to mistake
+    for a finished one. Returns how many rows were written, or None if this
+    connection had already been adopted.
+
+    Raises: sqlite3.Error, OSError.
+    """
+    store = path if path is not None else default_path()
+    store.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.close(os.open(store, os.O_CREAT | os.O_RDWR, 0o600))
+    db = sqlite3.connect(store)
+    try:
+        _configure(db, busy_timeout_ms=busy_timeout_ms)
+        _migrate(db)
+        db.execute("begin immediate")
+        try:
+            already = db.execute(
+                'select 1 from migrated_connections where "connection" = ?',
+                (connection,),
+            ).fetchone()
+            if already is not None:
+                db.rollback()
+                return None
+            db.executemany(
+                _INSERT,
+                [
+                    _adopted_row(record, connection=connection, program=program)
+                    for record in records
+                ],
+            )
+            db.execute(
+                "insert into migrated_connections "
+                '("connection", "migrated_at", "records") values (?, ?, ?)',
+                (connection, datetime.now(timezone.utc).isoformat(), len(records)),
+            )
+        except BaseException:
+            db.rollback()
+            raise
+        db.commit()
+    finally:
+        db.close()
+    return len(records)
+
+
+def _adopted_row(record: Record, *, connection: str, program: str) -> tuple[Any, ...]:
+    """One record as a row of `COLUMNS`, redacted as a live write would be."""
+    return (
+        record.run_at.isoformat(),
+        program,
+        connection,
+        None,
+        None,
+        redact_sql(record.sql),
+        record.status,
+        record.rows,
+        None,
+        _rounded(record.elapsed_ms),
+        None,
+    )
 
 
 def recent(

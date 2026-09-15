@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -53,7 +54,6 @@ from harlequin.catalog import (
 from harlequin.catalog_cache import (
     CatalogCache,
     get_catalog_cache,
-    migrate_pickled_history,
     update_catalog_cache,
 )
 from harlequin.components import (
@@ -97,7 +97,7 @@ from harlequin.exception import (
     pretty_error_message,
     pretty_print_error,
 )
-from harlequin.history import History
+from harlequin.history import History, migrate_pickled_history
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.plugins import load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
@@ -183,9 +183,11 @@ class ResultsFetched(Message):
 class QueryHistoryLoaded(Message):
     """The store's rows for this connection, read on a worker."""
 
-    def __init__(self, history: History) -> None:
+    def __init__(self, history: History, warning: str | None = None) -> None:
         super().__init__()
         self.history = history
+        self.warning = warning
+        """What went wrong on the way to these rows, if anything did."""
 
 
 class TunnelClosed(Message):
@@ -1126,6 +1128,9 @@ class Harlequin(AppBase):
 
     @on(QueryHistoryLoaded)
     def show_query_history(self, message: QueryHistoryLoaded) -> None:
+        if message.warning is not None:
+            self.notify(message.warning, title="Query History", severity="warning")
+
         async def history_callback(screen_data: str | None) -> None:
             """
             Insert the selected query into a new buffer.
@@ -1380,10 +1385,6 @@ class Harlequin(AppBase):
         cache = get_catalog_cache()
         if cache is not None:
             self.post_message(CatalogCacheLoaded(cache=cache))
-        if self.query_log.enabled:
-            # before this session runs anything: the move only happens while
-            # the store holds nothing for this connection
-            migrate_pickled_history(self.connection_hash)
 
     @work(
         thread=True,
@@ -1393,8 +1394,18 @@ class Harlequin(AppBase):
         description="Reading the query history.",
     )
     def _load_query_history(self) -> None:
+        warning: str | None = None
+        if self.query_log.enabled:
+            try:
+                migrate_pickled_history(self.connection_hash)
+            except (sqlite3.Error, OSError) as e:
+                # the move is one transaction, so the next read tries again
+                warning = f"Harlequin could not adopt your saved query history: {e}"
         self.post_message(
-            QueryHistoryLoaded(history=History.recent(connection=self.connection_hash))
+            QueryHistoryLoaded(
+                history=History.recent(connection=self.connection_hash),
+                warning=warning,
+            )
         )
 
     @work(

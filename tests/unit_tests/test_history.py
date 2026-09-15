@@ -9,16 +9,16 @@ rather than as a crash.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 import pytest
 from rich.console import Console
 
-from harlequin.catalog_cache import migrate_pickled_history
-from harlequin.history import History, QueryExecution
+from harlequin.history import History, QueryExecution, migrate_pickled_history
 from harlequin.query_log import QueryLog
+from tests.conftest import LEGACY_HISTORY
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def test_recent_takes_its_rows_from_the_newest_end(log: QueryLog) -> None:
     for i in range(10):
         log.write(f"select {i}")
 
-    assert [record.query_text for record in History.recent(n=2)] == [
+    assert [record.query_text for record in History.recent(limit=2)] == [
         "select 9",
         "select 8",
     ]
@@ -157,50 +157,66 @@ def test_a_row_with_an_unreadable_timestamp_costs_only_that_row(
 # --- the one-time move out of the pickle -------------------------------------
 
 
-@pytest.fixture
-def pickled(write_legacy_history: Callable[..., None]) -> datetime:
-    """Two queries and an error, in a cache of the version that pickled them."""
-    ran_at = datetime.now() - timedelta(days=30)
-    write_legacy_history(
-        "abc123",
-        ("select 1", ran_at, 1, 0.5),
-        ("sel", ran_at + timedelta(minutes=1), -1, 0.0),
-    )
-    return ran_at
+def local(ran_at: datetime) -> datetime:
+    """A version-2 timestamp, which was naive local time, as the store reads it."""
+    return ran_at.astimezone()
 
 
-def test_a_pickled_history_moves_into_the_store(pickled: datetime, store: Path) -> None:
+def test_a_pickled_history_moves_into_the_store(
+    legacy_history_cache: Path, store: Path
+) -> None:
     assert migrate_pickled_history("abc123") == 2
 
     records = list(History.recent(connection="abc123"))
     assert [record.query_text for record in records] == ["sel", "select 1"]
-    # its own timestamp, months old, rather than the moment it was moved
-    assert records[-1].executed_at == pickled.astimezone()
+    # its own timestamp, from before the store existed, rather than the moment
+    # it was moved
+    assert records[-1].executed_at == local(LEGACY_HISTORY["abc123"][0][1])
     assert records[-1].result_row_count == 1
+    assert records[-1].elapsed == 0.5
     assert records[0].status == "error"
     assert programs(store) == {"harlequin"}
 
 
-def test_a_pickled_history_moves_once(pickled: datetime, store: Path) -> None:
+def test_a_pickled_history_moves_once(legacy_history_cache: Path, store: Path) -> None:
     assert migrate_pickled_history("abc123") == 2
     assert migrate_pickled_history("abc123") == 0
     assert len(History.recent(connection="abc123")) == 2
 
 
-def test_a_connection_that_has_run_something_is_left_alone(
-    pickled: datetime, store: Path
+def test_a_pickled_history_moves_once_across_processes(
+    legacy_history_cache: Path, store: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A store with rows is the newer record, whichever command wrote them."""
-    log = QueryLog(program="hsql", connection="abc123")
-    log.write("select 2")
-    log.close()
+    """The store's marker is what holds, not this process's memory of the move."""
+    assert migrate_pickled_history("abc123") == 2
 
+    monkeypatch.setattr("harlequin.history._migrated", set())
     assert migrate_pickled_history("abc123") == 0
-    assert [record.query_text for record in History.recent()] == ["select 2"]
+    assert len(History.recent(connection="abc123")) == 2
+
+
+def test_a_connection_hsql_wrote_first_still_gets_its_pickle(
+    legacy_history_cache: Path, store: Path
+) -> None:
+    """Both commands key the store alike, and only the IDE moves the pickle.
+
+    So rows for this connection are no evidence that the move has happened --
+    one `hsql` run against the database puts them there.
+    """
+    agent = QueryLog(program="hsql", connection="abc123")
+    agent.write("select * from orders")
+    agent.close()
+
+    assert migrate_pickled_history("abc123") == 2
+    assert sorted(record.query_text for record in History.recent()) == [
+        "sel",
+        "select * from orders",
+        "select 1",
+    ]
 
 
 def test_a_connection_the_cache_does_not_hold_moves_nothing(
-    pickled: datetime, store: Path
+    legacy_history_cache: Path, store: Path
 ) -> None:
     assert migrate_pickled_history("other") == 0
     assert len(History.recent()) == 0
@@ -211,3 +227,31 @@ def test_there_is_nothing_to_move_without_a_pickle(
 ) -> None:
     assert migrate_pickled_history("abc123") == 0
     assert not store.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_a_moved_pickle_is_no_longer_readable_by_everyone(
+    legacy_history_cache: Path, store: Path
+) -> None:
+    """It holds every statement it recorded, and nothing redacted them."""
+    legacy_history_cache.chmod(0o644)
+
+    migrate_pickled_history("abc123")
+
+    assert legacy_history_cache.stat().st_mode & 0o077 == 0
+
+
+def test_a_cache_this_version_cannot_unpickle_is_not_an_error(
+    legacy_history_cache: Path, store: Path
+) -> None:
+    """A rename since the file was written must not cost the screen.
+
+    The classes a version-2 pickle names are `harlequin.history`'s, so its
+    load is the one place this app reads a format an older one wrote.
+    """
+    legacy_history_cache.write_bytes(
+        legacy_history_cache.read_bytes().replace(b"QueryExecution", b"QueryExecutioZ")
+    )
+
+    assert migrate_pickled_history("abc123") == 0
+    assert len(History.recent()) == 0

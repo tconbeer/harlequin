@@ -1,35 +1,32 @@
 from __future__ import annotations
 
+import contextlib
 import pickle
-import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from platformdirs import user_cache_dir
 
 from harlequin.catalog import Catalog
-from harlequin.query_log import (
-    QueryLog,
-    get_connection_hash,  # re-exported
-    recent,
-)
+from harlequin.query_log import get_connection_hash  # re-exported
 
 if TYPE_CHECKING:
     from harlequin.components.data_catalog import S3Tree
+    from harlequin.history import QueryExecution
 
 CACHE_VERSION = 3
 
 HISTORY_CACHE_VERSION = 2
-"""The last version that held the query history, which the store now holds."""
+"""The version whose pickle holds a query history."""
 
 __all__ = [
     "CatalogCache",
     "get_catalog_cache",
     "get_connection_hash",
-    "migrate_pickled_history",
+    "load_legacy_history",
+    "restrict_legacy_cache",
     "update_catalog_cache",
 ]
 
@@ -75,51 +72,26 @@ def update_catalog_cache(
     _write_cache(cache)
 
 
-def migrate_pickled_history(connection_hash: str | None) -> int:
-    """Copy a pre-3 cache's queries for one connection into the query log.
-
-    Once per connection, and never over rows that are already there: a store
-    holding any of this connection's queries has either been migrated or been
-    written to since, and the pickle is the older record either way. Returns
-    how many records moved.
-    """
-    if not connection_hash:
-        return 0
+def load_legacy_history(connection_hash: str) -> list[QueryExecution] | None:
+    """The queries a version-2 cache holds for one connection, if it holds any."""
     cache_file = _get_cache_file(HISTORY_CACHE_VERSION)
     if not cache_file.exists():
-        return 0
-    try:
-        if recent(connection=connection_hash, limit=1):
-            return 0
-    except sqlite3.Error:
-        return 0
+        return None
     cache = _load_cache(cache_file)
     if cache is None:
-        return 0
-    # the field this class no longer declares: what a version-2 pickle carries
+        return None
+    # a version-2 pickle carries a history dict keyed by connection hash
     history = getattr(cache, "history", {}).get(connection_hash)
-    if history is None:
-        return 0
-    log = QueryLog(program="harlequin", connection=connection_hash)
-    migrated = 0
-    try:
-        for record in history:
-            # a version-2 record had no status: a negative row count is how it
-            # said the query failed
-            failed = (record.result_row_count or 0) < 0
-            written = log.write(
-                record.query_text,
-                status="error" if failed else "ok",
-                rows=None if failed else record.result_row_count,
-                elapsed_ms=record.elapsed * 1000,
-                # recorded in local time, and the store keeps UTC
-                run_at=record.executed_at.astimezone(timezone.utc),
-            )
-            if written is not None:
-                migrated += 1
-    finally:
-        log.close()
-    return migrated
+    return None if history is None else list(history)
+
+
+def restrict_legacy_cache() -> None:
+    """Take the group and world bits off a version-2 cache.
+
+    It holds every statement it recorded, and nothing redacted them.
+    """
+    with contextlib.suppress(OSError):
+        _get_cache_file(HISTORY_CACHE_VERSION).chmod(0o600)
 
 
 def _get_cache_file(version: int = CACHE_VERSION) -> Path:
@@ -148,6 +120,10 @@ def _load_cache(cache_file: Path | None = None) -> CatalogCache | None:
         FileNotFoundError,
         AssertionError,
         EOFError,
+        # an older pickle names classes by module path, which this version may
+        # have renamed or moved
+        AttributeError,
+        ImportError,
     ):
         return None
     else:
