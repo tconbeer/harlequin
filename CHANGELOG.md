@@ -8,8 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - Adds a `chdb` extra for installing the chDB adapter (`pip install 'harlequin[chdb]'`) and querying local ClickHouse databases ([#1144](https://github.com/tconbeer/harlequin/issues/1144)).
 - Harlequin's Query History (`F8`) now shows the queries hsql ran against the same database, and keeps them when a session ends without a clean quit ([#429](https://github.com/tconbeer/harlequin/issues/429)).
-- Harlequin's Query History (`F8`) now has a filter: type to narrow the list to queries that mention what you typed, anywhere in your history rather than only in the queries on screen ([#429](https://github.com/tconbeer/harlequin/issues/429)).
-- Harlequin's Query History screen now lists its keys in a footer, and its preview pane no longer takes a cursor ([#850](https://github.com/tconbeer/harlequin/issues/850)).
+- Harlequin's Query History (`F8`) now has a filter: start typing to narrow the list to queries that mention what you typed, searching your whole history ([#429](https://github.com/tconbeer/harlequin/issues/429)).
+- Harlequin's Query History screen now lists its keys in a footer, ignores the app's keys while it is open, and shows no cursor in its preview pane, which scrolls with the arrow keys. A very long query no longer fills the list with one entry ([#850](https://github.com/tconbeer/harlequin/issues/850)).
 - `hsql --history` lists the queries Harlequin and hsql have run, newest first, and `hsql --history-search TERM` lists the ones whose SQL mentions TERM. Both take every format and layout flag a query does; `-P`, `-a` or a connection string narrows them to one database ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 
 ### Performance

@@ -9,6 +9,9 @@ DataCatalog,
 EditorCollection,
 FooterContainer > Input,
 ResultsViewer,
+HistoryScreen #history_filter,
+HistoryScreen OptionList,
+HistoryScreen QueryPreview,
 Lazy {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
@@ -24,7 +27,8 @@ EditorCollection:focus-within,
 FooterContainer > Input:focus,
 ResultsViewer:focus-within,
 HistoryScreen #history_filter:focus,
-HistoryScreen OptionList:focus {
+HistoryScreen OptionList:focus,
+HistoryScreen QueryPreview:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
@@ -577,40 +581,27 @@ ExportScreen Button:hover,
 
 /* HISTORY SCREEN */
 
+/* opaque, unlike every other modal here: this screen fills the viewport, and
+it is a ModalScreen so that the app's keys stop at it rather than for the dim
+backdrop that comes with one */
 HistoryScreen {
     background: $background;
 }
 
-HistoryScreen #history_panes {
-    height: 1fr;
-}
-
 HistoryScreen #history_filter_pane {
-    width: 50%;
-    height: 100%;
+    width: 1fr;
 }
 
 HistoryScreen #history_filter {
-    background: $background;
-    border: round $border-color-nofocus;
-    border-title-color: $border-title-color-nofocus;
     height: 3;
-    width: 100%;
 }
 
 HistoryScreen QueryPreview {
-    border: round $border-color-nofocus;
-    border-title-color: $border-title-color-nofocus;
-    width: 50%;
-    height: 100%;
+    width: 1fr;
 }
 
 HistoryScreen OptionList {
-    background: $background;
     background-tint: $background;
-    border: round $border-color-nofocus;
-    width: 100%;
-    height: 1fr;
     padding: 0;
 }
 

@@ -30,6 +30,9 @@ DEFAULT_ROWS = 500
 ERROR_STYLE: StyleType = "bold italic red"
 """What a record renders an unsuccessful run in, for a caller with no theme."""
 
+MAX_LINES = 8
+"""The most lines of a query a row shows before it says how many are left."""
+
 
 @dataclass
 class QueryExecution:
@@ -70,11 +73,11 @@ class QueryExecution:
                 )
             )
         query_lines = self.query_text.strip().splitlines()
-        if len(query_lines) > 8:
+        if len(query_lines) > MAX_LINES:
             continuation: RenderableType = Text(
-                f"… ({len(query_lines) - 7} more lines)\n", style="italic"
+                f"… ({len(query_lines) - MAX_LINES + 1} more lines)\n", style="italic"
             )
-            query_lines = query_lines[0:7]
+            query_lines = query_lines[: MAX_LINES - 1]
         else:
             continuation = ""
 
@@ -83,7 +86,9 @@ class QueryExecution:
                 renderables=[Text(ts, style="bold"), result],
                 expand=True,
             ),
-            "\n".join(query_lines),
+            # ellipsised rather than wrapped, so that one line of a query is one
+            # line of the row and a single long line cannot fill the pane
+            Text("\n".join(query_lines), no_wrap=True, overflow="ellipsis"),
             continuation,
         )
 

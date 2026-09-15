@@ -5,9 +5,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 from rich.padding import Padding
 from rich.style import Style
-from textual import on, work
+from textual import events, on, work
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
@@ -21,6 +20,7 @@ from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
     from textual.app import RenderResult
+    from textual.widget import Widget
 
 FILTER_INTERVAL = 0.2
 """How long the store goes unread while the filter is being typed into."""
@@ -51,30 +51,27 @@ class HistoryList(OptionList):
     BORDER_TITLE = "Query History"
 
 
-class QueryPreview(TextEditor, can_focus=False):
+class QueryPreview(TextEditor, inherit_bindings=False):
     """The highlighted query, for reading.
 
-    Nothing in it can take focus, so a cursor never lands in a query that the
-    pane will not let the user change.
+    It takes focus so that a query too long for the pane can be scrolled from
+    the keyboard, but `show_cursor` gives it no cursor and no cursor-line
+    highlight, and the arrow keys scroll it as they would any other container.
+    The editor's own file and search keys are not inherited: nothing here is
+    saved, opened or searched.
     """
 
     def on_mount(self) -> None:
+        # set on the child because TextEditor does not take it:
+        # https://github.com/tconbeer/textual-textarea/issues/345
         assert self.text_input is not None
-        self.text_input.can_focus = False
+        self.text_input.show_cursor = False
 
 
 class HistoryScreen(ModalScreen[str]):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "history-screen--error-label",
     }
-
-    BINDINGS = [
-        Binding("up", "cursor_up", "Up", show=False),
-        Binding("down", "cursor_down", "Down", show=False),
-        Binding("pageup", "page_up", "Page Up", show=False),
-        Binding("pagedown", "page_down", "Page Down", show=False),
-    ]
-    """The list's keys, so it is still driveable while the filter has focus."""
 
     class HistoryFiltered(Message):
         """Posted when a filtered read of the query log comes back.
@@ -99,6 +96,8 @@ class HistoryScreen(ModalScreen[str]):
     ) -> None:
         super().__init__(name, id, classes)
         self.history = history
+        self.search = ""
+        """The filter term `history` was read for."""
         self.connection = connection
         self.theme = theme
         self._filter_timer: Timer | None = None
@@ -111,7 +110,9 @@ class HistoryScreen(ModalScreen[str]):
             color=error_style.color, italic=error_style.italic, bold=error_style.bold
         )
         self.filter_input = Input(
-            placeholder="Filter by query text", id="history_filter"
+            placeholder="Filter by query text",
+            id="history_filter",
+            select_on_focus=False,
         )
         self.list = HistoryList(*self._options())
         self.preview = QueryPreview(
@@ -129,32 +130,56 @@ class HistoryScreen(ModalScreen[str]):
         self.filter_input.border_title = "Filter"
         self._show_count()
         self._highlight_first()
-        # the filter takes focus, and the screen's bindings drive the list
-        self.filter_input.focus()
+        # the screen opens on the list, which is what it is for; the filter is
+        # reached by typing
+        self.list.focus()
         self.post_message(WidgetMounted(widget=self))
 
     def action_cancel(self) -> None:
-        """Clear the filter, or leave when there is nothing to clear."""
-        if self.filter_input.value:
+        """Empty the filter, leave the filter, or leave the screen."""
+        if not self.filter_input.has_focus:
+            self.app.pop_screen()
+        elif self.filter_input.value:
             self.filter_input.value = ""
         else:
-            self.app.pop_screen()
+            self.list.focus()
 
     def action_select(self) -> None:
-        self.list.action_select()
+        """Take the highlighted query, or take the filter's term to the list."""
+        if self.filter_input.has_focus:
+            self.list.focus()
+        else:
+            self.list.action_select()
 
-    def action_cursor_up(self) -> None:
-        self.list.action_cursor_up()
+    def focus_next(self, selector: str | type[Widget] = "*") -> Widget:
+        return self._focus_other_pane()
 
-    def action_cursor_down(self) -> None:
-        self.list.action_cursor_down()
+    def focus_previous(self, selector: str | type[Widget] = "*") -> Widget:
+        return self._focus_other_pane()
 
-    def action_page_up(self) -> None:
-        # OptionList's two paging actions are the only unannotated ones
-        self.list.action_page_up()  # type: ignore[no-untyped-call]
+    def _focus_other_pane(self) -> Widget:
+        """Tab is between the list and the preview.
 
-    def action_page_down(self) -> None:
-        self.list.action_page_down()  # type: ignore[no-untyped-call]
+        The filter is not in the round trip: it is reached by typing, and every
+        way out of it leads back to the list. Overriding the methods rather than
+        the actions catches `app.focus_next`, which is what Textual binds tab to
+        before a keymap is applied.
+        """
+        pane: Widget = self.preview if self.list.has_focus else self.list
+        pane.focus()
+        return pane
+
+    def on_key(self, event: events.Key) -> None:
+        """Typing over the list starts a search rather than being swallowed."""
+        if not self.list.has_focus:
+            return
+        typed = event.character
+        if typed is None or not typed.isprintable():
+            return
+        event.stop()
+        event.prevent_default()
+        self.filter_input.focus()
+        self.filter_input.insert_text_at_cursor(typed)
 
     @on(Input.Changed, "#history_filter")
     def schedule_filter(self, message: Input.Changed) -> None:
@@ -174,12 +199,12 @@ class HistoryScreen(ModalScreen[str]):
         group="history_filters",
     )
     def read_history(self, search: str) -> None:
-        """The whole store filtered by `search`, not the rows already on screen."""
+        """The whole store, filtered by `search`."""
         try:
             history: History | None = History.recent(
                 connection=self.connection, search=search or None
             )
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
             history = None
         self.post_message(self.HistoryFiltered(history=history, search=search))
 
@@ -200,6 +225,11 @@ class HistoryScreen(ModalScreen[str]):
                 )
             return
         self._filter_failed = False
+        if message.search == self.search and self.list.option_count:
+            # an edit that came to nothing inside the debounce window still
+            # reads, and rebuilding for it would lose the highlight
+            return
+        self.search = message.search
         self.history = message.history
         self.list.clear_options()
         self.list.add_options(self._options())
