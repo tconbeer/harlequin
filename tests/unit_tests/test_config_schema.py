@@ -276,6 +276,14 @@ def test_the_base_schema_still_closes_what_it_does_know() -> None:
     assert profile(check, limit=True)
 
 
+def test_code_editor_is_constrained_to_enum() -> None:
+    check = validator(None)
+    assert not profile(check, code_editor="default")
+    assert not profile(check, code_editor="vim")
+    assert profile(check, code_editor="invalid")
+    assert profile(check, code_editor=True)
+
+
 def test_only_the_base_schema_claims_the_published_id() -> None:
     """A schema built for one machine is not the one published at that URL."""
     assert "$id" not in schema_for({"faux": FAKE_OPTIONS})

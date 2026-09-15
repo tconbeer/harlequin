@@ -16,7 +16,9 @@ from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
+    DEFAULT_CODE_EDITOR,
     DEFAULT_SSH_TIMEOUT,
+    VALID_CODE_EDITORS,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
@@ -35,6 +37,7 @@ from harlequin.exception import (
     pretty_print_error,
 )
 from harlequin.first_pass import attach_adapter_options, first_pass
+from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 from harlequin.keys_app import HarlequinKeys
 from harlequin.locale_manager import set_locale
 from harlequin.options import AbstractOption
@@ -51,6 +54,20 @@ DEFAULT_VIEWER_MAX_ROWS = 100_000
 DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())
 DEFAULT_KEYMAP_NAMES = ["vscode"]
+
+# Auto-applied whenever "vim" is in keymap_names, or when code_editor="vim"
+# (if keymaps were not customized). If a profile already defines its own
+# keymap named "vim" (via [[keymaps.vim]] in a config file), that one is used
+# instead -- this default is only a fallback, never an override.
+DEFAULT_VIM_RESULTS_VIEWER_KEYMAP = HarlequinKeyMap(
+    name="vim",
+    bindings=[
+        HarlequinKeyBinding(keys="k,up", action="results_viewer.cursor_up"),
+        HarlequinKeyBinding(keys="down,j", action="results_viewer.cursor_down"),
+        HarlequinKeyBinding(keys="h,left", action="results_viewer.cursor_left"),
+        HarlequinKeyBinding(keys="l,right", action="results_viewer.cursor_right"),
+    ],
+)
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -142,6 +159,7 @@ HARLEQUIN_OPTION_GROUPS: list[OptionGroupDict] = [
             "--show-files",
             "--show-s3",
             "--theme",
+            "--code-editor",
             "--keymap-name",
             "--viewer-max-rows",
             "--limit",
@@ -549,6 +567,13 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ),
         is_flag=True,
     )
+    @click.option(
+        "--code-editor",
+        default=DEFAULT_CODE_EDITOR,
+        show_default=True,
+        type=click.Choice(list(VALID_CODE_EDITORS), case_sensitive=False),
+        help="The code editor to use in the query editor (default or vim).",
+    )
     @click.pass_context
     def inner_cli(
         ctx: click.Context,
@@ -672,7 +697,39 @@ def build_cli(argv: Sequence[str]) -> click.Command:
             )
             ctx.exit(2)
 
-        # off the config before the adapter is handed the rest of it
+        # must be popped before it's passed to the adapter below, same as
+        # every other harlequin-only option above
+        code_editor: str = str(config.pop("code_editor", DEFAULT_CODE_EDITOR)).lower()
+        if code_editor not in VALID_CODE_EDITORS:
+            pretty_print_error(
+                HarlequinConfigError(
+                    msg=(
+                        f"Invalid value for 'code_editor': {code_editor!r}. "
+                        f"Must be one of: {', '.join(VALID_CODE_EDITORS)}."
+                    ),
+                    title="Harlequin Config Error",
+                )
+            )
+            ctx.exit(2)
+
+        # If vim is in keymap_names, ensure DEFAULT_VIM_RESULTS_VIEWER_KEYMAP is loaded
+        # if not overridden by the user.
+        # Also, if code_editor == "vim", auto-include "vim" in keymap_names by default
+        # if keymaps were not explicitly configured.
+        if (
+            code_editor == "vim"
+            and keymap_names == DEFAULT_KEYMAP_NAMES
+            and "vim" not in keymap_names
+        ):
+            keymap_names = [*keymap_names, "vim"]
+
+        if "vim" in keymap_names and not any(
+            km.name == "vim" for km in user_defined_keymaps
+        ):
+            user_defined_keymaps = [
+                *user_defined_keymaps,
+                DEFAULT_VIM_RESULTS_VIEWER_KEYMAP,
+            ]
         try:
             ssh_config = take_ssh_keys(config, typed=explicitly_set)
             no_write_history = take_no_write_history(config)
@@ -725,6 +782,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 show_s3=show_s3,
                 export_path=export_path,
                 ssh_tunnel=tunnel,
+                code_editor=code_editor,
             )
             tui.run()
 

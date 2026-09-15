@@ -82,6 +82,13 @@ def _wizard(config_path: Path | None) -> None:
         style=HARLEQUIN_QUESTIONARY_STYLE,
     ).unsafe_ask()
 
+    code_editor = questionary.select(
+        message="What code editor should this profile use?",
+        choices=["default", "vim"],
+        default=selected_profile.get("code_editor", "default"),
+        style=HARLEQUIN_QUESTIONARY_STYLE,
+    ).unsafe_ask()
+
     keymap_choices = [
         questionary.Choice(
             title=opt,
@@ -182,6 +189,7 @@ def _wizard(config_path: Path | None) -> None:
         "theme": theme,
         "viewer_max_rows": viewer_max_rows,
         "keymap_name": keymap_name,
+        "code_editor": code_editor,
     }
 
     if limit is not None and limit >= 0:

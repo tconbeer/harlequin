@@ -1,4 +1,4 @@
-from harlequin.components.code_editor import CodeEditor, EditorCollection
+from harlequin.components.code_editor import CodeEditor, EditorCollection, VimCodeEditor
 from harlequin.components.data_catalog import DataCatalog, HarlequinTree
 from harlequin.components.debug_info import DebugInfoScreen
 from harlequin.components.export_screen import ExportScreen, export_callback
@@ -7,10 +7,12 @@ from harlequin.components.history_screen import HistoryScreen
 from harlequin.components.results_viewer import ResultsTable, ResultsViewer
 from harlequin.components.run_query_bar import RunQueryBar
 from harlequin.components.text_modal import CellViewModal, ErrorModal, TextModal
+from harlequin.components.vim_status_bar import VimStatusBar
 
 __all__ = [
     "CellViewModal",
     "CodeEditor",
+    "VimCodeEditor",
     "EditorCollection",
     "ErrorModal",
     "ExportScreen",
@@ -24,4 +26,5 @@ __all__ = [
     "HarlequinTree",
     "HistoryScreen",
     "TextModal",
+    "VimStatusBar",
 ]
