@@ -23,6 +23,8 @@ from harlequin.query_log import (
     RETENTION_ROWS,
     SCHEMA_VERSION,
     QueryLog,
+    Record,
+    adopt,
     connection_id,
     default_path,
     get_connection_hash,
@@ -410,6 +412,136 @@ def test_several_processes_can_write_at_once(store: Path) -> None:
         for future in [pool.submit(_insert_many, str(store)) for _ in range(4)]:
             future.result()
     assert len(rows(store)) == 400
+
+
+# --- adopting what ran before the store --------------------------------------
+
+
+def adopted(sql: str, *, rows: int | None = 1) -> Record:
+    return Record(
+        sql=sql,
+        run_at=datetime(2026, 8, 1, 9, 30, tzinfo=timezone.utc),
+        rows=rows,
+        elapsed_ms=500.0,
+    )
+
+
+def test_adopting_writes_the_records_and_says_how_many(store: Path) -> None:
+    moved = adopt(
+        "abc123",
+        [adopted("select 1"), adopted("select 2")],
+        program="harlequin",
+        path=store,
+    )
+
+    assert moved == 2
+    written_rows = rows(store)
+    assert [row["sql"] for row in written_rows] == ["select 1", "select 2"]
+    assert all(row["program"] == "harlequin" for row in written_rows)
+    assert all(row["connection"] == "abc123" for row in written_rows)
+
+
+def test_a_connection_is_adopted_once(store: Path) -> None:
+    """The marker, not the rows, is what says the move already happened."""
+    assert adopt("abc123", [adopted("select 1")], program="harlequin", path=store) == 1
+    assert (
+        adopt("abc123", [adopted("select 1")], program="harlequin", path=store) is None
+    )
+    assert len(rows(store)) == 1
+
+
+def test_a_connection_that_has_run_since_is_still_adopted(store: Path) -> None:
+    """A store with rows for this connection is not a store that has adopted it.
+
+    Both commands write the store under the same key, and only the IDE adopts,
+    so one `hsql` run against a database is all it takes for rows to be there.
+    """
+    other = QueryLog(program="hsql", connection="abc123", path=store)
+    other.write("select 2")
+    other.close()
+
+    assert adopt("abc123", [adopted("select 1")], program="harlequin", path=store) == 1
+    assert sorted(row["sql"] for row in rows(store)) == ["select 1", "select 2"]
+
+
+def test_adopting_nothing_still_claims_the_connection(store: Path) -> None:
+    """An empty history is moved once, rather than looked for forever."""
+    assert adopt("abc123", [], program="harlequin", path=store) == 0
+    assert (
+        adopt("abc123", [adopted("select 1")], program="harlequin", path=store) is None
+    )
+
+
+def test_a_failed_adoption_leaves_nothing_behind(
+    store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One transaction, so the next attempt sees a store it has not touched."""
+
+    def explode(sql: str) -> str:
+        if sql == "select 2":
+            raise RuntimeError("boom")
+        return sql
+
+    monkeypatch.setattr("harlequin.query_log.redact_sql", explode)
+    with pytest.raises(RuntimeError):
+        adopt(
+            "abc123",
+            [adopted("select 1"), adopted("select 2")],
+            program="harlequin",
+            path=store,
+        )
+    assert rows(store) == []
+
+    monkeypatch.undo()
+    assert (
+        adopt(
+            "abc123",
+            [adopted("select 1"), adopted("select 2")],
+            program="harlequin",
+            path=store,
+        )
+        == 2
+    )
+    assert len(rows(store)) == 2
+
+
+def test_an_adopted_record_is_redacted(store: Path) -> None:
+    hide_secrets_in({"password": SECRET})
+    adopt(
+        "abc123",
+        [adopted(f"attach 'dbname=x password={SECRET}'")],
+        program="harlequin",
+        path=store,
+    )
+
+    (row,) = rows(store)
+    assert SECRET not in row["sql"]
+    assert REDACTED in row["sql"]
+
+
+def _adopt_one(store: str) -> str:
+    moved = adopt(
+        "abc123",
+        [adopted(f"select {n}") for n in range(200)],
+        program="harlequin",
+        path=Path(store),
+    )
+    return "claimed" if moved is not None else "skipped"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="a process pool per test is slow on Windows"
+)
+def test_only_one_of_several_processes_adopts(store: Path) -> None:
+    """Two panes restoring the same database at login is the ordinary case."""
+    QueryLog(program="hsql", path=store).close()
+    with ProcessPoolExecutor(max_workers=3) as pool:
+        outcomes = [
+            f.result() for f in [pool.submit(_adopt_one, str(store)) for _ in range(3)]
+        ]
+
+    assert sorted(outcomes) == ["claimed", "skipped", "skipped"]
+    assert len(rows(store)) == 200
 
 
 # --- reading it back ---------------------------------------------------------

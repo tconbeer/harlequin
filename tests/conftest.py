@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import duckdb
@@ -10,6 +11,7 @@ import pytest
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from harlequin.catalog_cache import HISTORY_CACHE_VERSION
 from harlequin.locale_manager import set_locale
 from harlequin.windows_timezone import check_and_install_tzdata
 
@@ -23,6 +25,18 @@ else:
 # SQLite grows a transaction button, so the tests that show one render differently
 # and skip their snapshot assertions (see the transaction_button_visible fixture).
 SNAPSHOT_PYTHON = (3, 10)
+
+LEGACY_CACHE_FILE = "catalog-cache-2.pickle"
+LEGACY_HISTORY: dict[str, list[tuple[str, datetime, int, float]]] = {
+    "abc123": [
+        ("select 1", datetime(2026, 8, 1, 9, 30), 1, 0.5),
+        ("sel", datetime(2026, 8, 1, 9, 31), -1, 0.0),
+    ],
+    "foo": [("select * from line_items", datetime(2026, 8, 1, 10, 30), 3, 1.25)],
+}
+"""What the committed version-2 cache holds, per connection: the four fields a
+record of that version had -- sql, when it ran in local time, how many rows it
+returned (negative for a failure), and how long it took in seconds."""
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -101,6 +115,37 @@ def query_log_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     store = tmp_path / "history.db"
     monkeypatch.setattr("harlequin.query_log.default_path", lambda: store)
     return store
+
+
+@pytest.fixture(autouse=True)
+def catalog_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the catalog cache -- and the pickled history a migration reads --
+    at a throwaway directory, and return it."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(
+        "harlequin.catalog_cache.user_cache_dir", lambda **_: str(cache_dir)
+    )
+    return cache_dir
+
+
+@pytest.fixture(autouse=True)
+def forget_migrated_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start each test as a new process does, having adopted no connection."""
+    monkeypatch.setattr("harlequin.history._migrated", set())
+
+
+@pytest.fixture
+def legacy_history_cache(catalog_cache_dir: Path, data_dir: Path) -> Path:
+    """Put a version-2 catalog cache where Harlequin would find one.
+
+    Written by Harlequin 2.14.0 (`scripts/write_legacy_cache.py`), so it names
+    the classes it pickles exactly as a user's own file does. It holds
+    `LEGACY_HISTORY`: two connections, one of whose queries failed.
+    """
+    catalog_cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = catalog_cache_dir / f"catalog-cache-{HISTORY_CACHE_VERSION}.pickle"
+    cache_file.write_bytes((data_dir / LEGACY_CACHE_FILE).read_bytes())
+    return cache_file
 
 
 @pytest.fixture
