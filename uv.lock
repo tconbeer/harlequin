@@ -612,6 +612,42 @@ wheels = [
 ]
 
 [[package]]
+name = "chdb"
+version = "4.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "chdb-core" },
+    { name = "pandas" },
+    { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "pyarrow", version = "25.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/41/45159ab43d461ff3eff32611c5c9b8396ff5b89d71c5acfa7749b82f66aa/chdb-4.4.0-py3-none-any.whl", hash = "sha256:b9d1159b19a101a650e72e085631dcc3a0879c31faf7c098bff3ea51dbba2daf", size = 1689158, upload-time = "2026-09-11T09:48:18.87Z" },
+]
+
+[package.optional-dependencies]
+adbc = [
+    { name = "adbc-driver-manager" },
+    { name = "chdb-core" },
+]
+
+[[package]]
+name = "chdb-core"
+version = "26.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas" },
+    { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "pyarrow", version = "25.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/e2/c35ba5fa6c129d89779529d24450b0a910f5dd949e66917633b839e6fe64/chdb_core-26.7.3-cp39-abi3-macosx_10_15_x86_64.whl", hash = "sha256:bf5b8eea6c11dd5b1c248bd0266ab260a550788e775e4dc1c5e409afa8f20e9a", size = 120870714, upload-time = "2026-09-11T02:57:17.939Z" },
+    { url = "https://files.pythonhosted.org/packages/41/63/5e4113784d9801fa232e67139b0d1b2f6502b5151ca552ac4ea4df1ca8d7/chdb_core-26.7.3-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:2ef970603bb8a5f9d0c14e8d8d228018e25e96887ce42deb923c6ad2307781c5", size = 104007841, upload-time = "2026-09-11T00:31:09.057Z" },
+    { url = "https://files.pythonhosted.org/packages/06/55/09e9caffe3b48281209fd1e1a75a2ecec8f569c83cfed31cc87f6ecd8503/chdb_core-26.7.3-cp39-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:e64c61a868cad97eb375fb17e23b00bf5058cc9d9d94351cb97dde82d212c7d6", size = 154018582, upload-time = "2026-09-11T01:12:16.529Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/6a/2cc573cc0be4bd3418b6603759a764333a126a11a2e582d59731c0892365/chdb_core-26.7.3-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b10b96f9599fab42ba51d9be80333e1819782bdc8a91b2b26979149693ba431f", size = 175350680, upload-time = "2026-09-11T00:12:06.783Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -784,7 +820,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1338,6 +1374,9 @@ bigquery = [
 cassandra = [
     { name = "harlequin-cassandra" },
 ]
+chdb = [
+    { name = "harlequin-chdb" },
+]
 databricks = [
     { name = "harlequin-databricks" },
 ]
@@ -1397,6 +1436,7 @@ requires-dist = [
     { name = "harlequin-adbc", marker = "extra == 'adbc'" },
     { name = "harlequin-bigquery", marker = "extra == 'bigquery'" },
     { name = "harlequin-cassandra", marker = "extra == 'cassandra'" },
+    { name = "harlequin-chdb", marker = "extra == 'chdb'" },
     { name = "harlequin-databricks", marker = "extra == 'databricks'" },
     { name = "harlequin-mysql", marker = "extra == 'mysql'" },
     { name = "harlequin-nebulagraph", marker = "extra == 'nebulagraph'" },
@@ -1418,7 +1458,7 @@ requires-dist = [
     { name = "tree-sitter-sql", specifier = ">=0.3.11,<0.4" },
     { name = "wcwidth", specifier = ">=0.2.13,<0.9" },
 ]
-provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph"]
+provides-extras = ["s3", "postgres", "mysql", "odbc", "bigquery", "trino", "databricks", "adbc", "cassandra", "nebulagraph", "chdb"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1488,6 +1528,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6f/b6/837778b8ead437c06e0f28cc3969ef8df89d797e165ec0d6518cb34fa0e0/harlequin_cassandra-0.1.4.tar.gz", hash = "sha256:3f4d07455056606f13451ac27c148ffce7324ee65a2abc242af24443c5bcbe2d", size = 9236, upload-time = "2025-10-30T06:10:06.509Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/f0/96915a9a23d7f2ac404f8f580c3b1b4d6c58e68113b022ad4d6fe4776c25/harlequin_cassandra-0.1.4-py3-none-any.whl", hash = "sha256:a8c7dee546e30ea33888f614ae45dacffc462252be964f166239bc339e740e87", size = 9500, upload-time = "2025-10-30T06:10:05.292Z" },
+]
+
+[[package]]
+name = "harlequin-chdb"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "chdb", extra = ["adbc"] },
+    { name = "chdb-core" },
+    { name = "harlequin" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/dd/b5/a0b8729d289d6d36db843da905d8d8d65f2b6075dee0cd3a16b848f453f2/harlequin_chdb-0.1.0.tar.gz", hash = "sha256:ead559be50e6fee7a5ea8446d50035a17d28a11dfda6dd28cb162ce9ad749146", size = 16961, upload-time = "2026-09-14T23:04:50.107Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/9a/cb5ec9637997817ade66c75d063abd4cd8e5ae784359840536a8189509f8/harlequin_chdb-0.1.0-py3-none-any.whl", hash = "sha256:6458e5d68ee6d130d5f91ee817c8fba858df2aa4ce4c47485340d9450eed2c83", size = 14706, upload-time = "2026-09-14T23:04:49.004Z" },
 ]
 
 [[package]]
