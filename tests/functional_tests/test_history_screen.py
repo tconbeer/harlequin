@@ -10,24 +10,48 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from rich.console import COLOR_SYSTEMS
+from textual.pilot import Pilot
 
 import harlequin.app
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.app import QuerySubmitted
+from harlequin.app import QueryHistoryLoaded, QuerySubmitted
+from harlequin.components import HistoryScreen
+from harlequin.history import History
 from harlequin.query import fetch
+from harlequin.query_log import QueryLog
 
 
 @pytest.fixture
 def mock_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    base = datetime(2024, 1, 26, hour=10)
+    """Fix what the store records, so the screen that reads it back snapshots.
+
+    The timestamps are built from a local wall-clock time and written in UTC,
+    which is how a record made anywhere renders as the same row: the screen
+    shows the reader's own time zone.
+    """
+    base = datetime(2024, 1, 26, hour=10).astimezone()
     mock_datetime = MagicMock()
     mock_datetime.now.side_effect = (base + timedelta(minutes=i) for i in range(1000))
-    monkeypatch.setattr("harlequin.history.datetime", mock_datetime)
+    monkeypatch.setattr("harlequin.query_log.datetime", mock_datetime)
 
-    mock_time = MagicMock()
-    mock_time.monotonic.side_effect = (float(i) for i in range(1000))
-    monkeypatch.setattr("harlequin.app.time", mock_time)
+    for module in ("harlequin.app", "harlequin.query"):
+        mock_time = MagicMock()
+        mock_time.monotonic.side_effect = (float(i) for i in range(1000))
+        monkeypatch.setattr(f"{module}.time", mock_time)
+
+
+async def open_history(
+    pilot: Pilot,
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> HistoryScreen:
+    """Press the key that opens the History screen, and return the screen."""
+    await pilot.press("f8")
+    await wait_for_workers(app)
+    await pilot.pause()
+    assert isinstance(app.screen, HistoryScreen)
+    return app.screen
 
 
 @pytest.mark.asyncio
@@ -57,7 +81,7 @@ async def test_history_screen(
         await pilot.pause()
         await pilot.press("space")
 
-        await pilot.press("f8")
+        await open_history(pilot, app, wait_for_workers)
         await pilot.press("down")
         snap_results.append(await app_snapshot(app, "History Viewer"))
 
@@ -69,12 +93,12 @@ async def test_history_screen(
 
 
 @pytest.mark.asyncio
-async def test_history_screen_crash(
+async def test_a_second_request_does_not_stack_history_screens(
     app: Harlequin,
-    app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_time: None,
 ) -> None:
+    """https://github.com/tconbeer/harlequin/issues/485"""
     async with app.run_test() as pilot:
         q = [f"select {i};" for i in range(15)]
         while app.editor is None:
@@ -84,9 +108,19 @@ async def test_history_screen_crash(
         await wait_for_workers(app)
         await pilot.pause()
 
-        # https://github.com/tconbeer/harlequin/issues/485
+        screen = await open_history(pilot, app, wait_for_workers)
         await pilot.press("f8")
-        await pilot.press("f8")
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        # and a read that lands after the screen is already up is dropped too,
+        # which is the half a keypress cannot reach
+        app.post_message(QueryHistoryLoaded(history=History(queries=[])))
+        await pilot.pause()
+
+        assert app.is_running
+        assert app.screen is screen
+        assert [s for s in app.screen_stack if isinstance(s, HistoryScreen)] == [screen]
 
 
 def logged(store: Path) -> list[dict[str, Any]]:
@@ -273,5 +307,95 @@ async def test_a_session_that_records_nothing_still_runs_queries(
         await wait_for_workers(app)
         await pilot.pause()
 
-        assert app.history is not None, "the in-memory history is not the store"
+        assert not query_log_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_the_screen_shows_what_another_command_ran(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """One store, so an agent's queries reach the human's History screen."""
+    agent = QueryLog(program="hsql", connection="foo")
+    agent.write("select * from line_items", rows=3, elapsed_ms=12.5)
+    agent.close()
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert [record.query_text for record in screen.history] == [
+            "select 1;",
+            "select * from line_items",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_the_screen_shows_only_this_connections_queries(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    elsewhere = QueryLog(program="hsql", connection="another-database")
+    elsewhere.write("select * from orders")
+    elsewhere.close()
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert len(screen.history) == 0
+
+
+@pytest.mark.asyncio
+async def test_the_screen_opens_before_anything_has_been_run(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """An empty store is an empty screen rather than an error."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert len(screen.history) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_pickled_history_arrives_in_the_screen(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    legacy_history_cache: Path,
+) -> None:
+    """The one-time move: what an older Harlequin saved is still there."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert [record.query_text for record in screen.history] == [
+            "select * from line_items"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_records_nothing_moves_no_pickle(
+    duckdb_adapter: type[HarlequinAdapter],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    legacy_history_cache: Path,
+    query_log_path: Path,
+) -> None:
+    """`--no-write-history` is a refusal to write, and the move is a write."""
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        connection_hash="foo",
+        record_history=False,
+    )
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert len(screen.history) == 0
         assert not query_log_path.exists()

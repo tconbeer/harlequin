@@ -557,10 +557,8 @@ async def test_toggle_transaction_mode_worker_error_shows_modal(
 @pytest.mark.parametrize(
     ("worker_name", "expected_message"),
     [
-        (
-            "_load_catalog_cache",
-            "Harlequin could not load its cache; your query history may be missing.",
-        ),
+        ("_load_catalog_cache", "Harlequin could not load its cache."),
+        ("_load_query_history", "Harlequin could not read your query history."),
         ("_extend_and_merge_completers", "Harlequin could not update completions."),
         ("_build_completers", "Harlequin could not build completions."),
     ],

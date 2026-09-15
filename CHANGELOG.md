@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Adds a `chdb` extra for installing the chDB adapter (`pip install 'harlequin[chdb]'`) and querying local ClickHouse databases ([#1144](https://github.com/tconbeer/harlequin/issues/1144)).
+- Harlequin's Query History (`F8`) now shows the queries hsql ran against the same database, and keeps them when a session ends without a clean quit ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 - `hsql --history` lists the queries Harlequin and hsql have run, newest first, and `hsql --history-search TERM` lists the ones whose SQL mentions TERM. Both take every format and layout flag a query does; `-P`, `-a` or a connection string narrows them to one database ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 
 ### Bug Fixes
