@@ -1145,6 +1145,7 @@ class Harlequin(AppBase):
         self.push_screen(
             HistoryScreen(
                 history=message.history,
+                connection=self.connection_hash,
                 theme=self.theme,
                 id="history_screen",
             ),
