@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - A value containing a newline no longer breaks `hsql`'s `table` and `vertical` output: it now spans as many lines as it has, with `+` marking each one that continues, as psql does.
+- The Data Exporter now writes the Feather File Version you chose, and its Compression and Chunk Size options now have an effect. Every export from the dialog wrote a legacy Version 1 file, which cannot hold compression.
 
 ## [2.14.0] - 2026-09-14
 
