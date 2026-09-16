@@ -1,13 +1,11 @@
 import pickle
 from pathlib import Path
-from typing import Awaitable, Callable, List
+from typing import List
 
 import pytest
-from textual.pilot import Pilot
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
-from harlequin.components.code_editor import CodeEditor
 from harlequin.editor_cache import (
     BufferState,
     Cache,
@@ -16,6 +14,7 @@ from harlequin.editor_cache import (
     load_cache,
     write_cache,
 )
+from tests.functional_tests.helpers import wait_for_editor
 
 
 @pytest.fixture
@@ -65,7 +64,6 @@ def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
 async def test_harlequin_loads_cache(
     cache: Cache,
     app: Harlequin,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     write_cache(cache)
     async with app.run_test() as pilot:
@@ -84,7 +82,7 @@ async def test_harlequin_loads_cache(
 @pytest.mark.use_cache
 @pytest.mark.asyncio
 async def test_harlequin_writes_cache(
-    app: Harlequin, wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]]
+    app: Harlequin,
 ) -> None:
     cache_path = get_cache_file()
     assert not cache_path.exists()
@@ -109,7 +107,6 @@ async def test_harlequin_writes_cache(
 async def test_harlequin_recovers_buffers(
     cache: Cache,
     app: Harlequin,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A recovered session started from the cache, so it wins over one."""
     write_cache(Cache(focus_index=0, buffers=[BufferState(Selection(), "stale\n")]))
@@ -131,7 +128,7 @@ async def test_harlequin_recovers_buffers(
 @pytest.mark.use_cache
 @pytest.mark.asyncio
 async def test_harlequin_clears_its_recovery_file_on_quit(
-    app: Harlequin, wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]]
+    app: Harlequin,
 ) -> None:
     recovery_file = get_recovery_file()
     recovery_file.parent.mkdir(parents=True, exist_ok=True)
@@ -148,7 +145,7 @@ async def test_harlequin_clears_its_recovery_file_on_quit(
 @pytest.mark.use_cache
 @pytest.mark.asyncio
 async def test_harlequin_checkpoints_buffers(
-    app: Harlequin, wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]]
+    app: Harlequin,
 ) -> None:
     recovery_file = get_recovery_file()
     async with app.run_test() as pilot:

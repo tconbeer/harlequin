@@ -2,10 +2,9 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
-from textual.pilot import Pilot
 
 from harlequin import Harlequin
-from harlequin.components.code_editor import CodeEditor
+from tests.functional_tests.helpers import wait_for_editor
 
 
 @pytest.mark.asyncio
@@ -14,7 +13,6 @@ async def test_debug_info_screen(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     config_path = Path("tests/data/unit_tests/config/good_config.toml").resolve()
     monkeypatch.setattr(

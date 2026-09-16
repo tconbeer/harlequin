@@ -968,7 +968,7 @@ def test_nothing_takes_a_turn_between_a_cancel_and_the_interrupt_it_sends() -> N
     assert session.cancel(A_REQUEST) == server.STOPPED
     assert blocked_while_interrupting == [True]
     # and it goes through once the cancel has let the lock go
-    assert wait_until(lambda: turns == [True])
+    wait_until(lambda: turns == [True], description="the waiting turn to go through")
 
 
 class _Interrupting(_FakeConnection):
@@ -1168,7 +1168,7 @@ def test_the_turnstile_serves_in_arrival_order() -> None:
         def has_arrived(waiting: int = number) -> bool:
             return turnstile.snapshot()[1] == waiting
 
-        assert wait_until(has_arrived)
+        wait_until(has_arrived, description=f"thread {number} to take its ticket")
 
     turnstile.leave()
     for thread in threads:

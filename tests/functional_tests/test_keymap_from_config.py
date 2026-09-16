@@ -6,12 +6,10 @@ from typing import Awaitable, Callable
 
 import pytest
 from textual import events
-from textual.pilot import Pilot
 
 from harlequin import Harlequin, HarlequinAdapter
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import load_profile_and_keymaps
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 
 QUERY = dedent(
     """
@@ -36,8 +34,6 @@ async def test_results_viewer_bindings(
     duckdb_adapter: type[HarlequinAdapter],
     data_dir: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     config_path = (
         data_dir / "functional_tests" / "test_keymap_from_config" / "config.toml"
@@ -58,7 +54,7 @@ async def test_results_viewer_bindings(
         editor.text = q
         await pilot.press("ctrl+j")
 
-        table = await wait_for_table(pilot, app)
+        table = await wait_for_any_table(pilot, app)
 
         assert table is not None
         assert table.cursor_coordinate == (0, 0)
@@ -99,7 +95,6 @@ async def test_alt_letter_binding_beats_the_focused_editor(
     duckdb_adapter: type[HarlequinAdapter],
     data_dir: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """alt+n opens a buffer instead of typing an "n" into the focused one."""
     config_path = (

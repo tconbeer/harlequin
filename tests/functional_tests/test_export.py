@@ -9,8 +9,7 @@ from textual.pilot import Pilot
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.components import ExportScreen
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.results_viewer import ResultsTable
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 from tests.waiting import wait_for, wait_for_value
 
 
@@ -47,8 +46,6 @@ async def test_export(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
@@ -57,7 +54,7 @@ async def test_export(
         editor = await wait_for_editor(pilot, app)
         editor.text = "select 1 as a, 2 as b"
         await pilot.press("ctrl+j")  # run query
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
         assert len(app.screen_stack) == 1
 
         export_screen = await open_export_screen(pilot, app)
@@ -94,8 +91,6 @@ async def test_export_result_with_no_rows(
     app_all_adapters: Harlequin,
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """A query that matched nothing exports a header and no rows.
 
@@ -110,7 +105,7 @@ async def test_export_result_with_no_rows(
         editor = await wait_for_editor(pilot, app)
         editor.text = "select 1 as a, 2 as b where false"
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
 
         export_screen = await open_export_screen(pilot, app)
 
@@ -132,8 +127,6 @@ async def test_export_under_a_limit_stops_at_the_limit(
     app: Harlequin,
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """The fetch asks for one row more than the limit, to learn there are more.
 
@@ -146,7 +139,7 @@ async def test_export_under_a_limit_stops_at_the_limit(
         app.run_query_bar.limit_input.value = "5"
         editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        table = await wait_for_table(pilot, app)
+        table = await wait_for_any_table(pilot, app)
         assert table.fetch_truncated is True
 
         export_screen = await open_export_screen(pilot, app)
@@ -166,8 +159,6 @@ async def test_export_starts_at_the_export_path(
     duckdb_adapter: type[HarlequinAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """`-o` names the folder the Data Exporter opens in, so a user who exports
     into the same place every time types a file name and nothing else."""
@@ -181,7 +172,7 @@ async def test_export_starts_at_the_export_path(
         editor = await wait_for_editor(pilot, app)
         editor.text = "select 1 as a"
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
 
         export_screen = await open_export_screen(pilot, app)
         assert export_screen.file_input.value == f"{tmp_path / 'exports'}{os.sep}"
@@ -202,8 +193,6 @@ async def test_an_export_path_with_a_file_name_picks_its_format(
     duckdb_adapter: type[HarlequinAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """A whole path prefills whole, and the extension chooses the format the
     same way a typed one does."""
@@ -218,7 +207,7 @@ async def test_an_export_path_with_a_file_name_picks_its_format(
         editor = await wait_for_editor(pilot, app)
         editor.text = "select 1 as a"
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
 
         export_screen = await open_export_screen(pilot, app)
         assert export_screen.file_input.value == str(export_path)

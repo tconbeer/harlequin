@@ -5,12 +5,10 @@ from typing import Awaitable, Callable
 
 import pytest
 from textual.message import Message
-from textual.pilot import Pilot
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.results_viewer import ResultsTable
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 from tests.waiting import wait_for, wait_for_value
 
 
@@ -20,7 +18,6 @@ async def test_run_query_bar(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     app = app_all_adapters_small_db
     snap_results: list[bool] = []
@@ -126,7 +123,6 @@ async def test_transaction_button(
     app_small_sqlite: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     app = app_small_sqlite
     snap_results: list[bool] = []
@@ -162,8 +158,6 @@ async def test_transaction_button(
 async def test_a_configured_limit_is_in_force_from_the_first_query(
     duckdb_adapter: type[HarlequinAdapter],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """`--limit` sets the input and checks the box, so it actually limits.
 
@@ -185,7 +179,7 @@ async def test_a_configured_limit_is_in_force_from_the_first_query(
 
         editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        table = await wait_for_table(pilot, app)
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count == 10
         assert table.fetch_truncated is True
         assert app.results_viewer.border_title == (
@@ -197,7 +191,6 @@ async def test_a_configured_limit_is_in_force_from_the_first_query(
 async def test_no_configured_limit_leaves_the_box_unchecked(
     app_small_duck: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A human watching a viewport can afford a full fetch, so nothing configured
     means nothing limited -- with 500 in the input to start from."""

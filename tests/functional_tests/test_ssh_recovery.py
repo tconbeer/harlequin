@@ -13,15 +13,20 @@ from typing import Awaitable, Callable, Iterator
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
 from harlequin.app import QuerySubmitted
-from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
+from harlequin.catalog import InteractiveCatalogItem
 from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.text_modal import ErrorModal
-from harlequin.exception import HarlequinSshError
 from harlequin.ssh import Forward, SshTunnel
+from tests.functional_tests.helpers import (
+    expand_catalog_node,
+    first_database_node,
+    rendered_catalog,
+    replaced_catalog,
+)
+from tests.tunnels import ssh_child_exited
 from tests.waiting import POLL_INTERVAL, accepts, on_a_free_port, wait_for
 
 pytestmark = pytest.mark.skipif(
@@ -37,12 +42,7 @@ def _modal_text(app: Harlequin) -> str:
 
 
 async def _wait_for_drop(pilot: Pilot, tunnel: SshTunnel) -> None:
-    """Wait for the watcher thread to notice the child let the forward go.
-
-    Pumping rather than sleeping, because the app is running: the notice
-    arrives as a message, and an event loop nobody hands back to cannot take
-    it.
-    """
+    """Wait for the watcher thread to notice the child let the forward go."""
     await wait_for(
         pilot,
         lambda: tunnel.needs_restart,
@@ -53,11 +53,7 @@ async def _wait_for_drop(pilot: Pilot, tunnel: SshTunnel) -> None:
 
 @pytest.fixture
 def dropping_tunnel(drop_trigger: Path, fake_ssh_client: Path) -> Iterator[SshTunnel]:
-    """A tunnel whose child holds its forward until `drop_trigger` is touched.
-
-    Stopped here rather than by each test, so a test that fails before its own
-    teardown still leaves no child behind.
-    """
+    """A tunnel whose child holds its forward until `drop_trigger` is touched."""
 
     def start(port: int) -> SshTunnel:
         tunnel = SshTunnel(
@@ -75,7 +71,7 @@ def dropping_tunnel(drop_trigger: Path, fake_ssh_client: Path) -> Iterator[SshTu
         tunnel.start()
         return tunnel
 
-    tunnel = on_a_free_port(start, retry_on=HarlequinSshError)
+    tunnel = on_a_free_port(start, retry_on=ssh_child_exited)
     try:
         yield tunnel
     finally:
@@ -105,7 +101,9 @@ async def test_a_dropped_tunnel_is_reopened_before_the_next_thing_that_needs_it(
         await wait_for_workers(app)
         await wait_for(
             pilot,
-            lambda: app.connection not in (None, first_connection),
+            lambda: (
+                app.connection is not None and app.connection is not first_connection
+            ),
             description="the app to adopt the connection it reconnected with",
         )
 
@@ -135,10 +133,7 @@ async def test_a_reconnect_leaves_a_catalog_that_still_loads(
     drop_trigger: Path,
     schema_updates: list[None],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    expand_catalog_node: Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    rendered_catalog: Callable[..., Awaitable[Catalog]],
-    first_database_node: Callable[[Pilot, Harlequin], Awaitable[TreeNode[CatalogItem]]],
 ) -> None:
     """A query that reopens a dropped tunnel leaves a catalog that still loads.
 
@@ -169,7 +164,7 @@ async def test_a_reconnect_leaves_a_catalog_that_still_loads(
         schema_updates.clear()
         app.post_message(QuerySubmitted(queries=["select 1"], limit=None))
         await wait_for_workers(app)
-        rebuilt_catalog = await rendered_catalog(pilot, app, replacing=first_catalog)
+        rebuilt_catalog = await replaced_catalog(pilot, app, first_catalog)
 
         assert len(schema_updates) == 1
         assert rebuilt_catalog is not first_catalog
@@ -192,7 +187,6 @@ async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
     schema_updates: list[None],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    rendered_catalog: Callable[..., Awaitable[Catalog]],
 ) -> None:
     app.ssh_tunnel = dropping_tunnel
     async with app.run_test() as pilot:
@@ -208,7 +202,7 @@ async def test_a_refresh_that_reconnects_does_not_ask_for_a_second_one(
         schema_updates.clear()
         app.action_refresh_catalog()
         await wait_for_workers(app)
-        rebuilt_catalog = await rendered_catalog(pilot, app, replacing=first_catalog)
+        rebuilt_catalog = await replaced_catalog(pilot, app, first_catalog)
 
         assert len(schema_updates) == 1
         assert rebuilt_catalog is not first_catalog

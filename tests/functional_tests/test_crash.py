@@ -13,12 +13,11 @@ import pickle
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from rich.console import Console
-from textual.pilot import Pilot
 from textual.widgets.text_area import Selection
 
 import harlequin.app
@@ -26,11 +25,11 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QuerySubmitted
 from harlequin.app_base import _as_markup
-from harlequin.components.code_editor import CodeEditor
 from harlequin.crash import ISSUE_URL, crash_message
 from harlequin.editor_cache import BufferState, Cache, get_cache_file
 from harlequin.exception import HarlequinCrashError, pretty_error_message
 from harlequin.query import fetch
+from tests.functional_tests.helpers import wait_for_editor
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +69,6 @@ async def test_a_crash_prints_a_panel_and_not_a_traceback(
     app: Harlequin,
     crash_reports_go_to_tmp: Path,
     capsys: pytest.CaptureFixture[str],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
@@ -98,7 +96,6 @@ async def test_a_crash_saves_the_open_buffers(
     mock_user_cache_dir: Path,
     crash_reports_go_to_tmp: Path,
     capsys: pytest.CaptureFixture[str],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
@@ -121,7 +118,6 @@ async def test_a_crash_saves_the_open_buffers(
 async def test_the_report_holds_what_the_session_was(
     duckdb_adapter: type[HarlequinAdapter],
     crash_reports_go_to_tmp: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Built the way `cli.py` builds it, which is where the adapter gets a name."""
     app = Harlequin(
@@ -155,7 +151,6 @@ async def test_a_crash_report_is_written_once(
     app: Harlequin,
     crash_reports_go_to_tmp: Path,
     capsys: pytest.CaptureFixture[str],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The handler runs inside an `except` block, so it must not be able to
     raise. A second exception returns without reporting again."""
@@ -177,7 +172,6 @@ async def test_a_crash_is_reported_even_when_the_report_cannot_be_written(
     app: Harlequin,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     def _raise(*_args: object, **_kwargs: object) -> None:
         raise OSError("the log dir is gone")
@@ -201,7 +195,6 @@ async def test_the_traceback_is_still_printed_in_dev_mode(
     app: Harlequin,
     crash_reports_go_to_tmp: Path,
     capsys: pytest.CaptureFixture[str],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """`make serve`, i.e. `textual run --dev`: one code path, both audiences."""
     with pytest.raises(RuntimeError):
@@ -234,7 +227,6 @@ async def test_a_crash_while_replaying_recovered_buffers_cannot_repeat(
     mock_user_cache_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     crash_reports_go_to_tmp: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The crash-loop guard, end to end: the poisoned file is spent by the
     start that choked on it."""
@@ -272,7 +264,6 @@ async def test_a_crash_mid_fetch_keeps_the_query_it_was_running(
     app: Harlequin,
     crash_reports_go_to_tmp: Path,
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """And needs nothing from the handler to do it: the row was committed when
     the statement was run, which is what the two-phase write is for."""

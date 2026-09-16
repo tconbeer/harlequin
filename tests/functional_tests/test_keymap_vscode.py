@@ -6,12 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from textual.css.query import NoMatches
-from textual.pilot import Pilot
 from textual.widgets import Input
 
 from harlequin import Harlequin
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.results_viewer import ResultsTable
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 
 QUERY = dedent(
     """
@@ -36,7 +34,6 @@ async def test_editor_bindings(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
@@ -176,8 +173,6 @@ async def test_results_viewer_bindings(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
@@ -187,7 +182,7 @@ async def test_results_viewer_bindings(
         editor.text = q
         await pilot.press("ctrl+j")
 
-        table = await wait_for_table(pilot, app)
+        table = await wait_for_any_table(pilot, app)
 
         assert table is not None
         assert table.cursor_coordinate == (0, 0)
@@ -264,7 +259,6 @@ async def test_results_viewer_bindings(
 async def test_editor_bindings_do_not_beat_the_find_input(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """ctrl+w and ctrl+k edit the find input, rather than closing or switching a buffer.
 

@@ -17,10 +17,10 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QueryHistoryLoaded, QuerySubmitted
 from harlequin.components import HistoryScreen
-from harlequin.components.code_editor import CodeEditor
 from harlequin.history import History
 from harlequin.query import fetch
 from harlequin.query_log import QueryLog
+from tests.functional_tests.helpers import wait_for_editor
 from tests.waiting import wait_for_value
 
 
@@ -64,7 +64,6 @@ async def test_history_screen(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_time: None,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
@@ -101,7 +100,6 @@ async def test_a_second_request_does_not_stack_history_screens(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_time: None,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """https://github.com/tconbeer/harlequin/issues/485"""
     async with app.run_test() as pilot:
@@ -142,7 +140,6 @@ async def test_a_query_is_recorded_as_it_runs(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """As each statement runs, not at quit."""
     async with app.run_test() as pilot:
@@ -167,7 +164,6 @@ async def test_a_row_exists_before_its_rows_are_known(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The two-phase write: a session that dies mid-fetch keeps the query.
 
@@ -212,7 +208,6 @@ async def test_a_query_cancelled_mid_fetch_is_recorded_as_canceled(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The cancel has to mark the rows before it cancels the cursor.
 
@@ -274,7 +269,6 @@ async def test_a_cancel_leaves_a_finished_query_alone(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Only what the fetch never completed is `canceled`."""
     async with app.run_test() as pilot:
@@ -299,7 +293,6 @@ async def test_a_session_that_records_nothing_still_runs_queries(
     duckdb_adapter: type[HarlequinAdapter],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """`--no-write-history`, or the key of that name in the profile."""
     app = Harlequin(
@@ -321,7 +314,6 @@ async def test_a_session_that_records_nothing_still_runs_queries(
 async def test_the_screen_shows_what_another_command_ran(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """One store, so an agent's queries reach the human's History screen."""
     agent = QueryLog(program="hsql", connection="foo")
@@ -346,7 +338,6 @@ async def test_the_screen_shows_what_another_command_ran(
 async def test_the_screen_shows_only_this_connections_queries(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     elsewhere = QueryLog(program="hsql", connection="another-database")
     elsewhere.write("select * from orders")
@@ -362,7 +353,6 @@ async def test_the_screen_shows_only_this_connections_queries(
 async def test_the_screen_opens_before_anything_has_been_run(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """An empty store is an empty screen rather than an error."""
     async with app.run_test() as pilot:
@@ -376,7 +366,6 @@ async def test_a_pickled_history_arrives_in_the_screen(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     legacy_history_cache: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The one-time move: what an older Harlequin saved is still there."""
     async with app.run_test() as pilot:
@@ -393,7 +382,6 @@ async def test_a_session_that_records_nothing_moves_no_pickle(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     legacy_history_cache: Path,
     query_log_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """`--no-write-history` is a refusal to write, and the move is a write."""
     app = Harlequin(

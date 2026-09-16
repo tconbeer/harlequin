@@ -16,9 +16,13 @@ from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
 from harlequin.components.code_editor import CodeEditor
-from harlequin.components.data_catalog.database_tree import DatabaseTree
-from harlequin.components.text_modal import ErrorModal
 from harlequin.statements import find_separators, split
+from tests.functional_tests.helpers import (
+    expand_catalog_node,
+    wait_for_catalog_tree,
+    wait_for_editor,
+    wait_for_error_modal,
+)
 from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
@@ -26,7 +30,6 @@ from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 async def test_query_formatting(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
@@ -43,13 +46,25 @@ async def test_query_formatting(
         assert "no changes" in list(app._notifications)[-1].message
 
 
-@pytest.mark.flaky
+async def loaded_buffer(pilot: Pilot, app: Harlequin, tab_id: str, text: str) -> None:
+    """Wait until `tab_id` is the active buffer and its text is in the editor.
+
+    Activating a tab and swapping its state into the one editor are two steps
+    on the message pump, so the text lands after the tab id does.
+    """
+    collection = app.editor_collection
+    await wait_for(
+        pilot,
+        lambda: collection.active == tab_id and collection.current_editor.text == text,
+        description=f"{tab_id} to be the loaded buffer, holding {text!r}",
+    )
+
+
 @pytest.mark.asyncio
 async def test_multiple_buffers(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
@@ -64,64 +79,50 @@ async def test_multiple_buffers(
         snap_results.append(await app_snapshot(app, "Tab 1 of 1 (No tabs)"))
 
         await pilot.press("ctrl+n")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-2", "")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
-        assert app.editor_collection.active == "tab-2"
-        assert editor.text == ""
         editor.text = "tab 2"
         await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 2 of 2"))
 
         await pilot.press("ctrl+n")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-3", "")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
-        assert app.editor_collection.active == "tab-3"
-        assert editor.text == ""
         editor.text = "tab 3"
         await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 3 of 3"))
 
         await pilot.press("ctrl+k")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-1", "tab 1")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
-        assert app.editor_collection.active == "tab-1"
-        assert editor.text == "tab 1"
         snap_results.append(await app_snapshot(app, "Tab 1 of 3"))
 
         await pilot.press("ctrl+k")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-2", "tab 2")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
-        assert app.editor_collection.active == "tab-2"
-        assert editor.text == "tab 2"
         snap_results.append(await app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-3", "tab 3")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
-        assert app.editor_collection.active == "tab-3"
-        assert editor.text == "tab 3"
         # TODO: bring back this flaky test.
         # snap_results.append(await app_snapshot(app, "Tab 3 after deleting 2"))
 
         await pilot.press("ctrl+k")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-1", "tab 1")
         await pilot.wait_for_scheduled_animations()
-        assert app.editor_collection.active == "tab-1"
-        assert editor.text == "tab 1"
         snap_results.append(await app_snapshot(app, "Tab 1 of [1,3]"))
 
         await pilot.press("ctrl+k")
-        await pilot.pause()
+        await loaded_buffer(pilot, app, "tab-3", "tab 3")
         await pilot.wait_for_scheduled_animations()
-        assert app.editor_collection.active == "tab-3"
-        assert editor.text == "tab 3"
         snap_results.append(await app_snapshot(app, "Tab 3 of [1,3]"))
 
         assert all(snap_results)
@@ -131,7 +132,6 @@ async def test_multiple_buffers(
 async def test_buffers_keep_their_state(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Switching buffers has to carry everything the editor holds, not just the text."""
     async with app.run_test(size=(120, 36)) as pilot:
@@ -186,7 +186,6 @@ async def test_buffers_keep_their_state(
 async def test_a_buffer_opened_on_the_way_out_does_not_crash(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The Query Editor mounts lazily, so a quit can land before its first buffer."""
     async with app.run_test() as pilot:
@@ -201,15 +200,29 @@ async def test_a_buffer_opened_on_the_way_out_does_not_crash(
         assert editor is collection.current_editor
 
 
-@pytest.mark.flaky
+async def completions_for(pilot: Pilot, editor: CodeEditor, text: str) -> None:
+    """Wait until the completion list is open over a buffer holding `text`.
+
+    A keypress reaches the list through the editor's own worker, so the list a
+    snapshot catches is a keypress behind unless the test waits for it.
+    """
+    await wait_for(
+        pilot,
+        lambda: (
+            editor.text == text
+            and editor.completion_list.is_open
+            and editor.completion_list.option_count > 0
+        ),
+        description=f"the completion list to open over {text!r}",
+    )
+
+
 @pytest.mark.asyncio
 async def test_word_autocomplete(
     app_all_adapters: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
@@ -228,30 +241,22 @@ async def test_word_autocomplete(
         editor.focus()
 
         await pilot.press("s")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await completions_for(pilot, editor, "s")
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "s"))
 
         await pilot.press("e")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await completions_for(pilot, editor, "se")
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se"))
 
         await pilot.press("l")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await completions_for(pilot, editor, "sel")
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "sel"))
 
         await pilot.press("backspace")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await completions_for(pilot, editor, "se")
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "se again"))
 
@@ -274,15 +279,11 @@ async def test_word_autocomplete(
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Initial snapshot very flaky on windows."
 )
-@pytest.mark.flaky
 @pytest.mark.asyncio
 async def test_member_autocomplete(
     app_small_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    expand_catalog_node: Callable[..., Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
@@ -318,16 +319,13 @@ async def test_member_autocomplete(
         editor.focus()
 
         await pilot.press("full_stop")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await completions_for(pilot, editor, '"drivers".')
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "driver members"))
 
         await pilot.press("quotation_mark")
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        # the editor auto-closes the quote
+        await completions_for(pilot, editor, '"drivers".""')
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "with quote"))
 
@@ -346,7 +344,6 @@ async def test_footer_inputs(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     app_snapshot: Callable[..., Awaitable[bool]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
@@ -390,7 +387,6 @@ async def test_footer_inputs(
 async def test_selected_queries(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #929: the queries at the cursor or selection are
     returned once each, in the order they appear in the buffer."""
@@ -458,7 +454,6 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A failed symbol scan warns instead of crashing the app.
 
@@ -532,7 +527,6 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
 async def test_selected_queries_split_on_character_columns(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #1015: the editor and `harlequin.statements` split
     at the same place.
@@ -558,7 +552,6 @@ async def test_selected_queries_split_on_character_columns(
 async def test_selected_queries_do_not_split_dollar_quoted_bodies(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #1019: the editor and `harlequin.statements` agree,
     and neither treats a semicolon inside `$$ ... $$` as a separator."""
@@ -582,7 +575,6 @@ async def test_selected_queries_do_not_split_dollar_quoted_bodies(
 async def test_buffer_symbols_reach_the_completers(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
@@ -638,7 +630,6 @@ async def test_buffer_symbols_reach_the_completers(
 async def test_numbers_do_not_open_the_completion_list(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A number leaves the list closed, so enter inserts a newline."""
     async with app.run_test() as pilot:
@@ -680,7 +671,6 @@ async def test_external_editor_round_trip(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The buffer goes out to $EDITOR as a file and comes back as one edit.
 
@@ -724,7 +714,6 @@ async def test_external_editor_nonzero_exit_discards_the_edit(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     monkeypatch.setenv("EDITOR", "ed")
 
@@ -754,8 +743,6 @@ async def test_external_editor_without_an_editor_named(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)
@@ -777,8 +764,6 @@ async def test_external_editor_in_a_terminal_that_cannot_suspend(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """The real suspend, which the headless driver refuses, is an error modal."""
     monkeypatch.setenv("EDITOR", sys.executable)
@@ -801,7 +786,6 @@ async def test_external_editor_clamps_the_cursor_to_a_shorter_buffer(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A position the edited buffer no longer holds lands at the nearest one."""
     monkeypatch.setenv("EDITOR", "ed")

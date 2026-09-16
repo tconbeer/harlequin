@@ -6,15 +6,14 @@ from unittest.mock import MagicMock
 
 import pytest
 from textual.message import Message
-from textual.pilot import Pilot
 from textual.widgets import Tooltip
 from textual_fastdatatable import DataTable
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.results_viewer import ResultsTable, ResultsViewer
+from harlequin.components.results_viewer import ResultsViewer
 from harlequin.components.text_modal import CellViewModal
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
@@ -24,8 +23,6 @@ async def test_dupe_column_names(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     app = app_all_adapters
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
@@ -34,7 +31,7 @@ async def test_dupe_column_names(
         editor = await wait_for_editor(pilot, app)
         editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "dupe columns")
 
@@ -46,8 +43,6 @@ async def test_copy_data(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     app = app_all_adapters
     query = "select 3, 'rosberg', 6, 'ROS', 'Nico', 'Rosberg', '1985-06-27', 'German', 'http://en.wikipedia.org/wiki/Nico_Rosberg'"
@@ -58,7 +53,7 @@ async def test_copy_data(
         editor = await wait_for_editor(pilot, app)
         editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
         # the table is pushed before the Results Viewer is shown and focused
         await wait_for(
             pilot,
@@ -90,8 +85,6 @@ async def test_view_cell_modal(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     long_value = "the quick brown fox " * 40
     query = f"select '{long_value}' as story"
@@ -100,7 +93,7 @@ async def test_view_cell_modal(
         editor = await wait_for_editor(pilot, app)
         editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
         # the table is pushed before the Results Viewer is shown and focused
         await wait_for(
             pilot,
@@ -156,8 +149,6 @@ async def test_data_truncated_with_tooltip(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     app = app_all_adapters
     query = "select 'supercalifragilisticexpialidocious'"
@@ -166,7 +157,7 @@ async def test_data_truncated_with_tooltip(
         editor = await wait_for_editor(pilot, app)
         editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
 
         await pilot.hover(ResultsViewer, (2, 2))
         await wait_for(
@@ -184,8 +175,6 @@ async def test_infinity_timestamp(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     query = """
         select
@@ -199,7 +188,7 @@ async def test_infinity_timestamp(
         editor = await wait_for_editor(pilot, app)
         editor.text = query
         await pilot.press("ctrl+j")
-        results_table = await wait_for_table(pilot, app)
+        results_table = await wait_for_any_table(pilot, app)
         assert results_table.get_row_at(0) == [
             date.max,
             datetime.max,
@@ -214,8 +203,6 @@ async def test_infinity_timestamp(
 async def test_the_viewer_cap_is_a_soft_one(
     duckdb_adapter: type[HarlequinAdapter],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """Everything is fetched and the viewer holds the first N.
 
@@ -232,7 +219,7 @@ async def test_the_viewer_cap_is_a_soft_one(
         editor = await wait_for_editor(pilot, app)
         editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        table = await wait_for_table(pilot, app)
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count == 10
         assert table.fetched_row_count == 100
         assert table.fetch_truncated is False

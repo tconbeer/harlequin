@@ -1,11 +1,9 @@
 from typing import Awaitable, Callable, List
 
 import pytest
-from textual.pilot import Pilot
 
 from harlequin import Harlequin
-from harlequin.components.code_editor import CodeEditor
-from harlequin.components.data_catalog.database_tree import DatabaseTree
+from tests.functional_tests.helpers import wait_for_catalog_tree, wait_for_editor
 
 
 @pytest.mark.asyncio
@@ -13,8 +11,6 @@ async def test_toggle_sidebar(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
@@ -54,7 +50,6 @@ async def test_toggle_full_screen(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:

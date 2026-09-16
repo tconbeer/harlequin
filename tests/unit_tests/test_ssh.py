@@ -40,6 +40,7 @@ from harlequin.ssh import (
     parse_config,
     resolve_config,
 )
+from tests.tunnels import ssh_child_exited
 from tests.waiting import accepts, free_port, on_a_free_port, settle, wait_until
 
 FAKE_SSH = Path(__file__).parent.parent / "data" / "unit_tests" / "ssh" / "ssh"
@@ -85,7 +86,7 @@ def started_tunnel(
         tunnel.start()
         return tunnel
 
-    return on_a_free_port(start, retry_on=HarlequinSshError)
+    return on_a_free_port(start, retry_on=ssh_child_exited)
 
 
 # the argv, which is the whole of what Harlequin says to ssh
@@ -622,7 +623,9 @@ def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> No
     tunnel = started_tunnel(before_start=lambda t: t.watch(notices.append))
     try:
         drop_trigger.touch()
-        assert wait_until(lambda: bool(notices))
+        wait_until(
+            lambda: bool(notices), description="the tunnel to be reported closed"
+        )
     finally:
         tunnel.stop()
     assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
@@ -644,7 +647,9 @@ def test_a_tunnel_watched_after_it_started_is_still_reported(
         assert tunnel._process is not None
         tunnel._process.wait()
         tunnel.watch(notices.append)
-        assert wait_until(lambda: bool(notices))
+        wait_until(
+            lambda: bool(notices), description="the tunnel to be reported closed"
+        )
     finally:
         tunnel.stop()
     assert notices == ["tunnel closed: Timeout, server web-1 not responding."]
@@ -677,7 +682,9 @@ def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
     tunnel = started_tunnel(before_start=watch_twice)
     try:
         drop_trigger.touch()
-        assert wait_until(lambda: bool(notices))
+        wait_until(
+            lambda: bool(notices), description="the tunnel to be reported closed"
+        )
         settle()
     finally:
         tunnel.stop()
@@ -689,7 +696,7 @@ def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
     notices: list[str] = []
     tunnel = started_tunnel(before_start=lambda t: t.watch(notices.append))
     tunnel.stop()
-    settle()
+    settle(0.5)
     assert notices == []
 
 
@@ -1050,7 +1057,10 @@ def test_a_tunnel_that_dropped_asks_to_be_reopened(
     assert not tunnel.needs_restart
     try:
         drop_trigger.touch()
-        assert wait_until(lambda: tunnel.needs_restart)
+        wait_until(
+            lambda: tunnel.needs_restart,
+            description="the tunnel to be reported dropped",
+        )
         assert not accepts(port)
         # the child that comes back stays up
         monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
@@ -1071,7 +1081,10 @@ def test_a_restart_never_asks_for_a_credential(
     try:
         assert "BatchMode=yes" not in calls(record)[-1]
         drop_trigger.touch()
-        assert wait_until(lambda: tunnel.needs_restart)
+        wait_until(
+            lambda: tunnel.needs_restart,
+            description="the tunnel to be reported dropped",
+        )
         monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
         tunnel.restart()
         assert "BatchMode=yes" in calls(record)[-1]
@@ -1093,7 +1106,10 @@ def test_two_workers_reopening_at_once_do_not_bury_a_working_tunnel(
     port = tunnel.endpoints[0][1]
     try:
         drop_trigger.touch()
-        assert wait_until(lambda: tunnel.needs_restart)
+        wait_until(
+            lambda: tunnel.needs_restart,
+            description="the tunnel to be reported dropped",
+        )
         monkeypatch.delenv("FAKE_SSH_DROP_WHEN")
 
         started = threading.Barrier(2)
@@ -1125,7 +1141,9 @@ def test_a_restart_that_fails_is_not_tried_again(
 ) -> None:
     tunnel = started_tunnel(before_start=lambda t: t.watch(lambda notice: None))
     drop_trigger.touch()
-    assert wait_until(lambda: tunnel.needs_restart)
+    wait_until(
+        lambda: tunnel.needs_restart, description="the tunnel to be reported dropped"
+    )
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")
     monkeypatch.setenv("FAKE_SSH_EXIT", "255")
     with pytest.raises(HarlequinSshError, match="Permission denied"):

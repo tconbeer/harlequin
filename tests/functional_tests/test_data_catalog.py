@@ -19,7 +19,6 @@ from rich.style import Style
 from rich.text import Text
 from textual import work
 from textual.geometry import Offset
-from textual.pilot import Pilot
 from textual.widgets import Input, Tooltip
 from textual.worker import Worker, WorkerState
 
@@ -27,10 +26,15 @@ from harlequin import Harlequin
 from harlequin.autocomplete.completers import BUFFER_TYPE_LABEL
 from harlequin.catalog import CatalogItem, InteractiveCatalogItem
 from harlequin.components import ErrorModal, ExportScreen
-from harlequin.components.code_editor import CodeEditor
 from harlequin.components.data_catalog.database_tree import DatabaseTree
-from harlequin.components.results_viewer import ResultsTable
 from harlequin_duckdb.adapter import DuckDbAdapter
+from tests.functional_tests.helpers import (
+    expand_catalog_node,
+    wait_for_any_table,
+    wait_for_catalog_tree,
+    wait_for_editor,
+    wait_for_error_modal,
+)
 from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
@@ -69,8 +73,6 @@ async def test_data_catalog(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_duck
@@ -182,8 +184,6 @@ async def test_data_catalog(
 async def test_double_click_inserts_node_into_editor(
     app_multi_duck: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
@@ -220,7 +220,6 @@ async def test_file_tree(
     data_dir: Path,
     app_snapshot: Callable[..., Awaitable[bool]],
     mock_pyperclip: MagicMock,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     test_dir = data_dir / "functional_tests" / "files"
@@ -259,7 +258,6 @@ async def test_s3_tree(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
     mock_boto3: None,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     app = Harlequin(
@@ -300,7 +298,6 @@ async def test_s3_tree_does_not_crash_without_boto3(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     app = Harlequin(
         duckdb_adapter((":memory:",)),
@@ -317,9 +314,6 @@ async def test_context_menu(
     app_small_duck: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    expand_catalog_node: Callable[..., Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
@@ -385,7 +379,6 @@ def _file_tree_paths(app: Harlequin) -> Set[Path]:
 async def test_file_tree_refreshes_after_editor_save(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """
     Regression test for https://github.com/tconbeer/harlequin/issues/871:
@@ -420,8 +413,6 @@ async def test_file_tree_refreshes_after_editor_save(
 async def test_file_tree_refreshes_after_export(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """
     Regression test for https://github.com/tconbeer/harlequin/issues/871:
@@ -434,7 +425,7 @@ async def test_file_tree_refreshes_after_export(
 
         editor.text = "select 1 as a, 2 as b"
         await pilot.press("ctrl+j")  # run query
-        await wait_for_table(pilot, app)
+        await wait_for_any_table(pilot, app)
 
         export_path = tmp_path / "exported.csv"
         assert export_path not in _file_tree_paths(app)
@@ -462,19 +453,16 @@ class BlockingCatalogItem(InteractiveCatalogItem):
 
     started: ClassVar[threading.Event] = threading.Event()
     release: ClassVar[threading.Event] = threading.Event()
-    returned: ClassVar[threading.Event] = threading.Event()
 
     def fetch_children(self) -> List[CatalogItem]:
         type(self).started.set()
         type(self).release.wait(timeout=10)
-        type(self).returned.set()
         return []
 
 
 @pytest.mark.asyncio
 async def test_reload_while_loader_is_fetching(
     duckdb_adapter: Type[DuckDbAdapter],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """Reloading the catalog mid-fetch must not crash the background loader.
 
@@ -486,7 +474,6 @@ async def test_reload_while_loader_is_fetching(
     """
     BlockingCatalogItem.started.clear()
     BlockingCatalogItem.release.clear()
-    BlockingCatalogItem.returned.clear()
 
     app = Harlequin(duckdb_adapter((":memory:",)))
     async with app.run_test(size=(120, 36)) as pilot:
@@ -510,17 +497,23 @@ async def test_reload_while_loader_is_fetching(
         )
 
         # ... and swap the queue out from under the in-flight loader
+        queue_it_came_from = tree._load_queue
         await tree.reload()
         BlockingCatalogItem.release.set()
+
+        # the loader marks the item done on the queue it took it from, which is
+        # the assertion: marking the replacement instead leaves this at 1, and
+        # raises "task_done() called too many times" over there
+        def item_marked_done() -> bool:
+            # the count `task_done()` decrements; asyncio.Queue keeps it private
+            return bool(getattr(queue_it_came_from, "_unfinished_tasks") == 0)  # noqa: B009
+
         await wait_for(
             pilot,
-            BlockingCatalogItem.returned.is_set,
-            description="the blocking fetch to return",
+            item_marked_done,
+            description="the loader to finish with the item it was fetching",
             interval=POLL_INTERVAL,
         )
-        # the loader takes the result on the pump, which is where task_done()
-        # used to land on the queue the reload had just put in place
-        await pilot.pause()
 
         loaders = [
             w for w in app.workers if w.name == "_database_tree_background_loader"
@@ -533,8 +526,6 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    expand_catalog_node: Callable[..., Awaitable[None]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """A catalog item too wide for the catalog gets a tooltip on hover.
 
@@ -589,8 +580,6 @@ async def test_buffer_symbols_load_the_items_they_name(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """The catalog loads the children of the items the query editor names.
 
@@ -656,9 +645,6 @@ async def test_buffer_symbols_load_the_items_they_name(
 async def test_child_worker_failure_is_surfaced_and_loader_continues(
     duckdb_adapter: Type[DuckDbAdapter],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
-    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """An unexpected failure in the loader's per-item worker shows one catalog
     modal, and the loader goes on to the next item.
@@ -726,9 +712,6 @@ async def test_child_worker_failure_is_surfaced_and_loader_continues(
 async def test_background_loader_failure_is_surfaced_without_crashing(
     duckdb_adapter: Type[DuckDbAdapter],
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
-    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
-    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """An unexpected failure inside the background loader stops that loader
     with one catalog modal, and does not crash Harlequin.
