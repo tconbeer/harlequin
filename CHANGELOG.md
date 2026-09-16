@@ -12,10 +12,11 @@ All notable changes to this project will be documented in this file.
 
 ### Performance
 
-- On Windows, Harlequin no longer waits for its timezone database check (and a possible download) before starting: the app opens right away and the check runs in the background. A download that fails is now a warning instead of an error that quits Harlequin ([#1134](https://github.com/tconbeer/harlequin/issues/1134)).
+- On Windows, Harlequin no longer waits for its timezone database check (and a possible download) before starting up ([#1134](https://github.com/tconbeer/harlequin/issues/1134)).
 
 ### Bug Fixes
 
+- On Windows, a timezone database that cannot be downloaded is now a warning; it no longer quits Harlequin ([#1134](https://github.com/tconbeer/harlequin/issues/1134)).
 - A value containing a newline no longer breaks `hsql`'s `table` and `vertical` output: it now spans as many lines as it has, with `+` marking each one that continues, as psql does.
 - The Data Exporter now writes the Feather File Version you chose, and its Compression and Chunk Size options now have an effect. Every export from the dialog wrote a legacy Version 1 file, which cannot hold compression.
 

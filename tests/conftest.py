@@ -13,7 +13,7 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.catalog_cache import HISTORY_CACHE_VERSION
 from harlequin.locale_manager import set_locale
-from harlequin.windows_timezone import download_tzdata, find_tzdata
+from harlequin.windows_timezone import download_tzdata, locate_tzdata
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points
@@ -69,7 +69,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def install_tzdata() -> None:
-    if sys.platform == "win32" and not find_tzdata():
+    if sys.platform == "win32" and not locate_tzdata():
         download_tzdata()
 
 

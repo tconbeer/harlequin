@@ -104,7 +104,11 @@ from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fet
 from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
-from harlequin.windows_timezone import download_tzdata, find_tzdata
+from harlequin.windows_timezone import (
+    TZ_DATA_DOCS_URL,
+    download_tzdata,
+    locate_tzdata,
+)
 
 if TYPE_CHECKING:
     from textual.await_complete import AwaitComplete
@@ -254,6 +258,11 @@ def _adapter_distribution(adapter_name: str | None) -> str | None:
     return f"{distribution} {adapter_versions().get(adapter_name)}"
 
 
+TZDATA_WAIT_SECONDS = 30.0
+"""How long a fetch waits for the timezone database, matching the download's
+own budget in `harlequin.windows_timezone`."""
+
+
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
     "_load_catalog_cache": "Harlequin could not load its cache.",
     "_load_query_history": "Harlequin could not read your query history.",
@@ -324,12 +333,13 @@ class Harlequin(AppBase):
         # already started, by the command that built this app: `ssh` prompts for
         # a passphrase on the terminal Textual is about to take.
         self.ssh_tunnel = ssh_tunnel
-        # only Windows ships without a timezone database Arrow can read, and
-        # --no-download-tzdata is how a session opts out of looking for one.
-        self.wants_tzdata = sys.platform == "win32" and not no_download_tzdata
         self._tzdata_ready = threading.Event()
         """Set once Arrow has a timezone database, or is not getting one."""
-        if not self.wants_tzdata:
+        self._tzdata_stop = threading.Event()
+        """Set on quit, to abandon a download rather than wait it out."""
+        # only Windows ships without a database Arrow can read, and
+        # --no-download-tzdata is how a session opts out of looking for one.
+        if sys.platform != "win32" or no_download_tzdata:
             self._tzdata_ready.set()
         # kept as text: it is what the Data Exporter's path input starts with
         self.export_path = str(export_path) if export_path is not None else None
@@ -487,7 +497,7 @@ class Harlequin(AppBase):
             )
             self.ssh_tunnel.watch(self._post_tunnel_closed)
 
-        if self.wants_tzdata:
+        if not self._tzdata_ready.is_set():
             self._ensure_tzdata()
 
         self._connect()
@@ -648,10 +658,11 @@ class Harlequin(AppBase):
     def notify_tzdata_download(self, message: TzDataDownloadStarted) -> None:
         self.notify(
             "Harlequin is downloading a timezone database, which it needs for "
-            "timestamptz values. It will only do this once, and a result that "
-            "holds a timestamptz waits for it.",
+            "timestamptz values. It will only do this once, and query results "
+            f"wait until it finishes.\n{TZ_DATA_DOCS_URL}",
             title="Harlequin Timezone Support",
             severity="warning",
+            markup=False,
         )
 
     @on(HarlequinDriver.Notify)
@@ -1297,6 +1308,9 @@ class Harlequin(AppBase):
         return context
 
     async def action_quit(self) -> None:
+        # first, so a download in flight starts unwinding while the caches
+        # below are written rather than after
+        self._tzdata_stop.set()
         write_editor_cache(
             Cache(
                 focus_index=self.editor_collection.active_buffer_index,
@@ -1608,10 +1622,10 @@ class Harlequin(AppBase):
         answer; `_fetch_data` is what waits for it.
         """
         try:
-            if find_tzdata():
+            if locate_tzdata():
                 return
             self.post_message(TzDataDownloadStarted())
-            download_tzdata()
+            download_tzdata(stop=self._tzdata_stop)
         finally:
             self._tzdata_ready.set()
 
@@ -1628,10 +1642,13 @@ class Harlequin(AppBase):
         submitted_at: float,
         limit: RowLimit,
     ) -> None:
-        # Arrow cannot build a timestamptz column without a timezone
-        # database, and on Windows one may still be downloading. Already set
-        # everywhere else, so nothing waits here.
-        self._tzdata_ready.wait()
+        # Arrow cannot build a timestamptz column without a timezone database,
+        # and on Windows one may still be downloading. The event is already set
+        # on every other platform, so only Windows ever blocks here. Bounded,
+        # because a worker that never returns keeps its thread out of the pool
+        # `_cancel_query` also runs in; a fetch that goes ahead without the
+        # database is no worse off than one on a machine that has none.
+        self._tzdata_ready.wait(timeout=TZDATA_WAIT_SECONDS)
         errors: list[tuple[BaseException, str]] = []
         results: Dict[str, ResultSet] = {}
         # `limit` is the hard limit the queries were executed under, passed back

@@ -542,8 +542,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.option(
         "--no-download-tzdata",
         help=(
-            "(Windows Only) Prevent Harlequin from downloading an IANA timezone "
-            "database, even if one is missing. May cause undesired behavior."
+            "(Windows Only) Prevent Harlequin from looking for an IANA timezone "
+            "database, or downloading one if it is missing. Harlequin may fail "
+            "to load timestamptz values into the Results Viewer."
         ),
         is_flag=True,
     )
@@ -614,8 +615,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         for key in hsql_profile_keys() - harlequin_options - declared_by_adapter:
             config.pop(key, None)
 
-        # the app looks for a tzdatabase on a worker; nothing before the
-        # first result set needs one.
         # popped on every platform: the remaining config is the adapter's
         no_download_tzdata = bool(config.pop("no_download_tzdata", False))
 
