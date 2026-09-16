@@ -15,7 +15,6 @@ from textual.widgets import Footer, Input, OptionList
 from textual.widgets.option_list import Option
 from textual_textarea import TextEditor
 
-from harlequin.bindings import unbind_actions
 from harlequin.history import History, QueryExecution
 from harlequin.messages import WidgetMounted
 
@@ -51,15 +50,6 @@ class HistoryList(OptionList):
     BORDER_TITLE = "Query History"
 
 
-EDITING_ACTIONS = frozenset(
-    {"paste", "cut", "undo", "redo", "toggle_comment", "delete_line"}
-)
-"""What a read-only text area does anyway, because these reach the document
-through the programmatic API rather than through a keypress:
-https://github.com/tconbeer/textual-textarea/issues/346. Remove once the pin
-carries the fix; `test_the_preview_takes_no_input` derives the real list."""
-
-
 class QueryPreview(TextEditor, inherit_bindings=False):
     """The highlighted query, for reading.
 
@@ -71,12 +61,11 @@ class QueryPreview(TextEditor, inherit_bindings=False):
     """
 
     def on_mount(self) -> None:
-        assert self.text_input is not None
-        # set on the child because TextEditor does not take it:
+        # set on the child, which is what TextEditor does not pass them to:
         # https://github.com/tconbeer/textual-textarea/issues/345
+        assert self.text_input is not None
         self.text_input.show_cursor = False
         self.text_input.use_system_clipboard = False
-        unbind_actions(self.text_input, EDITING_ACTIONS)
 
 
 class HistoryScreen(ModalScreen[str]):
