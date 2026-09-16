@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- DuckDB geometry columns now show as text, like `POINT (-117.93367 34.34613)`, instead of as raw bytes, in the Results Viewer and everywhere else; the spatial extension's types also get a `geo` label in the Data Catalog ([#302](https://github.com/tconbeer/harlequin/issues/302)).
+
 ## [2.15.0] - 2026-09-16
 
 ### Features

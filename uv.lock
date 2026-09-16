@@ -820,7 +820,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1450,7 +1450,7 @@ requires-dist = [
     { name = "rich-click", specifier = "==1.9.9" },
     { name = "shandy-sqlfmt", specifier = ">=0.28.2" },
     { name = "textual", specifier = "==8.2.8" },
-    { name = "textual-fastdatatable", specifier = "==0.19.2" },
+    { name = "textual-fastdatatable", specifier = "==0.19.3" },
     { name = "textual-textarea", specifier = "==0.18.4" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
     { name = "tomlkit", specifier = ">=0.15.1,<0.16.0" },
@@ -3894,7 +3894,7 @@ wheels = [
 
 [[package]]
 name = "textual-fastdatatable"
-version = "0.19.2"
+version = "0.19.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -3903,9 +3903,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/e1/16c0b9f1d14895b1232e3a8b6f169191bf3258ab78ff80dbcc4885c55423/textual_fastdatatable-0.19.2.tar.gz", hash = "sha256:97a692d4d02551b8d311758b8a9fb6e755a445dc457ac37633c981f74baa1441", size = 48750, upload-time = "2026-09-04T03:38:36.61Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/d7/53a2950fe3ce9c6d7f07961359ef34d510929a4bd7e30a0bc7ded888b9db/textual_fastdatatable-0.19.3.tar.gz", hash = "sha256:3b76a82c3a0637e29f603ca9d952393a7a6a7ec1a6ebc5e2a698beb1b233dfee", size = 53852, upload-time = "2026-09-16T18:31:05.586Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/e8/5a09ed3918cbaa951b9052d50eddde13e2d7eab76f6b574904bef3fe3ce0/textual_fastdatatable-0.19.2-py3-none-any.whl", hash = "sha256:1d97d0170c1bc1781950532b0e829ee9309c93cf4f82045aa3e311b1b1de5d8d", size = 45589, upload-time = "2026-09-04T03:38:35.047Z" },
+    { url = "https://files.pythonhosted.org/packages/10/6c/f1ab71cd3931bd0d378a58b6c3c0330ee882b7a3b16d9b0960a3062dd298/textual_fastdatatable-0.19.3-py3-none-any.whl", hash = "sha256:53d706b09e2759a8ea0c6a65956b5acd2847c86ac54116d5ca30ff26c135546f", size = 51364, upload-time = "2026-09-16T18:31:03.635Z" },
 ]
 
 [[package]]

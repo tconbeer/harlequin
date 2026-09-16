@@ -205,6 +205,20 @@ class DuckDbConnection(HarlequinConnection):
         "REAL": "#.#",
         "STRUCT": "{}",
         "MAP": "{m}",
+        # the spatial extension's types. WKB_BLOB is bytes and shows as bytes;
+        # the rest are geometry, whether stored as a blob or as a struct of
+        # doubles, and the label says so rather than what holds it.
+        "GEOMETRY": "geo",
+        "POINT_2D": "geo",
+        "POINT_3D": "geo",
+        "POINT_4D": "geo",
+        "LINESTRING_2D": "geo",
+        "LINESTRING_3D": "geo",
+        "POLYGON_2D": "geo",
+        "POLYGON_3D": "geo",
+        "BOX_2D": "geo",
+        "BOX_2DF": "geo",
+        "WKB_BLOB": "0b",
     }
 
     UNKNOWN_TYPE = "?"

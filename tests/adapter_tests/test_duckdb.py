@@ -7,7 +7,7 @@ import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError
-from harlequin_duckdb.adapter import DuckDbAdapter
+from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
 
 
 def test_connect(tiny_duck: Path, small_duck: Path, tmp_path: Path) -> None:
@@ -395,3 +395,26 @@ def test_transaction_mode() -> None:
     assert conn.transaction_mode is None
     assert conn.toggle_transaction_mode() is None
     assert conn.transaction_mode is None
+
+
+@pytest.mark.parametrize(
+    ("native_type", "expected"),
+    [
+        ("GEOMETRY", "geo"),
+        ("GEOMETRY[]", "[geo]"),
+        ("POINT_2D", "geo"),
+        ("POINT_3D", "geo"),
+        ("POINT_4D", "geo"),
+        ("LINESTRING_2D", "geo"),
+        ("LINESTRING_3D", "geo"),
+        ("POLYGON_2D", "geo"),
+        ("POLYGON_3D", "geo"),
+        ("BOX_2D", "geo"),
+        ("BOX_2DF", "geo"),
+        ("WKB_BLOB", "0b"),
+        ("BLOB", "0b"),
+    ],
+)
+def test_spatial_types_have_a_label(native_type: str, expected: str) -> None:
+    """Typed as strings, so this needs no spatial extension to be installed."""
+    assert DuckDbConnection._short_column_type(native_type) == expected
