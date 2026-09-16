@@ -15,12 +15,12 @@ from textual.widgets import Footer, Input, OptionList
 from textual.widgets.option_list import Option
 from textual_textarea import TextEditor
 
+from harlequin.bindings import unbind_actions
 from harlequin.history import History, QueryExecution
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
     from textual.app import RenderResult
-    from textual.widget import Widget
 
 FILTER_INTERVAL = 0.2
 """How long the store goes unread while the filter is being typed into."""
@@ -51,6 +51,15 @@ class HistoryList(OptionList):
     BORDER_TITLE = "Query History"
 
 
+EDITING_ACTIONS = frozenset(
+    {"paste", "cut", "undo", "redo", "toggle_comment", "delete_line"}
+)
+"""What a read-only text area does anyway, because these reach the document
+through the programmatic API rather than through a keypress:
+https://github.com/tconbeer/textual-textarea/issues/346. Remove once the pin
+carries the fix; `test_the_preview_takes_no_input` derives the real list."""
+
+
 class QueryPreview(TextEditor, inherit_bindings=False):
     """The highlighted query, for reading.
 
@@ -62,10 +71,12 @@ class QueryPreview(TextEditor, inherit_bindings=False):
     """
 
     def on_mount(self) -> None:
+        assert self.text_input is not None
         # set on the child because TextEditor does not take it:
         # https://github.com/tconbeer/textual-textarea/issues/345
-        assert self.text_input is not None
         self.text_input.show_cursor = False
+        self.text_input.use_system_clipboard = False
+        unbind_actions(self.text_input, EDITING_ACTIONS)
 
 
 class HistoryScreen(ModalScreen[str]):
@@ -150,24 +161,6 @@ class HistoryScreen(ModalScreen[str]):
             self.list.focus()
         else:
             self.list.action_select()
-
-    def focus_next(self, selector: str | type[Widget] = "*") -> Widget:
-        return self._focus_other_pane()
-
-    def focus_previous(self, selector: str | type[Widget] = "*") -> Widget:
-        return self._focus_other_pane()
-
-    def _focus_other_pane(self) -> Widget:
-        """Tab is between the list and the preview.
-
-        The filter is not in the round trip: it is reached by typing, and every
-        way out of it leads back to the list. Overriding the methods rather than
-        the actions catches `app.focus_next`, which is what Textual binds tab to
-        before a keymap is applied.
-        """
-        pane: Widget = self.preview if self.list.has_focus else self.list
-        pane.focus()
-        return pane
 
     def on_key(self, event: events.Key) -> None:
         """Typing over the list starts a search rather than being swallowed."""

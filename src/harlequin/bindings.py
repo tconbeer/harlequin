@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Container
 
 from harlequin.exception import HarlequinBindingError
 
@@ -28,6 +28,23 @@ def key_needs_priority(key: str) -> bool:
     return (
         modifier_names in ({"alt"}, {"alt", "shift"}) and unmodified_key.isprintable()
     )
+
+
+def unbind_actions(target: Widget | App, actions: Container[str]) -> None:
+    """Drop this widget's bindings for the named actions.
+
+    Textual has no public removal, and `_bindings` is per-instance, so this is
+    the counterpart to `bind()` below rather than a new seam. For a widget that
+    must not do a thing, the key not reaching the action is surer than the
+    action refusing.
+    """
+    key_to_bindings = target._bindings.key_to_bindings
+    for key, bindings in list(key_to_bindings.items()):
+        kept = [binding for binding in bindings if binding.action not in actions]
+        if kept:
+            key_to_bindings[key] = kept
+        else:
+            del key_to_bindings[key]
 
 
 def bind(

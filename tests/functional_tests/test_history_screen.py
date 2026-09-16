@@ -565,14 +565,37 @@ async def test_the_preview_scrolls_sideways_from_the_keyboard(
 async def test_the_preview_takes_no_input(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Focus makes it scrollable, not editable."""
+    """Focus makes it scrollable, not editable.
+
+    Every key the text area still binds, rather than a list written here: a
+    read-only text area edits anyway under `paste`, `cut`, `undo` and friends,
+    which reach the document without a keypress
+    (https://github.com/tconbeer/textual-textarea/issues/346), and the
+    `EDITING_ACTIONS` guarding against that has to be told when it goes stale.
+    """
     async with app.run_test() as pilot:
         while app.editor is None:
             await pilot.pause()
         screen = await focus_preview(pilot, app, wait_for_workers)
+        text_area = preview_area(screen)
+        # a machine whose clipboard has something on it, as CI runners do
+        monkeypatch.setattr(text_area, "system_paste", lambda: "PASTED")
+        text_area.clipboard = "PASTED"
 
-        await pilot.press("x", "backspace", "delete", "ctrl+v", "tab")
+        edited_by = []
+        for key in sorted(set(text_area._bindings.key_to_bindings)):
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            if screen.preview.text != LONG_QUERY:
+                edited_by.append(key)
+                screen.preview.text = LONG_QUERY
+                await pilot.pause()
+        assert not edited_by, f"these keys edited a read-only preview: {edited_by}"
+
+        await pilot.press("x", "backspace", "delete")
         await pilot.pause()
         assert screen.preview.text == LONG_QUERY
 
@@ -757,22 +780,28 @@ async def test_the_screen_opens_on_the_list(
 
 
 @pytest.mark.asyncio
-async def test_tab_moves_between_the_list_and_the_preview(
+async def test_tab_cycles_the_three_panes(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
-    """The filter is not in the round trip; every way out of it is the list."""
     async with app.run_test() as pilot:
         while app.editor is None:
             await pilot.pause()
-        screen = await focus_preview(pilot, app, wait_for_workers)
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert screen.list.has_focus
 
         await pilot.press("tab")
         await pilot.pause()
-        assert screen.list.has_focus
+        assert preview_area(screen).has_focus
 
-        screen.filter_input.focus()
+        await pilot.press("tab")
         await pilot.pause()
+        assert screen.filter_input.has_focus
+
         await pilot.press("tab")
         await pilot.pause()
         assert screen.list.has_focus
