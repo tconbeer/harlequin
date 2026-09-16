@@ -56,6 +56,14 @@ def settle(seconds: float = SETTLE_SECONDS) -> None:
     time.sleep(seconds)
 
 
+async def settle_app(pilot: Pilot, seconds: float = SETTLE_SECONDS) -> None:
+    """`settle`, for an app that is running: a blocking sleep would stop the
+    loop the thing that must not happen would have to happen on."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        await pilot.pause(POLL_INTERVAL)
+
+
 async def wait_for(
     pilot: Pilot,
     predicate: Callable[[], bool],
