@@ -11,7 +11,7 @@ FooterContainer > Input,
 ResultsViewer,
 HistoryScreen #history_filter,
 HistoryScreen #history_filter_controls > Select,
-HistoryScreen OptionList,
+HistoryScreen HistoryList,
 HistoryScreen QueryPreview,
 Lazy {
     border: round $border-color-nofocus;
@@ -29,7 +29,7 @@ FooterContainer > Input:focus,
 ResultsViewer:focus-within,
 HistoryScreen #history_filter:focus,
 HistoryScreen #history_filter_controls > Select:focus,
-HistoryScreen OptionList:focus,
+HistoryScreen HistoryList:focus,
 HistoryScreen QueryPreview:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
@@ -611,26 +611,26 @@ HistoryScreen QueryPreview {
     width: 1fr;
 }
 
-HistoryScreen OptionList {
+HistoryScreen HistoryList {
     background-tint: $background;
     height: 1fr;
     width: 1fr;
     padding: 0;
 }
 
-HistoryScreen OptionList > .option-list--option-highlighted {
+HistoryScreen HistoryList > .option-list--option-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;
 }
 
 
-HistoryScreen OptionList > .option-list--option-hover {
+HistoryScreen HistoryList > .option-list--option-hover {
     color: $text;
     background: $boost;
 }
 
-HistoryScreen OptionList > .option-list--option-hover-highlighted {
+HistoryScreen HistoryList > .option-list--option-hover-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;

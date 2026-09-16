@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rich.console import COLOR_SYSTEMS
 from textual.pilot import Pilot
+from textual.widgets._select import SelectOverlay
 from textual_textarea.text_editor import TextAreaPlus
 
 import harlequin.app
@@ -1111,6 +1112,37 @@ async def test_the_dropdowns_and_the_search_term_narrow_together(
         assert [record.query_text for record in screen.history] == [
             "select * from line_items"
         ]
+
+
+@pytest.mark.asyncio
+async def test_an_open_dropdown_has_room_for_its_options(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A menu is an OptionList, so a rule written for the list can empty it.
+
+    Asserted on the height it is given rather than on the options it holds: it
+    held all of them while rendering as an empty box.
+    """
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await show_filters(pilot, app)
+
+        for select in (screen.program_select, screen.status_select):
+            select.focus()
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.pause()
+            overlay = select.query_one(SelectOverlay)
+            assert overlay.option_count > 1
+            assert overlay.size.height >= overlay.option_count, (
+                f"{select.id} opened a menu with no room for its options"
+            )
+            await pilot.press("escape")
+            await pilot.pause()
 
 
 @pytest.mark.asyncio
