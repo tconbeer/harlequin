@@ -1451,7 +1451,7 @@ requires-dist = [
     { name = "shandy-sqlfmt", specifier = ">=0.28.2" },
     { name = "textual", specifier = "==8.2.8" },
     { name = "textual-fastdatatable", specifier = "==0.19.2" },
-    { name = "textual-textarea", specifier = "==0.18.2" },
+    { name = "textual-textarea", specifier = "==0.18.3" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
     { name = "tomlkit", specifier = ">=0.15.1,<0.16.0" },
     { name = "tree-sitter", specifier = ">=0.25,<0.27" },
@@ -3926,15 +3926,15 @@ wheels = [
 
 [[package]]
 name = "textual-textarea"
-version = "0.18.2"
+version = "0.18.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyperclip" },
     { name = "textual", extra = ["syntax"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/e8/061ba3d6861984e5377b08bbf6f55d06fe43623d5bb4b26e27239a0f3959/textual_textarea-0.18.2.tar.gz", hash = "sha256:55890c62e270dd6f4a8988e0cfc54120a05022eead82c665095dd2be14bf17a9", size = 28994, upload-time = "2026-09-01T21:47:49.536Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/95/544a5bf903068e46dbe30e9faca3c0f373c5d964b4c226b4acd97657e9e2/textual_textarea-0.18.3.tar.gz", hash = "sha256:76dd59534390fcb126c5a84a7de630d5e7b8f2b3b4bc5912ec7fdee294668825", size = 29144, upload-time = "2026-09-16T01:51:55.46Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/ea/780c6e700c84f5532ed0bc9e24865f9e23b8bbaa358f6c6c6c9620589205/textual_textarea-0.18.2-py3-none-any.whl", hash = "sha256:d5e3952f8507972c73a8e830619174236a0bf725a5c6fe761812ba77f0bf2331", size = 27350, upload-time = "2026-09-01T21:47:48.367Z" },
+    { url = "https://files.pythonhosted.org/packages/92/20/b70ae6b1433ef80805d860ed5741d40ab5f1ee34d93a51360937702c776d/textual_textarea-0.18.3-py3-none-any.whl", hash = "sha256:df9b086a7a685fe78593ec7fa67070411bbbf1f01f72bb849727ca5289e98c8e", size = 27369, upload-time = "2026-09-16T01:51:54.106Z" },
 ]
 
 [[package]]

@@ -577,14 +577,6 @@ async def test_the_preview_takes_no_input(
         assert screen.preview.text == LONG_QUERY
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "read_only does not stop paste, cut, undo, toggle_comment or "
-        "delete_line: https://github.com/tconbeer/textual-textarea/issues/346. "
-        "Drop this marker with the pin that carries the fix."
-    ),
-)
 @pytest.mark.asyncio
 async def test_the_preview_ignores_every_key_it_binds(
     app: Harlequin,
@@ -593,8 +585,8 @@ async def test_the_preview_ignores_every_key_it_binds(
 ) -> None:
     """Every key the text area binds, rather than a list written here.
 
-    Derived at run time so that a pin bump says whether the editing keys still
-    reach the document, instead of this file claiming an answer of its own.
+    Derived at run time, so a component-library bump that gives a read-only
+    text area a way to edit itself fails here and names the key.
     """
     async with app.run_test() as pilot:
         while app.editor is None:
