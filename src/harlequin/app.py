@@ -104,6 +104,7 @@ from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fet
 from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
+from harlequin.windows_timezone import download_tzdata, find_tzdata
 
 if TYPE_CHECKING:
     from textual.await_complete import AwaitComplete
@@ -231,6 +232,10 @@ class CompletersReady(Message):
         self.member_completer = member_completer
 
 
+class TzDataDownloadStarted(Message):
+    """This machine has no timezone database, so the worker is fetching one."""
+
+
 def _adapter_distribution(adapter_name: str | None) -> str | None:
     """The distribution an adapter came from, and its version.
 
@@ -287,6 +292,7 @@ class Harlequin(AppBase):
         viewer_max_rows: int | str | None = 100_000,
         query_limit: int | str | None = None,
         ssh_tunnel: SshTunnel | None = None,
+        no_download_tzdata: bool = False,
         driver_class: Union[Type[Driver], None] = None,
         css_path: Union[CSSPathType, None] = None,
         watch_css: bool = False,
@@ -318,6 +324,13 @@ class Harlequin(AppBase):
         # already started, by the command that built this app: `ssh` prompts for
         # a passphrase on the terminal Textual is about to take.
         self.ssh_tunnel = ssh_tunnel
+        # only Windows ships without a timezone database Arrow can read, and
+        # --no-download-tzdata is how a session opts out of looking for one.
+        self.wants_tzdata = sys.platform == "win32" and not no_download_tzdata
+        self._tzdata_ready = threading.Event()
+        """Set once Arrow has a timezone database, or is not getting one."""
+        if not self.wants_tzdata:
+            self._tzdata_ready.set()
         # kept as text: it is what the Data Exporter's path input starts with
         self.export_path = str(export_path) if export_path is not None else None
         # None is no cap: the viewer holds every row that was fetched. So are 0
@@ -474,6 +487,9 @@ class Harlequin(AppBase):
             )
             self.ssh_tunnel.watch(self._post_tunnel_closed)
 
+        if self.wants_tzdata:
+            self._ensure_tzdata()
+
         self._connect()
         self._load_catalog_cache()
         self.action_bind_keymaps(*self.keymap_names)
@@ -628,6 +644,16 @@ class Harlequin(AppBase):
             ConfirmModal(prompt=message.instructions), callback=screen_callback
         )
 
+    @on(TzDataDownloadStarted)
+    def notify_tzdata_download(self, message: TzDataDownloadStarted) -> None:
+        self.notify(
+            "Harlequin is downloading a timezone database, which it needs for "
+            "timestamptz values. It will only do this once, and a result that "
+            "holds a timestamptz waits for it.",
+            title="Harlequin Timezone Support",
+            severity="warning",
+        )
+
     @on(HarlequinDriver.Notify)
     def driver_notify(self, message: HarlequinDriver.Notify) -> None:
         message.stop()
@@ -739,6 +765,15 @@ class Harlequin(AppBase):
                 title="Transaction Error",
                 header="Harlequin could not change the transaction mode.",
                 error=worker_error,
+            )
+        elif worker_name == "_ensure_tzdata":
+            # a session with no timezone database is usable right up until a
+            # timestamptz reaches the Results Viewer, so this is not a modal
+            self.notify(
+                str(worker_error),
+                title=getattr(worker_error, "title", "Harlequin Timezone Error"),
+                severity="warning",
+                markup=False,
             )
         elif worker_name in _PARTIAL_FAILURE_WORKER_NOTIFICATIONS:
             self.notify(
@@ -1563,6 +1598,27 @@ class Harlequin(AppBase):
         thread=True,
         exclusive=True,
         exit_on_error=False,
+        group="tzdata",
+        description="finding a timezone database.",
+    )
+    def _ensure_tzdata(self) -> None:
+        """Point Arrow at a timezone database, downloading one if there is none.
+
+        On a worker because nothing before the first result set needs the
+        answer; `_fetch_data` is what waits for it.
+        """
+        try:
+            if find_tzdata():
+                return
+            self.post_message(TzDataDownloadStarted())
+            download_tzdata()
+        finally:
+            self._tzdata_ready.set()
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
         group="query_runners",
         description="fetching data from adapter.",
     )
@@ -1572,6 +1628,10 @@ class Harlequin(AppBase):
         submitted_at: float,
         limit: RowLimit,
     ) -> None:
+        # Arrow cannot build a timestamptz column without a timezone
+        # database, and on Windows one may still be downloading. Already set
+        # everywhere else, so nothing waits here.
+        self._tzdata_ready.wait()
         errors: list[tuple[BaseException, str]] = []
         results: Dict[str, ResultSet] = {}
         # `limit` is the hard limit the queries were executed under, passed back

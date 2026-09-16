@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - Harlequin's Query History (`F8`) now shows the queries hsql ran against the same database, and keeps them when a session ends without a clean quit ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 - `hsql --history` lists the queries Harlequin and hsql have run, newest first, and `hsql --history-search TERM` lists the ones whose SQL mentions TERM. Both take every format and layout flag a query does; `-P`, `-a` or a connection string narrows them to one database ([#429](https://github.com/tconbeer/harlequin/issues/429)).
 
+### Performance
+
+- On Windows, Harlequin no longer waits for its timezone database check (and a possible download) before starting: the app opens right away and the check runs in the background. A download that fails is now a warning instead of an error that quits Harlequin ([#1134](https://github.com/tconbeer/harlequin/issues/1134)).
+
 ### Bug Fixes
 
 - A value containing a newline no longer breaks `hsql`'s `table` and `vertical` output: it now spans as many lines as it has, with `+` marking each one that continues, as psql does.
