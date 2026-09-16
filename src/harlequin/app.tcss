@@ -10,6 +10,7 @@ EditorCollection,
 FooterContainer > Input,
 ResultsViewer,
 HistoryScreen #history_filter,
+HistoryScreen #history_filter_controls > Select,
 HistoryScreen OptionList,
 HistoryScreen QueryPreview,
 Lazy {
@@ -27,6 +28,7 @@ EditorCollection:focus-within,
 FooterContainer > Input:focus,
 ResultsViewer:focus-within,
 HistoryScreen #history_filter:focus,
+HistoryScreen #history_filter_controls > Select:focus,
 HistoryScreen OptionList:focus,
 HistoryScreen QueryPreview:focus-within {
     border: round $border-color-focus;
@@ -588,12 +590,21 @@ HistoryScreen {
     background: $background;
 }
 
-HistoryScreen #history_filter_pane {
-    width: 1fr;
+HistoryScreen #history_filter_controls {
+    height: 3;
 }
 
 HistoryScreen #history_filter {
-    height: 3;
+    width: 1fr;
+}
+
+HistoryScreen #history_filter_controls > Select {
+    width: 24;
+}
+
+HistoryScreen #history_filter_controls > Select SelectCurrent {
+    border: none;
+    padding: 0 1;
 }
 
 HistoryScreen QueryPreview {
@@ -602,6 +613,8 @@ HistoryScreen QueryPreview {
 
 HistoryScreen OptionList {
     background-tint: $background;
+    height: 1fr;
+    width: 1fr;
     padding: 0;
 }
 

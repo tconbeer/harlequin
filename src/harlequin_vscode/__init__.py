@@ -124,6 +124,7 @@ VSCODE_RESULTS_VIEWER_BINDINGS = [
 VSCODE_HISTORY_SCREEN_BINDINGS = [
     HarlequinKeyBinding("enter", "history_screen.select_query"),
     HarlequinKeyBinding("escape", "history_screen.cancel"),
+    HarlequinKeyBinding("ctrl+f", "history_screen.toggle_filters"),
 ]
 
 

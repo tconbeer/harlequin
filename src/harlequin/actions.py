@@ -333,20 +333,25 @@ HARLEQUIN_ACTIONS = {
     #######################################################
     # HistoryScreen ACTIONS
     #######################################################
-    # both are priority: the screen owns these two keys wherever focus is, and
-    # the filter input and the preview each bind one of them for themselves
     "history_screen.select_query": Action(
         target=HistoryScreen,
         action="select",
         description="Select Query",
         show=True,
+        # the filter input binds enter to its own submit, and the preview stops
+        # it before a binding is looked for
         priority=True,
+    ),
+    "history_screen.toggle_filters": Action(
+        target=HistoryScreen,
+        action="toggle_filters",
+        description="Filter",
+        show=True,
     ),
     "history_screen.cancel": Action(
         target=HistoryScreen,
         action="cancel",
         description="Cancel",
         show=True,
-        priority=True,
     ),
 }

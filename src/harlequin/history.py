@@ -118,6 +118,8 @@ class History:
         connection: str | None = None,
         limit: int | None = DEFAULT_ROWS,
         search: str | None = None,
+        program: str | None = None,
+        status: str | None = None,
     ) -> "History":
         """The newest logged queries, newest first.
 
@@ -129,6 +131,8 @@ class History:
         rows = recent(
             connection=connection,
             search=search,
+            program=program,
+            status=status,
             limit=limit,
             busy_timeout_ms=UI_BUSY_TIMEOUT_MS,
         )
