@@ -10,15 +10,17 @@ from click.testing import CliRunner, Result
 
 from harlequin import Harlequin
 from harlequin.cli import (
-    DEFAULT_KEYMAP_NAMES,
-    DEFAULT_THEME,
-    DEFAULT_VIEWER_MAX_ROWS,
     HEADLESS_DOCS_URL,
     build_cli,
     hsql_profile_keys,
     hsql_spellings,
 )
 from harlequin.config import Config, Provenance, _merge
+from harlequin.core_options import (
+    DEFAULT_KEYMAP_NAMES,
+    DEFAULT_THEME,
+    DEFAULT_VIEWER_MAX_ROWS,
+)
 from harlequin_duckdb import DUCKDB_OPTIONS, DuckDbAdapter
 from harlequin_sqlite import SQLITE_OPTIONS, HarlequinSqliteAdapter
 

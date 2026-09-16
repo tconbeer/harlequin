@@ -328,7 +328,7 @@
         "theme": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
-        "keymap_name": {
+        "viewer_max_rows": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
         "show_files": {
@@ -337,13 +337,13 @@
         "show_s3": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
+        "keymap_name": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
         "locale": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
         "no_download_tzdata": {
-          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
-        },
-        "viewer_max_rows": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         }
       }

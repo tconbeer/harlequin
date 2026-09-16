@@ -35,13 +35,14 @@ A **session** is the fourth shape, and it is two roles of this one command.
 it over a socket; `--session NAME` is such an invocation, carried there by the
 client in `harlequin.hsql.client`, which forwards argv verbatim. The server
 parses every served request with this same command, and `ctx.obj` carries the
-session into the callback. Every option is in exactly one group, decided by
-when its value can be read: connection-time (`CONN_STR`, `-a`, `-P`, the SSH
-options, every adapter's), per-request (`-c`, `--format`, every mode), and
-server-lifetime (`--queue-timeout`, `--idle-timeout`, `--max-lifetime`).
-`--serve` refuses the second group and every other invocation refuses the
-third; each refusal names the invocation the option belongs on.
-`docs/cli-options.md` is the reference, and the checklist for adding one.
+session into the callback. Every option is in exactly one group, which it
+declares in `harlequin.core_options` along with the rest of what this command
+takes: connection-time (`CONN_STR`, `-a`, `-P`, the SSH options, every
+adapter's), per-request (`-c`, `--format`, every mode), and server-lifetime
+(`--queue-timeout`, `--idle-timeout`, `--max-lifetime`). `--serve` refuses the
+second group and every other invocation refuses the third; each refusal names
+the invocation the option belongs on. `docs/cli-options.md` is the reference,
+and the checklist for adding one.
 """
 
 from __future__ import annotations
@@ -69,13 +70,7 @@ from typing import (
 import click
 
 from harlequin.config import (
-    CLI_ONLY_SESSION_KEYS,
-    CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
-    DEFAULT_SSH_TIMEOUT,
-    SSH_KEYS,
-    TUI_ONLY_KEYS,
-    UNLIMITED,
     merge_profile_with_cli,
     parse_profile_options,
     parse_row_count,
@@ -83,6 +78,21 @@ from harlequin.config import (
     sluggify_option_name,
     take_no_write_history,
     take_ssh_keys,
+)
+from harlequin.core_options import (
+    CLI_ONLY_SESSION_KEYS,
+    CLI_ONLY_SSH_KEYS,
+    CONNECTION_OPTIONS,
+    DEFAULT_FORMAT,
+    DEFAULT_IDLE_TIMEOUT,
+    DEFAULT_LIMIT,
+    DEFAULT_MAX_LIFETIME,
+    HSQL,
+    PER_REQUEST_OPTIONS,
+    SERVER_OPTIONS,
+    SSH_KEYS,
+    TUI_ONLY_KEYS,
+    attach_core_options,
 )
 from harlequin.exception import (
     HarlequinCatalogPathError,
@@ -117,18 +127,8 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
-PROGRAM = "hsql"
-
-DEFAULT_FORMAT = "table"
-
-DEFAULT_LIMIT = 500
-"""Small on purpose: fetching a million rows to print forty of them is waste.
-
-`--limit` is the *hard* limit -- `cursor.set_limit()`, so fewer rows leave the
-database -- and it is the same promise the `limit` key makes in the IDE. `-1`
-is unlimited, and `0` fetches a header and no rows, which is how a caller asks
-what a query's columns are.
-"""
+PROGRAM = HSQL
+"""This command, as it names itself and as it declares its options."""
 
 SHORTHANDS = {
     "csv": "csv",
@@ -142,79 +142,12 @@ SHORTHANDS = {
 SOURCES = f"{__name__}.sources"
 """Context key under which `-c` and `-f` record themselves, in order."""
 
-CONNECTION_OPTIONS = frozenset({"conn_str", "adapter", "read_only", *SSH_KEYS})
-"""Opened once, with the connection, so `--serve` takes them. Every adapter
-option is one too; `connection_option_names()` joins the two sets."""
-
-CONFIG_OPTIONS = frozenset({"profile", "config_path"})
-"""Which file and which profile the other options are read from.
-
-Not connection-time, though a profile usually holds connection-time keys:
-these name where values come from rather than being values, so which group
-one belongs to is decided by what it resolves to. A profile of nothing but
-`format` and `limit` is per-request whichever way it was named, which is what
-lets a served `-P` behave the way a discovered `default_profile` does.
-"""
-
-SERVER_OPTIONS = frozenset({"queue_timeout", "idle_timeout", "max_lifetime"})
-"""Set once per server, and bound to its lifetime."""
-
 SERVER_OPTION_BOUNDS = {
     "queue_timeout": "how long a request waits for the one before it",
     "idle_timeout": "how long a session sits with nothing to do",
     "max_lifetime": "how long a session runs at all",
 }
 """What each of them bounds, for the error that refuses it anywhere else."""
-
-DEFAULT_IDLE_TIMEOUT = 1800.0
-DEFAULT_MAX_LIFETIME = 28800.0
-"""How long a session waits with nothing to do, and how long it runs at all.
-
-A session is a live authenticated connection, so it is bounded unless an
-operator says otherwise; `0` is how they say so.
-"""
-
-ROLE_OPTIONS = frozenset({"serve", "session"})
-"""The two spellings that say which process an invocation is."""
-
-PER_REQUEST_OPTIONS = frozenset(
-    {
-        "command",
-        "file",
-        "output",
-        "format",
-        *SHORTHANDS,
-        "vertical",
-        "tuples_only",
-        "no_align",
-        "no_header",
-        "no_footer",
-        "null_string",
-        "timeout",
-        "config_mode",
-        "catalog",
-        "catalog_search",
-        "path",
-        "history",
-        "history_search",
-        "spec",
-        "info",
-        "skill",
-        "session_reset",
-        "session_status",
-        "limit",
-        "display_rows",
-        "result",
-        "on_error",
-        "stats",
-        "color",
-        "version",
-        "no_write_history",
-    }
-)
-"""Read on every invocation, so a session's client sends them and `--serve`
-takes none. `tests/unit_tests/test_hsql_serve.py` pins the five groups to the
-command: every declared parameter is in exactly one."""
 
 
 def build_cli(argv: Sequence[str]) -> click.Command:
@@ -229,16 +162,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         argv,
         installed,
         program=PROGRAM,
-        # the modes, so that the pass can decline to read a profile for a
-        # command that is not going to connect with one
-        extra_options=[
-            click.Option(["--config"]),
-            click.Option(["--spec"], is_flag=True),
-            click.Option(["--info"], is_flag=True),
-            click.Option(["--skill"], is_flag=True),
-            click.Option(["--session-reset"], is_flag=True),
-            click.Option(["--session-status"], is_flag=True),
-        ],
         # A mode reports on what is installed or configured rather than
         # connecting with it, so there is no profile to read for one. `--config`
         # reads the files itself and reports what it finds wrong with them under
@@ -251,7 +174,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # adapter.
         needs_profile=lambda params: (
             not (
-                params.get("config") is not None
+                params.get("config_mode") is not None
                 or params.get("spec")
                 or params.get("info")
                 or params.get("skill")
@@ -265,7 +188,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # the adapter's options are half of what it writes.
         needs_adapter=lambda params: (
             not (
-                _reports_config(params.get("config"))
+                _reports_config(params.get("config_mode"))
                 or params.get("spec")
                 or params.get("info")
                 or params.get("skill")
@@ -290,363 +213,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         name=PROGRAM,
         no_args_is_help=True,
         epilog=_epilog(installed, found.adapter),
-    )
-    @click.version_option(package_name="harlequin", prog_name=PROGRAM)
-    @click.argument("conn_str", nargs=-1)
-    @click.option(
-        "-c",
-        "--command",
-        multiple=True,
-        callback=_record_source,
-        help="Execute SQL. Repeatable.",
-    )
-    @click.option(
-        "-f",
-        "--file",
-        multiple=True,
-        callback=_record_source,
-        metavar="PATH",
-        help="Execute SQL from a file, or from stdin for `-`. Repeatable.",
-    )
-    @click.option(
-        "-o",
-        "--output",
-        metavar="PATH",
-        help="Write results to PATH instead of stdout. Accepts a file or directory.",
-    )
-    # long spelling only: -F is psql's --field-separator, and a flag that sets
-    # a delimiter in one command and picks a format in the other is a mistake
-    # waiting for a script. The shorthand flags below cover the common choices.
-    @click.option(
-        "--format",
-        default=DEFAULT_FORMAT,
-        show_default=True,
-        metavar="NAME",
-        type=click.Choice(output.format_names(), case_sensitive=False),
-        help="Output format. See below for the list.",
-    )
-    @click.option("--csv", is_flag=True, help="Shorthand for --format csv.")
-    @click.option("--json", is_flag=True, help="Shorthand for --format json.")
-    @click.option("--jsonl", is_flag=True, help="Shorthand for --format jsonl.")
-    @click.option("--markdown", is_flag=True, help="Shorthand for --format markdown.")
-    @click.option(
-        "-x",
-        "--vertical",
-        is_flag=True,
-        help="Shorthand for --format vertical. As in psql.",
-    )
-    @click.option(
-        "-t",
-        "--tuples-only",
-        is_flag=True,
-        help="Rows only: no header, no footer. As in psql.",
-    )
-    @click.option(
-        "-A", "--no-align", is_flag=True, help="Unaligned output. As in psql."
-    )
-    @click.option(
-        "--no-header", is_flag=True, help="Omit the header row, keeping other chrome."
-    )
-    @click.option(
-        "--no-footer",
-        is_flag=True,
-        help="Omit the row-count footer, keeping other chrome.",
-    )
-    @click.option(
-        "--null-string",
-        metavar="TEXT",
-        help="Render NULL as TEXT. Defaults to NULL for text formats, empty for csv.",
-    )
-    @click.option(
-        "-P",
-        "--profile",
-        help=(
-            "Load a profile from an available config file. Options passed here take "
-            "precedence over the profile's. Use the profile named None for "
-            "Harlequin's defaults instead of the config file's default profile."
-        ),
-    )
-    @click.option(
-        "-a",
-        "--adapter",
-        default=DEFAULT_ADAPTER,
-        show_default=True,
-        metavar="NAME",
-        type=click.Choice(installed, case_sensitive=False),
-        help="The installed adapter plug-in to connect with.",
-    )
-    @click.option(
-        "-r",
-        "--read-only",
-        "read_only",
-        is_flag=True,
-        help=(
-            "Connect read-only, and refuse to run at all if the adapter cannot. "
-            "To check an adapter's capabilities, use --info."
-        ),
-    )
-    @click.option(
-        "--timeout",
-        metavar="SECONDS",
-        type=click.FloatRange(min=0, min_open=True),
-        help=(
-            "Cancel the run after SECONDS and exit 4. Refused if the adapter "
-            "cannot cancel a query; to check, use --info."
-        ),
-    )
-    @click.option(
-        "--ssh-host",
-        metavar="TEXT",
-        help=(
-            "Open an SSH tunnel to this destination first, and connect through "
-            "it. A Host alias, host, user@host or ssh://user@host:port, passed "
-            "to ssh verbatim."
-        ),
-    )
-    @click.option(
-        "--ssh-forward",
-        metavar="TEXT",
-        multiple=True,
-        help=(
-            "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. "
-            "Repeatable. Omit it when your ssh config has the LocalForward."
-        ),
-    )
-    @click.option(
-        "--ssh-batch-mode",
-        is_flag=True,
-        help=(
-            "Fail rather than prompt for a passphrase, a password or a host "
-            "key. ssh's own BatchMode; set it in scripts, CI and cron."
-        ),
-    )
-    @click.option(
-        "--ssh-allow-reuse",
-        is_flag=True,
-        help=(
-            "When the local port is already bound, warn and connect through "
-            "the listener that has it instead of failing."
-        ),
-    )
-    @click.option(
-        "--ssh-timeout",
-        metavar="SECONDS",
-        type=click.FloatRange(min=0, min_open=True),
-        help=(
-            "Seconds to wait for the tunnel's forwards. "
-            f"[default: {DEFAULT_SSH_TIMEOUT:g}]"
-        ),
-    )
-    # existence is not click's to check: every mode that reads this path
-    # already refuses a file that is not there, naming it, and `--config init`
-    # is the one invocation whose whole job is to write a file that is not there
-    # yet.
-    @click.option(
-        "--config-path",
-        type=click.Path(dir_okay=False, resolve_path=True, path_type=Path),
-        envvar="HARLEQUIN_CONFIG_PATH",
-        show_envvar=True,
-        metavar="PATH",
-        help="Use this config file instead of the ones hsql discovers.",
-    )
-    @click.option(
-        "--config",
-        "config_mode",
-        metavar="MODE",
-        type=click.Choice(CONFIG_MODES, case_sensitive=False),
-        help=(
-            "Report on the config files hsql found, or write a profile into "
-            "one, and exit without running SQL. One of: "
-            f"{', '.join(CONFIG_MODES)}."
-        ),
-    )
-    @click.option(
-        "--catalog",
-        is_flag=True,
-        help=(
-            "List the catalog objects one level below --path, and exit without "
-            "running SQL."
-        ),
-    )
-    @click.option(
-        "--catalog-search",
-        metavar="TERM",
-        help=(
-            "Search the whole catalog, at every level, for objects whose "
-            "name contains TERM, and exit without running SQL. Not every "
-            "adapter can; see --info."
-        ),
-    )
-    @click.option(
-        "--path",
-        metavar="TEXT",
-        help=(
-            "Where in the catalog --catalog looks, and what --catalog-search "
-            "searches under. Dotted segments, named by the adapter; the top of "
-            "the catalog by default. A trailing * filters a --catalog listing."
-        ),
-    )
-    @click.option(
-        "--history",
-        is_flag=True,
-        help=(
-            "List the queries harlequin and hsql have run, newest first, and "
-            "exit without running SQL. --limit says how many; -P, -a or a "
-            "CONN_STR narrows it to one database."
-        ),
-    )
-    @click.option(
-        "--history-search",
-        metavar="TERM",
-        help=(
-            "List the logged queries whose SQL contains TERM, newest first, "
-            "and exit without running SQL. Scoped like --history."
-        ),
-    )
-    @click.option(
-        "--spec",
-        is_flag=True,
-        help=(
-            "Every option here, plus every installed adapter's, as JSON. "
-            "-a narrows it to one adapter."
-        ),
-    )
-    @click.option(
-        "--info",
-        is_flag=True,
-        help=(
-            "Versions, config files, the active profile, and what each "
-            "installed adapter declares it supports, as JSON. Connects to "
-            "nothing. -a narrows it to one adapter."
-        ),
-    )
-    @click.option(
-        "--skill",
-        is_flag=True,
-        help=(
-            "Write the Agent Skill for driving hsql, as markdown. -o installs "
-            "it: 'hsql --skill -o ~/.claude/skills/hsql/'."
-        ),
-    )
-    @click.option(
-        "--serve",
-        metavar="NAME",
-        help=(
-            "Connect, then hold the connection open as the session named NAME "
-            "and answer `--session NAME` invocations from it until stopped. "
-            "Takes connection and session-lifetime options; no per-request "
-            "ones. Not on native Windows."
-        ),
-    )
-    @click.option(
-        "--session",
-        metavar="NAME",
-        help=(
-            "Send this invocation to the running session named NAME, started "
-            "with --serve. HSQL_SESSION=NAME does the same for every "
-            "invocation, and runs without the session, with a warning, when "
-            "none is up."
-        ),
-    )
-    @click.option(
-        "--session-reset",
-        is_flag=True,
-        help=(
-            "Ask the session to close its connection and open a fresh one, "
-            "and exit without running SQL. Temp tables, settings and an open "
-            "transaction are gone. Needs --session."
-        ),
-    )
-    @click.option(
-        "--session-status",
-        is_flag=True,
-        help=(
-            "Poll the server for its status as JSON, and exit. Reports while "
-            "a query is running. Needs --session."
-        ),
-    )
-    @click.option(
-        "--queue-timeout",
-        metavar="SECONDS",
-        type=click.FloatRange(min=0, min_open=True),
-        help=(
-            "With --serve: a request waits at most SECONDS for the one before "
-            "it, then exits 4 without reaching the database. [default: no "
-            "limit]"
-        ),
-    )
-    @click.option(
-        "--idle-timeout",
-        metavar="SECONDS",
-        default=DEFAULT_IDLE_TIMEOUT,
-        show_default="1800 (30 minutes)",
-        type=click.FloatRange(min=0),
-        help=(
-            "With --serve: stop the session once it has gone SECONDS with no "
-            "request. 0 for a session that waits as long as it takes."
-        ),
-    )
-    @click.option(
-        "--max-lifetime",
-        metavar="SECONDS",
-        default=DEFAULT_MAX_LIFETIME,
-        show_default="28800 (8 hours)",
-        type=click.FloatRange(min=0),
-        help=(
-            "With --serve: stop the session SECONDS after it connected, "
-            "whatever it is doing; a request already running finishes first. "
-            "0 for a session that runs until something stops it."
-        ),
-    )
-    @click.option(
-        "--limit",
-        default=DEFAULT_LIMIT,
-        show_default=True,
-        metavar="N",
-        type=click.IntRange(min=UNLIMITED),
-        help="Maximum rows fetched per result set. -1 for no limit.",
-    )
-    @click.option(
-        "--display-rows",
-        metavar="N",
-        type=click.IntRange(min=UNLIMITED),
-        help=(
-            "Rows printed per result set by the text layouts. -1 for all rows. "
-            f"[default: {_default_display_rows()}]"
-        ),
-    )
-    @click.option(
-        "--result",
-        default="all",
-        show_default=True,
-        metavar="all|last|N",
-        help="Which result set(s) to emit.",
-    )
-    @click.option(
-        "--on-error",
-        default="stop",
-        show_default=True,
-        type=click.Choice(["stop", "continue"]),
-        help="What to do when a statement fails.",
-    )
-    @click.option(
-        "--no-write-history",
-        "no_write_history",
-        is_flag=True,
-        help=(
-            "Do not record this run's queries in the query history that "
-            "Harlequin and hsql share."
-        ),
-    )
-    @click.option(
-        "--stats", is_flag=True, help="Write a one-line JSON summary to stderr."
-    )
-    @click.option(
-        "--color",
-        default="never",
-        show_default=True,
-        type=click.Choice(["auto", "always", "never"]),
-        help="Color text output. `auto` follows the terminal and NO_COLOR.",
     )
     @click.pass_context
     def inner_cli(
@@ -1355,6 +921,30 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         ctx.exit(run.exit_code)
 
     cmd: click.Command = inner_cli
+    # the options this command declares, in `harlequin.core_options`, with the
+    # part of each that only this command can answer
+    attach_core_options(
+        cmd,
+        HSQL,
+        supplied={
+            "version_option": click.version_option(
+                package_name="harlequin", prog_name=PROGRAM
+            ),
+            "record_source": _record_source,
+            "formats": click.Choice(output.format_names(), case_sensitive=False),
+            "adapters": click.Choice(installed, case_sensitive=False),
+            "config_modes": click.Choice(CONFIG_MODES, case_sensitive=False),
+            "config_mode_help": (
+                "Report on the config files hsql found, or write a profile into "
+                "one, and exit without running SQL. One of: "
+                f"{', '.join(CONFIG_MODES)}."
+            ),
+            "display_rows_help": (
+                "Rows printed per result set by the text layouts. -1 for all rows. "
+                f"[default: {_default_display_rows()}]"
+            ),
+        },
+    )
     if adapter_cls is not None and found.adapter is not None:
         # what is left of the profile once this command's own options are out
         # of it belongs to the adapter, which is about to be handed it

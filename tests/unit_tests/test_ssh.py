@@ -23,7 +23,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 from harlequin.cli import build_cli as harlequin_cli
-from harlequin.config import DEFAULT_SSH_TIMEOUT, SSH_KEYS, take_ssh_keys
+from harlequin.config import DEFAULT_SSH_TIMEOUT, take_ssh_keys
+from harlequin.core_options import SSH_KEYS
 from harlequin.exception import HarlequinConfigError, HarlequinSshError
 from harlequin.hsql.cli import build_cli as hsql_cli
 from harlequin.hsql.diagnostics import ExitCode

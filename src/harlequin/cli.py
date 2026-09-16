@@ -16,7 +16,6 @@ from harlequin.adapter import HarlequinAdapter
 from harlequin.colors import GREEN, PINK, PURPLE, VALID_THEMES, YELLOW
 from harlequin.config import (
     DEFAULT_ADAPTER,
-    DEFAULT_SSH_TIMEOUT,
     Profile,
     load_profile_and_keymaps,
     merge_profile_with_cli,
@@ -27,6 +26,13 @@ from harlequin.config import (
     take_ssh_keys,
 )
 from harlequin.config_wizard import wizard
+from harlequin.core_options import (
+    DEFAULT_KEYMAP_NAMES,
+    DEFAULT_THEME,
+    DEFAULT_VIEWER_MAX_ROWS,
+    HARLEQUIN,
+    attach_core_options,
+)
 from harlequin.exception import (
     HarlequinConfigError,
     HarlequinLocaleError,
@@ -44,11 +50,7 @@ from harlequin.redact import hide_secrets_in
 if TYPE_CHECKING:
     from harlequin.ssh import SshTunnel
 
-# configure defaults
-DEFAULT_VIEWER_MAX_ROWS = 100_000
-DEFAULT_THEME = "harlequin"
 ALL_THEMES = ", ".join(VALID_THEMES.keys())
-DEFAULT_KEYMAP_NAMES = ["vscode"]
 
 # configure the rich click interface (mostly --help options)
 DOCS_URL = "https://harlequin.sh/docs/getting-started"
@@ -319,7 +321,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     is the right trade -- the one that got faster is the one that opens the IDE.
     """
     installed_adapter_names = adapter_names()
-    first_pass_config = first_pass(argv, installed_adapter_names, program="harlequin")
+    first_pass_config = first_pass(argv, installed_adapter_names, program=HARLEQUIN)
     adapters: dict[str, type[HarlequinAdapter]] = {}
     if first_pass_config.wants_help:
         adapters = load_adapter_plugins()
@@ -349,205 +351,6 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         return loaded if loaded is not None else load_adapter(name)
 
     @click.command(cls=HarlequinCommand)
-    @click.version_option(package_name="harlequin", message=_version_option())
-    @click.argument(
-        "conn_str",
-        nargs=-1,
-    )
-    @click.option(
-        "-P",
-        "--profile",
-        help=(
-            "Select a profile from an available config file to load its values. "
-            "Other options passed here will take precedence over those loaded "
-            "from the profile. Use the special profile named None to use Harlequin's "
-            "defaults, instead of the default profile specified in the config "
-            "file."
-        ),
-    )
-    @click.option(
-        "--config-path",
-        help=(
-            "By default, Harlequin finds files named .harlequin.toml in the "
-            "current directory and the home directory (~) and merges them. "
-            "Use this option to specify the full path to a config file at "
-            "a different location."
-        ),
-        type=click.Path(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            resolve_path=True,
-            path_type=Path,
-        ),
-        envvar="HARLEQUIN_CONFIG_PATH",
-        show_envvar=True,
-    )
-    @click.option(
-        "-t",
-        "--theme",
-        default=DEFAULT_THEME,
-        show_default=True,
-        help=(
-            "Set the theme (colors) of the Harlequin IDE. "
-            "Must be `harlequin` or the name of a Textual theme: "
-            f"{ALL_THEMES}"
-        ),
-    )
-    @click.option(
-        "--viewer-max-rows",
-        default=DEFAULT_VIEWER_MAX_ROWS,
-        type=click.IntRange(min=-1),
-        help=(
-            "Set the maximum number of rows that can be loaded into Harlequin's "
-            "Results Viewer. Set to -1 for no limit. Default is "
-            f"{DEFAULT_VIEWER_MAX_ROWS:,}"
-        ),
-    )
-    @click.option(
-        "--limit",
-        type=click.IntRange(min=-1),
-        help=(
-            "Default value for the limit control; if set, the limit will be "
-            "applied by default. If unset, queries fetch all rows."
-        ),
-    )
-    @click.option(
-        "-o",
-        "--output",
-        type=click.Path(file_okay=True, dir_okay=True, path_type=Path),
-        help="The default directory or file path for the Data Exporter.",
-    )
-    @click.option(
-        "--adapter",
-        "-a",
-        default=DEFAULT_ADAPTER,
-        show_default=True,
-        type=click.Choice(installed_adapter_names, case_sensitive=False),
-        help=(
-            "The name of an installed database adapter plug-in "
-            "to use to connect to the database at CONN_STR."
-        ),
-    )
-    @click.option(
-        "--no-write-history",
-        "no_write_history",
-        is_flag=True,
-        help=(
-            "Do not record this session's queries in the query history that "
-            "Harlequin and hsql share."
-        ),
-    )
-    @click.option(
-        "--read-only",
-        "-r",
-        "read_only",
-        is_flag=True,
-        help=(
-            "Connect read-only, and refuse to start at all if the adapter "
-            "cannot. To check an adapter's capabilities, use `hsql --info`."
-        ),
-    )
-    @click.option(
-        "--show-files",
-        "-f",
-        type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-        help=(
-            "The path to a directory to show in a file tree viewer in the Data Catalog."
-        ),
-    )
-    @click.option(
-        "--show-s3",
-        "--s3",
-        help=(
-            "The bucket name or URI, or the keyword `all` to show s3 objects "
-            "in the Data Catalog."
-        ),
-    )
-    @click.option(
-        "--keymap-name",
-        help=(
-            "The name of a keymap plugin to load. Repeat this option to load "
-            "multiple keymaps. Keymaps listed last will override earlier ones. "
-            "For example, to tweak the default keymap, use '--keymap-name vscode "
-            "--keymap-name my_keys'"
-        ),
-        multiple=True,
-        default=DEFAULT_KEYMAP_NAMES,
-    )
-    @click.option(
-        "--ssh-host",
-        help=(
-            "Open an SSH tunnel to this destination first, and connect through "
-            "it. A Host alias, host, user@host or ssh://user@host:port, passed "
-            "to ssh verbatim."
-        ),
-    )
-    @click.option(
-        "--ssh-forward",
-        multiple=True,
-        help=(
-            "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. "
-            "Repeat this option for more than one. Omit it when your ssh config "
-            "already has the LocalForward."
-        ),
-    )
-    @click.option(
-        "--ssh-batch-mode",
-        is_flag=True,
-        help=(
-            "Fail rather than prompt for a passphrase, a password or a host "
-            "key. ssh's own BatchMode."
-        ),
-    )
-    @click.option(
-        "--ssh-allow-reuse",
-        is_flag=True,
-        help=(
-            "When the local port is already bound, warn and connect through "
-            "the listener that has it instead of failing."
-        ),
-    )
-    @click.option(
-        "--ssh-timeout",
-        type=click.FloatRange(min=0, min_open=True),
-        help=(
-            "Seconds to wait for the tunnel's forwards. Default is "
-            f"{DEFAULT_SSH_TIMEOUT:g}"
-        ),
-    )
-    @click.option(
-        "--config",
-        help=(
-            "Run the configuration wizard to create or update a Harlequin config file."
-        ),
-        is_flag=True,
-        callback=_config_wizard_callback,
-        expose_value=True,
-    )
-    @click.option(
-        "--keys",
-        help=("Run the key binding config app to create or update a Harlequin keymap."),
-        is_flag=True,
-        callback=_keys_app_callback,
-        expose_value=True,
-    )
-    @click.option(
-        "--locale",
-        help=(
-            "Provide a locale string (e.g., `en_US.UTF-8`) to override "
-            "the system locale for number formatting."
-        ),
-    )
-    @click.option(
-        "--no-download-tzdata",
-        help=(
-            "(Windows Only) Prevent Harlequin from looking for an IANA timezone "
-            "database, or downloading one if it is missing. Harlequin may fail "
-            "to load timestamptz values into the Results Viewer."
-        ),
-        is_flag=True,
-    )
     @click.pass_context
     def inner_cli(
         ctx: click.Context,
@@ -724,6 +527,28 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         # a crash exits 1 and a config or connection error exits 2; without
         # this, both of those exited 0
         ctx.exit(tui.return_code or 0)
+
+    # the options this command declares, in `harlequin.core_options`, with the
+    # part of each that only this command can answer
+    attach_core_options(
+        inner_cli,
+        HARLEQUIN,
+        supplied={
+            "version_option": click.version_option(
+                package_name="harlequin", message=_version_option()
+            ),
+            "adapters": click.Choice(installed_adapter_names, case_sensitive=False),
+            "theme_help": (
+                "Set the theme (colors) of the Harlequin IDE. "
+                "Must be `harlequin` or the name of a Textual theme: "
+                f"{ALL_THEMES}"
+            ),
+            "config_wizard": _config_wizard_callback,
+            "keys_app": _keys_app_callback,
+        },
+        option_cls=click.RichOption,
+        argument_cls=click.RichArgument,
+    )
 
     # this command's own options, before any adapter's are added to it
     harlequin_options = {param.name for param in inner_cli.params}
