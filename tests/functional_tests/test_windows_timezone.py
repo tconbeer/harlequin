@@ -12,12 +12,14 @@ from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QuerySubmitted, ResultsFetched, TzDataDownloadStarted
 from harlequin.exception import HarlequinTzDataError
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
+from tests.waiting import settle_app, wait_for_messages
 
 
 async def _await_results(
     app: Harlequin, pilot: Pilot, messages: list[Message]
 ) -> ResultsFetched:
-    """Pump until the fetch has posted its message and its tab has mounted.
+    """The fetch's message, once its tab has mounted.
 
     `wait_for_workers()` cannot stand in for this: a `QuerySubmitted` that has
     not been handled yet has started no worker, so it returns with nothing to
@@ -25,12 +27,9 @@ async def _await_results(
     which `Tabs` refuses until that tab is in its list -- so a test that stops
     pumping in between can tear down mid-mount.
     """
-    for _ in range(200):
-        await pilot.pause()
-        fetched = [m for m in messages if isinstance(m, ResultsFetched)]
-        if fetched and app.results_viewer.get_visible_table() is not None:
-            return fetched[-1]
-    raise AssertionError("the query never produced a mounted result")
+    await wait_for_messages(pilot, messages, ResultsFetched)
+    await wait_for_any_table(pilot, app)
+    return [m for m in messages if isinstance(m, ResultsFetched)][-1]
 
 
 @pytest.fixture
@@ -67,14 +66,12 @@ async def test_the_app_starts_while_the_tzdata_download_is_in_flight(
 
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert download_started.wait(timeout=10.0)
         assert [m for m in messages if isinstance(m, TzDataDownloadStarted)]
 
         app.post_message(QuerySubmitted(queries=["select 1 as foo"], limit=None))
-        for _ in range(20):
-            await pilot.pause()
+        await settle_app(pilot)
         assert not [m for m in messages if isinstance(m, ResultsFetched)]
 
         finish_download.set()
@@ -101,8 +98,7 @@ async def test_a_fetch_gives_up_on_a_download_that_never_finishes(
     messages: list[Message] = []
     try:
         async with app.run_test(message_hook=messages.append) as pilot:
-            while app.editor is None:
-                await pilot.pause()
+            await wait_for_editor(pilot, app)
             app.post_message(QuerySubmitted(queries=["select 1 as foo"], limit=None))
             assert (await _await_results(app, pilot, messages)).errors == []
             assert not app._tzdata_ready.is_set()
@@ -133,8 +129,7 @@ async def test_quitting_abandons_a_download_in_flight(
     monkeypatch.setattr("harlequin.app.update_catalog_cache", lambda **_: None)
 
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert download_started.wait(timeout=10.0)
         await app.action_quit()
     assert stop_seen.wait(timeout=10.0)
@@ -158,8 +153,7 @@ async def test_a_failed_tzdata_download_is_a_warning(
 
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         await wait_for_workers(app)
         await pilot.pause()
         assert len(app.screen_stack) == 1

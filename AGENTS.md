@@ -66,6 +66,8 @@ uv run --python 3.12 --group test pytest -m 'py12 and not online' --snapshot-upd
 ```
 
 - Async tests need `@pytest.mark.asyncio`. Await `wait_for_workers(app)` (fixture) rather than sleeping — it skips the catalog background loader, which never finishes on its own.
+- **A wait waits on a condition, not a duration, and new ones go in `tests/waiting.py`.** `wait_until` polls state another thread or process sets; `wait_for` / `wait_for_value` / `wait_for_messages` pump the app while they poll and raise naming what never happened; `settle` is the only duration. The app-shaped waits are plain functions over those in `tests/functional_tests/helpers.py`. Loopback ports come from `free_port`, which draws from below the range the OS hands out on its own, with `on_a_free_port` for a child that lost the race anyway. Predating all of this and not yet folded in: `wait_for_workers`, `tests/hsql_sessions.py`, and `_until_status` and one `time.sleep(3)` in `test_hsql_serve.py`.
+- `wait_for_workers` returns when the worker's future resolves, which is *before* the app has handled the message carrying the result, and it gives up silently after a fixed number of pumps. Read app state through one of the waits above, never straight after it.
 - Shared fixtures: `tests/conftest.py` builds throwaway DuckDB/SQLite databases (`tiny_*`, `small_*`) and app instances (`app`, `app_all_adapters`, `app_small_duck`, …); `app_all_adapters` is parametrized so one test body covers both bundled adapters.
 
 ## Import hygiene
@@ -152,7 +154,7 @@ Both query workers are thin wrappers over the execution core above: `_execute_qu
 
 Adapters are third-party code: a raw driver exception (not a `HarlequinQueryError`) must surface as an error modal, never crash the app.
 
-**There is exactly one `CodeEditor`, however many buffers are open.** `EditorCollection` (`components/code_editor.py`) is a row of `Tabs` over that single editor; every other buffer lives in `buffer_states` as an `EditorState`, and activating a tab swaps the loaded buffer's state out and the new one's in. A `TextArea` costs a tree-sitter parse and a full widget mount to build, so the count of them is what start-up used to scale with. Anything the editor holds and a user would expect to survive a tab switch — text, selection, scroll position, undo history — has to be in `EditorState`, or it silently belongs to whichever buffer was last loaded.
+**There is exactly one `CodeEditor`, however many buffers are open.** The functional tests lean on this: they bind the editor once and read it across tab switches, so a second one would silently give ~190 assertions the wrong widget. `EditorCollection` (`components/code_editor.py`) is a row of `Tabs` over that single editor; every other buffer lives in `buffer_states` as an `EditorState`, and activating a tab swaps the loaded buffer's state out and the new one's in. A `TextArea` costs a tree-sitter parse and a full widget mount to build, so the count of them is what start-up used to scale with. Anything the editor holds and a user would expect to survive a tab switch — text, selection, scroll position, undo history — has to be in `EditorState`, or it silently belongs to whichever buffer was last loaded.
 
 The Data Catalog (`components/data_catalog/database_tree.py`) loads by viewport, not eagerly: an `asyncio.PriorityQueue` feeds a background loader, with user-expanded nodes at `DEMAND_PRIORITY` jumping ahead of speculative `PREFETCH_PRIORITY` work near the viewport, and children added in chunks so a wide node can't stall rendering.
 

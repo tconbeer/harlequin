@@ -6,12 +6,15 @@ from unittest.mock import MagicMock
 
 import pytest
 from textual.message import Message
+from textual.widgets import Tooltip
 from textual_fastdatatable import DataTable
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.components.results_viewer import ResultsViewer
 from harlequin.components.text_modal import CellViewModal
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
+from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
 @pytest.mark.asyncio
@@ -25,16 +28,10 @@ async def test_dupe_column_names(
     query = "select 1 as a, 1 as a, 2 as a, 2 as a"
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for_any_table(pilot, app)
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "dupe columns")
 
@@ -53,18 +50,16 @@ async def test_copy_data(
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-
-        assert app.results_viewer._has_focus_within
+        await wait_for_any_table(pilot, app)
+        # the table is pushed before the Results Viewer is shown and focused
+        await wait_for(
+            pilot,
+            lambda: app.results_viewer._has_focus_within,
+            description="the Results Viewer to take focus",
+        )
         keys = ["shift+right"] * 8
         await pilot.press(*keys)
         await pilot.wait_for_scheduled_animations()
@@ -77,10 +72,10 @@ async def test_copy_data(
         assert isinstance(copied_message, DataTable.SelectionCopied)
         assert isinstance(copied_message.values, list)
 
-        app.editor.text = ""
-        app.editor.focus()
+        editor.text = ""
+        editor.focus()
         await pilot.press("ctrl+v")  # paste
-        assert app.editor.text == expected
+        assert editor.text == expected
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "paste values from table")
 
@@ -95,22 +90,24 @@ async def test_view_cell_modal(
     query = f"select '{long_value}' as story"
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-
-        assert app.results_viewer._has_focus_within
+        await wait_for_any_table(pilot, app)
+        # the table is pushed before the Results Viewer is shown and focused
+        await wait_for(
+            pilot,
+            lambda: app.results_viewer._has_focus_within,
+            description="the Results Viewer to take focus",
+        )
         await pilot.press("space")
-        await pilot.pause()
-
-        assert isinstance(app.screen, CellViewModal)
-        assert app.screen.text == long_value
-        assert app.screen.title == "story"
+        modal = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, CellViewModal) else None,
+            description="the cell view modal",
+        )
+        assert modal.text == long_value
+        assert modal.title == "story"
         assert await app_snapshot(app, "view cell modal")
 
         # clicking the text copies it and leaves the modal up, as does c
@@ -157,19 +154,18 @@ async def test_data_truncated_with_tooltip(
     query = "select 'supercalifragilisticexpialidocious'"
     async with app.run_test(tooltips=True) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for_any_table(pilot, app)
 
         await pilot.hover(ResultsViewer, (2, 2))
-        await pilot.pause(0.5)
+        await wait_for(
+            pilot,
+            lambda: app.screen.get_child_by_type(Tooltip).display,
+            description="the hover to outlast the tooltip delay",
+            interval=POLL_INTERVAL,
+        )
         if not transaction_button_visible(app):
             assert await app_snapshot(app, "hover over truncated value")
 
@@ -189,15 +185,10 @@ async def test_infinity_timestamp(
         """
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-
-        results_table = app.results_viewer.get_visible_table()
-        assert results_table is not None
+        results_table = await wait_for_any_table(pilot, app)
         assert results_table.get_row_at(0) == [
             date.max,
             datetime.max,
@@ -225,17 +216,10 @@ async def test_the_viewer_cap_is_a_soft_one(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select * from range(100)"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-
-        table = app.results_viewer.get_visible_table()
-        assert table is not None
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count == 10
         assert table.fetched_row_count == 100
         assert table.fetch_truncated is False

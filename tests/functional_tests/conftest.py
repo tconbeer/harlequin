@@ -5,14 +5,11 @@ from typing import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import pytest
-from textual.pilot import Pilot
 from textual.widgets import Input
-from textual.widgets._tree import TreeNode
 from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 from harlequin.autocomplete import HarlequinCompletion
-from harlequin.catalog import CatalogItem
 
 
 @pytest.fixture(autouse=True)
@@ -218,29 +215,6 @@ def wait_for_workers() -> Callable[[Harlequin], Awaitable[None]]:
                 await asyncio.sleep(0)
 
     return wait_for_filtered_workers
-
-
-@pytest.fixture
-def expand_catalog_node() -> Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[None]]:
-    """Expand a catalog node and wait until its real children are rendered.
-
-    The catalog shows a "loading…" placeholder child as soon as an unloaded node
-    is expanded, so waiting on `node.children` alone returns before the adapter
-    has answered.
-    """
-
-    async def expand(pilot: Pilot, node: TreeNode[CatalogItem]) -> None:
-        node.expand()
-        while True:
-            data = node.data
-            if data is None or (
-                getattr(data, "loaded", True)
-                and len(node.children) == len(data.children)
-            ):
-                return
-            await pilot.pause()
-
-    return expand
 
 
 @pytest.fixture

@@ -54,6 +54,7 @@ from harlequin.query_log import QueryLog
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from tests.hsql_sessions import HsqlSubprocess, ServeSession, WarmSession
+from tests.waiting import wait_until
 
 needs_unix_sockets = pytest.mark.skipif(
     not hasattr(socket, "AF_UNIX"), reason="hsql sessions are POSIX-only"
@@ -967,7 +968,7 @@ def test_nothing_takes_a_turn_between_a_cancel_and_the_interrupt_it_sends() -> N
     assert session.cancel(A_REQUEST) == server.STOPPED
     assert blocked_while_interrupting == [True]
     # and it goes through once the cancel has let the lock go
-    _until(lambda: turns == [True])
+    wait_until(lambda: turns == [True], description="the waiting turn to go through")
 
 
 class _Interrupting(_FakeConnection):
@@ -1161,24 +1162,18 @@ def test_the_turnstile_serves_in_arrival_order() -> None:
         thread = threading.Thread(target=wait_turn, args=(number,))
         thread.start()
         threads.append(thread)
+
         # each ticket is taken before the next thread starts, so the arrival
         # order is this loop's rather than the scheduler's
-        _until(lambda waiting=number: turnstile.snapshot()[1] == waiting)  # type: ignore[misc]
+        def has_arrived(waiting: int = number) -> bool:
+            return turnstile.snapshot()[1] == waiting
+
+        wait_until(has_arrived, description=f"thread {number} to take its ticket")
 
     turnstile.leave()
     for thread in threads:
         thread.join(5)
     assert order == [1, 2]
-
-
-def _until(condition: Callable[[], bool], timeout: float = 10.0) -> None:
-    """Block until `condition` holds, so a test orders threads by observation."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if condition():
-            return
-        time.sleep(0.005)
-    raise AssertionError("the condition never held")
 
 
 def test_the_turnstile_gives_up_on_a_deadline() -> None:

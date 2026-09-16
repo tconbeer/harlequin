@@ -10,6 +10,12 @@ from textual.worker import Worker, WorkerState
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
+from tests.functional_tests.helpers import (
+    wait_for_any_table,
+    wait_for_editor,
+    wait_for_error_modal,
+)
+from tests.waiting import wait_for, wait_for_messages
 
 
 @pytest.mark.asyncio
@@ -23,8 +29,7 @@ async def test_select_1(
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert app.title == "Harlequin"
         assert app.focused.__class__.__name__ == "TextAreaPlus"
 
@@ -33,26 +38,20 @@ async def test_select_1(
             await pilot.press(key)
         await pilot.press("ctrl+j")  # alias for ctrl+enter
 
-        await pilot.pause()
-        [query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, exactly=True
+        )
         assert query_submitted_message.queries == [q]
-        await wait_for_workers(app)
-        await pilot.pause()
-        [query_executed_message] = [
-            m for m in messages if isinstance(m, QueriesExecuted)
-        ]
+        [query_executed_message] = await wait_for_messages(
+            pilot, messages, QueriesExecuted, exactly=True
+        )
         assert query_executed_message.query_count == 1
         assert query_executed_message.cursors
-        await wait_for_workers(app)
-        await pilot.pause()
-        [results_fetched_message] = [
-            m for m in messages if isinstance(m, ResultsFetched)
-        ]
+        [results_fetched_message] = await wait_for_messages(
+            pilot, messages, ResultsFetched, exactly=True
+        )
         assert results_fetched_message.errors == []
-        table = app.results_viewer.get_visible_table()
-        assert table
+        table = await wait_for_any_table(pilot, app)
         assert table.source_row_count == table.row_count == 1
         # sqlite on py3.12 will show the Tx: Auto button, and snap
         # will fail
@@ -84,29 +83,23 @@ async def test_queries_do_not_crash_all_adapters(
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+j")
-        await pilot.pause()
 
         if query:
-            [query_submitted_message] = [
-                m for m in messages if isinstance(m, QuerySubmitted)
-            ]
+            [query_submitted_message] = await wait_for_messages(
+                pilot, messages, QuerySubmitted, exactly=True
+            )
             assert query_submitted_message.queries == [query]
-            await wait_for_workers(app)
-            await pilot.pause()
-            [query_executed_message] = [
-                m for m in messages if isinstance(m, QueriesExecuted)
-            ]
+            [query_executed_message] = await wait_for_messages(
+                pilot, messages, QueriesExecuted, exactly=True
+            )
             assert query_executed_message.cursors
-        if query and query != "select 1 where false":
-            await pilot.pause()
-            await wait_for_workers(app)
-            table = app.results_viewer.get_visible_table()
-            assert table is not None
-            assert table.row_count >= 1
+            # an empty result is still a table, with a header and no rows
+            table = await wait_for_any_table(pilot, app)
+            if query != "select 1 where false":
+                assert table.row_count >= 1
 
 
 @pytest.mark.asyncio
@@ -141,19 +134,11 @@ async def test_queries_do_not_crash(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = query
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        table = app.results_viewer.get_visible_table()
-        assert table is not None
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count >= 1
 
 
@@ -169,42 +154,37 @@ async def test_multiple_queries(
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         q = "select 1; select 2"
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")
 
         # should only run one query
-        await wait_for_workers(app)
-        await pilot.pause()
-        [query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, exactly=True
+        )
         assert query_submitted_message.queries == ["select 1;"]
-        table = app.results_viewer.get_visible_table()
-        assert table
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count == table.source_row_count == 1
         assert "hide-tabs" in app.results_viewer.classes
-        await wait_for_workers(app)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "One query"))
 
-        app.editor.focus()
+        editor.focus()
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
         # should run both queries
-        await wait_for_workers(app)
-        await pilot.pause()
-        await pilot.wait_for_scheduled_animations()
-        [_, query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [_, query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, count=2, exactly=True
+        )
         assert query_submitted_message.queries == ["select 1;", "select 2"]
-        assert app.results_viewer.tab_count == 2
+        await wait_for(
+            pilot,
+            lambda: app.results_viewer.tab_count == 2,
+            description="the Results Viewer to show a tab per query",
+        )
         assert "hide-tabs" not in app.results_viewer.classes
-        await wait_for_workers(app)
-        await pilot.pause(0.5)
+        await wait_for_messages(pilot, messages, ResultsFetched, count=2)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Both queries"))
         assert app.results_viewer.active == "result-1"
@@ -234,45 +214,41 @@ async def test_single_query_terminated_with_semicolon(
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         q = "select 1;    \n\t\n"
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")
 
         # should only run current query
-        await wait_for_workers(app)
-        await pilot.pause()
-        [query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, exactly=True
+        )
         assert query_submitted_message.queries == ["select 1;"]
+        await wait_for_any_table(pilot, app)
         assert app.results_viewer.tab_count == 1
 
-        app.editor.focus()
+        editor.focus()
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
 
         # should not run whitespace query, even though included
         # in selection.
-        await wait_for_workers(app)
-        await pilot.pause()
-        [_, query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [_, query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, count=2, exactly=True
+        )
         assert query_submitted_message.queries == ["select 1;"]
+        await wait_for_workers(app)
         assert app.results_viewer.tab_count == 1
 
-        app.editor.focus()
+        editor.focus()
         await pilot.press("ctrl+end")
         await pilot.press("ctrl+j")
         # should run previous query
-        await wait_for_workers(app)
-        await pilot.pause()
-        [*_, query_submitted_message] = [
-            m for m in messages if isinstance(m, QuerySubmitted)
-        ]
+        [*_, query_submitted_message] = await wait_for_messages(
+            pilot, messages, QuerySubmitted, count=3, exactly=True
+        )
         assert query_submitted_message.queries == ["select 1;"]
+        await wait_for_workers(app)
         assert app.results_viewer.tab_count == 1
 
 
@@ -298,16 +274,13 @@ async def test_query_errors(
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = bad_query
+        editor = await wait_for_editor(pilot, app)
+        editor.text = bad_query
 
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for_error_modal(pilot, app)
         assert len(app.screen_stack) == 2
-        assert isinstance(app.screen, ErrorModal)
         snap_results.append(await app_snapshot(app, "Error visible"))
 
         await pilot.press("space")
@@ -330,16 +303,13 @@ async def test_rich_markup(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause(0.1)
+        editor = await wait_for_editor(pilot, app)
 
         q = "select '[some text]', '[red]some text[/]'"
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")  # alias for ctrl+enter
 
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for_any_table(pilot, app)
         assert await app_snapshot(app, "select markup")
 
 
@@ -355,8 +325,7 @@ async def test_adapter_raises_unexpected_error(
     """
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         assert app.connection is not None
 
         def raise_driver_error(query: str) -> None:
@@ -364,15 +333,13 @@ async def test_adapter_raises_unexpected_error(
 
         monkeypatch.setattr(app.connection, "execute", raise_driver_error)
 
-        app.editor.text = "use ht;"
+        editor.text = "use ht;"
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        await wait_for_workers(app)
-        await pilot.pause()
+        modal = await wait_for_error_modal(pilot, app)
 
         assert app.is_running
-        assert isinstance(app.screen, ErrorModal)
-        assert "Unknown database" in str(app.screen.error)
+        assert "Unknown database" in str(modal.error)
 
         await pilot.press("space")
         assert len(app.screen_stack) == 1
@@ -408,8 +375,7 @@ async def test_update_schema_data_worker_error_shows_catalog_modal(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         app.data_catalog.database_tree.loading = True
         await app.handle_worker_error(
@@ -429,8 +395,7 @@ async def test_connect_worker_error_exits_with_code_two(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await app.handle_worker_error(
             worker_error_message("_connect", RuntimeError("connection refused"))
@@ -451,8 +416,7 @@ async def test_worker_error_from_unrecognized_worker_shows_modal(
     """
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await app.handle_worker_error(
             worker_error_message("some_future_worker", RuntimeError("boom"))
@@ -474,8 +438,7 @@ async def test_query_worker_error_shows_modal_and_restores_ui(
     leave the run bar stuck in the non-responsive state."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         app.run_query_bar.set_not_responsive()
         app.results_viewer.show_loading()
@@ -503,8 +466,7 @@ async def test_execute_query_worker_error_is_not_silent_and_app_survives(
     """
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         assert app.connection is not None
 
         def broken_execute(
@@ -517,16 +479,12 @@ async def test_execute_query_worker_error_is_not_silent_and_app_survives(
 
         monkeypatch.setattr("harlequin.app.execute", broken_execute)
 
-        app.editor.text = "select 1"
+        editor.text = "select 1"
         await pilot.press("ctrl+a")
         await pilot.press("ctrl+j")
-        for _ in range(100):
-            if isinstance(app.screen, ErrorModal):
-                break
-            await pilot.pause(0.05)
+        modal = await wait_for_error_modal(pilot, app)
         assert app.is_running
-        assert isinstance(app.screen, ErrorModal)
-        assert "boom inside execute core" in str(app.screen.error)
+        assert "boom inside execute core" in str(modal.error)
         assert "non-responsive" not in app.run_query_bar.classes
 
         await pilot.press("space")
@@ -540,8 +498,7 @@ async def test_toggle_transaction_mode_worker_error_shows_modal(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await app.handle_worker_error(
             worker_error_message("toggle_transaction_mode", RuntimeError("boom"))
@@ -572,8 +529,7 @@ async def test_partial_failure_workers_notify_without_modal(
     """A worker whose failure leaves the app usable warns instead of modaling."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await app.handle_worker_error(
             worker_error_message(worker_name, RuntimeError("boom"))
@@ -597,8 +553,7 @@ async def test_worker_errors_are_ignored_while_app_is_exiting(
     """An error that lands during the exit drain is noise, not a modal."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         app._exit = True
         try:
@@ -619,8 +574,7 @@ async def test_worker_state_change_without_error_is_ignored(
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await app.handle_worker_error(worker_error_message("some_future_worker", None))
         await pilot.pause()

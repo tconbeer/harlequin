@@ -14,6 +14,7 @@ from harlequin.editor_cache import (
     load_cache,
     write_cache,
 )
+from tests.functional_tests.helpers import wait_for_editor
 
 
 @pytest.fixture
@@ -60,11 +61,13 @@ def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
 
 @pytest.mark.use_cache
 @pytest.mark.asyncio
-async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
+async def test_harlequin_loads_cache(
+    cache: Cache,
+    app: Harlequin,
+) -> None:
     write_cache(cache)
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert app.editor_collection is not None
         assert app.editor is not None
         assert app.editor_collection.tab_count == len(cache.buffers)
@@ -78,18 +81,18 @@ async def test_harlequin_loads_cache(cache: Cache, app: Harlequin) -> None:
 
 @pytest.mark.use_cache
 @pytest.mark.asyncio
-async def test_harlequin_writes_cache(app: Harlequin) -> None:
+async def test_harlequin_writes_cache(
+    app: Harlequin,
+) -> None:
     cache_path = get_cache_file()
     assert not cache_path.exists()
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
-        assert app.editor_collection is not None
+        editor = await wait_for_editor(pilot, app)
         assert app.editor_collection.tab_count == 1
-        app.editor.text = "first"
+        editor.text = "first"
         await pilot.press("ctrl+n")
         await pilot.pause()
-        app.editor.text = "second"
+        editor.text = "second"
         await pilot.press("ctrl+q")
     assert cache_path.exists()
     with open(cache_path, "rb") as f:
@@ -101,15 +104,17 @@ async def test_harlequin_writes_cache(app: Harlequin) -> None:
 
 @pytest.mark.use_cache
 @pytest.mark.asyncio
-async def test_harlequin_recovers_buffers(cache: Cache, app: Harlequin) -> None:
+async def test_harlequin_recovers_buffers(
+    cache: Cache,
+    app: Harlequin,
+) -> None:
     """A recovered session started from the cache, so it wins over one."""
     write_cache(Cache(focus_index=0, buffers=[BufferState(Selection(), "stale\n")]))
     recovery_file = get_cache_file().with_name("recovered-20260904T120000Z-99.pickle")
     recovery_file.write_bytes(pickle.dumps(cache))
 
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert app.editor_collection is not None
         assert [buffer.text for buffer in app.editor_collection.buffers] == [
             buffer.text for buffer in cache.buffers
@@ -122,14 +127,15 @@ async def test_harlequin_recovers_buffers(cache: Cache, app: Harlequin) -> None:
 
 @pytest.mark.use_cache
 @pytest.mark.asyncio
-async def test_harlequin_clears_its_recovery_file_on_quit(app: Harlequin) -> None:
+async def test_harlequin_clears_its_recovery_file_on_quit(
+    app: Harlequin,
+) -> None:
     recovery_file = get_recovery_file()
     recovery_file.parent.mkdir(parents=True, exist_ok=True)
     recovery_file.write_bytes(pickle.dumps(Cache(focus_index=0, buffers=[])))
 
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         await pilot.press("ctrl+q")
 
     assert not recovery_file.exists()
@@ -138,16 +144,17 @@ async def test_harlequin_clears_its_recovery_file_on_quit(app: Harlequin) -> Non
 
 @pytest.mark.use_cache
 @pytest.mark.asyncio
-async def test_harlequin_checkpoints_buffers(app: Harlequin) -> None:
+async def test_harlequin_checkpoints_buffers(
+    app: Harlequin,
+) -> None:
     recovery_file = get_recovery_file()
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         app._checkpoint_editor_cache()
         # a blank buffer is not work, so there is nothing to save yet
         assert not recovery_file.exists()
 
-        app.editor.text = "select 1"
+        editor.text = "select 1"
         app._checkpoint_editor_cache()
         assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"
 
@@ -157,6 +164,6 @@ async def test_harlequin_checkpoints_buffers(app: Harlequin) -> None:
         assert recovery_file.stat().st_mtime_ns == written_at
 
         # a blank buffer cannot destroy a good checkpoint, either
-        app.editor.text = ""
+        editor.text = ""
         app._checkpoint_editor_cache()
         assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"

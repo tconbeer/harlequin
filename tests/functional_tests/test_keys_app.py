@@ -9,6 +9,7 @@ from textual.widgets import Input
 
 from harlequin import HarlequinKeys
 from harlequin.keys_app import QuitModal
+from tests.waiting import wait_for, wait_for_value
 
 USER_CONFIG_PATH = Path("/tmp") / "harlequin"
 
@@ -41,13 +42,20 @@ async def test_keys_app(
     app = keys_app
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
-        while (
-            app.active_keymap_names is None
-            or app.bindings is None
-            or app.unmodifed_bindings is None
-            or app.table is None
-        ):
-            await pilot.pause()
+
+        def the_bindings_are_loaded() -> bool:
+            return None not in (
+                app.active_keymap_names,
+                app.bindings,
+                app.unmodifed_bindings,
+                app.table,
+            )
+
+        await wait_for(
+            pilot,
+            the_bindings_are_loaded,
+            description="the keymap editor to load the bindings it edits",
+        )
         snap_results.append(await app_snapshot(app, "Initialization"))
 
         await pilot.press("down", "down", "down", "down", "enter")
@@ -59,13 +67,11 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Enter Key Modal"))
 
         await pilot.press("f3")
-        await pilot.pause(0.1)
-        await pilot.wait_for_animation()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3"))
 
         await pilot.press("tab", "tab", "enter", "f4")
-        await pilot.pause(0.1)
-        await pilot.wait_for_animation()
+        await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Edit Modal: f3 and f4"))
 
         await pilot.press("shift+tab", "enter")
@@ -79,10 +85,13 @@ async def test_keys_app(
         snap_results.append(await app_snapshot(app, "Main modal, Focus F3"))
 
         await pilot.press("ctrl+q")
-        while not isinstance(app.screen, QuitModal):
-            await pilot.pause()
         # the quit modal should now be visible.
-        path_input = app.screen.query_one(
+        quit_modal = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, QuitModal) else None,
+            description="the Quit modal",
+        )
+        path_input = quit_modal.query_one(
             "#path_input",
             expect_type=Input,
         )

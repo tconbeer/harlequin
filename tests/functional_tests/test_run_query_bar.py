@@ -8,6 +8,8 @@ from textual.message import Message
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
+from tests.waiting import wait_for, wait_for_value
 
 
 @pytest.mark.asyncio
@@ -22,8 +24,7 @@ async def test_run_query_bar(
     messages: list[Message] = []
     async with app.run_test(size=(120, 36), message_hook=messages.append) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         # initialization
         bar = app.run_query_bar
         assert bar.limit_checkbox.value is False
@@ -32,8 +33,7 @@ async def test_run_query_bar(
 
         # query without any limit by clicking the button;
         # dataset has 857 records
-        assert app.editor is not None
-        app.editor.text = "select * from drivers"
+        editor.text = "select * from drivers"
         await pilot.click("#run_query")
         await wait_for_workers(app)
         await pilot.pause()
@@ -128,19 +128,27 @@ async def test_transaction_button(
     snap_results: list[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None or app.connection is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
+        connection = await wait_for_value(
+            pilot, lambda: app.connection, description="the app to connect"
+        )
 
-        assert app.connection.transaction_mode
-        assert app.connection.transaction_mode.label == "Auto"
+        assert connection.transaction_mode
+        assert connection.transaction_mode.label == "Auto"
         snap_results.append(await app_snapshot(app, "Initialize with Tx: Auto"))
         await pilot.click("#transaction_button")
-        await pilot.pause(0.3)
+        await wait_for(
+            pilot,
+            lambda: (
+                connection.transaction_mode is not None
+                and connection.transaction_mode.label == "Manual"
+            ),
+            description="the transaction mode to switch to Manual",
+        )
         await pilot.wait_for_animation()
-        assert app.connection.transaction_mode
-        assert app.connection.transaction_mode.label == "Manual"
-        assert app.connection.transaction_mode.commit is not None
-        assert app.connection.transaction_mode.rollback is not None
+        assert connection.transaction_mode
+        assert connection.transaction_mode.commit is not None
+        assert connection.transaction_mode.rollback is not None
         snap_results.append(await app_snapshot(app, "After click with Tx: Manual"))
 
         assert all(snap_results)
@@ -163,21 +171,15 @@ async def test_a_configured_limit_is_in_force_from_the_first_query(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         bar = app.run_query_bar
         assert bar.limit_checkbox.value is True
         assert bar.limit_input.value == "10"
         assert bar.limit_value == 10
 
-        app.editor.text = "select * from range(100)"
+        editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        for _ in range(3):
-            await wait_for_workers(app)
-            await pilot.pause()
-
-        table = app.results_viewer.get_visible_table()
-        assert table is not None
+        table = await wait_for_any_table(pilot, app)
         assert table.row_count == 10
         assert table.fetch_truncated is True
         assert app.results_viewer.border_title == (
@@ -195,8 +197,7 @@ async def test_no_configured_limit_leaves_the_box_unchecked(
     app = app_small_duck
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert app.run_query_bar.limit_checkbox.value is False
         assert app.run_query_bar.limit_input.value == "500"
         assert app.run_query_bar.limit_value is None

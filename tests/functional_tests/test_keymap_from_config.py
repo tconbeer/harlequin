@@ -9,6 +9,7 @@ from textual import events
 
 from harlequin import Harlequin, HarlequinAdapter
 from harlequin.config import load_profile_and_keymaps
+from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
 
 QUERY = dedent(
     """
@@ -47,15 +48,13 @@ async def test_results_viewer_bindings(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         q = QUERY
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")
 
-        while (table := app.results_viewer.get_visible_table()) is None:
-            await pilot.pause()
+        table = await wait_for_any_table(pilot, app)
 
         assert table is not None
         assert table.cursor_coordinate == (0, 0)
@@ -111,11 +110,10 @@ async def test_alt_letter_binding_beats_the_focused_editor(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor.text = "select 1"
+        editor.focus()
         await pilot.press("ctrl+end")
         assert app.editor_collection.tab_count == 1
 
@@ -124,11 +122,11 @@ async def test_alt_letter_binding_beats_the_focused_editor(
         await pilot.wait_for_scheduled_animations()
 
         assert app.editor_collection.tab_count == 2
-        assert app.editor.text == ""
+        assert editor.text == ""
 
         # the buffer the editor was on did not get an "n" typed into it
         await pilot.press("ctrl+k")
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-1"
-        assert app.editor.text == "select 1"
+        assert editor.text == "select 1"

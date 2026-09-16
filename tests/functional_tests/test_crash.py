@@ -29,6 +29,7 @@ from harlequin.crash import ISSUE_URL, crash_message
 from harlequin.editor_cache import BufferState, Cache, get_cache_file
 from harlequin.exception import HarlequinCrashError, pretty_error_message
 from harlequin.query import fetch
+from tests.functional_tests.helpers import wait_for_editor
 
 
 @pytest.fixture(autouse=True)
@@ -65,12 +66,13 @@ def unwrapped(text: str) -> str:
 
 @pytest.mark.asyncio
 async def test_a_crash_prints_a_panel_and_not_a_traceback(
-    app: Harlequin, crash_reports_go_to_tmp: Path, capsys: pytest.CaptureFixture[str]
+    app: Harlequin,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
+            await wait_for_editor(pilot, app)
             crash(app, RuntimeError("boom"))
             await pilot.pause()
 
@@ -97,9 +99,8 @@ async def test_a_crash_saves_the_open_buffers(
 ) -> None:
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
-            app.editor.text = "select 'work in progress'"
+            editor = await wait_for_editor(pilot, app)
+            editor.text = "select 'work in progress'"
             crash(app, RuntimeError("boom"))
             await pilot.pause()
 
@@ -115,7 +116,8 @@ async def test_a_crash_saves_the_open_buffers(
 
 @pytest.mark.asyncio
 async def test_the_report_holds_what_the_session_was(
-    duckdb_adapter: type[HarlequinAdapter], crash_reports_go_to_tmp: Path
+    duckdb_adapter: type[HarlequinAdapter],
+    crash_reports_go_to_tmp: Path,
 ) -> None:
     """Built the way `cli.py` builds it, which is where the adapter gets a name."""
     app = Harlequin(
@@ -125,9 +127,8 @@ async def test_the_report_holds_what_the_session_was(
     )
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
-            app.editor.text = "select 'reproduce me'"
+            editor = await wait_for_editor(pilot, app)
+            editor.text = "select 'reproduce me'"
             crash(app, RuntimeError("boom"))
             await pilot.pause()
 
@@ -147,14 +148,15 @@ async def test_the_report_holds_what_the_session_was(
 
 @pytest.mark.asyncio
 async def test_a_crash_report_is_written_once(
-    app: Harlequin, crash_reports_go_to_tmp: Path, capsys: pytest.CaptureFixture[str]
+    app: Harlequin,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The handler runs inside an `except` block, so it must not be able to
     raise. A second exception returns without reporting again."""
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
+            await wait_for_editor(pilot, app)
             crash(app, RuntimeError("boom"))
             crash(app, RuntimeError("and again"))
             await pilot.pause()
@@ -178,8 +180,7 @@ async def test_a_crash_is_reported_even_when_the_report_cannot_be_written(
 
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
+            await wait_for_editor(pilot, app)
             crash(app, RuntimeError("boom"))
             await pilot.pause()
 
@@ -191,13 +192,14 @@ async def test_a_crash_is_reported_even_when_the_report_cannot_be_written(
 
 @pytest.mark.asyncio
 async def test_the_traceback_is_still_printed_in_dev_mode(
-    app: Harlequin, crash_reports_go_to_tmp: Path, capsys: pytest.CaptureFixture[str]
+    app: Harlequin,
+    crash_reports_go_to_tmp: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`make serve`, i.e. `textual run --dev`: one code path, both audiences."""
     with pytest.raises(RuntimeError):
         async with app.run_test() as pilot:
-            while app.editor is None:
-                await pilot.pause()
+            await wait_for_editor(pilot, app)
             app.features = frozenset({*app.features, "debug"})
             crash(app, RuntimeError("boom"))
             await pilot.pause()
@@ -252,11 +254,9 @@ async def test_a_crash_while_replaying_recovered_buffers_cannot_repeat(
 
     monkeypatch.undo()
     async with app_all_adapters.run_test() as pilot:
-        while app_all_adapters.editor is None:
-            await pilot.pause()
-        assert app_all_adapters.editor_collection is not None
+        editor = await wait_for_editor(pilot, app_all_adapters)
         assert app_all_adapters.editor_collection.tab_count == 1
-        assert app_all_adapters.editor.text == ""
+        assert editor.text == ""
 
 
 @pytest.mark.asyncio
@@ -279,8 +279,7 @@ async def test_a_crash_mid_fetch_keeps_the_query_it_was_running(
     try:
         with pytest.raises(RuntimeError):
             async with app.run_test() as pilot:
-                while app.editor is None:
-                    await pilot.pause()
+                await wait_for_editor(pilot, app)
                 with patch.object(harlequin.app, "fetch", slow_fetch):
                     app.post_message(
                         QuerySubmitted(queries=["select 1 as a;"], limit=None)
