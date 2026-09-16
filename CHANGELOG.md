@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-09-16
+
 ### Features
 
 - Adds a `chdb` extra for installing the chDB adapter (`pip install 'harlequin[chdb]'`) and querying local ClickHouse databases ([#1144](https://github.com/tconbeer/harlequin/issues/1144)).
@@ -1123,7 +1125,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.14.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.15.0...HEAD
+[2.15.0]: https://github.com/tconbeer/harlequin/compare/2.14.0...2.15.0
 [2.14.0]: https://github.com/tconbeer/harlequin/compare/2.13.0...2.14.0
 [2.13.0]: https://github.com/tconbeer/harlequin/compare/2.12.2...2.13.0
 [2.12.2]: https://github.com/tconbeer/harlequin/compare/2.12.1...2.12.2
