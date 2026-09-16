@@ -6,11 +6,26 @@ from typing import Awaitable, Callable
 
 import pytest
 from textual.message import Message
+from textual.pilot import Pilot
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QuerySubmitted, ResultsFetched, TzDataDownloadStarted
 from harlequin.exception import HarlequinTzDataError
+
+
+async def _settle_results(app: Harlequin, pilot: Pilot) -> None:
+    """Wait for the fetched result's tab to mount.
+
+    `TabbedContent.add_pane` activates the tab it just added, and `Tabs`
+    refuses an id that is not in its list yet, so a test that stops pumping
+    between the fetch and the mount can tear down mid-`add_pane`.
+    """
+    for _ in range(100):
+        await pilot.pause()
+        if app.results_viewer.get_visible_table() is not None:
+            return
+    raise AssertionError("the result table never became visible")
 
 
 @pytest.fixture
@@ -63,6 +78,7 @@ async def test_the_app_starts_while_the_tzdata_download_is_in_flight(
         await pilot.pause()
         [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
         assert results_fetched.errors == []
+        await _settle_results(app, pilot)
 
 
 @pytest.mark.asyncio
@@ -95,6 +111,7 @@ async def test_a_fetch_gives_up_on_a_download_that_never_finishes(
             [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
             assert results_fetched.errors == []
             assert not app._tzdata_ready.is_set()
+            await _settle_results(app, pilot)
     finally:
         release_download.set()
 
@@ -147,6 +164,8 @@ async def test_a_failed_tzdata_download_is_a_warning(
 
     messages: list[Message] = []
     async with app.run_test(message_hook=messages.append) as pilot:
+        while app.editor is None:
+            await pilot.pause()
         await wait_for_workers(app)
         await pilot.pause()
         assert len(app.screen_stack) == 1
@@ -163,3 +182,4 @@ async def test_a_failed_tzdata_download_is_a_warning(
         await pilot.pause()
         [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
         assert results_fetched.errors == []
+        await _settle_results(app, pilot)
