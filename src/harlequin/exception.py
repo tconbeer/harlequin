@@ -15,10 +15,16 @@ class HarlequinExit(Exception):
 
 
 class HarlequinError(Exception):
-    def __init__(self, msg: str, title: str = "") -> None:
+    markup: bool = False  # pretty_error_message interprets Rich markup only when True
+
+    def __init__(
+        self, msg: str, title: str = "", *, markup: bool | None = None
+    ) -> None:
         super().__init__(msg)
         self.msg = msg
         self.title = title
+        if markup is not None:
+            self.markup = markup
 
 
 class HarlequinBindingError(HarlequinError):
@@ -38,7 +44,7 @@ class HarlequinConnectionError(HarlequinError):
 class HarlequinCrashError(HarlequinError):
     """A bug in Harlequin itself, as the panel that replaces the traceback."""
 
-    pass
+    markup = True
 
 
 class HarlequinCopyError(HarlequinError):
@@ -90,11 +96,19 @@ def pretty_print_error(error: HarlequinError) -> None:
 
 
 def pretty_error_message(error: HarlequinError) -> "Panel":
+    from rich.markup import escape
     from rich.panel import Panel
 
+    # Driver text is the common case, and rich treats a string as markup, so
+    # `[amount]` would vanish. Authored markup opts in via `error.markup`.
+    body = str(error)
+    title = error.title if error.title else "Harlequin encountered an error."
+    if not getattr(error, "markup", False):
+        body = escape(body)
+        title = escape(title)
     return Panel.fit(
-        str(error),
-        title=error.title if error.title else ("Harlequin encountered an error."),
+        body,
+        title=title,
         title_align="left",
         border_style="red",
     )
