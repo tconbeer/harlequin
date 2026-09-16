@@ -17,7 +17,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence, cast
+from typing import Any, Literal, Mapping, Sequence, cast, get_args
 
 from platformdirs import user_state_path
 
@@ -26,6 +26,14 @@ from harlequin.redact import redact_conn_str, redact_sql
 Status = Literal["ok", "error", "canceled"]
 """What became of one statement. Only the caller that cancelled a statement can
 tell it from one that matched nothing, so `canceled` is its own status."""
+
+STATUSES: tuple[str, ...] = get_args(Status)
+"""Every status, for a reader offering them to filter by."""
+
+PROGRAMS: tuple[str, ...] = ("harlequin", "hsql")
+"""The commands that write to the store. `program` is a plain text column and
+anything could write another, but these are the two this package ships; pinned
+to what they pass by `test_every_program_that_writes_is_offered`."""
 
 
 @dataclass(frozen=True)
@@ -459,16 +467,18 @@ def recent(
     *,
     connection: str | None = None,
     search: str | None = None,
+    program: str | None = None,
+    status: str | None = None,
     limit: int | None = None,
     path: Path | None = None,
     busy_timeout_ms: int = BUSY_TIMEOUT_MS,
 ) -> list[tuple[Any, ...]]:
     """The newest rows of the store first, as `READ_COLUMNS` describes them.
 
-    One indexed read -- a filter on `connection`, a `like` on `sql`, and a
-    limit -- so asking for twenty costs the same on a store of a hundred
-    thousand rows as on a store of twenty. `limit` is a number of rows, or None
-    for all of them.
+    One indexed read -- a filter on `connection`, a `like` on `sql`, an
+    equality on `program` or `status`, and a limit -- so asking for twenty
+    costs the same on a store of a hundred thousand rows as on a store of
+    twenty. `limit` is a number of rows, or None for all of them.
 
     A store that is not there yet is a history of nothing rather than an error,
     and nothing here creates or migrates one: a reader that wrote would be a
@@ -495,6 +505,12 @@ def recent(
         if search:
             clauses.append(_SEARCH_CLAUSE)
             values.append(f"%{_like_literal(search)}%")
+        if program is not None:
+            clauses.append('"program" = ?')
+            values.append(program)
+        if status is not None:
+            clauses.append('"status" = ?')
+            values.append(status)
         where = f" where {' and '.join(clauses)}" if clauses else ""
         # -1 is SQLite's own spelling of no limit, so one query shape serves
         # both, and `id desc` is the index the store was built with

@@ -9,6 +9,10 @@ DataCatalog,
 EditorCollection,
 FooterContainer > Input,
 ResultsViewer,
+HistoryScreen #history_filter,
+HistoryScreen #history_filter_controls > Select,
+HistoryScreen HistoryList,
+HistoryScreen QueryPreview,
 Lazy {
     border: round $border-color-nofocus;
     border-title-color: $border-title-color-nofocus;
@@ -23,8 +27,10 @@ DataCatalog:focus-within,
 EditorCollection:focus-within,
 FooterContainer > Input:focus,
 ResultsViewer:focus-within,
-HistoryScreen TextArea:focus,
-HistoryScreen OptionList:focus {
+HistoryScreen #history_filter:focus,
+HistoryScreen #history_filter_controls > Select:focus,
+HistoryScreen HistoryList:focus,
+HistoryScreen QueryPreview:focus-within {
     border: round $border-color-focus;
     border-title-color: $border-title-color-focus;
 }
@@ -577,34 +583,54 @@ ExportScreen Button:hover,
 
 /* HISTORY SCREEN */
 
-HistoryScreen TextArea {
-    border: round $border-color-nofocus;
-    width: 50%;
-    height: 100%;
+/* opaque, unlike every other modal here: this screen fills the viewport, and
+it is a ModalScreen so that the app's keys stop at it rather than for the dim
+backdrop that comes with one */
+HistoryScreen {
+    background: $background;
 }
 
-HistoryScreen OptionList {
-    background: $background;
+HistoryScreen #history_filter_controls {
+    height: 3;
+}
+
+HistoryScreen #history_filter {
+    width: 1fr;
+}
+
+HistoryScreen #history_filter_controls > Select {
+    width: 24;
+}
+
+HistoryScreen #history_filter_controls > Select SelectCurrent {
+    border: none;
+    padding: 0 1;
+}
+
+HistoryScreen QueryPreview {
+    width: 1fr;
+}
+
+HistoryScreen HistoryList {
     background-tint: $background;
-    border: round $border-color-nofocus;
-    width: 50%;
-    height: 100%;
+    height: 1fr;
+    width: 1fr;
     padding: 0;
 }
 
-HistoryScreen OptionList > .option-list--option-highlighted {
+HistoryScreen HistoryList > .option-list--option-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;
 }
 
 
-HistoryScreen OptionList > .option-list--option-hover {
+HistoryScreen HistoryList > .option-list--option-hover {
     color: $text;
     background: $boost;
 }
 
-HistoryScreen OptionList > .option-list--option-hover-highlighted {
+HistoryScreen HistoryList > .option-list--option-hover-highlighted {
     background: $secondary;
     color: auto;
     text-style: none;

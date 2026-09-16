@@ -11,13 +11,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rich.console import COLOR_SYSTEMS
 from textual.pilot import Pilot
+from textual.widgets._select import SelectOverlay
+from textual_textarea.text_editor import TextAreaPlus
 
 import harlequin.app
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QueryHistoryLoaded, QuerySubmitted
 from harlequin.components import HistoryScreen
-from harlequin.history import History
+from harlequin.components.help_screen import HelpScreen
+from harlequin.components.history_screen import FILTER_INTERVAL, Filters
+from harlequin.history import DEFAULT_ROWS, History
 from harlequin.query import fetch
 from harlequin.query_log import QueryLog
 from tests.functional_tests.helpers import wait_for_editor
@@ -58,6 +62,64 @@ async def open_history(
     )
 
 
+async def settle_filter(
+    pilot: Pilot,
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    *,
+    search: str = "",
+    program: str | None = None,
+    status: str | None = None,
+) -> None:
+    """Wait until the screen is listing what these filters match.
+
+    A poll rather than a sleep: the debounce arms a timer, so how long the read
+    takes to start is not something a test can time.
+    """
+    screen = app.screen
+    assert isinstance(screen, HistoryScreen)
+    wanted = Filters(search=search, program=program, status=status)
+    for _ in range(int(FILTER_INTERVAL * 100)):
+        await pilot.pause(FILTER_INTERVAL / 4)
+        await wait_for_workers(app)
+        await pilot.pause()
+        if screen.applied_filters == wanted:
+            return
+    raise AssertionError(f"the filter never settled on {wanted}")
+
+
+async def show_filters(pilot: Pilot, app: Harlequin) -> HistoryScreen:
+    """Press the key that reveals the filter controls, and return the screen."""
+    screen = app.screen
+    assert isinstance(screen, HistoryScreen)
+    if not screen.filter_controls.display:
+        await pilot.press("ctrl+f")
+        await pilot.pause()
+    assert screen.filter_controls.display
+    return screen
+
+
+async def type_filter(
+    pilot: Pilot,
+    app: Harlequin,
+    term: str,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Type into the filter and wait for the read it debounces to land."""
+    screen = await show_filters(pilot, app)
+    screen.filter_input.focus()
+    await pilot.pause()
+    await pilot.press(*term)
+    await settle_filter(pilot, app, wait_for_workers, search=term)
+
+
+def preview_area(screen: HistoryScreen) -> TextAreaPlus:
+    """The text area inside the preview, which is what focus and scroll act on."""
+    area = screen.preview.text_input
+    assert area is not None
+    return area
+
+
 @pytest.mark.asyncio
 async def test_history_screen(
     app: Harlequin,
@@ -88,6 +150,14 @@ async def test_history_screen(
         await pilot.press("down")
         snap_results.append(await app_snapshot(app, "History Viewer"))
 
+        await type_filter(pilot, app, "select 1", wait_for_workers)
+        snap_results.append(await app_snapshot(app, "Filtered History Viewer"))
+
+        await pilot.press("escape")
+        await settle_filter(pilot, app, wait_for_workers)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("down")
         await pilot.press("enter")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "New buffer with select 14"))
@@ -394,3 +464,713 @@ async def test_a_session_that_records_nothing_moves_no_pickle(
         screen = await open_history(pilot, app, wait_for_workers)
         assert len(screen.history) == 0
         assert not query_log_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_an_app_binding_does_not_reach_through_the_screen(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """https://github.com/tconbeer/harlequin/issues/850"""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert not app.full_screen
+
+        for key in ("f1", "f10", "f12"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.screen is screen, f"{key} pushed a screen"
+        assert not [s for s in app.screen_stack if isinstance(s, HelpScreen)]
+        assert not app.full_screen, "f10 reached the app"
+
+
+LONG_QUERY = "select\n" + ",\n".join(f"  {i} as column_{i}" for i in range(60)) + "\n;"
+
+
+async def focus_preview(
+    pilot: Pilot,
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    query: str = LONG_QUERY,
+) -> HistoryScreen:
+    """Open the History screen over one query and tab into the preview."""
+    app.post_message(QuerySubmitted(queries=[query], limit=None))
+    await pilot.pause()
+    await wait_for_workers(app)
+    await pilot.pause()
+    screen = await open_history(pilot, app, wait_for_workers)
+    await pilot.press("tab")
+    await pilot.pause()
+    assert preview_area(screen).has_focus, "tab did not reach the preview"
+    return screen
+
+
+@pytest.mark.asyncio
+async def test_the_preview_shows_no_cursor(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """https://github.com/tconbeer/harlequin/issues/850
+
+    It takes focus so it can be scrolled, but a query it will not let anyone
+    change does not get a cursor.
+    """
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+
+        assert not preview_area(screen)._draw_cursor
+        assert not preview_area(screen)._has_cursor
+
+
+@pytest.mark.asyncio
+async def test_the_preview_scrolls_from_the_keyboard(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A query taller than the pane is readable without a mouse."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+        text_area = preview_area(screen)
+        assert text_area.scroll_offset.y == 0
+
+        await pilot.press(*["down"] * 5)
+        await pilot.pause()
+        scrolled = text_area.scroll_offset.y
+        assert scrolled > 0, "down did not scroll the preview"
+
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert text_area.scroll_offset.y > scrolled, "pagedown did not scroll further"
+
+        await pilot.press(*["up"] * 100)
+        await pilot.pause()
+        assert text_area.scroll_offset.y == 0
+
+
+@pytest.mark.asyncio
+async def test_the_preview_scrolls_sideways_from_the_keyboard(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A query on one very long line is read across, not down."""
+    one_liner = "select '" + "lorem ipsum dolor sit amet " * 200 + "';"
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers, query=one_liner)
+        text_area = preview_area(screen)
+        assert text_area.scroll_offset.x == 0
+
+        await pilot.press(*["right"] * 5)
+        await pilot.pause()
+        assert text_area.scroll_offset.x > 0, "right did not scroll the preview"
+
+        await pilot.press(*["left"] * 100)
+        await pilot.pause()
+        assert text_area.scroll_offset.x == 0
+
+
+@pytest.mark.asyncio
+async def test_the_preview_takes_no_input(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Focus makes it scrollable, not editable."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+
+        await pilot.press("x", "backspace", "delete", "ctrl+v", "shift+insert")
+        await pilot.pause()
+        assert screen.preview.text == LONG_QUERY
+
+
+@pytest.mark.asyncio
+async def test_the_preview_ignores_every_key_it_binds(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every key the text area binds, rather than a list written here.
+
+    Derived at run time, so a component-library bump that gives a read-only
+    text area a way to edit itself fails here and names the key.
+    """
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+        text_area = preview_area(screen)
+        # a machine whose clipboard has something on it, as CI runners do
+        monkeypatch.setattr(text_area, "system_paste", lambda: "PASTED")
+        text_area.clipboard = "PASTED"
+
+        edited_by = []
+        for key in sorted(set(text_area._bindings.key_to_bindings)):
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            if screen.preview.text != LONG_QUERY:
+                edited_by.append(key)
+                screen.preview.text = LONG_QUERY
+                await pilot.pause()
+        assert not edited_by, f"these keys edited a read-only preview: {edited_by}"
+
+
+@pytest.mark.asyncio
+async def test_the_previews_own_editor_keys_are_not_live(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Nothing in the preview is saved, opened or searched."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+
+        # ctrl+f is not here: it is the screen's own, for the filter controls
+        editor_keys = {"ctrl+s", "ctrl+o", "f3", "ctrl+g"}
+        assert not editor_keys & set(app.screen.active_bindings)
+
+        for key in sorted(editor_keys):
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.is_running, f"{key} closed the app"
+            assert app.screen is screen, f"{key} pushed a screen"
+
+
+@pytest.mark.asyncio
+async def test_quit_still_reaches_the_app_from_the_screen(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The modal stops the app's bindings, but quit is a priority binding."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        await open_history(pilot, app, wait_for_workers)
+
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert not app.is_running
+
+
+@pytest.mark.asyncio
+async def test_enter_selects_a_query_from_the_preview(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The screen's key wins wherever focus is."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen is not screen
+        assert app.editor is not None
+        assert app.editor.text == LONG_QUERY
+
+
+@pytest.mark.asyncio
+async def test_the_filter_searches_the_whole_store(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """https://github.com/tconbeer/harlequin/issues/429
+
+    The filter is a query over the store, so it reaches queries older than the
+    ones the screen holds.
+    """
+    log = QueryLog(program="hsql", connection="foo")
+    log.write("select * from line_items")
+    for i in range(DEFAULT_ROWS):
+        log.write(f"select {i} from orders")
+    log.close()
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        listed = [record.query_text for record in screen.history]
+        assert len(listed) == DEFAULT_ROWS
+        assert "select * from line_items" not in listed
+
+        await type_filter(pilot, app, "line_items", wait_for_workers)
+        assert [record.query_text for record in screen.history] == [
+            "select * from line_items"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_an_edit_that_changes_nothing_keeps_your_place(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The debounce reads once per interval, whatever was typed inside it.
+
+    A typo and its correction, or a term every match already contains, both
+    arrive here as a read for the term already listed.
+    """
+    log = QueryLog(program="hsql", connection="foo")
+    for i in range(5):
+        log.write(f"select {i} from orders")
+    log.close()
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await type_filter(pilot, app, "orders", wait_for_workers)
+
+        # enter takes the term to the list, where the arrows move the highlight
+        await pilot.press("enter", "down", "down")
+        await pilot.pause()
+        assert screen.list.highlighted == 2
+        chosen = screen.preview.text
+
+        # the read the debounce will make for a term already listed -- watched,
+        # because waiting on the term settling would be waiting on what is
+        # already true
+        reads: list[Filters] = []
+        read_history = screen.read_history
+
+        def watched_read(filters: Filters) -> None:
+            reads.append(filters)
+            read_history(filters)
+
+        screen.read_history = watched_read  # type: ignore[assignment,method-assign]
+
+        # typed and taken back inside one debounce window
+        screen.filter_input.focus()
+        await pilot.pause()
+        await pilot.press("x", "backspace")
+        for _ in range(int(FILTER_INTERVAL * 100)):
+            await pilot.pause(FILTER_INTERVAL / 4)
+            await wait_for_workers(app)
+            await pilot.pause()
+            if reads:
+                break
+        assert reads == [Filters(search="orders")], (
+            "the debounce never re-read the unchanged term"
+        )
+
+        assert screen.filter_input.value == "orders"
+        assert screen.list.highlighted == 2, "the list jumped back to the top"
+        assert screen.preview.text == chosen
+
+
+@pytest.mark.asyncio
+async def test_the_filter_matches_no_wildcards(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A typed `_` matches an underscore, not `like`'s any-character."""
+    log = QueryLog(program="hsql", connection="foo")
+    log.write("select * from lineXitems")
+    log.close()
+
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert len(screen.history) == 1, "the record the filter has to miss is absent"
+
+        await type_filter(pilot, app, "line_items", wait_for_workers)
+        assert len(screen.history) == 0
+
+
+@pytest.mark.asyncio
+async def test_the_screen_opens_on_the_list(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Picking a query is what the screen is for, so the list has focus."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+
+        assert screen.list.has_focus
+
+
+@pytest.mark.asyncio
+async def test_tab_cycles_the_panes_that_are_shown(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert screen.list.has_focus
+
+        # the controls are hidden, so they are not in the cycle
+        await pilot.press("tab")
+        await pilot.pause()
+        assert preview_area(screen).has_focus
+        await pilot.press("tab")
+        await pilot.pause()
+        assert screen.list.has_focus
+
+        await show_filters(pilot, app)
+        for expected in (
+            screen.program_select,
+            screen.status_select,
+            screen.list,
+            preview_area(screen),
+            screen.filter_input,
+        ):
+            await pilot.press("tab")
+            await pilot.pause()
+            assert expected.has_focus
+
+
+@pytest.mark.asyncio
+async def test_typing_over_the_list_starts_a_search(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A key the list has no use for is the start of a filter term."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(
+            QuerySubmitted(queries=["select 1;", "select 2 as orders;"], limit=None)
+        )
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        assert screen.list.has_focus
+        assert not screen.filter_controls.display
+
+        await pilot.press("o")
+        await pilot.pause()
+        assert screen.filter_controls.display, "typing did not reveal the controls"
+        assert screen.filter_input.has_focus, "typing did not reach the filter"
+        assert screen.filter_input.value == "o", "the first key typed was lost"
+
+        await pilot.press("r", "d", "e", "r", "s")
+        await settle_filter(pilot, app, wait_for_workers, search="orders")
+        assert screen.filter_input.value == "orders"
+        assert [record.query_text for record in screen.history] == [
+            "select 2 as orders;"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_the_arrow_keys_do_not_reach_the_list_from_the_filter(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The filter is a text box, not a second set of keys for the list."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(
+            QuerySubmitted(queries=["select 1;", "select 2;", "select 3;"], limit=None)
+        )
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        await open_history(pilot, app, wait_for_workers)
+        screen = await show_filters(pilot, app)
+        screen.filter_input.focus()
+        await pilot.pause()
+        highlighted = screen.list.highlighted
+
+        await pilot.press("down", "down", "pagedown", "up", "pageup")
+        await pilot.pause()
+        assert screen.list.highlighted == highlighted
+
+
+@pytest.mark.asyncio
+async def test_escape_empties_the_filter_then_leaves_it(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+
+        await type_filter(pilot, app, "nothing matches this", wait_for_workers)
+        assert len(screen.history) == 0
+
+        await pilot.press("escape")
+        await settle_filter(pilot, app, wait_for_workers)
+        assert app.screen is screen
+        assert screen.filter_input.value == ""
+        assert screen.filter_input.has_focus, "an emptied filter also lost focus"
+        assert [record.query_text for record in screen.history] == ["select 1;"]
+
+        # empty, so the second one hands the screen back to the list
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is screen
+        assert screen.list.has_focus
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is not screen
+
+
+@pytest.mark.asyncio
+async def test_escape_over_the_preview_leaves_the_screen(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Only the filter gives escape a second meaning."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await focus_preview(pilot, app, wait_for_workers)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is not screen
+
+
+@pytest.mark.asyncio
+async def test_enter_in_the_filter_goes_to_the_list(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Enter commits the search rather than the query, so the list can be driven."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(
+            QuerySubmitted(queries=["select 1;", "select 2 as orders;"], limit=None)
+        )
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+
+        await type_filter(pilot, app, "orders", wait_for_workers)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen is screen, "enter in the filter left the screen"
+        assert screen.list.has_focus
+        assert screen.filter_input.value == "orders", "the term was cleared"
+
+        # and enter again, over the list, takes the query
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen is not screen
+        assert app.editor is not None
+        assert app.editor.text == "select 2 as orders;"
+
+
+async def logged_by_both(app: Harlequin) -> None:
+    """One row from each program, one of them an error."""
+    agent = QueryLog(program="hsql", connection="foo")
+    agent.write("select * from line_items", rows=3)
+    agent.write("select bad from", status="error", error="Parser Error")
+    agent.close()
+
+
+@pytest.mark.asyncio
+async def test_the_filter_controls_start_hidden(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The screen is for picking a query; the controls are there when asked for."""
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+
+        assert not screen.filter_controls.display
+        assert screen.list.has_focus
+
+        await pilot.press("ctrl+f")
+        await pilot.pause()
+        assert screen.filter_controls.display
+        assert screen.filter_input.has_focus, "the controls appeared without focus"
+
+        await pilot.press("ctrl+f")
+        await pilot.pause()
+        assert not screen.filter_controls.display
+        assert screen.list.has_focus
+
+
+@pytest.mark.asyncio
+async def test_putting_the_controls_away_stops_filtering(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A filter still narrowing the list from behind a hidden control is a
+    list nobody can explain."""
+    await logged_by_both(app)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        everything = len(screen.history)
+
+        await type_filter(pilot, app, "line_items", wait_for_workers)
+        screen.status_select.value = "ok"
+        await settle_filter(
+            pilot, app, wait_for_workers, search="line_items", status="ok"
+        )
+        assert len(screen.history) < everything
+
+        await pilot.press("ctrl+f")
+        await settle_filter(pilot, app, wait_for_workers)
+        assert not screen.filter_controls.display
+        assert screen.filter_input.value == ""
+        assert screen.program_select.is_blank()
+        assert screen.status_select.is_blank()
+        assert len(screen.history) == everything
+
+
+@pytest.mark.asyncio
+async def test_the_program_dropdown_narrows_to_one_command(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    await logged_by_both(app)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        app.post_message(QuerySubmitted(queries=["select 1;"], limit=None))
+        await pilot.pause()
+        await wait_for_workers(app)
+        await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await show_filters(pilot, app)
+
+        screen.program_select.value = "hsql"
+        await settle_filter(pilot, app, wait_for_workers, program="hsql")
+        assert [record.query_text for record in screen.history] == [
+            "select bad from",
+            "select * from line_items",
+        ]
+
+        screen.program_select.value = "harlequin"
+        await settle_filter(pilot, app, wait_for_workers, program="harlequin")
+        assert [record.query_text for record in screen.history] == ["select 1;"]
+
+
+@pytest.mark.asyncio
+async def test_the_outcome_dropdown_narrows_to_one_status(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    await logged_by_both(app)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await show_filters(pilot, app)
+
+        screen.status_select.value = "error"
+        await settle_filter(pilot, app, wait_for_workers, status="error")
+        assert [record.query_text for record in screen.history] == ["select bad from"]
+
+
+@pytest.mark.asyncio
+async def test_the_dropdowns_and_the_search_term_narrow_together(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    await logged_by_both(app)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+
+        await type_filter(pilot, app, "select", wait_for_workers)
+        screen.program_select.value = "hsql"
+        screen.status_select.value = "ok"
+        await settle_filter(
+            pilot, app, wait_for_workers, search="select", program="hsql", status="ok"
+        )
+        assert [record.query_text for record in screen.history] == [
+            "select * from line_items"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_an_open_dropdown_has_room_for_its_options(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A menu is an OptionList, so a rule written for the list can empty it.
+
+    Asserted on the height it is given rather than on the options it holds: it
+    held all of them while rendering as an empty box.
+    """
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await show_filters(pilot, app)
+
+        for select in (screen.program_select, screen.status_select):
+            select.focus()
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.pause()
+            overlay = select.query_one(SelectOverlay)
+            assert overlay.option_count > 1
+            assert overlay.size.height >= overlay.option_count, (
+                f"{select.id} opened a menu with no room for its options"
+            )
+            await pilot.press("escape")
+            await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_an_open_dropdown_keeps_enter_and_escape(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The screen owns both keys, so it has to hand them back to a menu."""
+    await logged_by_both(app)
+    async with app.run_test() as pilot:
+        while app.editor is None:
+            await pilot.pause()
+        screen = await open_history(pilot, app, wait_for_workers)
+        await show_filters(pilot, app)
+        screen.program_select.focus()
+        await pilot.pause()
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen.program_select.expanded, "enter did not open the menu"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not screen.program_select.expanded, "escape did not close the menu"
+        assert app.screen is screen, "escape left the screen instead of the menu"
+
+        await pilot.press("enter", "down", "enter")
+        await pilot.pause()
+        await settle_filter(pilot, app, wait_for_workers, program="harlequin")
+        assert screen.program_select.value == "harlequin"
+        assert app.screen is screen, "enter took a query instead of an option"

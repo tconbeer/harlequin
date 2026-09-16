@@ -16,7 +16,12 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from harlequin.history import History, QueryExecution, migrate_pickled_history
+from harlequin.history import (
+    MAX_LINES,
+    History,
+    QueryExecution,
+    migrate_pickled_history,
+)
 from harlequin.query_log import QueryLog
 from tests.conftest import LEGACY_HISTORY
 
@@ -139,6 +144,31 @@ def test_a_query_whose_rows_were_never_counted_still_renders(log: QueryLog) -> N
     assert record.result_row_count is None
     assert record.elapsed is None
     assert "SUCCESS" in rendered(record)
+
+
+def test_a_long_line_is_ellipsised_rather_than_wrapped(log: QueryLog) -> None:
+    """One line of a query is one line of the row.
+
+    A wrapped line grows the row with the query's length, so one query could be
+    taller than the pane it is listed in.
+    """
+    log.write("select '" + "x" * 5_000 + "'", rows=1, elapsed_ms=12.5)
+
+    (record,) = History.recent()
+    body = rendered(record).splitlines()
+    assert len(body) == 3, "the row grew with the query"
+    assert body[1].rstrip().endswith("…")
+
+
+def test_a_row_is_no_taller_than_the_lines_it_shows(log: QueryLog) -> None:
+    log.write("\n".join(f"select {i}," for i in range(40)), rows=1, elapsed_ms=12.5)
+
+    (record,) = History.recent()
+    body = rendered(record).splitlines()
+    # the timestamp, MAX_LINES - 1 of the query, the count of what is left,
+    # and the blank line that separates one row from the next
+    assert len(body) == MAX_LINES + 2
+    assert any("… (33 more lines)" in line for line in body)
 
 
 def test_a_row_with_an_unreadable_timestamp_costs_only_that_row(

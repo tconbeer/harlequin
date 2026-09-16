@@ -19,6 +19,7 @@ import pytest
 from harlequin import query_log
 from harlequin.query_log import (
     MIGRATIONS,
+    PROGRAMS,
     READ_COLUMNS,
     RETENTION_ROWS,
     SCHEMA_VERSION,
@@ -656,6 +657,15 @@ def test_an_untunneled_connection_keys_on_its_details_alone() -> None:
     assert connection_id(None, ("my.db",), {}, through=()) == get_connection_hash(
         ("my.db",), {}
     )
+
+
+def test_the_programs_offered_are_the_ones_that_write() -> None:
+    """`PROGRAMS` is what a reader offers to filter by, so it has to be every
+    command that writes. The IDE's own spelling is pinned where it writes it,
+    by `test_a_query_is_recorded_as_it_runs`."""
+    from harlequin.hsql.cli import PROGRAM as HSQL_PROGRAM
+
+    assert set(PROGRAMS) == {"harlequin", HSQL_PROGRAM}
 
 
 def test_the_retention_cap_matches_the_history_screen() -> None:
