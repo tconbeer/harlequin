@@ -94,7 +94,7 @@ class HistoryScreen(ModalScreen[str]):
     def __init__(
         self,
         history: History,
-        connection: str | None = None,
+        connection_hash: str | None = None,
         theme: str = "harlequin",
         name: str | None = None,
         id: str | None = None,  # noqa: A002
@@ -102,9 +102,9 @@ class HistoryScreen(ModalScreen[str]):
     ) -> None:
         super().__init__(name, id, classes)
         self.history = history
-        self.applied = Filters()
+        self.applied_filters = Filters()
         """What `history` was read for."""
-        self.connection = connection
+        self.connection_hash = connection_hash
         self.theme = theme
         self._filter_timer: Timer | None = None
         self._filter_failed = False
@@ -250,7 +250,7 @@ class HistoryScreen(ModalScreen[str]):
         """The whole store, filtered by what the controls are set to."""
         try:
             history: History | None = History.recent(
-                connection=self.connection,
+                connection=self.connection_hash,
                 search=filters.search or None,
                 program=filters.program,
                 status=filters.status,
@@ -276,11 +276,11 @@ class HistoryScreen(ModalScreen[str]):
                 )
             return
         self._filter_failed = False
-        if message.filters == self.applied and self.list.option_count:
+        if message.filters == self.applied_filters and self.list.option_count:
             # an edit that came to nothing inside the debounce window still
             # reads, and rebuilding for it would lose the highlight
             return
-        self.applied = message.filters
+        self.applied_filters = message.filters
         self.history = message.history
         self.list.clear_options()
         self.list.add_options(self._options())

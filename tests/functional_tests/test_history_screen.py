@@ -82,7 +82,7 @@ async def settle_filter(
         await pilot.pause(FILTER_INTERVAL / 4)
         await wait_for_workers(app)
         await pilot.pause()
-        if screen.applied == wanted:
+        if screen.applied_filters == wanted:
             return
     raise AssertionError(f"the filter never settled on {wanted}")
 
