@@ -63,7 +63,7 @@ jobs:
       - name: Install timezone database
         if: matrix.os == 'Windows-latest'
         run: |
-          uv run --no-sync python -c "from harlequin.windows_timezone import download_tzdata, find_tzdata; find_tzdata() or download_tzdata()"
+          uv run --no-sync python -c "from harlequin.windows_timezone import download_tzdata, locate_tzdata; locate_tzdata() or download_tzdata()"
 
       - name: Run tests
         run: |
