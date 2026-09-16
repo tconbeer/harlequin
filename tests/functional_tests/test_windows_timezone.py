@@ -14,18 +14,23 @@ from harlequin.app import QuerySubmitted, ResultsFetched, TzDataDownloadStarted
 from harlequin.exception import HarlequinTzDataError
 
 
-async def _settle_results(app: Harlequin, pilot: Pilot) -> None:
-    """Wait for the fetched result's tab to mount.
+async def _await_results(
+    app: Harlequin, pilot: Pilot, messages: list[Message]
+) -> ResultsFetched:
+    """Pump until the fetch has posted its message and its tab has mounted.
 
-    `TabbedContent.add_pane` activates the tab it just added, and `Tabs`
-    refuses an id that is not in its list yet, so a test that stops pumping
-    between the fetch and the mount can tear down mid-`add_pane`.
+    `wait_for_workers()` cannot stand in for this: a `QuerySubmitted` that has
+    not been handled yet has started no worker, so it returns with nothing to
+    wait for. And `TabbedContent.add_pane` activates the tab it just added,
+    which `Tabs` refuses until that tab is in its list -- so a test that stops
+    pumping in between can tear down mid-mount.
     """
-    for _ in range(100):
+    for _ in range(200):
         await pilot.pause()
-        if app.results_viewer.get_visible_table() is not None:
-            return
-    raise AssertionError("the result table never became visible")
+        fetched = [m for m in messages if isinstance(m, ResultsFetched)]
+        if fetched and app.results_viewer.get_visible_table() is not None:
+            return fetched[-1]
+    raise AssertionError("the query never produced a mounted result")
 
 
 @pytest.fixture
@@ -46,7 +51,6 @@ def windows_app(
 async def test_the_app_starts_while_the_tzdata_download_is_in_flight(
     windows_app: Harlequin,
     monkeypatch: pytest.MonkeyPatch,
-    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
     """The editor is up before the download returns, but a fetch waits for it,
     since Arrow needs the database to build a timestamptz column."""
@@ -74,11 +78,7 @@ async def test_the_app_starts_while_the_tzdata_download_is_in_flight(
         assert not [m for m in messages if isinstance(m, ResultsFetched)]
 
         finish_download.set()
-        await wait_for_workers(app)
-        await pilot.pause()
-        [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
-        assert results_fetched.errors == []
-        await _settle_results(app, pilot)
+        assert (await _await_results(app, pilot, messages)).errors == []
 
 
 @pytest.mark.asyncio
@@ -104,14 +104,8 @@ async def test_a_fetch_gives_up_on_a_download_that_never_finishes(
             while app.editor is None:
                 await pilot.pause()
             app.post_message(QuerySubmitted(queries=["select 1 as foo"], limit=None))
-            for _ in range(200):
-                await pilot.pause()
-                if [m for m in messages if isinstance(m, ResultsFetched)]:
-                    break
-            [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
-            assert results_fetched.errors == []
+            assert (await _await_results(app, pilot, messages)).errors == []
             assert not app._tzdata_ready.is_set()
-            await _settle_results(app, pilot)
     finally:
         release_download.set()
 
@@ -178,8 +172,4 @@ async def test_a_failed_tzdata_download_is_a_warning(
         assert [n for n in failures if "No network." in n.message]
 
         app.post_message(QuerySubmitted(queries=["select 1 as foo"], limit=None))
-        await wait_for_workers(app)
-        await pilot.pause()
-        [results_fetched] = [m for m in messages if isinstance(m, ResultsFetched)]
-        assert results_fetched.errors == []
-        await _settle_results(app, pilot)
+        assert (await _await_results(app, pilot, messages)).errors == []
