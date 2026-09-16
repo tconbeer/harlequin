@@ -14,7 +14,6 @@ import socket
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
 from unittest.mock import MagicMock
@@ -41,27 +40,13 @@ from harlequin.ssh import (
     parse_config,
     resolve_config,
 )
+from tests.waiting import accepts, free_port, on_a_free_port, settle, wait_until
 
 FAKE_SSH = Path(__file__).parent.parent / "data" / "unit_tests" / "ssh" / "ssh"
 
 posix_only = pytest.mark.skipif(
     os.name == "nt", reason="a Python script is not an executable on Windows"
 )
-
-
-def free_port() -> int:
-    """A port nothing is listening on, most likely still true a moment from now."""
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def accepts(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1):
-            return True
-    except OSError:
-        return False
 
 
 @pytest.fixture
@@ -82,6 +67,25 @@ def child_tunnel(*ports: int, **kwargs: object) -> SshTunnel:
     argv.append("redshift_prod")
     forwards = tuple(Forward(str(port), "[remote]:5439") for port in ports)
     return SshTunnel(argv, forwards=forwards, host="redshift_prod", **kwargs)  # type: ignore[arg-type]
+
+
+def started_tunnel(
+    *, before_start: Callable[[SshTunnel], None] | None = None, **kwargs: object
+) -> SshTunnel:
+    """A tunnel whose child is up, on a port it won the race for.
+
+    Its port is `tunnel.endpoints[0][1]`. `before_start` is for what a caller
+    has to set while the tunnel is still cold, since a retry builds a new one.
+    """
+
+    def start(port: int) -> SshTunnel:
+        tunnel = child_tunnel(port, **kwargs)
+        if before_start is not None:
+            before_start(tunnel)
+        tunnel.start()
+        return tunnel
+
+    return on_a_free_port(start, retry_on=HarlequinSshError)
 
 
 # the argv, which is the whole of what Harlequin says to ssh
@@ -303,11 +307,14 @@ def test_a_probe_that_says_nothing_readable_polls_nothing(
 
 
 def test_a_tunnel_holds_its_port_open_and_gives_it_back() -> None:
-    port = free_port()
-    with child_tunnel(port) as tunnel:
+    tunnel = started_tunnel()
+    port = tunnel.endpoints[0][1]
+    try:
         assert accepts(port)
         assert tunnel.running
         assert not tunnel.reused
+    finally:
+        tunnel.stop()
     assert not accepts(port)
 
 
@@ -315,9 +322,11 @@ def test_a_forward_that_takes_a_moment_is_waited_for(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FAKE_SSH_DELAY", "0.4")
-    port = free_port()
-    with child_tunnel(port):
-        assert accepts(port)
+    tunnel = started_tunnel()
+    try:
+        assert accepts(tunnel.endpoints[0][1])
+    finally:
+        tunnel.stop()
 
 
 def test_a_child_that_never_opens_the_forward_names_batch_mode(
@@ -508,17 +517,15 @@ def test_a_tunnel_with_no_port_to_poll_still_notices_a_child_that_dies(
 
 
 def test_stopping_twice_is_not_an_error() -> None:
-    tunnel = child_tunnel(free_port())
-    tunnel.start()
+    tunnel = started_tunnel()
     tunnel.stop()
     tunnel.stop()
     assert not tunnel.running
 
 
 def test_a_stopped_tunnel_starts_again() -> None:
-    port = free_port()
-    tunnel = child_tunnel(port)
-    tunnel.start()
+    tunnel = started_tunnel()
+    port = tunnel.endpoints[0][1]
     tunnel.stop()
     assert not accepts(port)
     tunnel.start()
@@ -610,21 +617,9 @@ def test_the_keepalive_is_parsed_off_the_resolved_config() -> None:
     assert bare is not None and bare.server_alive_interval is None
 
 
-def wait_until(predicate: Callable[[], bool], *, seconds: float = 10) -> bool:
-    """Poll until something a thread does becomes true, or give up."""
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(0.02)
-    return predicate()
-
-
 def test_a_child_that_dies_says_so_in_ssh_s_last_words(drop_trigger: Path) -> None:
     notices: list[str] = []
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(notices.append)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(notices.append))
     try:
         drop_trigger.touch()
         assert wait_until(lambda: bool(notices))
@@ -643,8 +638,7 @@ def test_a_tunnel_watched_after_it_started_is_still_reported(
     time the child can die in.
     """
     notices: list[str] = []
-    tunnel = child_tunnel(free_port())
-    tunnel.start()
+    tunnel = started_tunnel()
     try:
         drop_trigger.touch()
         assert tunnel._process is not None
@@ -667,7 +661,7 @@ def test_a_reused_listener_is_never_called_closed(
     try:
         assert tunnel.reused
         tunnel.watch(notices.append)
-        time.sleep(0.3)
+        settle()
     finally:
         tunnel.stop()
     assert notices == []
@@ -675,14 +669,16 @@ def test_a_reused_listener_is_never_called_closed(
 
 def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
     notices: list[str] = []
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(notices.append)
-    tunnel.watch(notices.append)
-    tunnel.start()
+
+    def watch_twice(tunnel: SshTunnel) -> None:
+        tunnel.watch(notices.append)
+        tunnel.watch(notices.append)
+
+    tunnel = started_tunnel(before_start=watch_twice)
     try:
         drop_trigger.touch()
         assert wait_until(lambda: bool(notices))
-        time.sleep(0.3)
+        settle()
     finally:
         tunnel.stop()
     assert len(notices) == 1
@@ -691,11 +687,9 @@ def test_watching_twice_does_not_double_the_notice(drop_trigger: Path) -> None:
 def test_a_tunnel_taken_down_on_purpose_is_not_news() -> None:
     """The control is the test above: the same harness does fire, on a death."""
     notices: list[str] = []
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(notices.append)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(notices.append))
     tunnel.stop()
-    time.sleep(0.5)
+    settle()
     assert notices == []
 
 
@@ -1051,10 +1045,8 @@ def test_a_tunnel_ssh_would_not_describe_says_it_waited_for_nothing() -> None:
 def test_a_tunnel_that_dropped_asks_to_be_reopened(
     drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    port = free_port()
-    tunnel = child_tunnel(port)
-    tunnel.watch(lambda notice: None)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(lambda notice: None))
+    port = tunnel.endpoints[0][1]
     assert not tunnel.needs_restart
     try:
         drop_trigger.touch()
@@ -1075,9 +1067,7 @@ def test_a_restart_never_asks_for_a_credential(
     """Something owns the terminal by now, so a prompt has nowhere to go."""
     record = tmp_path / "argv.jsonl"
     monkeypatch.setenv("FAKE_SSH_ARGV", str(record))
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(lambda notice: None)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(lambda notice: None))
     try:
         assert "BatchMode=yes" not in calls(record)[-1]
         drop_trigger.touch()
@@ -1099,10 +1089,8 @@ def test_two_workers_reopening_at_once_do_not_bury_a_working_tunnel(
     `_execute_query` and `update_schema_data` are exclusive within their own
     worker groups and not against each other, so both can arrive at once.
     """
-    port = free_port()
-    tunnel = child_tunnel(port)
-    tunnel.watch(lambda notice: None)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(lambda notice: None))
+    port = tunnel.endpoints[0][1]
     try:
         drop_trigger.touch()
         assert wait_until(lambda: tunnel.needs_restart)
@@ -1135,9 +1123,7 @@ def test_two_workers_reopening_at_once_do_not_bury_a_working_tunnel(
 def test_a_restart_that_fails_is_not_tried_again(
     drop_trigger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    tunnel = child_tunnel(free_port())
-    tunnel.watch(lambda notice: None)
-    tunnel.start()
+    tunnel = started_tunnel(before_start=lambda t: t.watch(lambda notice: None))
     drop_trigger.touch()
     assert wait_until(lambda: tunnel.needs_restart)
     monkeypatch.setenv("FAKE_SSH_STDERR", "Permission denied (publickey).")

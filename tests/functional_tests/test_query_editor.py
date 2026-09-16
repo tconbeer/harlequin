@@ -7,6 +7,7 @@ from typing import Awaitable, Callable, List, Sequence
 import pytest
 from textual import events
 from textual.app import App
+from textual.pilot import Pilot
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 from textual.worker import WorkerFailed
@@ -15,28 +16,30 @@ from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
 from harlequin.components.code_editor import CodeEditor
+from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.text_modal import ErrorModal
 from harlequin.statements import find_separators, split
+from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
 @pytest.mark.asyncio
 async def test_query_formatting(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select\n\n1 FROM\n\n foo"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select\n\n1 FROM\n\n foo"
 
         await pilot.press("f4")
-        assert app.editor.text == "select 1 from foo\n"
+        assert editor.text == "select 1 from foo\n"
         assert list(app._notifications)[-1].message == "Formatted query."
 
         # formatting an already-formatted query notifies that nothing changed
         await pilot.press("f4")
-        assert app.editor.text == "select 1 from foo\n"
+        assert editor.text == "select 1 from foo\n"
         assert "no changes" in list(app._notifications)[-1].message
 
 
@@ -46,16 +49,16 @@ async def test_multiple_buffers(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         assert app.editor_collection
         assert app.editor_collection.tab_count == 1
         assert app.editor_collection.active == "tab-1"
-        app.editor.text = "tab 1"
+        editor.text = "tab 1"
         await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 1 of 1 (No tabs)"))
@@ -65,8 +68,8 @@ async def test_multiple_buffers(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-2"
-        assert app.editor.text == ""
-        app.editor.text = "tab 2"
+        assert editor.text == ""
+        editor.text = "tab 2"
         await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 2 of 2"))
@@ -76,8 +79,8 @@ async def test_multiple_buffers(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-3"
-        assert app.editor.text == ""
-        app.editor.text = "tab 3"
+        assert editor.text == ""
+        editor.text = "tab 3"
         await pilot.press("home")
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Tab 3 of 3"))
@@ -87,7 +90,7 @@ async def test_multiple_buffers(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-1"
-        assert app.editor.text == "tab 1"
+        assert editor.text == "tab 1"
         snap_results.append(await app_snapshot(app, "Tab 1 of 3"))
 
         await pilot.press("ctrl+k")
@@ -95,7 +98,7 @@ async def test_multiple_buffers(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 3
         assert app.editor_collection.active == "tab-2"
-        assert app.editor.text == "tab 2"
+        assert editor.text == "tab 2"
         snap_results.append(await app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
@@ -103,7 +106,7 @@ async def test_multiple_buffers(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2
         assert app.editor_collection.active == "tab-3"
-        assert app.editor.text == "tab 3"
+        assert editor.text == "tab 3"
         # TODO: bring back this flaky test.
         # snap_results.append(await app_snapshot(app, "Tab 3 after deleting 2"))
 
@@ -111,14 +114,14 @@ async def test_multiple_buffers(
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-1"
-        assert app.editor.text == "tab 1"
+        assert editor.text == "tab 1"
         snap_results.append(await app_snapshot(app, "Tab 1 of [1,3]"))
 
         await pilot.press("ctrl+k")
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-3"
-        assert app.editor.text == "tab 3"
+        assert editor.text == "tab 3"
         snap_results.append(await app_snapshot(app, "Tab 3 of [1,3]"))
 
         assert all(snap_results)
@@ -128,14 +131,14 @@ async def test_multiple_buffers(
 async def test_buffers_keep_their_state(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Switching buffers has to carry everything the editor holds, not just the text."""
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        app.editor.focus()
+        editor.focus()
         await pilot.press(*"select 1")
         await pilot.press("ctrl+n")
         await pilot.pause()
@@ -144,51 +147,51 @@ async def test_buffers_keep_their_state(
         await pilot.pause()
 
         assert app.editor_collection.active == "tab-1"
-        assert app.editor.text == "select 1"
-        assert app.editor.selection == Selection((0, 8), (0, 8))
+        assert editor.text == "select 1"
+        assert editor.selection == Selection((0, 8), (0, 8))
 
         # the undo history moves with the buffer: this undoes the typing
         # in buffer one, not the switch that loaded it.
         await pilot.press("ctrl+z")
         await pilot.pause()
-        assert app.editor.text == ""
+        assert editor.text == ""
         await pilot.press("ctrl+z")
         await pilot.pause()
-        assert app.editor.text == ""
+        assert editor.text == ""
 
         await pilot.press("ctrl+k")
         await pilot.pause()
         assert app.editor_collection.active == "tab-2"
-        assert app.editor.text == "select 2"
+        assert editor.text == "select 2"
 
         # a buffer scrolled away from its cursor comes back where it was,
         # instead of snapping to the cursor.
-        assert app.editor.text_input is not None
-        app.editor.text = "\n".join(f"select {i}" for i in range(100))
+        assert editor.text_input is not None
+        editor.text = "\n".join(f"select {i}" for i in range(100))
         await pilot.press("ctrl+down", "ctrl+down", "ctrl+down")
         await pilot.pause()
-        scrolled_to = app.editor.text_input.scroll_offset
+        scrolled_to = editor.text_input.scroll_offset
         assert scrolled_to.y > 0
-        assert app.editor.selection == Selection((0, 0), (0, 0))
+        assert editor.selection == Selection((0, 0), (0, 0))
 
         await pilot.press("ctrl+k")
         await pilot.pause()
         await pilot.press("ctrl+k")
         await pilot.pause()
         assert app.editor_collection.active == "tab-2"
-        assert app.editor.text_input.scroll_offset == scrolled_to
+        assert editor.text_input.scroll_offset == scrolled_to
 
 
 @pytest.mark.asyncio
 async def test_a_buffer_opened_on_the_way_out_does_not_crash(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The Query Editor mounts lazily, so a quit can land before its first buffer."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         collection = app.editor_collection
         # not awaited: removal marks the subtree, and the buffer opens into it
@@ -205,22 +208,24 @@ async def test_word_autocomplete(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None or app.editor_collection.word_completer is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
+        await wait_for_value(
+            pilot,
+            lambda: app.editor_collection.word_completer,
+            description="the word completer to be built",
+        )
 
         # we need to let the data catalog load the root's children
-        while (
-            app.data_catalog.database_tree.loading
-            or not app.data_catalog.database_tree.root.children
-        ):
-            await pilot.pause()
+        await wait_for_catalog_tree(pilot, app)
 
-        app.editor.focus()
+        editor.focus()
 
         await pilot.press("s")
         await pilot.pause()
@@ -276,6 +281,8 @@ async def test_member_autocomplete(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     expand_catalog_node: Callable[..., Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
@@ -283,28 +290,32 @@ async def test_member_autocomplete(
         await wait_for_workers(app)
 
         # we need to expand the data catalog to load items into the completer
-        while (
-            app.data_catalog.database_tree.loading
-            or not app.data_catalog.database_tree.root.children
-        ):
-            await pilot.pause()
-        for db_node in app.data_catalog.database_tree.root.children:
+        tree = await wait_for_catalog_tree(pilot, app)
+        for db_node in tree.root.children:
             await expand_catalog_node(pilot, db_node)
             await wait_for_workers(app)
             for schema_node in db_node.children:
                 await expand_catalog_node(pilot, schema_node)
                 await wait_for_workers(app)
+
         # the relations are on screen now, so the catalog prefetches their
-        # columns; wait for those to reach the member completer.
-        await pilot.pause(1)
+        # columns; the completer holding one is what says they landed
+        member_completer = await wait_for_value(
+            pilot,
+            lambda: app.editor_collection.member_completer,
+            description="the member completer to be built",
+        )
+        await wait_for(
+            pilot,
+            lambda: bool(member_completer('"drivers".')),
+            description="the prefetched columns to reach the member completer",
+            interval=POLL_INTERVAL,
+        )
 
-        # now the completer should be populated
-        while app.editor is None or app.editor_collection.member_completer is None:
-            await pilot.pause()
-
-        app.editor.text = '"drivers"'
-        app.editor.selection = Selection((0, 9), (0, 9))
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = '"drivers"'
+        editor.selection = Selection((0, 9), (0, 9))
+        editor.focus()
 
         await pilot.press("full_stop")
         await pilot.pause()
@@ -335,17 +346,15 @@ async def test_footer_inputs(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
 
-        while app.editor is None:
-            await pilot.pause()
-
-        assert app.editor is not None
-        assert app.editor.text_input is not None
-        app.editor.text = "select 1"
+        editor = await wait_for_editor(pilot, app)
+        assert editor.text_input is not None
+        editor.text = "select 1"
 
         await pilot.press("ctrl+o")
         await pilot.pause()
@@ -356,7 +365,11 @@ async def test_footer_inputs(
         snap_results.append(await app_snapshot(app, "Save Input visible"))
 
         await pilot.press("escape")
-        await pilot.pause(0.1)
+        await wait_for(
+            pilot,
+            lambda: not editor.query("#textarea__save_input"),
+            description="the Save Input to be dismissed",
+        )
         snap_results.append(await app_snapshot(app, "No Input visible"))
 
         await pilot.press("ctrl+f")
@@ -377,6 +390,7 @@ async def test_footer_inputs(
 async def test_selected_queries(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #929: the queries at the cursor or selection are
     returned once each, in the order they appear in the buffer."""
@@ -387,16 +401,15 @@ async def test_selected_queries(
     async with app.run_test() as pilot:
         await wait_for_workers(app)
 
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        assert app.editor.text_input is not None
-        assert app.editor.text_input.is_syntax_aware
-        app.editor.text = f"{create}\n{insert}\n{select}\n{drop}\n"
+        assert editor.text_input is not None
+        assert editor.text_input.is_syntax_aware
+        editor.text = f"{create}\n{insert}\n{select}\n{drop}\n"
         await pilot.pause()
 
         # tree-sitter does not capture the semicolons in buffer order
-        assert find_separators(app.editor.text) == [
+        assert find_separators(editor.text) == [
             (0, 25),
             (1, 27),
             (2, 18),
@@ -404,40 +417,40 @@ async def test_selected_queries(
         ]
 
         # the whole buffer
-        app.editor.selection = Selection((0, 0), (4, 0))
-        assert app.editor.selected_queries() == [create, insert, select, drop]
+        editor.selection = Selection((0, 0), (4, 0))
+        assert editor.selected_queries() == [create, insert, select, drop]
 
         # a reverse selection is the same as a forward one
-        app.editor.selection = Selection((4, 0), (0, 0))
-        assert app.editor.selected_queries() == [create, insert, select, drop]
+        editor.selection = Selection((4, 0), (0, 0))
+        assert editor.selected_queries() == [create, insert, select, drop]
 
         # a selection that partially covers two queries runs both of them
-        app.editor.selection = Selection((1, 5), (2, 5))
-        assert app.editor.selected_queries() == [insert, select]
+        editor.selection = Selection((1, 5), (2, 5))
+        assert editor.selected_queries() == [insert, select]
 
         # a cursor inside a query runs only that query
         for row, query in enumerate([create, insert, select, drop]):
-            app.editor.selection = Selection((row, 3), (row, 3))
-            assert app.editor.selected_queries() == [query]
+            editor.selection = Selection((row, 3), (row, 3))
+            assert editor.selected_queries() == [query]
 
         # a cursor just after a semicolon runs the query it terminates,
         # not the one that follows it
-        app.editor.selection = Selection((1, 27), (1, 27))
-        assert app.editor.selected_queries() == [insert]
+        editor.selection = Selection((1, 27), (1, 27))
+        assert editor.selected_queries() == [insert]
 
         # a cursor at the start of a query runs that query
-        app.editor.selection = Selection((2, 0), (2, 0))
-        assert app.editor.selected_queries() == [select]
+        editor.selection = Selection((2, 0), (2, 0))
+        assert editor.selected_queries() == [select]
 
         # a cursor in the trailing whitespace runs the last query
-        app.editor.selection = Selection((4, 0), (4, 0))
-        assert app.editor.selected_queries() == [drop]
+        editor.selection = Selection((4, 0), (4, 0))
+        assert editor.selected_queries() == [drop]
 
         # a semicolon in a string literal does not separate queries
-        app.editor.text = "select 'a;b'"
+        editor.text = "select 'a;b'"
         await pilot.pause()
-        app.editor.selection = Selection((0, 0), (0, 0))
-        assert app.editor.selected_queries() == ["select 'a;b'"]
+        editor.selection = Selection((0, 0), (0, 0))
+        assert editor.selected_queries() == ["select 'a;b'"]
 
 
 @pytest.mark.asyncio
@@ -445,6 +458,7 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A failed symbol scan warns instead of crashing the app.
 
@@ -479,10 +493,7 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        editor = app.editor
-        assert editor is not None
+        editor = await wait_for_editor(pilot, app)
         monkeypatch.setattr("harlequin.components.code_editor.find_symbols", flaky_scan)
 
         # the first failure of a streak warns ...
@@ -499,11 +510,11 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
 
         # a successful scan resets the streak
         await editor.read_symbols("select 1").wait()
-        for _ in range(20):
-            if not editor._symbol_scan_failed:
-                break
-            await pilot.pause(0.05)
-        assert not editor._symbol_scan_failed
+        await wait_for(
+            pilot,
+            lambda: not editor._symbol_scan_failed,
+            description="the successful scan to reset the failure streak",
+        )
         assert warning_count() == 1
 
         # so the next failure warns again
@@ -521,6 +532,7 @@ async def test_symbol_scan_failure_warns_once_per_failure_streak(
 async def test_selected_queries_split_on_character_columns(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #1015: the editor and `harlequin.statements` split
     at the same place.
@@ -533,66 +545,70 @@ async def test_selected_queries_split_on_character_columns(
     async with app.run_test() as pilot:
         await wait_for_workers(app)
 
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        app.editor.text = "select '日本語';select 2"
+        editor.text = "select '日本語';select 2"
         await pilot.pause()
-        app.editor.selection = Selection((0, 0), (0, 22))
-        assert app.editor.selected_queries() == ["select '日本語';", "select 2"]
-        assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]
+        editor.selection = Selection((0, 0), (0, 22))
+        assert editor.selected_queries() == ["select '日本語';", "select 2"]
+        assert editor.selected_queries() == [s.sql for s in split(editor.text)]
 
 
 @pytest.mark.asyncio
 async def test_selected_queries_do_not_split_dollar_quoted_bodies(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """Regression test for #1019: the editor and `harlequin.statements` agree,
     and neither treats a semicolon inside `$$ ... $$` as a separator."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
 
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         script = "create function f() as $$ select 1; $$; select 2"
-        app.editor.text = script
+        editor.text = script
         await pilot.pause()
-        app.editor.selection = Selection((0, 0), (0, len(script)))
-        assert app.editor.selected_queries() == [
+        editor.selection = Selection((0, 0), (0, len(script)))
+        assert editor.selected_queries() == [
             "create function f() as $$ select 1; $$;",
             "select 2",
         ]
-        assert app.editor.selected_queries() == [s.sql for s in split(app.editor.text)]
+        assert editor.selected_queries() == [s.sql for s in split(editor.text)]
 
 
 @pytest.mark.asyncio
 async def test_buffer_symbols_reach_the_completers(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None or app.editor_collection.word_completer is None:
-            await pilot.pause()
-        word_completer = app.editor_collection.word_completer
+        editor = await wait_for_editor(pilot, app)
+        word_completer = await wait_for_value(
+            pilot,
+            lambda: app.editor_collection.word_completer,
+            description="the word completer to be built",
+        )
         member_completer = app.editor_collection.member_completer
         assert member_completer is not None
 
         assert not word_completer("my_c")
         assert not member_completer("t.my_c")
 
-        app.editor.text = (
+        editor.text = (
             "with my_cte as (select 1 as my_col) select t.my_col from my_cte t"
         )
 
         # the editor re-reads the buffer on a timer
-        for _ in range(20):
-            if word_completer("my_c"):
-                break
-            await pilot.pause(0.1)
-
+        await wait_for(
+            pilot,
+            lambda: bool(word_completer("my_c")),
+            description="the buffer's own symbols to reach the word completer",
+            interval=POLL_INTERVAL,
+        )
         assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")
         assert member_completer("t.my_c") == [(("t.my_col", "buf"), "t.my_col")]
 
@@ -601,19 +617,20 @@ async def test_buffer_symbols_reach_the_completers(
         first_buffer_id = app.editor_collection.active
         assert first_buffer_id is not None
         await app.editor_collection.action_new_buffer()
-        for _ in range(20):
-            if not word_completer("my_c"):
-                break
-            await pilot.pause(0.1)
-
-        assert not word_completer("my_c")
+        await wait_for(
+            pilot,
+            lambda: not word_completer("my_c"),
+            description="the new buffer's symbols to replace the old one's",
+            interval=POLL_INTERVAL,
+        )
 
         app.editor_collection.tabs.active = first_buffer_id
-        for _ in range(20):
-            if word_completer("my_c"):
-                break
-            await pilot.pause(0.1)
-
+        await wait_for(
+            pilot,
+            lambda: bool(word_completer("my_c")),
+            description="the first buffer's symbols to come back",
+            interval=POLL_INTERVAL,
+        )
         assert word_completer("my_c")[0] == (("my_cte", "buf"), "my_cte")
 
 
@@ -621,27 +638,29 @@ async def test_buffer_symbols_reach_the_completers(
 async def test_numbers_do_not_open_the_completion_list(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A number leaves the list closed, so enter inserts a newline."""
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None or app.editor_collection.word_completer is None:
-            await pilot.pause()
-
-        app.editor_collection.word_completer.update_buffer_symbols(
-            BufferSymbols(names=("foo_1",))
+        editor = await wait_for_editor(pilot, app)
+        word_completer = await wait_for_value(
+            pilot,
+            lambda: app.editor_collection.word_completer,
+            description="the word completer to be built",
         )
-        app.editor.focus()
+        word_completer.update_buffer_symbols(BufferSymbols(names=("foo_1",)))
+        editor.focus()
 
         await pilot.press("1")
         await pilot.pause()
         await wait_for_workers(app)
         await pilot.pause()
-        assert not app.editor.completion_list.is_open
+        assert not editor.completion_list.is_open
 
         await pilot.press("enter")
         await pilot.pause()
-        assert app.editor.text == "1\n"
+        assert editor.text == "1\n"
 
 
 def press_alt_e(app: Harlequin) -> None:
@@ -661,6 +680,7 @@ async def test_external_editor_round_trip(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """The buffer goes out to $EDITOR as a file and comes back as one edit.
 
@@ -680,24 +700,23 @@ async def test_external_editor_round_trip(
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1"
+        editor.focus()
         await pilot.press("ctrl+end")
 
         press_alt_e(app)
         await pilot.pause()
 
         assert seen_text == ["select 1"]
-        assert app.editor.text == "select 2"
+        assert editor.text == "select 2"
         # the cursor comes back where it was, not at the start of the buffer
-        assert app.editor.selection == Selection((0, 8), (0, 8))
+        assert editor.selection == Selection((0, 8), (0, 8))
 
         # the round trip is one undo away
         await pilot.press("ctrl+z")
         await pilot.pause()
-        assert app.editor.text == "select 1"
+        assert editor.text == "select 1"
 
 
 @pytest.mark.asyncio
@@ -705,6 +724,7 @@ async def test_external_editor_nonzero_exit_discards_the_edit(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     monkeypatch.setenv("EDITOR", "ed")
 
@@ -716,15 +736,14 @@ async def test_external_editor_nonzero_exit_discards_the_edit(
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1"
+        editor.focus()
 
         press_alt_e(app)
         await pilot.pause()
 
-        assert app.editor.text == "select 1"
+        assert editor.text == "select 1"
         notification = list(app._notifications)[-1]
         assert "status 1" in notification.message
         assert notification.severity == "warning"
@@ -735,23 +754,22 @@ async def test_external_editor_without_an_editor_named(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1"
+        editor.focus()
 
         press_alt_e(app)
-        await pilot.pause()
-
-        assert isinstance(app.screen, ErrorModal)
-        assert "$EDITOR" in app.screen.text
-        assert app.editor.text == "select 1"
+        modal = await wait_for_error_modal(pilot, app)
+        assert "$EDITOR" in modal.text
+        assert editor.text == "select 1"
 
 
 @pytest.mark.asyncio
@@ -759,23 +777,22 @@ async def test_external_editor_in_a_terminal_that_cannot_suspend(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """The real suspend, which the headless driver refuses, is an error modal."""
     monkeypatch.setenv("EDITOR", sys.executable)
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1"
+        editor.focus()
 
         press_alt_e(app)
-        await pilot.pause()
-
-        assert isinstance(app.screen, ErrorModal)
-        assert "suspend" in app.screen.text
-        assert app.editor.text == "select 1"
+        modal = await wait_for_error_modal(pilot, app)
+        assert "suspend" in modal.text
+        assert editor.text == "select 1"
         assert app.is_running
 
 
@@ -784,6 +801,7 @@ async def test_external_editor_clamps_the_cursor_to_a_shorter_buffer(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """A position the edited buffer no longer holds lands at the nearest one."""
     monkeypatch.setenv("EDITOR", "ed")
@@ -796,15 +814,14 @@ async def test_external_editor_clamps_the_cursor_to_a_shorter_buffer(
 
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1\nfrom foobar"
-        app.editor.focus()
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1\nfrom foobar"
+        editor.focus()
         await pilot.press("ctrl+end")
-        assert app.editor.selection == Selection((1, 11), (1, 11))
+        assert editor.selection == Selection((1, 11), (1, 11))
 
         press_alt_e(app)
         await pilot.pause()
 
-        assert app.editor.text == "select 1\nfrom f"
-        assert app.editor.selection == Selection((1, 6), (1, 6))
+        assert editor.text == "select 1\nfrom f"
+        assert editor.selection == Selection((1, 6), (1, 6))

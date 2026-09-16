@@ -12,7 +12,12 @@ from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 from harlequin.autocomplete import HarlequinCompletion
-from harlequin.catalog import CatalogItem
+from harlequin.catalog import Catalog, CatalogItem
+from harlequin.components import ErrorModal
+from harlequin.components.code_editor import CodeEditor
+from harlequin.components.data_catalog.database_tree import DatabaseTree
+from harlequin.components.results_viewer import ResultsTable
+from tests.waiting import wait_for, wait_for_value
 
 
 @pytest.fixture(autouse=True)
@@ -231,14 +236,19 @@ def expand_catalog_node() -> Callable[[Pilot, TreeNode[CatalogItem]], Awaitable[
 
     async def expand(pilot: Pilot, node: TreeNode[CatalogItem]) -> None:
         node.expand()
-        while True:
+
+        def children_are_rendered() -> bool:
             data = node.data
-            if data is None or (
+            return data is None or (
                 getattr(data, "loaded", True)
                 and len(node.children) == len(data.children)
-            ):
-                return
-            await pilot.pause()
+            )
+
+        await wait_for(
+            pilot,
+            children_are_rendered,
+            description=f"the children of {node.label!s} to be rendered",
+        )
 
     return expand
 
@@ -254,3 +264,115 @@ def transaction_button_visible() -> Callable[[Harlequin], bool]:
         )
 
     return fn
+
+
+@pytest.fixture
+def wait_for_editor() -> Callable[[Pilot, Harlequin], Awaitable[CodeEditor]]:
+    """The Query Editor, once the app has one.
+
+    The editor collection is mounted lazily, so an app that is running does not
+    yet have an editor to type into.
+    """
+
+    async def editor(pilot: Pilot, app: Harlequin) -> CodeEditor:
+        return await wait_for_value(
+            pilot, lambda: app.editor, description="the Query Editor to be mounted"
+        )
+
+    return editor
+
+
+@pytest.fixture
+def wait_for_table() -> Callable[[Pilot, Harlequin], Awaitable[ResultsTable]]:
+    """The table the Results Viewer is showing, once a query has filled one in."""
+
+    async def table(pilot: Pilot, app: Harlequin) -> ResultsTable:
+        return await wait_for_value(
+            pilot,
+            app.results_viewer.get_visible_table,
+            description="the Results Viewer to show a table",
+        )
+
+    return table
+
+
+@pytest.fixture
+def rendered_catalog() -> Callable[..., Awaitable[Catalog]]:
+    """The catalog the tree is holding, once it is not `replacing`.
+
+    `wait_for_workers` returns when `get_catalog()` has answered, which is
+    before the app has handled the message carrying its result, so reading the
+    tree straight after it races the message pump.
+    """
+
+    async def catalog(
+        pilot: Pilot, app: Harlequin, replacing: object = None
+    ) -> Catalog:
+        tree = app.data_catalog.database_tree
+        return await wait_for_value(
+            pilot,
+            lambda: tree.catalog if tree.catalog is not replacing else None,
+            description=(
+                "the data catalog to be replaced"
+                if replacing is not None
+                else "the data catalog to load"
+            ),
+        )
+
+    return catalog
+
+
+@pytest.fixture
+def first_database_node() -> Callable[
+    [Pilot, Harlequin], Awaitable[TreeNode[CatalogItem]]
+]:
+    """The tree's first database node, once the catalog has been rendered.
+
+    Setting the catalog and mounting its nodes are two steps, so a tree with a
+    catalog can still have no children.
+    """
+
+    async def node(pilot: Pilot, app: Harlequin) -> TreeNode[CatalogItem]:
+        tree = app.data_catalog.database_tree
+        return await wait_for_value(
+            pilot,
+            lambda: tree.root.children[0] if tree.root.children else None,
+            description="the data catalog to render a database",
+        )
+
+    return node
+
+
+@pytest.fixture
+def wait_for_error_modal() -> Callable[[Pilot, Harlequin], Awaitable[ErrorModal]]:
+    """The error modal on top of the stack, once the app has raised one."""
+
+    async def modal(pilot: Pilot, app: Harlequin) -> ErrorModal:
+        return await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ErrorModal) else None,
+            description="an error modal",
+        )
+
+    return modal
+
+
+@pytest.fixture
+def wait_for_catalog_tree() -> Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]]:
+    """The Data Catalog's database tree, once it has rendered what it found.
+
+    The tree's own background loader is not one of the workers
+    `wait_for_workers` waits on, so an app whose workers are all done can still
+    be showing an empty catalog.
+    """
+
+    async def tree(pilot: Pilot, app: Harlequin) -> DatabaseTree:
+        database_tree = app.data_catalog.database_tree
+        await wait_for(
+            pilot,
+            lambda: not database_tree.loading and bool(database_tree.root.children),
+            description="the Data Catalog to render its databases",
+        )
+        return database_tree
+
+    return tree

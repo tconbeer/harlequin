@@ -6,8 +6,11 @@ from typing import Awaitable, Callable
 
 import pytest
 from textual import events
+from textual.pilot import Pilot
 
 from harlequin import Harlequin, HarlequinAdapter
+from harlequin.components.code_editor import CodeEditor
+from harlequin.components.results_viewer import ResultsTable
 from harlequin.config import load_profile_and_keymaps
 
 QUERY = dedent(
@@ -33,6 +36,8 @@ async def test_results_viewer_bindings(
     duckdb_adapter: type[HarlequinAdapter],
     data_dir: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     config_path = (
         data_dir / "functional_tests" / "test_keymap_from_config" / "config.toml"
@@ -47,15 +52,13 @@ async def test_results_viewer_bindings(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         q = QUERY
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")
 
-        while (table := app.results_viewer.get_visible_table()) is None:
-            await pilot.pause()
+        table = await wait_for_table(pilot, app)
 
         assert table is not None
         assert table.cursor_coordinate == (0, 0)
@@ -96,6 +99,7 @@ async def test_alt_letter_binding_beats_the_focused_editor(
     duckdb_adapter: type[HarlequinAdapter],
     data_dir: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """alt+n opens a buffer instead of typing an "n" into the focused one."""
     config_path = (
@@ -111,11 +115,10 @@ async def test_alt_letter_binding_beats_the_focused_editor(
     )
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        app.editor.text = "select 1"
-        app.editor.focus()
+        editor.text = "select 1"
+        editor.focus()
         await pilot.press("ctrl+end")
         assert app.editor_collection.tab_count == 1
 
@@ -124,11 +127,11 @@ async def test_alt_letter_binding_beats_the_focused_editor(
         await pilot.wait_for_scheduled_animations()
 
         assert app.editor_collection.tab_count == 2
-        assert app.editor.text == ""
+        assert editor.text == ""
 
         # the buffer the editor was on did not get an "n" typed into it
         await pilot.press("ctrl+k")
         await pilot.pause()
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-1"
-        assert app.editor.text == "select 1"
+        assert editor.text == "select 1"

@@ -1,8 +1,10 @@
 from typing import Awaitable, Callable
 
 import pytest
+from textual.pilot import Pilot
 
 from harlequin import Harlequin
+from harlequin.components.code_editor import CodeEditor
 
 
 @pytest.mark.asyncio
@@ -10,11 +12,11 @@ async def test_help_screen(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert len(app.screen_stack) == 1
 
         await pilot.press("f1")

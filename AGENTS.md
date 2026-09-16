@@ -66,6 +66,8 @@ uv run --python 3.12 --group test pytest -m 'py12 and not online' --snapshot-upd
 ```
 
 - Async tests need `@pytest.mark.asyncio`. Await `wait_for_workers(app)` (fixture) rather than sleeping — it skips the catalog background loader, which never finishes on its own.
+- **Every wait lives in `tests/waiting.py`, and waits on a condition rather than a duration.** A test that sleeps, or pumps a fixed number of times, asserts that the machine it runs on is fast enough, and fails on a loaded runner for a reason nothing in it explains. `wait_until` polls state another thread or process sets; `wait_for` / `wait_for_value` / `wait_for_messages` pump the app while they poll and name what never happened when they give up; `settle` is the only duration there is, for establishing that nothing *else* happened. `free_port` draws from outside the range the OS hands out on its own, and `on_a_free_port` retries a child that lost the port anyway. The app-shaped conditions are fixtures over those, in `tests/functional_tests/conftest.py`: `wait_for_editor`, `wait_for_table`, `wait_for_error_modal`, `wait_for_catalog_tree`, `rendered_catalog`, `first_database_node`, `expand_catalog_node`.
+- `wait_for_workers` returns when the worker's future resolves, which is *before* the app has handled the message carrying the result. Read app state through one of the waits above, never straight after it.
 - Shared fixtures: `tests/conftest.py` builds throwaway DuckDB/SQLite databases (`tiny_*`, `small_*`) and app instances (`app`, `app_all_adapters`, `app_small_duck`, …); `app_all_adapters` is parametrized so one test body covers both bundled adapters.
 
 ## Import hygiene

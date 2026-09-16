@@ -4,10 +4,24 @@ from pathlib import Path
 from typing import Awaitable, Callable, List
 
 import pytest
+from textual.pilot import Pilot
 
 from harlequin import Harlequin
 from harlequin.adapter import HarlequinAdapter
 from harlequin.components import ExportScreen
+from harlequin.components.code_editor import CodeEditor
+from harlequin.components.results_viewer import ResultsTable
+from tests.waiting import wait_for, wait_for_value
+
+
+async def open_export_screen(pilot: Pilot, app: Harlequin) -> ExportScreen:
+    """Press the key that opens the Data Exporter, and return the screen."""
+    await pilot.press("ctrl+e")
+    return await wait_for_value(
+        pilot,
+        lambda: app.screen if isinstance(app.screen, ExportScreen) else None,
+        description="the Export screen",
+    )
 
 
 @pytest.mark.asyncio
@@ -33,51 +47,42 @@ async def test_export(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     transaction_button_visible: Callable[[Harlequin], bool],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     app = app_all_adapters
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1 as a, 2 as b"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1 as a, 2 as b"
         await pilot.press("ctrl+j")  # run query
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for_table(pilot, app)
         assert len(app.screen_stack) == 1
 
-        await pilot.press("ctrl+e")
-        await pilot.pause()
+        export_screen = await open_export_screen(pilot, app)
         assert len(app.screen_stack) == 2
-        assert app.screen.id == "export_screen"
-        assert isinstance(app.screen, ExportScreen)
+        assert export_screen.id == "export_screen"
         snap_results.append(await app_snapshot(app, "Export Screen"))
 
-        app.screen.file_input.value = f"/tmp/foo-bar-static/{filename}"
+        export_screen.file_input.value = f"/tmp/foo-bar-static/{filename}"
         await pilot.pause()
         snap_results.append(await app_snapshot(app, "Export with Path"))
         export_path = tmp_path / filename
-        app.screen.file_input.value = str(export_path)
+        export_screen.file_input.value = str(export_path)
         await pilot.pause()
         await pilot.press("enter")
-        await wait_for_workers(app)
-        await pilot.pause()
-
-        # test the written file
-        assert export_path.is_file()
+        # the export runs on a worker, and the screen it was on comes back
+        await wait_for(
+            pilot,
+            lambda: len(app.screen_stack) == 1 and export_path.is_file(),
+            description="the export to be written and the Export screen to close",
+        )
         if export_path.suffix == ".json":
             with export_path.open("r") as f:
                 line = f.readline()
                 assert line == '{"a":1,"b":2}\n'
 
-        # ensure we return to the main screen after export
-        assert len(app.screen_stack) == 1
-        await wait_for_workers(app)
-        await pilot.pause()
         snap_results.append(await app_snapshot(app, "After Export"))
 
         if not transaction_button_visible(app):
@@ -89,6 +94,8 @@ async def test_export_result_with_no_rows(
     app_all_adapters: Harlequin,
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """A query that matched nothing exports a header and no rows.
 
@@ -100,24 +107,20 @@ async def test_export_result_with_no_rows(
     app = app_all_adapters
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1 as a, 2 as b where false"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1 as a, 2 as b where false"
         await pilot.press("ctrl+j")
-        for _ in range(3):
-            await wait_for_workers(app)
-            await pilot.pause()
+        await wait_for_table(pilot, app)
 
-        await pilot.press("ctrl+e")
-        await pilot.pause()
-        assert isinstance(app.screen, ExportScreen)
+        export_screen = await open_export_screen(pilot, app)
 
         export_path = tmp_path / "empty.csv"
-        app.screen.file_input.value = str(export_path)
+        export_screen.file_input.value = str(export_path)
         await pilot.pause()
         await pilot.press("enter")
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for(
+            pilot, export_path.is_file, description="the export to be written"
+        )
 
         assert export_path.read_text() == "a,b\n"
         # back on the main screen, i.e. no error modal
@@ -129,6 +132,8 @@ async def test_export_under_a_limit_stops_at_the_limit(
     app: Harlequin,
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """The fetch asks for one row more than the limit, to learn there are more.
 
@@ -137,28 +142,21 @@ async def test_export_under_a_limit_stops_at_the_limit(
     """
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         app.run_query_bar.limit_input.value = "5"
-        app.editor.text = "select * from range(100)"
+        editor.text = "select * from range(100)"
         await pilot.press("ctrl+j")
-        for _ in range(3):
-            await wait_for_workers(app)
-            await pilot.pause()
-
-        table = app.results_viewer.get_visible_table()
-        assert table is not None
+        table = await wait_for_table(pilot, app)
         assert table.fetch_truncated is True
 
-        await pilot.press("ctrl+e")
-        await pilot.pause()
-        assert isinstance(app.screen, ExportScreen)
+        export_screen = await open_export_screen(pilot, app)
         export_path = tmp_path / "limited.csv"
-        app.screen.file_input.value = str(export_path)
+        export_screen.file_input.value = str(export_path)
         await pilot.pause()
         await pilot.press("enter")
-        await wait_for_workers(app)
-        await pilot.pause()
+        await wait_for(
+            pilot, export_path.is_file, description="the export to be written"
+        )
 
         assert len(export_path.read_text().splitlines()) == 6  # header and 5 rows
 
@@ -168,6 +166,8 @@ async def test_export_starts_at_the_export_path(
     duckdb_adapter: type[HarlequinAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """`-o` names the folder the Data Exporter opens in, so a user who exports
     into the same place every time types a file name and nothing else."""
@@ -178,27 +178,22 @@ async def test_export_starts_at_the_export_path(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1 as a"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1 as a"
         await pilot.press("ctrl+j")
-        for _ in range(3):
-            await wait_for_workers(app)
-            await pilot.pause()
+        await wait_for_table(pilot, app)
 
-        await pilot.press("ctrl+e")
-        await pilot.pause()
-        assert isinstance(app.screen, ExportScreen)
-        assert app.screen.file_input.value == f"{tmp_path / 'exports'}{os.sep}"
+        export_screen = await open_export_screen(pilot, app)
+        assert export_screen.file_input.value == f"{tmp_path / 'exports'}{os.sep}"
 
         # the folder does not exist yet, and exporting into it makes it
-        app.screen.file_input.value += "one.csv"
+        export_screen.file_input.value += "one.csv"
         await pilot.pause()
         await pilot.press("enter")
-        await wait_for_workers(app)
-        await pilot.pause()
+        exported = tmp_path / "exports" / "one.csv"
+        await wait_for(pilot, exported.is_file, description="the export to be written")
 
-        assert (tmp_path / "exports" / "one.csv").read_text() == "a\n1\n"
+        assert exported.read_text() == "a\n1\n"
         assert len(app.screen_stack) == 1
 
 
@@ -207,6 +202,8 @@ async def test_an_export_path_with_a_file_name_picks_its_format(
     duckdb_adapter: type[HarlequinAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """A whole path prefills whole, and the extension chooses the format the
     same way a typed one does."""
@@ -218,16 +215,11 @@ async def test_an_export_path_with_a_file_name_picks_its_format(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
-        app.editor.text = "select 1 as a"
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select 1 as a"
         await pilot.press("ctrl+j")
-        for _ in range(3):
-            await wait_for_workers(app)
-            await pilot.pause()
+        await wait_for_table(pilot, app)
 
-        await pilot.press("ctrl+e")
-        await pilot.pause()
-        assert isinstance(app.screen, ExportScreen)
-        assert app.screen.file_input.value == str(export_path)
-        assert app.screen.format_select.value == "parquet"
+        export_screen = await open_export_screen(pilot, app)
+        assert export_screen.file_input.value == str(export_path)
+        assert export_screen.format_select.value == "parquet"

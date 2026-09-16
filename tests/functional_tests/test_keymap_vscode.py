@@ -6,9 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 from textual.css.query import NoMatches
+from textual.pilot import Pilot
 from textual.widgets import Input
 
 from harlequin import Harlequin
+from harlequin.components.code_editor import CodeEditor
+from harlequin.components.results_viewer import ResultsTable
 
 QUERY = dedent(
     """
@@ -33,106 +36,106 @@ async def test_editor_bindings(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         q = QUERY
-        app.editor.text = q
-        assert app.editor.selection.start == app.editor.selection.end == (0, 0)
+        editor.text = q
+        assert editor.selection.start == editor.selection.end == (0, 0)
 
         # simple navigation
         await pilot.press("down")
-        assert app.editor.selection.start == app.editor.selection.end == (1, 0)
+        assert editor.selection.start == editor.selection.end == (1, 0)
         await pilot.press("right")
-        assert app.editor.selection.start == app.editor.selection.end == (1, 1)
+        assert editor.selection.start == editor.selection.end == (1, 1)
         await pilot.press("right")
-        assert app.editor.selection.start == app.editor.selection.end == (1, 2)
+        assert editor.selection.start == editor.selection.end == (1, 2)
         await pilot.press("left")
-        assert app.editor.selection.start == app.editor.selection.end == (1, 1)
+        assert editor.selection.start == editor.selection.end == (1, 1)
         await pilot.press("up")
-        assert app.editor.selection.start == app.editor.selection.end == (0, 1)
+        assert editor.selection.start == editor.selection.end == (0, 1)
         await pilot.press("ctrl+right")
-        assert app.editor.selection.start == app.editor.selection.end == (0, 6)
+        assert editor.selection.start == editor.selection.end == (0, 6)
         await pilot.press("ctrl+left")
-        assert app.editor.selection.start == app.editor.selection.end == (0, 0)
+        assert editor.selection.start == editor.selection.end == (0, 0)
         await pilot.press("ctrl+end")
-        assert app.editor.selection.start == app.editor.selection.end == (11, 18)
+        assert editor.selection.start == editor.selection.end == (11, 18)
         await pilot.press("ctrl+home")
-        assert app.editor.selection.start == app.editor.selection.end == (0, 0)
+        assert editor.selection.start == editor.selection.end == (0, 0)
 
         # simple selection
         await pilot.press("shift+down")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (1, 0)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (1, 0)
         await pilot.press("shift+right")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (1, 1)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (1, 1)
         await pilot.press("shift+right")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (1, 2)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (1, 2)
         await pilot.press("shift+left")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (1, 1)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (1, 1)
         await pilot.press("shift+up")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (0, 1)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (0, 1)
         await pilot.press("ctrl+shift+right")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (0, 6)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (0, 6)
         await pilot.press("ctrl+shift+left")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (0, 0)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (0, 0)
         await pilot.press("ctrl+shift+end")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (11, 18)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (11, 18)
         await pilot.press("ctrl+shift+home")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (0, 0)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (0, 0)
         await pilot.press("ctrl+a")
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (11, 18)
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (11, 18)
 
         # cut/copy/paste
         await pilot.press("ctrl+c")
-        assert app.editor.text == QUERY
-        assert app.editor.text_input is not None
-        assert app.editor.text_input.clipboard == QUERY
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (11, 18)
+        assert editor.text == QUERY
+        assert editor.text_input is not None
+        assert editor.text_input.clipboard == QUERY
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (11, 18)
         await pilot.press("ctrl+x")
-        assert app.editor.text == ""
-        assert app.editor.text_input.clipboard == QUERY
-        assert app.editor.selection.start == (0, 0)
-        assert app.editor.selection.end == (0, 0)
+        assert editor.text == ""
+        assert editor.text_input.clipboard == QUERY
+        assert editor.selection.start == (0, 0)
+        assert editor.selection.end == (0, 0)
         await pilot.press("ctrl+v")
-        assert app.editor.text == QUERY
-        assert app.editor.selection.start == app.editor.selection.end == (11, 18)
+        assert editor.text == QUERY
+        assert editor.selection.start == editor.selection.end == (11, 18)
 
         await pilot.press("a")
-        assert app.editor.text == QUERY + "a"
+        assert editor.text == QUERY + "a"
         await pilot.press("escape")  # dismiss autocomplete
         await pilot.press("enter")
-        assert app.editor.text == QUERY + "a\n    "
+        assert editor.text == QUERY + "a\n    "
 
         # undo/redo
         await pilot.press("ctrl+z")
-        assert app.editor.text == QUERY + "a"
+        assert editor.text == QUERY + "a"
         await pilot.press("ctrl+y")
-        assert app.editor.text == QUERY + "a\n    "
+        assert editor.text == QUERY + "a\n    "
 
         # delete
         await pilot.press("backspace")
-        assert app.editor.text == QUERY + "a\n   "
+        assert editor.text == QUERY + "a\n   "
         await pilot.press("shift+delete")
-        assert app.editor.text == QUERY + "a"
+        assert editor.text == QUERY + "a"
         await pilot.press("backspace")
-        assert app.editor.text == QUERY
+        assert editor.text == QUERY
         await pilot.press("ctrl+home")
         await pilot.press("delete")
-        assert app.editor.text == QUERY[1:]
+        assert editor.text == QUERY[1:]
 
         # find
         await pilot.press("ctrl+f")
@@ -173,18 +176,18 @@ async def test_results_viewer_bindings(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
         q = QUERY
-        app.editor.text = q
+        editor.text = q
         await pilot.press("ctrl+j")
 
-        while (table := app.results_viewer.get_visible_table()) is None:
-            await pilot.pause()
+        table = await wait_for_table(pilot, app)
 
         assert table is not None
         assert table.cursor_coordinate == (0, 0)
@@ -253,14 +256,15 @@ async def test_results_viewer_bindings(
 
         # copy
         await pilot.press("ctrl+c")
-        assert app.editor.text_input is not None
-        assert app.editor.text_input.clipboard.startswith("1\t2\t3")
+        assert editor.text_input is not None
+        assert editor.text_input.clipboard.startswith("1\t2\t3")
 
 
 @pytest.mark.asyncio
 async def test_editor_bindings_do_not_beat_the_find_input(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """ctrl+w and ctrl+k edit the find input, rather than closing or switching a buffer.
 
@@ -269,8 +273,7 @@ async def test_editor_bindings_do_not_beat_the_find_input(
     """
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         await pilot.press("ctrl+n")
         await pilot.pause()

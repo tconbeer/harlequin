@@ -1,8 +1,11 @@
 from typing import Awaitable, Callable, List
 
 import pytest
+from textual.pilot import Pilot
 
 from harlequin import Harlequin
+from harlequin.components.code_editor import CodeEditor
+from harlequin.components.data_catalog.database_tree import DatabaseTree
 
 
 @pytest.mark.asyncio
@@ -10,12 +13,14 @@ async def test_toggle_sidebar(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None or app.data_catalog.database_tree.loading:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
+        await wait_for_catalog_tree(pilot, app)
         # initialization
         sidebar = app.data_catalog
         assert not sidebar.disabled
@@ -49,14 +54,14 @@ async def test_toggle_full_screen(
     app: Harlequin,
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     async with app.run_test() as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         # initialization; all visible
-        app.editor.focus()
+        editor.focus()
         assert app.full_screen is False
         assert app.sidebar_hidden is False
         widgets = [app.data_catalog, app.editor_collection, app.results_viewer]
@@ -69,7 +74,7 @@ async def test_toggle_full_screen(
         await pilot.press("f10")
         # only editor visible
         assert not app.editor_collection.disabled
-        assert not app.editor.disabled
+        assert not editor.disabled
         assert not app.run_query_bar.disabled
         assert app.editor_collection.styles.width
         assert app.editor_collection.styles.width.value > 0
@@ -85,7 +90,7 @@ async def test_toggle_full_screen(
         assert not app.data_catalog.disabled
         assert app.full_screen
         assert not app.editor_collection.disabled
-        assert not app.editor.disabled
+        assert not editor.disabled
         snap_results.append(await app_snapshot(app, "Editor Full Screen with Sidebar"))
 
         await pilot.press("f10")
@@ -103,13 +108,13 @@ async def test_toggle_full_screen(
         assert app.sidebar_hidden
         assert app.data_catalog.disabled
         assert not app.editor_collection.disabled
-        assert not app.editor.disabled
+        assert not editor.disabled
         snap_results.append(await app_snapshot(app, "Sidebar hidden"))
 
         await pilot.press("f10")
         # only editor visible
         assert not app.editor_collection.disabled
-        assert not app.editor.disabled
+        assert not editor.disabled
         assert app.data_catalog.disabled
         assert app.results_viewer.disabled
         snap_results.append(
@@ -119,14 +124,14 @@ async def test_toggle_full_screen(
         await pilot.press("f10")
         # data catalog should still be hidden
         assert not app.editor_collection.disabled
-        assert not app.editor.disabled
+        assert not editor.disabled
         assert not app.run_query_bar.disabled
         assert app.data_catalog.disabled
         assert not app.results_viewer.disabled
         snap_results.append(
             await app_snapshot(app, "Exit Full Screen (sidebar remains hidden)")
         )
-        app.editor.text = "select 1"
+        editor.text = "select 1"
         await pilot.press("ctrl+j")
         # the query runs on a worker, and the Results Viewer cannot take focus
         # until it has results: pressing f10 before then full-screens whatever

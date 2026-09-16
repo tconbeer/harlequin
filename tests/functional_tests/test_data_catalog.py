@@ -19,15 +19,19 @@ from rich.style import Style
 from rich.text import Text
 from textual import work
 from textual.geometry import Offset
+from textual.pilot import Pilot
 from textual.widgets import Input, Tooltip
-from textual.worker import WorkerState
+from textual.worker import Worker, WorkerState
 
 from harlequin import Harlequin
 from harlequin.autocomplete.completers import BUFFER_TYPE_LABEL
 from harlequin.catalog import CatalogItem, InteractiveCatalogItem
 from harlequin.components import ErrorModal, ExportScreen
+from harlequin.components.code_editor import CodeEditor
 from harlequin.components.data_catalog.database_tree import DatabaseTree
+from harlequin.components.results_viewer import ResultsTable
 from harlequin_duckdb.adapter import DuckDbAdapter
+from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
 
 
 class MockS3Object(NamedTuple):
@@ -65,20 +69,20 @@ async def test_data_catalog(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     snap_results: List[bool] = []
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         catalog = app.data_catalog
         assert not catalog.database_tree.show_root
 
         # the catalog's background loader is not one of the workers waited on
         # above, so the root's children may not be there yet.
-        while catalog.database_tree.loading or not catalog.database_tree.root.children:
-            await pilot.pause()
+        await wait_for_catalog_tree(pilot, app)
 
         # this test app has two databases attached.
         dbs = catalog.database_tree.root.children
@@ -95,10 +99,14 @@ async def test_data_catalog(
         # node holds its children on `data` and only builds TreeNodes when it is
         # expanded, so that a huge catalog costs a screenful of nodes, not one
         # per object in the database.
-        assert isinstance(dbs[0].data, InteractiveCatalogItem)
-        while not dbs[0].data.loaded:
-            await pilot.pause(0.1)
-        assert len(dbs[0].data.children) == 2
+        first_db = dbs[0].data
+        assert isinstance(first_db, InteractiveCatalogItem)
+        await wait_for(
+            pilot,
+            lambda: first_db.loaded,
+            description="the first database's children to load",
+        )
+        assert len(first_db.children) == 2
         assert not dbs[0].children
         snap_results.append(await app_snapshot(app, "Initialization"))
 
@@ -115,8 +123,11 @@ async def test_data_catalog(
         # the schemas are on screen now, so the catalog probes them; wait, or the
         # snapshot catches "empty" still showing an expand arrow it will lose.
         for schema in dbs[0].children:
-            while not getattr(schema.data, "loaded", True):
-                await pilot.pause()
+            await wait_for(
+                pilot,
+                lambda node=schema: getattr(node.data, "loaded", True),
+                description=f"the columns of {schema.label!s} to be probed",
+            )
         snap_results.append(await app_snapshot(app, "small expanded"))
 
         # small's second schema is "main". click "main"
@@ -131,7 +142,7 @@ async def test_data_catalog(
         await pilot.press("ctrl+j")
         await pilot.pause()
         assert schema_main.is_expanded is True
-        assert app.editor.text == '"small"."main"'
+        assert editor.text == '"small"."main"'
         assert not catalog.has_focus
         snap_results.append(await app_snapshot(app, "Inserted small.main"))
 
@@ -158,10 +169,10 @@ async def test_data_catalog(
         assert mock_pyperclip.paste() == '"dob"'
 
         # reset the editor, then insert "dob"
-        app.editor.text = ""
+        editor.text = ""
         await pilot.press("ctrl+j")
         await pilot.pause()
-        assert app.editor.text == '"dob"'
+        assert editor.text == '"dob"'
         snap_results.append(await app_snapshot(app, "small.main.drivers.dob inserted"))
 
         assert all(snap_results)
@@ -171,31 +182,35 @@ async def test_data_catalog(
 async def test_double_click_inserts_node_into_editor(
     app_multi_duck: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_multi_duck
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         catalog = app.data_catalog
 
-        while catalog.database_tree.loading or not catalog.database_tree.root.children:
-            await pilot.pause()
+        await wait_for_catalog_tree(pilot, app)
 
         dbs = catalog.database_tree.root.children
-        assert isinstance(dbs[0].data, InteractiveCatalogItem)
-        while not dbs[0].data.loaded:
-            await pilot.pause(0.1)
+        first_db = dbs[0].data
+        assert isinstance(first_db, InteractiveCatalogItem)
+        await wait_for(
+            pilot,
+            lambda: first_db.loaded,
+            description="the first database's children to load",
+        )
 
         # a single click on "small" selects and expands it, but inserts nothing
         await pilot.click(catalog.__class__, offset=Offset(x=6, y=1))
         await pilot.pause()
-        assert app.editor.text == ""
+        assert editor.text == ""
 
         # a double click inserts the node's query name into the editor
         await pilot.double_click(catalog.__class__, offset=Offset(x=6, y=1))
         await pilot.pause()
-        assert app.editor.text == '"small"'
+        assert editor.text == '"small"'
         assert dbs[0].is_expanded is True
 
 
@@ -205,6 +220,7 @@ async def test_file_tree(
     data_dir: Path,
     app_snapshot: Callable[..., Awaitable[bool]],
     mock_pyperclip: MagicMock,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     test_dir = data_dir / "functional_tests" / "files"
@@ -214,8 +230,7 @@ async def test_file_tree(
         show_files=relative_test_dir,
     )
     async with app.run_test(size=(120, 36)) as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         catalog = app.data_catalog
         assert catalog.file_tree is not None
 
@@ -244,6 +259,7 @@ async def test_s3_tree(
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
     mock_boto3: None,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     snap_results: List[bool] = []
     app = Harlequin(
@@ -252,12 +268,15 @@ async def test_s3_tree(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         catalog = app.data_catalog
         assert catalog.s3_tree is not None
-        while not catalog.s3_tree.is_mounted:
-            await pilot.pause()
+        s3_tree = catalog.s3_tree
+        await wait_for(
+            pilot,
+            lambda: s3_tree.is_mounted,
+            description="the S3 tree to be mounted",
+        )
 
         await pilot.press("f6")  # focus catalog
         await pilot.press("k")  # show s3
@@ -281,6 +300,7 @@ async def test_s3_tree_does_not_crash_without_boto3(
     duckdb_adapter: Type[DuckDbAdapter],
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     app = Harlequin(
         duckdb_adapter((":memory:",)),
@@ -288,8 +308,7 @@ async def test_s3_tree_does_not_crash_without_boto3(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
         assert await app_snapshot(app, "Error visible")
 
 
@@ -299,20 +318,17 @@ async def test_context_menu(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     expand_catalog_node: Callable[..., Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     app = app_small_duck
     snap_results: List[bool] = []
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        while app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
 
         # we need to expand the data catalog to load items into the completer
-        while (
-            app.data_catalog.database_tree.loading
-            or not app.data_catalog.database_tree.root.children
-        ):
-            await pilot.pause()
+        await wait_for_catalog_tree(pilot, app)
         for db_node in app.data_catalog.database_tree.root.children:
             await expand_catalog_node(pilot, db_node)
             for schema_node in db_node.children:
@@ -369,6 +385,7 @@ def _file_tree_paths(app: Harlequin) -> Set[Path]:
 async def test_file_tree_refreshes_after_editor_save(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
 ) -> None:
     """
     Regression test for https://github.com/tconbeer/harlequin/issues/871:
@@ -377,34 +394,34 @@ async def test_file_tree_refreshes_after_editor_save(
     """
     app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
     async with app.run_test() as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
         assert app.data_catalog.file_tree is not None
 
         new_file = tmp_path / "saved_by_harlequin.sql"
         assert new_file not in _file_tree_paths(app)
 
-        app.editor.focus()
-        app.editor.text = "select 1"
+        editor.focus()
+        editor.text = "select 1"
         await pilot.press("ctrl+s")
         await pilot.pause()
-        save_input = app.editor.query_one("#textarea__save_input", Input)
+        save_input = editor.query_one("#textarea__save_input", Input)
         save_input.value = str(new_file)
         await pilot.press("enter")
 
-        for _ in range(100):
-            await pilot.pause()
-            if new_file in _file_tree_paths(app):
-                break
-
+        await wait_for(
+            pilot,
+            lambda: new_file in _file_tree_paths(app),
+            description="the file tree to show the saved file",
+        )
         assert new_file.is_file()
-        assert new_file in _file_tree_paths(app)
 
 
 @pytest.mark.asyncio
 async def test_file_tree_refreshes_after_export(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_table: Callable[[Pilot, Harlequin], Awaitable[ResultsTable]],
 ) -> None:
     """
     Regression test for https://github.com/tconbeer/harlequin/issues/871:
@@ -413,34 +430,31 @@ async def test_file_tree_refreshes_after_export(
     """
     app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
     async with app.run_test(size=(120, 36)) as pilot:
-        while app.editor is None:
-            await pilot.pause()
+        editor = await wait_for_editor(pilot, app)
 
-        app.editor.text = "select 1 as a, 2 as b"
+        editor.text = "select 1 as a, 2 as b"
         await pilot.press("ctrl+j")  # run query
-        for _ in range(100):
-            await pilot.pause()
-            if app.results_viewer.get_visible_table() is not None:
-                break
-        assert app.results_viewer.get_visible_table() is not None
+        await wait_for_table(pilot, app)
 
         export_path = tmp_path / "exported.csv"
         assert export_path not in _file_tree_paths(app)
 
         await pilot.press("ctrl+e")
-        while not isinstance(app.screen, ExportScreen):
-            await pilot.pause()
-        app.screen.file_input.value = str(export_path)
+        export_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ExportScreen) else None,
+            description="the Export screen",
+        )
+        export_screen.file_input.value = str(export_path)
         await pilot.pause()
         await pilot.press("enter")
 
-        for _ in range(100):
-            await pilot.pause()
-            if export_path in _file_tree_paths(app):
-                break
-
+        await wait_for(
+            pilot,
+            lambda: export_path in _file_tree_paths(app),
+            description="the file tree to show the exported file",
+        )
         assert export_path.is_file()
-        assert export_path in _file_tree_paths(app)
 
 
 class BlockingCatalogItem(InteractiveCatalogItem):
@@ -448,16 +462,19 @@ class BlockingCatalogItem(InteractiveCatalogItem):
 
     started: ClassVar[threading.Event] = threading.Event()
     release: ClassVar[threading.Event] = threading.Event()
+    returned: ClassVar[threading.Event] = threading.Event()
 
     def fetch_children(self) -> List[CatalogItem]:
         type(self).started.set()
         type(self).release.wait(timeout=10)
+        type(self).returned.set()
         return []
 
 
 @pytest.mark.asyncio
 async def test_reload_while_loader_is_fetching(
     duckdb_adapter: Type[DuckDbAdapter],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """Reloading the catalog mid-fetch must not crash the background loader.
 
@@ -469,12 +486,11 @@ async def test_reload_while_loader_is_fetching(
     """
     BlockingCatalogItem.started.clear()
     BlockingCatalogItem.release.clear()
+    BlockingCatalogItem.returned.clear()
 
     app = Harlequin(duckdb_adapter((":memory:",)))
     async with app.run_test(size=(120, 36)) as pilot:
-        tree = app.data_catalog.database_tree
-        while tree.loading:
-            await pilot.pause()
+        tree = await wait_for_catalog_tree(pilot, app)
 
         item = BlockingCatalogItem(
             qualified_identifier="blocking",
@@ -486,14 +502,25 @@ async def test_reload_while_loader_is_fetching(
         tree._add_to_load_queue(item, priority=0)
 
         # wait until the adapter call is actually in flight
-        while not BlockingCatalogItem.started.is_set():
-            await pilot.pause()
+        await wait_for(
+            pilot,
+            BlockingCatalogItem.started.is_set,
+            description="the blocking fetch to reach the adapter",
+            interval=POLL_INTERVAL,
+        )
 
         # ... and swap the queue out from under the in-flight loader
         await tree.reload()
         BlockingCatalogItem.release.set()
-        for _ in range(50):
-            await pilot.pause()
+        await wait_for(
+            pilot,
+            BlockingCatalogItem.returned.is_set,
+            description="the blocking fetch to return",
+            interval=POLL_INTERVAL,
+        )
+        # the loader takes the result on the pump, which is where task_done()
+        # used to land on the queue the reload had just put in place
+        await pilot.pause()
 
         loaders = [
             w for w in app.workers if w.name == "_database_tree_background_loader"
@@ -507,6 +534,7 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     expand_catalog_node: Callable[..., Awaitable[None]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """A catalog item too wide for the catalog gets a tooltip on hover.
 
@@ -522,9 +550,7 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
     app = Harlequin(duckdb_adapter([str(db_path)], no_init=True), connection_hash="tt")
     async with app.run_test(size=(120, 36), tooltips=True) as pilot:
         await wait_for_workers(app)
-        tree = app.data_catalog.database_tree
-        while tree.loading or not tree.root.children:
-            await pilot.pause()
+        tree = await wait_for_catalog_tree(pilot, app)
         db_node = tree.root.children[0]
         await expand_catalog_node(pilot, db_node)
         await expand_catalog_node(pilot, db_node.children[0])
@@ -550,8 +576,12 @@ async def test_tooltip_shows_the_full_label_of_a_truncated_item(
         assert type_label_span.style.color is not None
 
         tooltip = app.screen.get_child_by_type(Tooltip)
-        await pilot.pause(app.TOOLTIP_DELAY + 0.1)
-        assert tooltip.display
+        await wait_for(
+            pilot,
+            lambda: bool(tooltip.display),
+            description="the hover to outlast the tooltip delay",
+            interval=POLL_INTERVAL,
+        )
 
 
 @pytest.mark.asyncio
@@ -559,6 +589,8 @@ async def test_buffer_symbols_load_the_items_they_name(
     duckdb_adapter: Type[DuckDbAdapter],
     tmp_path: Path,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
 ) -> None:
     """The catalog loads the children of the items the query editor names.
 
@@ -578,33 +610,37 @@ async def test_buffer_symbols_load_the_items_they_name(
     )
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
-        tree = app.data_catalog.database_tree
-        while (
-            tree.loading
-            or app.editor is None
-            or app.editor_collection.member_completer is None
-        ):
-            await pilot.pause()
-        member_completer = app.editor_collection.member_completer
+        editor = await wait_for_editor(pilot, app)
+        tree = await wait_for_catalog_tree(pilot, app)
+        member_completer = await wait_for_value(
+            pilot,
+            lambda: app.editor_collection.member_completer,
+            description="the member completer to be built",
+        )
 
         database_item = tree.root.data.children[0] if tree.root.data else None
         assert database_item is not None
-        while not getattr(database_item, "loaded", False):
-            await pilot.pause()
+        await wait_for(
+            pilot,
+            lambda: getattr(database_item, "loaded", False),
+            description="the database's children to load",
+        )
         schema_item = next(
             item for item in database_item.children if item.label == "my_schema"
         )
         assert not schema_item.children
         assert not member_completer("my_schema.my_t")
 
-        app.editor.text = "select * from my_schema.my_table"
+        editor.text = "select * from my_schema.my_table"
 
         # the editor re-reads the buffer on a timer, the tree loads the schema
         # the buffer names, and then the relation it names under it
-        for _ in range(100):
-            if member_completer("my_table.my_c"):
-                break
-            await pilot.pause(0.1)
+        await wait_for(
+            pilot,
+            lambda: bool(member_completer("my_table.my_c")),
+            description="the catalog's columns to reach the member completer",
+            interval=POLL_INTERVAL,
+        )
 
         # the buffer names my_table, so its own completion for it is not proof;
         # the column is one only the catalog could have offered.
@@ -620,6 +656,9 @@ async def test_buffer_symbols_load_the_items_they_name(
 async def test_child_worker_failure_is_surfaced_and_loader_continues(
     duckdb_adapter: Type[DuckDbAdapter],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
+    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """An unexpected failure in the loader's per-item worker shows one catalog
     modal, and the loader goes on to the next item.
@@ -658,16 +697,12 @@ async def test_child_worker_failure_is_surfaced_and_loader_continues(
 
     app = Harlequin(duckdb_adapter((":memory:",)), connection_hash="child-failure")
     async with app.run_test(size=(120, 36)) as pilot:
-        tree = app.data_catalog.database_tree
-        while tree.loading or app.editor is None:
-            await pilot.pause()
+        await wait_for_editor(pilot, app)
+        tree = await wait_for_catalog_tree(pilot, app)
 
         tree.root.add("poison", data=poison_item)
         tree._add_to_load_queue(poison_item, priority=0)
-        for _ in range(200):
-            if any(isinstance(screen, ErrorModal) for screen in app.screen_stack):
-                break
-            await pilot.pause(0.05)
+        await wait_for_error_modal(pilot, app)
         assert isinstance(app.screen, ErrorModal)
         assert "boom in _load_children" in str(app.screen.error)
         assert app._exception is None
@@ -678,11 +713,11 @@ async def test_child_worker_failure_is_surfaced_and_loader_continues(
         # the loader survived the failed item and still processes the queue
         tree.root.add("good", data=good_item)
         tree._add_to_load_queue(good_item, priority=0)
-        for _ in range(200):
-            if good_item.loaded:
-                break
-            await pilot.pause(0.05)
-        assert good_item.loaded
+        await wait_for(
+            pilot,
+            lambda: good_item.loaded,
+            description="the loader to go on to the next item",
+        )
         assert len(app.screen_stack) == 1
         assert app._exception is None
 
@@ -691,6 +726,9 @@ async def test_child_worker_failure_is_surfaced_and_loader_continues(
 async def test_background_loader_failure_is_surfaced_without_crashing(
     duckdb_adapter: Type[DuckDbAdapter],
     monkeypatch: pytest.MonkeyPatch,
+    wait_for_editor: Callable[[Pilot, Harlequin], Awaitable[CodeEditor]],
+    wait_for_catalog_tree: Callable[[Pilot, Harlequin], Awaitable[DatabaseTree]],
+    wait_for_error_modal: Callable[[Pilot, Harlequin], Awaitable[ErrorModal]],
 ) -> None:
     """An unexpected failure inside the background loader stops that loader
     with one catalog modal, and does not crash Harlequin.
@@ -718,21 +756,23 @@ async def test_background_loader_failure_is_surfaced_without_crashing(
     monkeypatch.setattr(DatabaseTree, "_schedule_prefetch_scan", lambda self: None)
     app = Harlequin(duckdb_adapter((":memory:",)), connection_hash="loader-failure")
     async with app.run_test(size=(120, 36)) as pilot:
-        tree = app.data_catalog.database_tree
-        while tree.loading or app.editor is None:
-            await pilot.pause()
-        for _ in range(200):
-            loaders = [
+        await wait_for_editor(pilot, app)
+        tree = await wait_for_catalog_tree(pilot, app)
+
+        def running_loaders() -> list[Worker[None]]:
+            return [
                 worker
                 for worker in app.workers
                 if worker.name == "_database_tree_background_loader"
                 and worker.state == WorkerState.RUNNING
             ]
-            if loaders:
-                break
-            await pilot.pause(0.05)
-        assert len(loaders) == 1
-        loader = loaders[0]
+
+        await wait_for(
+            pilot,
+            lambda: bool(running_loaders()),
+            description="the catalog's background loader to start",
+        )
+        [loader] = running_loaders()
 
         item = SimpleCatalogItem(
             qualified_identifier="x",
@@ -742,10 +782,7 @@ async def test_background_loader_failure_is_surfaced_without_crashing(
         )
         tree.root.add("x", data=item)
         tree._add_to_load_queue(item, priority=0)
-        for _ in range(200):
-            if any(isinstance(screen, ErrorModal) for screen in app.screen_stack):
-                break
-            await pilot.pause(0.05)
+        await wait_for_error_modal(pilot, app)
         assert isinstance(app.screen, ErrorModal)
         assert "boom in the loader" in str(app.screen.error)
         assert app._exception is None
