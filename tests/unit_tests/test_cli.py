@@ -155,6 +155,31 @@ def test_no_write_history_that_is_not_a_boolean_is_refused(
     assert not mock_harlequin.called
 
 
+def test_no_download_tzdata_reaches_the_app(
+    mock_harlequin: MagicMock, mock_adapter: MagicMock, mock_empty_config: None
+) -> None:
+    """The app decides what to do with it; the command no longer downloads."""
+    runner = CliRunner()
+    res = invoke(runner, "--no-download-tzdata")
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["no_download_tzdata"] is True
+
+
+def test_no_download_tzdata_from_a_profile(
+    mock_harlequin: MagicMock,
+    mock_adapter: MagicMock,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / ".harlequin.toml"
+    config.write_text(
+        "[profiles.offline]\nadapter = 'duckdb'\nno_download_tzdata = true\n"
+    )
+    runner = CliRunner()
+    res = invoke(runner, ["--config-path", str(config), "-P", "offline"])
+    assert res.exit_code == 0
+    assert mock_harlequin.call_args.kwargs["no_download_tzdata"] is True
+
+
 @pytest.mark.parametrize("harlequin_args", ["", ":memory:"])
 def test_default(
     mock_harlequin: MagicMock,
@@ -182,6 +207,7 @@ def test_default(
         show_s3=None,
         export_path=None,
         ssh_tunnel=None,
+        no_download_tzdata=False,
     )
 
 

@@ -31,7 +31,6 @@ from harlequin.exception import (
     HarlequinConfigError,
     HarlequinLocaleError,
     HarlequinSshError,
-    HarlequinTzDataError,
     pretty_print_error,
 )
 from harlequin.first_pass import attach_adapter_options, first_pass
@@ -41,7 +40,6 @@ from harlequin.options import AbstractOption
 from harlequin.plugins import adapter_names, load_adapter, load_adapter_plugins
 from harlequin.query_log import connection_id
 from harlequin.redact import hide_secrets_in
-from harlequin.windows_timezone import check_and_install_tzdata
 
 if TYPE_CHECKING:
     from harlequin.ssh import SshTunnel
@@ -544,8 +542,9 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     @click.option(
         "--no-download-tzdata",
         help=(
-            "(Windows Only) Prevent Harlequin from downloading an IANA timezone "
-            "database, even if one is missing. May cause undesired behavior."
+            "(Windows Only) Prevent Harlequin from looking for an IANA timezone "
+            "database, or downloading one if it is missing. Harlequin may fail "
+            "to load timestamptz values into the Results Viewer."
         ),
         is_flag=True,
     )
@@ -616,15 +615,8 @@ def build_cli(argv: Sequence[str]) -> click.Command:
         for key in hsql_profile_keys() - harlequin_options - declared_by_adapter:
             config.pop(key, None)
 
-        # detect and install (if necessary) a tzdatabase on Windows
         # popped on every platform: the remaining config is the adapter's
-        no_download_tzdata = config.pop("no_download_tzdata", None)
-        if sys.platform == "win32" and not no_download_tzdata:
-            try:
-                check_and_install_tzdata()
-            except HarlequinTzDataError as e:
-                pretty_print_error(e)
-                ctx.exit(2)
+        no_download_tzdata = bool(config.pop("no_download_tzdata", False))
 
         # set the locale so we display numbers properly. Empty string uses system
         # default
@@ -725,6 +717,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 show_s3=show_s3,
                 export_path=export_path,
                 ssh_tunnel=tunnel,
+                no_download_tzdata=no_download_tzdata,
             )
             tui.run()
 
