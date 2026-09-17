@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence, TypedDict
 
 import click
 
@@ -57,20 +57,48 @@ class Group(Enum):
 
 
 @dataclass(frozen=True)
-class Supplied:
-    """A click keyword only the command can fill in: a choice of what is
-    installed, a callback, help naming a run-time value."""
+class RuntimeValue:
+    """A stand-in for a value that only exists once a command is being built.
+
+    It defers a choice of what is installed, a callback, or help naming a
+    computed default: whatever holds it is resolved against the mapping the
+    command passes to `attach_core_options()`, under `key`.
+    """
 
     key: str
 
 
+class ClickKwargs(TypedDict, total=False):
+    """The click keywords a declaration may set, so a typo is an error.
+
+    Each may hold a `RuntimeValue` in place of its own type.
+    """
+
+    help: str | RuntimeValue
+    type: click.ParamType | RuntimeValue
+    default: Any
+    show_default: bool | str
+    metavar: str
+    is_flag: bool
+    multiple: bool
+    nargs: int
+    expose_value: bool
+    envvar: str
+    show_envvar: bool
+    callback: Callable[..., Any] | RuntimeValue
+
+
 @dataclass(frozen=True)
 class On:
-    """One command's declaration: empty where it spells the option as the
-    shared declaration does, `decls` replacing it and `kwargs` merging over."""
+    """A sentinel enabling an option for one command, and its overrides.
+
+    `decls` *replaces* the shared spellings rather than adding to them;
+    `kwargs` merge over the shared keywords, key by key. Empty where the
+    command takes the option exactly as declared.
+    """
 
     decls: tuple[str, ...] = ()
-    kwargs: Mapping[str, Any] = field(default_factory=dict)
+    kwargs: ClickKwargs = field(default_factory=ClickKwargs)
 
 
 @dataclass(frozen=True)
@@ -83,7 +111,7 @@ class CoreOption:
     group: Group | None = None
     """When hsql reads it; None of what hsql does not declare."""
 
-    kwargs: Mapping[str, Any] = field(default_factory=dict)
+    kwargs: ClickKwargs = field(default_factory=ClickKwargs)
     harlequin: On | None = None
     hsql: On | None = None
     cli_only: bool = False
@@ -96,9 +124,10 @@ class CoreOption:
     first_pass: bool = False
     """Whether the pass that names the adapter reads it off raw argv."""
 
-    supplied_param: str | None = None
-    """A ready-made decorator the command supplies instead; `--version`
-    alone."""
+    decorator: RuntimeValue | None = None
+    """A whole click decorator from the command, in place of building one.
+    `--version` alone: click's `version_option()` writes the callback that
+    prints the message, which is the command's own."""
 
     def __post_init__(self) -> None:
         if self.harlequin is None and self.hsql is None:
@@ -108,7 +137,7 @@ class CoreOption:
                 f"{self.name} must declare a group if and only if hsql takes it."
             )
 
-    def on(self, command: str) -> On | None:
+    def config_for_command(self, command: str) -> On | None:
         """How `command` declares it, or None if it does not."""
         if command == HARLEQUIN:
             return self.harlequin
@@ -119,7 +148,7 @@ class CoreOption:
     def to_click(
         self,
         command: str,
-        supplied: Mapping[str, Any],
+        runtime_values: Mapping[str, Any],
         *,
         option_cls: type[click.Option] | None = None,
         argument_cls: type[click.Argument] | None = None,
@@ -128,16 +157,18 @@ class CoreOption:
 
         Click's `@option` appends to `Command.params`, which is what orders it.
         """
-        spelling = self.on(command)
-        if spelling is None:
+        command_config = self.config_for_command(command)
+        if command_config is None:
             return None
-        if self.supplied_param is not None:
-            decorator: Callable[[click.Command], click.Command] = _from_the_command(
-                supplied, self.supplied_param, name=self.name
+        if self.decorator is not None:
+            built: Callable[[click.Command], click.Command] = _unwrap_runtime_value(
+                self.decorator, runtime_values, name=self.name
             )
-            return decorator
-        decls = spelling.decls or self.decls
-        kwargs = _fill_in({**self.kwargs, **spelling.kwargs}, supplied, name=self.name)
+            return built
+        decls = command_config.decls or self.decls
+        kwargs = _build_click_kwargs(
+            {**self.kwargs, **command_config.kwargs}, runtime_values, name=self.name
+        )
         if self.argument:
             if argument_cls is not None:
                 kwargs["cls"] = argument_cls
@@ -147,30 +178,32 @@ class CoreOption:
         return click.option(*decls, **kwargs)
 
 
-def _fill_in(
-    kwargs: Mapping[str, Any], supplied: Mapping[str, Any], *, name: str
+def _build_click_kwargs(
+    kwargs: Mapping[str, Any], runtime_values: Mapping[str, Any], *, name: str
 ) -> dict[str, Any]:
-    """The declared keywords, with the command's part filled in."""
+    """The declared keywords, with every `RuntimeValue` in them unwrapped."""
     return {
-        key: _from_the_command(supplied, value.key, name=name)
-        if isinstance(value, Supplied)
+        key: _unwrap_runtime_value(value, runtime_values, name=name)
+        if isinstance(value, RuntimeValue)
         else value
         for key, value in kwargs.items()
     }
 
 
-def _from_the_command(supplied: Mapping[str, Any], key: str, *, name: str) -> Any:
-    """What the command supplied, or a refusal naming what it left out."""
-    if key not in supplied:
-        raise KeyError(f"{name} needs {key!r} from the command that declares it.")
-    return supplied[key]
+def _unwrap_runtime_value(
+    value: RuntimeValue, runtime_values: Mapping[str, Any], *, name: str
+) -> Any:
+    """What the command passed under this key, or a refusal naming it."""
+    if value.key not in runtime_values:
+        raise KeyError(f"{name} needs {value.key!r} from the command.")
+    return runtime_values[value.key]
 
 
 CORE_OPTIONS: Sequence[CoreOption] = (
     CoreOption(
         name="version",
         group=Group.PER_REQUEST,
-        supplied_param="version_option",
+        decorator=RuntimeValue("version_option"),
         harlequin=On(),
         hsql=On(),
     ),
@@ -190,7 +223,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         group=Group.PER_REQUEST,
         kwargs={
             "multiple": True,
-            "callback": Supplied("record_source"),
+            "callback": RuntimeValue("record_source"),
             "help": "Execute SQL. Repeatable.",
         },
         hsql=On(),
@@ -201,7 +234,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         group=Group.PER_REQUEST,
         kwargs={
             "multiple": True,
-            "callback": Supplied("record_source"),
+            "callback": RuntimeValue("record_source"),
             "metavar": "PATH",
             "help": "Execute SQL from a file, or from stdin for `-`. Repeatable.",
         },
@@ -211,19 +244,19 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         name="output",
         decls=("-o", "--output"),
         group=Group.PER_REQUEST,
+        kwargs={
+            "type": click.Path(file_okay=True, dir_okay=True, path_type=Path),
+            "metavar": "PATH",
+        },
         harlequin=On(
-            kwargs={
-                "type": click.Path(file_okay=True, dir_okay=True, path_type=Path),
-                "help": "The default directory or file path for the Data Exporter.",
-            }
+            kwargs={"help": "The default directory or file path for the Data Exporter."}
         ),
         hsql=On(
             kwargs={
-                "metavar": "PATH",
                 "help": (
                     "Write results to PATH instead of stdout. Accepts a file "
                     "or directory."
-                ),
+                )
             }
         ),
     ),
@@ -238,7 +271,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
             "default": DEFAULT_FORMAT,
             "show_default": True,
             "metavar": "NAME",
-            "type": Supplied("formats"),
+            "type": RuntimeValue("formats"),
             "help": "Output format. See below for the list.",
         },
         hsql=On(),
@@ -336,76 +369,57 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         decls=("-P", "--profile"),
         group=Group.CONFIG,
         first_pass=True,
-        harlequin=On(
-            kwargs={
-                "help": (
-                    "Select a profile from an available config file to load its "
-                    "values. Other options passed here will take precedence over "
-                    "those loaded from the profile. Use the special profile named "
-                    "None to use Harlequin's defaults, instead of the default "
-                    "profile specified in the config file."
-                )
-            }
-        ),
-        hsql=On(
-            kwargs={
-                "help": (
-                    "Load a profile from an available config file. Options passed "
-                    "here take precedence over the profile's. Use the profile "
-                    "named None for Harlequin's defaults instead of the config "
-                    "file's default profile."
-                )
-            }
-        ),
+        kwargs={
+            "help": (
+                "Select a profile from an available config file to load its "
+                "values. Other options passed here will take precedence over "
+                "those loaded from the profile. Use the special profile named "
+                "None to use Harlequin's defaults, instead of the default "
+                "profile specified in the config file."
+            )
+        },
+        harlequin=On(),
+        hsql=On(),
     ),
     # --- the connection ------------------------------------------------------
     CoreOption(
         name="adapter",
         group=Group.CONNECTION,
         first_pass=True,
+        decls=("-a", "--adapter"),
         kwargs={
             "default": DEFAULT_ADAPTER,
             "show_default": True,
-            "type": Supplied("adapters"),
+            "metavar": "NAME",
+            "type": RuntimeValue("adapters"),
+            "help": (
+                "The name of an installed database adapter plug-in "
+                "to use to connect to the database at CONN_STR."
+            ),
         },
-        harlequin=On(
-            decls=("--adapter", "-a"),
-            kwargs={
-                "help": (
-                    "The name of an installed database adapter plug-in "
-                    "to use to connect to the database at CONN_STR."
-                )
-            },
-        ),
-        hsql=On(
-            decls=("-a", "--adapter"),
-            kwargs={
-                "metavar": "NAME",
-                "help": "The installed adapter plug-in to connect with.",
-            },
-        ),
+        harlequin=On(),
+        hsql=On(),
     ),
     CoreOption(
         name="read_only",
         group=Group.CONNECTION,
         kwargs={"is_flag": True},
+        decls=("-r", "--read-only", "read_only"),
         harlequin=On(
-            decls=("--read-only", "-r", "read_only"),
             kwargs={
                 "help": (
                     "Connect read-only, and refuse to start at all if the adapter "
                     "cannot. To check an adapter's capabilities, use `hsql --info`."
                 )
-            },
+            }
         ),
         hsql=On(
-            decls=("-r", "--read-only", "read_only"),
             kwargs={
                 "help": (
                     "Connect read-only, and refuse to run at all if the adapter "
                     "cannot. To check an adapter's capabilities, use --info."
                 )
-            },
+            }
         ),
     ),
     CoreOption(
@@ -432,57 +446,41 @@ CORE_OPTIONS: Sequence[CoreOption] = (
                 "Open an SSH tunnel to this destination first, and connect through "
                 "it. A Host alias, host, user@host or ssh://user@host:port, passed "
                 "to ssh verbatim."
-            )
+            ),
+            "metavar": "TEXT",
         },
         harlequin=On(),
-        hsql=On(kwargs={"metavar": "TEXT"}),
+        hsql=On(),
     ),
     CoreOption(
         name="ssh_forward",
         decls=("--ssh-forward",),
         group=Group.CONNECTION,
-        kwargs={"multiple": True},
-        harlequin=On(
-            kwargs={
-                "help": (
-                    "A local forward, spelled as ssh -L takes one: "
-                    "LOCAL:HOST:REMOTE. Repeat this option for more than one. "
-                    "Omit it when your ssh config already has the LocalForward."
-                )
-            }
-        ),
-        hsql=On(
-            kwargs={
-                "metavar": "TEXT",
-                "help": (
-                    "A local forward, spelled as ssh -L takes one: "
-                    "LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config "
-                    "has the LocalForward."
-                ),
-            }
-        ),
+        kwargs={
+            "multiple": True,
+            "metavar": "TEXT",
+            "help": (
+                "A local forward, spelled as ssh -L takes one: "
+                "LOCAL:HOST:REMOTE. Repeat this option for more than one. "
+                "Omit it when your ssh config already has the LocalForward."
+            ),
+        },
+        harlequin=On(),
+        hsql=On(),
     ),
     CoreOption(
         name="ssh_batch_mode",
         decls=("--ssh-batch-mode",),
         group=Group.CONNECTION,
-        kwargs={"is_flag": True},
-        harlequin=On(
-            kwargs={
-                "help": (
-                    "Fail rather than prompt for a passphrase, a password or a "
-                    "host key. ssh's own BatchMode."
-                )
-            }
-        ),
-        hsql=On(
-            kwargs={
-                "help": (
-                    "Fail rather than prompt for a passphrase, a password or a "
-                    "host key. ssh's own BatchMode; set it in scripts, CI and cron."
-                )
-            }
-        ),
+        kwargs={
+            "is_flag": True,
+            "help": (
+                "Fail rather than prompt for a passphrase, a password or a "
+                "host key. ssh's own BatchMode."
+            ),
+        },
+        harlequin=On(),
+        hsql=On(),
     ),
     CoreOption(
         name="ssh_allow_reuse",
@@ -503,24 +501,16 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         name="ssh_timeout",
         decls=("--ssh-timeout",),
         group=Group.CONNECTION,
-        kwargs={"type": click.FloatRange(min=0, min_open=True)},
-        harlequin=On(
-            kwargs={
-                "help": (
-                    "Seconds to wait for the tunnel's forwards. Default is "
-                    f"{DEFAULT_SSH_TIMEOUT:g}"
-                )
-            }
-        ),
-        hsql=On(
-            kwargs={
-                "metavar": "SECONDS",
-                "help": (
-                    "Seconds to wait for the tunnel's forwards. "
-                    f"[default: {DEFAULT_SSH_TIMEOUT:g}]"
-                ),
-            }
-        ),
+        kwargs={
+            "type": click.FloatRange(min=0, min_open=True),
+            "metavar": "SECONDS",
+            "help": (
+                "Seconds to wait for the tunnel's forwards. Default is "
+                f"{DEFAULT_SSH_TIMEOUT:g}."
+            ),
+        },
+        harlequin=On(),
+        hsql=On(),
     ),
     # existence is not click's to check for hsql: every mode that reads this
     # path already refuses a file that is not there, naming it, and `--config
@@ -531,7 +521,17 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         decls=("--config-path",),
         group=Group.CONFIG,
         first_pass=True,
-        kwargs={"envvar": "HARLEQUIN_CONFIG_PATH", "show_envvar": True},
+        kwargs={
+            "envvar": "HARLEQUIN_CONFIG_PATH",
+            "show_envvar": True,
+            "metavar": "PATH",
+            "help": (
+                "By default, Harlequin finds files named .harlequin.toml in "
+                "the current directory and the home directory (~) and merges "
+                "them. Use this option to specify the full path to a config "
+                "file at a different location."
+            ),
+        },
         harlequin=On(
             kwargs={
                 "type": click.Path(
@@ -540,20 +540,12 @@ CORE_OPTIONS: Sequence[CoreOption] = (
                     dir_okay=False,
                     resolve_path=True,
                     path_type=Path,
-                ),
-                "help": (
-                    "By default, Harlequin finds files named .harlequin.toml in "
-                    "the current directory and the home directory (~) and merges "
-                    "them. Use this option to specify the full path to a config "
-                    "file at a different location."
-                ),
+                )
             }
         ),
         hsql=On(
             kwargs={
-                "type": click.Path(dir_okay=False, resolve_path=True, path_type=Path),
-                "metavar": "PATH",
-                "help": "Use this config file instead of the ones hsql discovers.",
+                "type": click.Path(dir_okay=False, resolve_path=True, path_type=Path)
             }
         ),
     ),
@@ -565,8 +557,8 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         first_pass=True,
         kwargs={
             "metavar": "MODE",
-            "type": Supplied("config_modes"),
-            "help": Supplied("config_mode_help"),
+            "type": RuntimeValue("config_modes"),
+            "help": RuntimeValue("config_mode_help"),
         },
         hsql=On(),
     ),
@@ -822,7 +814,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         kwargs={
             "metavar": "N",
             "type": click.IntRange(min=UNLIMITED),
-            "help": Supplied("display_rows_help"),
+            "help": RuntimeValue("display_rows_help"),
         },
         hsql=On(),
     ),
@@ -899,7 +891,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         kwargs={
             "default": DEFAULT_THEME,
             "show_default": True,
-            "help": Supplied("theme_help"),
+            "help": RuntimeValue("theme_help"),
         },
         harlequin=On(),
     ),
@@ -990,7 +982,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         kwargs={
             "is_flag": True,
             "expose_value": True,
-            "callback": Supplied("config_wizard"),
+            "callback": RuntimeValue("config_wizard"),
             "help": (
                 "Run the configuration wizard to create or update a Harlequin "
                 "config file."
@@ -1005,7 +997,7 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         kwargs={
             "is_flag": True,
             "expose_value": True,
-            "callback": Supplied("keys_app"),
+            "callback": RuntimeValue("keys_app"),
             "help": (
                 "Run the key binding config app to create or update a Harlequin keymap."
             ),
@@ -1024,7 +1016,7 @@ def attach_core_options(
     cmd: click.Command,
     command: str,
     *,
-    supplied: Mapping[str, Any],
+    runtime_values: Mapping[str, Any],
     option_cls: type[click.Option] | None = None,
     argument_cls: type[click.Argument] | None = None,
 ) -> None:
@@ -1032,7 +1024,10 @@ def attach_core_options(
     declaration order. `option_cls` is its `click.Option` subclass, if any."""
     for option in CORE_OPTIONS:
         declaration = option.to_click(
-            command, supplied, option_cls=option_cls, argument_cls=argument_cls
+            command,
+            runtime_values,
+            option_cls=option_cls,
+            argument_cls=argument_cls,
         )
         if declaration is not None:
             declaration(cmd)
@@ -1041,21 +1036,24 @@ def attach_core_options(
 def first_pass_options(command: str) -> list[click.Option]:
     """The options the first pass reads, as the copies it probes argv with.
 
-    Spellings, whether a value follows, an envvar: no more, because the probe
-    must survive an argv the command would refuse.
+    Not `to_click()`: the pass runs before the command exists, so there are no
+    runtime values to resolve, and the probe has to survive an argv the command
+    would refuse -- a `click.Choice` of installed adapters, a path that must
+    exist, or a callback would each abort it. A path stays a path, so what the
+    pass hands `load_profile()` is one.
     """
     probe: list[click.Option] = []
     for option in CORE_OPTIONS:
-        spelling = option.on(command)
-        if not option.first_pass or spelling is None:
+        command_config = option.config_for_command(command)
+        if not option.first_pass or command_config is None:
             continue
-        kwargs = {**option.kwargs, **spelling.kwargs}
+        kwargs = {**option.kwargs, **command_config.kwargs}
         declared_type = kwargs.get("type")
         probe.append(
             click.Option(
                 [
                     decl
-                    for decl in (spelling.decls or option.decls)
+                    for decl in (command_config.decls or option.decls)
                     if decl.startswith("-")
                 ]
                 + [option.name],

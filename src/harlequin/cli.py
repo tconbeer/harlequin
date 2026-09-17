@@ -533,7 +533,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     attach_core_options(
         inner_cli,
         HARLEQUIN,
-        supplied={
+        runtime_values={
             "version_option": click.version_option(
                 package_name="harlequin", message=_version_option()
             ),

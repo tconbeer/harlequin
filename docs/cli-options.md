@@ -23,7 +23,7 @@ the adapter reads it before there is a command to parse with.
 `attach_core_options()` builds the click options from that list, in the order
 it declares them, which is the order `hsql --help` lists them; the part only a
 command can answer — a `click.Choice` of what is installed, a callback, help
-naming a value computed at run time — arrives as `Supplied`. These are the
+naming a computed default — stands in the declaration as a `RuntimeValue`. These are the
 frozen part of each command's surface; an adapter option whose spelling
 collides with one loses that spelling (`first_pass.attach_adapter_options`).
 
@@ -69,8 +69,9 @@ is not compared.
 2. **Write the `CoreOption`** in `harlequin/core_options.py`, among the ones it
    belongs with — where it sits in that list is where `hsql --help` lists it.
    Give it `harlequin=On()`, `hsql=On()`, or both, and put in `kwargs` what
-   both commands share and in each `On` what only that command says. For
-   `hsql`, keep the help one or two sentences and name the default.
+   both commands share; an `On`'s own `kwargs` merge over those, and its
+   `decls` replace them, which is for a difference the two commands really
+   have. For `hsql`, keep the help one or two sentences and name the default.
 
 3. **Give it a group**, by when its value is read:
    - once, at connect time → `Group.CONNECTION`

@@ -926,7 +926,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
     attach_core_options(
         cmd,
         HSQL,
-        supplied={
+        runtime_values={
             "version_option": click.version_option(
                 package_name="harlequin", prog_name=PROGRAM
             ),

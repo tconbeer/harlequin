@@ -28,13 +28,13 @@ Alphabetical by name. Flags are off by default.
 
 | Option | Type | Values | Default | Env var | Description |
 | --- | --- | --- | --- | --- | --- |
-| `-a`, `--adapter` | choice | `NAME` | `duckdb` |  | The installed adapter plug-in to connect with. |
+| `-a`, `--adapter` | choice | `NAME` | `duckdb` |  | The name of an installed database adapter plug-in to use to connect to the database at CONN_STR. |
 | `--catalog` | boolean |  |  |  | List the catalog objects one level below --path, and exit without running SQL. |
 | `--catalog-search` | text | `TERM` |  |  | Search the whole catalog, at every level, for objects whose name contains TERM, and exit without running SQL. Not every adapter can; see --info. |
 | `--color` | choice | `auto`, `always`, `never` | `never` |  | Color text output. `auto` follows the terminal and NO_COLOR. |
 | `-c`, `--command` | text |  |  |  | Execute SQL. Repeatable. |
 | `--config` | choice | `show`, `list-profiles`, `validate`, `schema`, `init` |  |  | Report on the config files hsql found, or write a profile into one, and exit without running SQL. One of: show, list-profiles, validate, schema, init. |
-| `--config-path` | path | `PATH` |  | `HARLEQUIN_CONFIG_PATH` | Use this config file instead of the ones hsql discovers. |
+| `--config-path` | path | `PATH` |  | `HARLEQUIN_CONFIG_PATH` | By default, Harlequin finds files named .harlequin.toml in the current directory and the home directory (~) and merges them. Use this option to specify the full path to a config file at a different location. |
 | `--csv` | boolean |  |  |  | Shorthand for --format csv. |
 | `--display-rows` | integer | `N` |  |  | Rows printed per result set by the text layouts. -1 for all rows. [default: 40 for table, markdown, md; 10 for vertical] |
 | `-f`, `--file` | text | `PATH` |  |  | Execute SQL from a file, or from stdin for `-`. Repeatable. |
@@ -55,9 +55,9 @@ Alphabetical by name. Flags are off by default.
 | `--no-write-history` | boolean |  |  |  | Do not record this run's queries in the query history that Harlequin and hsql share. |
 | `--null-string` | text | `TEXT` |  |  | Render NULL as TEXT. Defaults to NULL for text formats, empty for csv. |
 | `--on-error` | choice | `stop`, `continue` | `stop` |  | What to do when a statement fails. |
-| `-o`, `--output` | text | `PATH` |  |  | Write results to PATH instead of stdout. Accepts a file or directory. |
+| `-o`, `--output` | path | `PATH` |  |  | Write results to PATH instead of stdout. Accepts a file or directory. |
 | `--path` | text | `TEXT` |  |  | Where in the catalog --catalog looks, and what --catalog-search searches under. Dotted segments, named by the adapter; the top of the catalog by default. A trailing * filters a --catalog listing. |
-| `-P`, `--profile` | text |  |  |  | Load a profile from an available config file. Options passed here take precedence over the profile's. Use the profile named None for Harlequin's defaults instead of the config file's default profile. |
+| `-P`, `--profile` | text |  |  |  | Select a profile from an available config file to load its values. Other options passed here will take precedence over those loaded from the profile. Use the special profile named None to use Harlequin's defaults, instead of the default profile specified in the config file. |
 | `--queue-timeout` | number | `SECONDS` |  |  | With --serve: a request waits at most SECONDS for the one before it, then exits 4 without reaching the database. [default: no limit] |
 | `-r`, `--read-only` | boolean |  |  |  | Connect read-only, and refuse to run at all if the adapter cannot. To check an adapter's capabilities, use --info. |
 | `--result` | text | `all\|last\|N` | `all` |  | Which result set(s) to emit. |
@@ -68,10 +68,10 @@ Alphabetical by name. Flags are off by default.
 | `--skill` | boolean |  |  |  | Write the Agent Skill for driving hsql, as markdown. -o installs it: 'hsql --skill -o ~/.claude/skills/hsql/'. |
 | `--spec` | boolean |  |  |  | Every option here, plus every installed adapter's, as JSON. -a narrows it to one adapter. |
 | `--ssh-allow-reuse` | boolean |  |  |  | When the local port is already bound, warn and connect through the listener that has it instead of failing. |
-| `--ssh-batch-mode` | boolean |  |  |  | Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron. |
-| `--ssh-forward` | text | `TEXT` |  |  | A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config has the LocalForward. |
+| `--ssh-batch-mode` | boolean |  |  |  | Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode. |
+| `--ssh-forward` | text | `TEXT` |  |  | A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeat this option for more than one. Omit it when your ssh config already has the LocalForward. |
 | `--ssh-host` | text | `TEXT` |  |  | Open an SSH tunnel to this destination first, and connect through it. A Host alias, host, user@host or ssh://user@host:port, passed to ssh verbatim. |
-| `--ssh-timeout` | number | `SECONDS` |  |  | Seconds to wait for the tunnel's forwards. [default: 60] |
+| `--ssh-timeout` | number | `SECONDS` |  |  | Seconds to wait for the tunnel's forwards. Default is 60. |
 | `--stats` | boolean |  |  |  | Write a one-line JSON summary to stderr. |
 | `--timeout` | number | `SECONDS` |  |  | Cancel the run after SECONDS and exit 4. Refused if the adapter cannot cancel a query; to check, use --info. |
 | `-t`, `--tuples-only` | boolean |  |  |  | Rows only: no header, no footer. As in psql. |

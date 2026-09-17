@@ -62,7 +62,7 @@ def test_the_ide_carries_every_option_it_declares() -> None:
 def test_an_option_a_command_did_not_answer_says_what_it_needed(command: str) -> None:
     """The error names the key, not a click keyword."""
     with pytest.raises(KeyError, match="version_option"):
-        attach_core_options(click.Command("probe"), command, supplied={})
+        attach_core_options(click.Command("probe"), command, runtime_values={})
 
 
 def test_the_first_pass_spells_an_option_the_way_the_command_does() -> None:
