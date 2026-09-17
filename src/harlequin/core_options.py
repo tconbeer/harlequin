@@ -1,24 +1,7 @@
 """Every option the two commands declare, in one place.
 
-An adapter declares its options once, in `ADAPTER_OPTIONS`, and both commands
-attach them; this is the same thing for the options core owns. A declaration
-here says which command takes the option, how that command spells it, and the
-flags that decide where its value may come from and where it may be used --
-so the answers travel with the option instead of in a name list somewhere
-else, where the two drift.
-
-`hsql`'s `group` is the one that carries the most: it says *when* an option's
-value is read, and so whether `--serve` accepts it, whether a served request
-may carry it, and whether it is compared against the session's connection
-identity. An option hsql declares cannot be declared without one, which is
-what the name lists could not enforce. `docs/cli-options.md` is the reference,
-and the checklist for adding an option.
-
-What a command still owns is the part only it can answer: a `click.Choice` of
-what is installed, a callback that reaches into its own module, help that
-names a value computed at run time. Those arrive as `Supplied`, filled in by
-`attach_core_options()`, which is also why nothing here imports either
-command -- or anything the headless CLI may not.
+A declaration says which command takes an option, how it spells it, and the
+flags for where its value may be used. `docs/cli-options.md` is the reference.
 """
 
 from __future__ import annotations
@@ -34,7 +17,7 @@ from harlequin.config import DEFAULT_ADAPTER, DEFAULT_SSH_TIMEOUT, UNLIMITED
 
 HARLEQUIN = "harlequin"
 HSQL = "hsql"
-"""The two commands, as `CoreOption` names them."""
+"""The two commands, as a declaration names them."""
 
 DEFAULT_THEME = "harlequin"
 DEFAULT_KEYMAP_NAMES = ["vscode"]
@@ -43,67 +26,48 @@ DEFAULT_VIEWER_MAX_ROWS = 100_000
 DEFAULT_FORMAT = "table"
 
 DEFAULT_LIMIT = 500
-"""Small on purpose: fetching a million rows to print forty of them is waste.
+"""Small on purpose: fetching a million rows to print forty is waste.
 
-`--limit` is the *hard* limit -- `cursor.set_limit()`, so fewer rows leave the
-database -- and it is the same promise the `limit` key makes in the IDE. `-1`
-is unlimited, and `0` fetches a header and no rows, which is how a caller asks
-what a query's columns are.
+The *hard* limit -- `cursor.set_limit()` -- so `0` fetches a header alone.
 """
 
 DEFAULT_IDLE_TIMEOUT = 1800.0
 DEFAULT_MAX_LIFETIME = 28800.0
-"""How long a session waits with nothing to do, and how long it runs at all.
-
-A session is a live authenticated connection, so it is bounded unless an
-operator says otherwise; `0` is how they say so.
-"""
+"""Idle and total bounds on a session, which `0` lifts."""
 
 
 class Group(Enum):
-    """When hsql reads an option's value, which is what decides where it goes.
-
-    `--serve` takes the connection and server groups and refuses the
-    per-request one; a served request is the other way round. An option in
-    neither group, or in two, would be one nobody refuses -- or one both do.
-    """
+    """When hsql reads an option's value, and so where it may be used:
+    `--serve` refuses the per-request group, a served request the server's."""
 
     CONNECTION = "connection"
-    """Read once, when the connection opens, so a session records it."""
+    """Read at connect time, so a session records it."""
 
     PER_REQUEST = "per-request"
-    """Read on every invocation, so a session's client sends it."""
+    """Read per invocation, so a client sends it."""
 
     SERVER = "server"
-    """Read once, at start-up, and bound to a server's lifetime."""
+    """Read at start-up, and bound to a server's lifetime."""
 
     ROLE = "role"
     """Read to decide which process runs the invocation."""
 
     CONFIG = "config"
-    """Read to pick the file and profile the other values come from."""
+    """Read to pick where the other values come from."""
 
 
 @dataclass(frozen=True)
 class Supplied:
-    """A click keyword only the command building the option can fill in.
-
-    `attach_core_options()` replaces it with `supplied[key]`, so a declaration
-    can name a choice of what is installed, or a callback, without this module
-    importing either command.
-    """
+    """A click keyword only the command can fill in: a choice of what is
+    installed, a callback, help naming a run-time value."""
 
     key: str
 
 
 @dataclass(frozen=True)
 class On:
-    """One command's declaration of an option.
-
-    Empty where the command spells it exactly as the shared declaration does;
-    `decls` replaces the shared spellings and `kwargs` are merged over the
-    shared keywords, which is where the two commands' help text differs.
-    """
+    """One command's declaration: empty where it spells the option as the
+    shared declaration does, `decls` replacing it and `kwargs` merging over."""
 
     decls: tuple[str, ...] = ()
     kwargs: Mapping[str, Any] = field(default_factory=dict)
@@ -111,38 +75,30 @@ class On:
 
 @dataclass(frozen=True)
 class CoreOption:
-    """One option of the `harlequin` or `hsql` command, and how it may be used.
-
-    `name` is the click parameter name, which is also the profile key a config
-    file writes it under. `harlequin` and `hsql` say which command declares it;
-    a command whose entry is None does not have it at all.
-    """
+    """One option of the `harlequin` or `hsql` command, and how it may be
+    used. `name` is the click parameter, and the profile key."""
 
     name: str
     decls: tuple[str, ...] = ()
     group: Group | None = None
-    """When hsql reads it. Required of an option hsql declares, and None of one
-    it does not, so the five groups are exactly hsql's parameters."""
+    """When hsql reads it; None of what hsql does not declare."""
 
     kwargs: Mapping[str, Any] = field(default_factory=dict)
     harlequin: On | None = None
     hsql: On | None = None
     cli_only: bool = False
-    """Whether a config file is refused it. True for an option whose value
-    decides which process runs the invocation, or which a config file
-    discovered in the working directory should not be able to weaken."""
+    """Whether a config file is refused it: a value deciding which process
+    runs, or one a discovered file may not weaken."""
 
     argument: bool = False
-    """Whether it is positional. `CONN_STR` is the only one."""
+    """Whether it is positional. `CONN_STR` alone is."""
 
     first_pass: bool = False
-    """Whether the first pass reads it, before there is a command to parse
-    with: an option that decides which adapter's options this command carries,
-    or whether it reads a profile at all."""
+    """Whether the pass that names the adapter reads it off raw argv."""
 
     supplied_param: str | None = None
-    """A ready-made click decorator the command supplies instead, under this
-    key. `--version` is the only one: its message is the command's own."""
+    """A ready-made decorator the command supplies instead; `--version`
+    alone."""
 
     def __post_init__(self) -> None:
         if self.harlequin is None and self.hsql is None:
@@ -153,7 +109,7 @@ class CoreOption:
             )
 
     def on(self, command: str) -> On | None:
-        """How `command` declares it, or None if that command does not."""
+        """How `command` declares it, or None if it does not."""
         if command == HARLEQUIN:
             return self.harlequin
         if command == HSQL:
@@ -170,9 +126,7 @@ class CoreOption:
     ) -> Callable[[click.Command], click.Command] | None:
         """The decorator that puts this option on `command`, or None.
 
-        The decorators click's own `@option` builds append straight to a
-        `Command`'s params, which is how `attach_core_options()` controls the
-        order they arrive in.
+        Click's `@option` appends to `Command.params`, which is what orders it.
         """
         spelling = self.on(command)
         if spelling is None:
@@ -196,7 +150,7 @@ class CoreOption:
 def _fill_in(
     kwargs: Mapping[str, Any], supplied: Mapping[str, Any], *, name: str
 ) -> dict[str, Any]:
-    """The declared keywords, with what only the command knows filled in."""
+    """The declared keywords, with the command's part filled in."""
     return {
         key: _from_the_command(supplied, value.key, name=name)
         if isinstance(value, Supplied)
@@ -206,7 +160,7 @@ def _fill_in(
 
 
 def _from_the_command(supplied: Mapping[str, Any], key: str, *, name: str) -> Any:
-    """What the command was to supply, or a refusal naming what it left out."""
+    """What the command supplied, or a refusal naming what it left out."""
     if key not in supplied:
         raise KeyError(f"{name} needs {key!r} from the command that declares it.")
     return supplied[key]
@@ -1059,14 +1013,11 @@ CORE_OPTIONS: Sequence[CoreOption] = (
         harlequin=On(),
     ),
 )
-"""Every core option, in the order hsql's `--help` lists them.
-
-The IDE's own are last: its help is rendered from the option groups in
-`harlequin.cli`, so where they sit here is free.
-"""
+"""Every core option, in the order hsql's `--help` lists them; the IDE's own
+last, since its help renders from the groups in `harlequin.cli`."""
 
 BY_NAME = {option.name: option for option in CORE_OPTIONS}
-"""Every declaration, under the profile key it is read from."""
+"""Every declaration, under its profile key."""
 
 
 def attach_core_options(
@@ -1077,14 +1028,8 @@ def attach_core_options(
     option_cls: type[click.Option] | None = None,
     argument_cls: type[click.Argument] | None = None,
 ) -> None:
-    """Put every option `command` declares on an already-built command.
-
-    The same shape as `attach_adapter_options()`, and for the same reason: a
-    declaration appends straight to `cmd.params`, so the order options arrive
-    in is the order they are declared in above -- which is the order `--help`
-    lists them. `option_cls` is the command's own `click.Option` subclass,
-    where it has one.
-    """
+    """Put every option `command` declares on an already-built command, in
+    declaration order. `option_cls` is its `click.Option` subclass, if any."""
     for option in CORE_OPTIONS:
         declaration = option.to_click(
             command, supplied, option_cls=option_cls, argument_cls=argument_cls
@@ -1096,11 +1041,8 @@ def attach_core_options(
 def first_pass_options(command: str) -> list[click.Option]:
     """The options the first pass reads, as the copies it probes argv with.
 
-    Spellings, whether a value follows, and an envvar: no more, because the
-    pass runs before the command exists and has to survive an argv the command
-    would refuse -- a `click.Path` that must exist would abort the whole probe
-    over a file the invocation was going to be told about properly. A path
-    stays a path, so what the pass hands `load_profile()` is one.
+    Spellings, whether a value follows, an envvar: no more, because the probe
+    must survive an argv the command would refuse.
     """
     probe: list[click.Option] = []
     for option in CORE_OPTIONS:
@@ -1132,25 +1074,18 @@ def _names(group: Group) -> frozenset[str]:
 
 
 CONNECTION_OPTIONS = _names(Group.CONNECTION)
-"""Opened once, with the connection, so `--serve` takes them. Every adapter
-option is one too; `connection_option_names()` joins the two sets."""
+"""Opened with the connection, so `--serve` takes them. Every adapter option
+is one too; `connection_option_names()` joins the two."""
 
 CONFIG_OPTIONS = _names(Group.CONFIG)
-"""Which file and which profile the other options are read from.
-
-Not connection-time, though a profile usually holds connection-time keys:
-these name where values come from rather than being values, so which group
-one belongs to is decided by what it resolves to. A profile of nothing but
-`format` and `limit` is per-request whichever way it was named, which is what
-lets a served `-P` behave the way a discovered `default_profile` does.
-"""
+"""Which file and which profile the rest are read from: names rather than
+values, so what a profile holds decides its group."""
 
 PER_REQUEST_OPTIONS = _names(Group.PER_REQUEST)
-"""Read on every invocation, so a session's client sends them and `--serve`
-takes none."""
+"""Read per invocation, so a client sends them and `--serve` takes none."""
 
 SERVER_OPTIONS = _names(Group.SERVER)
-"""Set once per server, and bound to its lifetime."""
+"""Set per server, and bound to its lifetime."""
 
 ROLE_OPTIONS = _names(Group.ROLE)
 """The two spellings that say which process an invocation is."""
@@ -1158,33 +1093,21 @@ ROLE_OPTIONS = _names(Group.ROLE)
 SSH_KEYS = tuple(
     option.name for option in CORE_OPTIONS if option.name.startswith("ssh_")
 )
-"""The profile keys that describe an SSH tunnel, which both commands read.
-
-The tunnel's keys are the ones named for it, which is what `take_ssh_keys()`
-takes off a merged config before an adapter is handed the rest.
-"""
+"""The tunnel's profile keys: the ones named for it. `take_ssh_keys()` takes
+them off before an adapter is handed the rest."""
 
 CLI_ONLY_SSH_KEYS = tuple(name for name in SSH_KEYS if BY_NAME[name].cli_only)
-"""SSH keys a config file may not answer.
-
-Config files are discovered in the working directory, so a cloned repository
-supplies one. `ssh_allow_reuse` turns off the check that the local port is not
-already someone else's listener, and a default that fails closed has to stay
-the caller's to turn off.
-"""
+"""SSH keys a config file may not answer: `ssh_allow_reuse` turns off the
+check that the local port is nobody else's listener, and a cloned repository
+supplies a config file."""
 
 CLI_ONLY_SESSION_KEYS = tuple(
     option.name
     for option in CORE_OPTIONS
     if option.cli_only and option.hsql is not None and option.name not in SSH_KEYS
 )
-"""The keys that decide which process runs an invocation, read from the
-command line alone as `CLI_ONLY_SSH_KEYS` are.
-
-hsql reads all three off argv before it opens a config file, so a profile
-that set one would name a session the invocation never reached, turn a query
-into a server, or apply only to the runs that never reach a session.
-"""
+"""The keys that decide which process runs an invocation. hsql reads them
+off argv before any config file, so a profile could not answer them."""
 
 TUI_ONLY_KEYS = tuple(
     option.name
@@ -1193,9 +1116,6 @@ TUI_ONLY_KEYS = tuple(
 )
 """Profile keys the IDE reads and a headless caller must drop.
 
-One profile serves both commands, so a profile written for the IDE has to work
-headless -- these are dropped rather than handed to an adapter as options it
-never declared. `locale` in particular is one a headless caller must ignore:
-the IDE sets it to group digits for a human, and output that varied with
-`LC_ALL` would be output a caller could not predict.
+One profile serves both commands, and `locale` above all: output that varied
+with `LC_ALL` is output a caller could not predict.
 """

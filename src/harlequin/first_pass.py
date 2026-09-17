@@ -67,19 +67,14 @@ def first_pass(
 
     `installed` is every installed adapter's name, which the caller has usually
     already read for a `click.Choice`; a name that is not one of them is left
-    for that Choice to reject, with the list. `program` is the command this
-    pass is for, which is also whose declarations it probes with.
+    for that Choice to reject, with the list. `program` names the command,
+    whose `first_pass` declarations the probe parses with.
 
-    What the probe parses with is every option `program` declared `first_pass`,
-    so a flag of this command's is one the pass knows about and a value of one
-    is not mistaken for another option's. `needs_adapter` and `needs_profile`
-    read what the probe found and say whether this invocation wants each of
-    them; an invocation that wants neither pays for neither. They are two
-    questions because one invocation answers them differently: `hsql --config
-    init` writes a profile rather than running under one, so it needs the
-    adapter whose options it is about to write and must not read a profile that
-    does not exist yet. `needs_profile` defaults to `needs_adapter`, which is
-    the same answer everywhere else.
+    `needs_adapter` and `needs_profile` say whether this invocation wants each;
+    one that wants neither pays for neither. They are two questions because
+    `hsql --config init` needs the adapter whose options it writes and must not
+    read a profile that does not exist yet. `needs_profile` defaults to
+    `needs_adapter`.
 
     A config file it cannot read is held, not raised: at this point there is no
     command and so no exit code, and the profile is wanted whether or not it
