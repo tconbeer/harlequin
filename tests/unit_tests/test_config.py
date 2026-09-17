@@ -7,7 +7,6 @@ import pytest
 
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection
 from harlequin.config import (
-    TUI_ONLY_KEYS,
     Config,
     ConfigFile,
     ConfigProblem,
@@ -25,6 +24,7 @@ from harlequin.config import (
     resolve_profile,
     validate_config_files,
 )
+from harlequin.core_options import TUI_ONLY_KEYS
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 from harlequin.options import (

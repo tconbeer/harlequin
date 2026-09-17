@@ -25,12 +25,12 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Collection, Mapping, Sequence
 
 import click
 
 from harlequin.config import DEFAULT_ADAPTER, Profile, load_profile
+from harlequin.core_options import first_pass_options
 from harlequin.exception import HarlequinConfigError
 
 if TYPE_CHECKING:
@@ -59,7 +59,6 @@ def first_pass(
     installed: Sequence[str],
     *,
     program: str,
-    extra_options: Sequence[click.Option] = (),
     needs_adapter: Callable[[Mapping[str, Any]], bool] | None = None,
     needs_profile: Callable[[Mapping[str, Any]], bool] | None = None,
     no_args_is_help: bool = False,
@@ -68,17 +67,14 @@ def first_pass(
 
     `installed` is every installed adapter's name, which the caller has usually
     already read for a `click.Choice`; a name that is not one of them is left
-    for that Choice to reject, with the list.
+    for that Choice to reject, with the list. `program` names the command,
+    whose `first_pass` declarations the probe parses with.
 
-    `extra_options` are spellings this command has that bear on the answer --
-    the caller's own flags, so that a value of one is not mistaken for another
-    option's. `needs_adapter` and `needs_profile` read what the probe found and
-    say whether this invocation wants each of them; an invocation that wants
-    neither pays for neither. They are two questions because one invocation
-    answers them differently: `hsql --config init` writes a profile rather than
-    running under one, so it needs the adapter whose options it is about to
-    write and must not read a profile that does not exist yet. `needs_profile`
-    defaults to `needs_adapter`, which is the same answer everywhere else.
+    `needs_adapter` and `needs_profile` say whether this invocation wants each;
+    one that wants neither pays for neither. They are two questions because
+    `hsql --config init` needs the adapter whose options it writes and must not
+    read a profile that does not exist yet. `needs_profile` defaults to
+    `needs_adapter`.
 
     A config file it cannot read is held, not raised: at this point there is no
     command and so no exit code, and the profile is wanted whether or not it
@@ -87,14 +83,7 @@ def first_pass(
     probe = click.Command(
         program,
         params=[
-            click.Option(["-a", "--adapter"]),
-            click.Option(["-P", "--profile"]),
-            click.Option(
-                ["--config-path"],
-                type=click.Path(path_type=Path),
-                envvar="HARLEQUIN_CONFIG_PATH",
-            ),
-            *extra_options,
+            *first_pass_options(program),
             # click's own --help and --version are eager and would exit; these
             # are the same spellings as plain flags, so the probe can see that
             # one was asked for.

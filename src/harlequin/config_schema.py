@@ -31,13 +31,15 @@ from typing import TYPE_CHECKING, Any, Container, Mapping, Sequence
 import msgspec
 
 from harlequin.config import (
-    CLI_ONLY_SESSION_KEYS,
-    CLI_ONLY_SSH_KEYS,
     DEFAULT_ADAPTER,
-    TUI_ONLY_KEYS,
     Config,
     adapter_options_model,
     sluggify_option_name,
+)
+from harlequin.core_options import (
+    CLI_ONLY_SESSION_KEYS,
+    CLI_ONLY_SSH_KEYS,
+    TUI_ONLY_KEYS,
 )
 from harlequin.keymap import RawKeyBinding
 

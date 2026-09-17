@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from harlequin.cli import DEFAULT_KEYMAP_NAMES
+from harlequin.core_options import DEFAULT_KEYMAP_NAMES
 from harlequin.exception import HarlequinConfigError
 from harlequin.keymap import HarlequinKeyMap
 from harlequin.plugins import (

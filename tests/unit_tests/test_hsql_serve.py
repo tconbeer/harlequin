@@ -28,15 +28,17 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
-from harlequin.config import TUI_ONLY_KEYS
-from harlequin.exception import HarlequinConnectionError
-from harlequin.hsql import protocol, server
-from harlequin.hsql.cli import (
+from harlequin.core_options import (
     CONFIG_OPTIONS,
     CONNECTION_OPTIONS,
     PER_REQUEST_OPTIONS,
     ROLE_OPTIONS,
     SERVER_OPTIONS,
+    TUI_ONLY_KEYS,
+)
+from harlequin.exception import HarlequinConnectionError
+from harlequin.hsql import protocol, server
+from harlequin.hsql.cli import (
     _execute_all,
     _fetched,
     _Run,
@@ -145,7 +147,10 @@ def served_by(
 def test_every_option_is_in_exactly_one_group() -> None:
     """The rule that defines the two roles: `--serve` refuses the per-request
     group and a served request refuses the server's, so an option in neither
-    or in both would be one nobody refuses -- or one both do."""
+    or in both would be one nobody refuses -- or one both do.
+
+    The groups are read off the declarations now, so what this catches is an
+    option that reached the command some other way."""
     declared = {param.name for param in bare_command().params if param.name}
     groups = [
         CONNECTION_OPTIONS,

@@ -40,6 +40,7 @@ STEPS: list[tuple[str, str]] = [
     ("harlequin.catalog", "import harlequin.catalog"),
     ("harlequin.options", "import harlequin.options"),
     ("harlequin.config", "import harlequin.config"),
+    ("harlequin.core_options", "import harlequin.core_options"),
     ("harlequin.plugins", "import harlequin.plugins"),
     (
         "fastdatatable backend",

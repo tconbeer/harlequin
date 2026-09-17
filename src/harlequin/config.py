@@ -104,55 +104,6 @@ minute of someone reading a screen. `--ssh-batch-mode` is what an unattended
 caller passes to fail at the first prompt instead of waiting this out.
 """
 
-SSH_KEYS = (
-    "ssh_host",
-    "ssh_forward",
-    "ssh_batch_mode",
-    "ssh_allow_reuse",
-    "ssh_timeout",
-)
-"""The profile keys that describe an SSH tunnel, which both commands read.
-
-Named here rather than in `harlequin.ssh` so that an invocation with no tunnel
-can take them off a config without importing the module that opens one.
-"""
-
-CLI_ONLY_SSH_KEYS = ("ssh_allow_reuse",)
-"""SSH keys a config file may not answer.
-
-Config files are discovered in the working directory, so a cloned repository
-supplies one. This key turns off the check that the local port is not already
-someone else's listener, and a default that fails closed has to stay the
-caller's to turn off.
-"""
-
-CLI_ONLY_SESSION_KEYS = ("session", "serve", "session_status")
-"""The keys that decide which process runs an invocation, read from the
-command line alone as `CLI_ONLY_SSH_KEYS` are.
-
-hsql reads all three off argv before it opens a config file, so a profile
-that set one would name a session the invocation never reached, turn a query
-into a server, or apply only to the runs that never reach a session.
-"""
-
-TUI_ONLY_KEYS = (
-    "theme",
-    "keymap_name",
-    "show_files",
-    "show_s3",
-    "locale",
-    "no_download_tzdata",
-    "viewer_max_rows",
-)
-"""Profile keys the IDE reads and a headless caller must drop.
-
-One profile serves both commands, so a profile written for the IDE has to work
-headless -- these are dropped rather than handed to an adapter as options it
-never declared. `locale` in particular is one a headless caller must ignore:
-the IDE sets it to group digits for a human, and output that varied with
-`LC_ALL` would be output a caller could not predict.
-"""
-
 Profile = Dict[str, Any]
 """One `[profiles.x]` table: a command's own options, plus its adapter's.
 
@@ -711,6 +662,11 @@ def take_ssh_keys(
     if a config file answered a key only a caller may, or if `ssh_timeout` is
     not a number of seconds.
     """
+    # imported here rather than at module scope: an option declaration is
+    # click's to render, and this module is on the path of everything that only
+    # reads a config file
+    from harlequin.core_options import CLI_ONLY_SSH_KEYS, SSH_KEYS
+
     taken = {key: config.pop(key) for key in SSH_KEYS if key in config}
     for key in CLI_ONLY_SSH_KEYS:
         if taken.get(key) and key not in typed:

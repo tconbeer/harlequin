@@ -168,11 +168,11 @@
         },
         "profile": {
           "type": "string",
-          "description": "Load a profile from an available config file. Options passed here take precedence over the profile's. Use the profile named None for Harlequin's defaults instead of the config file's default profile."
+          "description": "Select a profile from an available config file to load its values. Other options passed here will take precedence over those loaded from the profile. Use the special profile named None to use Harlequin's defaults, instead of the default profile specified in the config file."
         },
         "adapter": {
           "type": "string",
-          "description": "The installed adapter plug-in to connect with.",
+          "description": "The name of an installed database adapter plug-in to use to connect to the database at CONN_STR.",
           "default": "duckdb"
         },
         "read_only": {
@@ -200,20 +200,20 @@
               }
             }
           ],
-          "description": "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeatable. Omit it when your ssh config has the LocalForward."
+          "description": "A local forward, spelled as ssh -L takes one: LOCAL:HOST:REMOTE. Repeat this option for more than one. Omit it when your ssh config already has the LocalForward."
         },
         "ssh_batch_mode": {
           "type": "boolean",
-          "description": "Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode; set it in scripts, CI and cron.",
+          "description": "Fail rather than prompt for a passphrase, a password or a host key. ssh's own BatchMode.",
           "default": false
         },
         "ssh_timeout": {
           "type": "number",
-          "description": "Seconds to wait for the tunnel's forwards. [default: 60]"
+          "description": "Seconds to wait for the tunnel's forwards. Default is 60."
         },
         "config_path": {
           "type": "string",
-          "description": "Use this config file instead of the ones hsql discovers."
+          "description": "By default, Harlequin finds files named .harlequin.toml in the current directory and the home directory (~) and merges them. Use this option to specify the full path to a config file at a different location."
         },
         "config_mode": {
           "type": "string",
@@ -328,7 +328,7 @@
         "theme": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
-        "keymap_name": {
+        "viewer_max_rows": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
         "show_files": {
@@ -337,13 +337,13 @@
         "show_s3": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
+        "keymap_name": {
+          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
+        },
         "locale": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         },
         "no_download_tzdata": {
-          "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
-        },
-        "viewer_max_rows": {
           "description": "Read by the harlequin IDE; hsql ignores it. See `harlequin --help`."
         }
       }

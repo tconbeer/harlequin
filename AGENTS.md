@@ -162,9 +162,11 @@ The Data Catalog (`components/data_catalog/database_tree.py`) loads by viewport,
 
 `HARLEQUIN_ACTIONS` is the single registry mapping an action name to a target widget class and an action method. Keymaps (plugin- or config-defined) map keys to those names, and `bind()` applies them at runtime. A new user-bindable behavior needs an entry in `HARLEQUIN_ACTIONS` — otherwise it can't be bound or shown in the help screen. `harlequin --keys` launches a second Textual app (`keys_app.py`) that edits keymaps and writes them back into the user's config file.
 
-### Options and config (`options.py`, `config.py`, `cli.py`)
+### Options and config (`options.py`, `core_options.py`, `config.py`, `cli.py`)
 
 **`docs/cli-options.md` is the reference for the option groups and the checklist for adding an option** — read it before adding one to either command.
+
+`core_options.py` is where both commands' own options are declared, once each: a `CoreOption` says which command takes it, how that command spells it, and the flags that decide where its value may come from — `group`, which is when `hsql` reads it, and `cli_only`, which is whether a config file may set it. `attach_core_options()` builds the click options from the list, in declaration order, which is the order `hsql --help` lists them; a `RuntimeValue` stands in for what only a command can supply (a `click.Choice` of what is installed, a callback, help naming a computed default). The name lists the two commands used to compare against — the five groups, `TUI_ONLY_KEYS`, `CLI_ONLY_SESSION_KEYS`, `CLI_ONLY_SSH_KEYS`, `SSH_KEYS` — are derived from the declarations, so an option cannot be declared without answering them. Nothing here may import either command, or anything the `hsql does not reach the TUI` contract forbids.
 
 `AbstractOption` subclasses (`TextOption`, `ListOption`, `PathOption`, `SelectOption`, `FlagOption`) each know how to render themselves three ways: `to_click()` for the CLI, `to_widgets()` for the TUI, and `to_questionary()` for the config wizard. Declaring an adapter option once gets all three. `cli.py` builds the click command dynamically from the loaded adapters' `ADAPTER_OPTIONS`. Anything added to `AbstractOption` has to be **concrete, with a working base implementation**: it is public API and third-party adapters subclass it, so a subclass that predates the addition still has to answer — which is what `to_dict()`'s `getattr` calls and `secret`'s class attribute are for.
 
