@@ -433,7 +433,7 @@ class Harlequin(AppBase):
         self.footer = Footer(show_command_palette=False)
 
         # lay out the widgets
-        with Horizontal():
+        with Horizontal() as self.main_row:
             yield self.data_catalog
             with Vertical(id="main_panel"):
                 yield editor_placeholder
@@ -1337,9 +1337,8 @@ class Harlequin(AppBase):
         if self.screen.query(KeysPanel):
             return
         # on the main screen, a column beside the other panels, above the footer
-        main_row = self.data_catalog.parent
-        if isinstance(main_row, Widget) and self.data_catalog.screen is self.screen:
-            main_row.mount(KeysPanel())
+        if self.main_row.screen is self.screen:
+            self.main_row.mount(KeysPanel())
         else:
             self.screen.mount(KeysPanel())
 

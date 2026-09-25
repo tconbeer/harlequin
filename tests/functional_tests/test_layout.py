@@ -194,7 +194,7 @@ async def test_toggle_keys_panel(
             lambda: next(iter(app.screen.query(KeysPanel)), None),
             description="the Keys panel to be mounted",
         )
-        assert panel.parent is app.data_catalog.parent
+        assert panel.parent is app.main_row
         await wait_for(
             pilot,
             lambda: "Format Query" in listed_descriptions(),
@@ -215,5 +215,16 @@ async def test_toggle_keys_panel(
             lambda: not app.screen.query(KeysPanel),
             description="the Keys panel to be removed",
         )
+
+        # the command palette's Keys command opens the same panel
+        await pilot.press("ctrl+p")
+        await pilot.press(*"keys")
+        await pilot.press("enter")
+        panel = await wait_for_value(
+            pilot,
+            lambda: next(iter(app.query(KeysPanel)), None),
+            description="the palette's Keys command to mount the Keys panel",
+        )
+        assert panel.parent is app.main_row
 
         assert all(snap_results)
