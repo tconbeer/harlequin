@@ -65,6 +65,7 @@ from harlequin.components import (
     ExportScreen,
     HelpScreen,
     HistoryScreen,
+    KeysPanel,
     ResultsViewer,
     RunQueryBar,
     export_callback,
@@ -1331,6 +1332,22 @@ class Harlequin(AppBase):
 
     def action_show_help_screen(self) -> None:
         self.push_screen(HelpScreen(id="help_screen"))
+
+    def action_show_help_panel(self) -> None:
+        if self.screen.query(KeysPanel):
+            return
+        # on the main screen, a column beside the other panels, above the footer
+        main_row = self.data_catalog.parent
+        if isinstance(main_row, Widget) and self.data_catalog.screen is self.screen:
+            main_row.mount(KeysPanel())
+        else:
+            self.screen.mount(KeysPanel())
+
+    def action_toggle_keys_panel(self) -> None:
+        if self.screen.query(KeysPanel):
+            self.action_hide_help_panel()
+        else:
+            self.action_show_help_panel()
 
     def action_show_debug_info(self) -> None:
         SCREEN_ID = "debug_info_screen"

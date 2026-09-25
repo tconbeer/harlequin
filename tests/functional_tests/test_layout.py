@@ -3,7 +3,9 @@ from typing import Awaitable, Callable, List
 import pytest
 
 from harlequin import Harlequin
+from harlequin.components.keys_panel import KeysList, KeysPanel, KeysTable
 from tests.functional_tests.helpers import wait_for_catalog_tree, wait_for_editor
+from tests.waiting import settle_app, wait_for, wait_for_value
 
 
 @pytest.mark.asyncio
@@ -164,6 +166,54 @@ async def test_toggle_full_screen(
             assert w.styles.width.value > 0
         snap_results.append(
             await app_snapshot(app, "Exit RV Full Screen (sidebar visible)")
+        )
+
+        assert all(snap_results)
+
+
+@pytest.mark.asyncio
+async def test_toggle_keys_panel(
+    app: Harlequin,
+    app_snapshot: Callable[..., Awaitable[bool]],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    def listed_descriptions() -> List[str]:
+        table = app.screen.query_one(KeysTable).render()
+        return [str(cell) for cell in table.columns[1].cells]
+
+    snap_results: List[bool] = []
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        editor = await wait_for_editor(pilot, app)
+        await wait_for_catalog_tree(pilot, app)
+        editor.focus()
+
+        await pilot.press("f7")
+        panel = await wait_for_value(
+            pilot,
+            lambda: next(iter(app.screen.query(KeysPanel)), None),
+            description="the Keys panel to be mounted",
+        )
+        assert panel.parent is app.data_catalog.parent
+        await wait_for(
+            pilot,
+            lambda: "Format Query" in listed_descriptions(),
+            description="the Keys panel to list the Query Editor's keys",
+        )
+        snap_results.append(await app_snapshot(app, "Keys Panel"))
+
+        await pilot.click(KeysList, offset=(5, 5))
+        assert app.focused is panel.query_one(KeysList)
+        await pilot.press("pagedown")
+        await settle_app(pilot)
+        assert "Format Query" in listed_descriptions()
+        snap_results.append(await app_snapshot(app, "Keys Panel Focused"))
+
+        await pilot.press("f7")
+        await wait_for(
+            pilot,
+            lambda: not app.screen.query(KeysPanel),
+            description="the Keys panel to be removed",
         )
 
         assert all(snap_results)

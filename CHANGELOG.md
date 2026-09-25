@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - DuckDB geometry columns now show as text, like `POINT (-117.93367 34.34613)`, instead of as raw bytes, in the Results Viewer and everywhere else; the spatial extension's types also get a `geo` label in the Data Catalog ([#302](https://github.com/tconbeer/harlequin/issues/302)).
+- Press `F7` to show or hide the Keys panel, which lists the keys for the focused widget. It now matches the rest of Harlequin's panels and can be focused (click or `Tab`) and scrolled with the keyboard. The new `toggle_keys_panel` action can be bound in a keymap ([#753](https://github.com/tconbeer/harlequin/issues/753)).
 
 ### Refactoring
 

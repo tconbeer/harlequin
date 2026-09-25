@@ -46,6 +46,11 @@ HARLEQUIN_ACTIONS = {
         description="Help",
         show=True,
     ),
+    "toggle_keys_panel": Action(
+        target=None,
+        action="toggle_keys_panel",
+        description="Keys",
+    ),
     "focus_next": Action(target=Screen, action="focus_next"),
     "focus_previous": Action(target=Screen, action="focus_previous"),
     "focus_query_editor": Action(

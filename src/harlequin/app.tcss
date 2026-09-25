@@ -8,6 +8,7 @@ $border-title-color-focus: $primary;
 DataCatalog,
 EditorCollection,
 FooterContainer > Input,
+KeysPanel,
 ResultsViewer,
 HistoryScreen #history_filter,
 HistoryScreen #history_filter_controls > Select,
@@ -26,6 +27,7 @@ LoadingIndicator {
 DataCatalog:focus-within,
 EditorCollection:focus-within,
 FooterContainer > Input:focus,
+KeysPanel:focus-within,
 ResultsViewer:focus-within,
 HistoryScreen #history_filter:focus,
 HistoryScreen #history_filter_controls > Select:focus,
@@ -379,6 +381,29 @@ ResultsTable > .datatable--header-hover {
 ResultsTable > .datatable--hover {
     color: $text;
     background: $boost;
+}
+
+/* KEYS PANEL */
+KeysPanel {
+    padding: 0;
+}
+
+Horizontal > KeysPanel {
+    split: initial;
+}
+
+KeysPanel KeysList {
+    background: $background;
+    padding: 0 1;
+    & > BindingsTable > .bindings-table--key {
+        color: $secondary;
+    }
+    & > BindingsTable > .bindings-table--description {
+        color: $primary;
+    }
+    & > BindingsTable > .bindings-table--header {
+        color: $primary;
+    }
 }
 
 /* TEXT MODALS (CELL VIEW, ERROR) */
