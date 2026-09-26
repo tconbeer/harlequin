@@ -1331,7 +1331,15 @@ class Harlequin(AppBase):
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
-        self.push_screen(HelpScreen(id="help_screen"))
+        keys_panel_key = next(
+            (
+                self.get_key_display(binding)
+                for _, binding in self._bindings
+                if binding.action == "toggle_keys_panel"
+            ),
+            None,
+        )
+        self.push_screen(HelpScreen(keys_panel_key=keys_panel_key, id="help_screen"))
 
     def action_show_help_panel(self) -> None:
         if self.screen.query(KeysPanel):

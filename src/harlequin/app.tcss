@@ -444,6 +444,11 @@ HelpScreen {
     padding: 0;
 }
 
+HelpScreen #keys_panel_tip {
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
 /* Shared Components */
 
 #modal_outer {

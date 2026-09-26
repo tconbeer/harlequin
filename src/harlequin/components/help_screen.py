@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from textual import events
@@ -15,6 +17,16 @@ class HelpScreen(ModalScreen):
         docs, available at https://harlequin.sh/docs/getting-started
     """.split()
 
+    def __init__(
+        self,
+        keys_panel_key: str | None = None,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self.keys_panel_key = keys_panel_key
+
     def compose(self) -> ComposeResult:
         markdown_path = Path(__file__).parent / "help_screen.md"
         with open(markdown_path, "r") as f:
@@ -22,12 +34,24 @@ class HelpScreen(ModalScreen):
 
         with VerticalSuppressClicks(id="modal_outer"):
             yield Static(" ".join(self.header_text), id="modal_header")
+            yield Static(self._keys_panel_tip(), id="keys_panel_tip")
             with VerticalScroll(id="modal_inner"):
                 yield Markdown(markdown=markdown)
             yield Static(
                 "Scroll with arrows. Press any other key to continue.",
                 id="modal_footer",
             )
+
+    def _keys_panel_tip(self) -> str:
+        if self.keys_panel_key is None:
+            return (
+                "To see the keys for the focused widget, open the Keys panel from "
+                "the command palette ([b $secondary]ctrl+p[/])."
+            )
+        return (
+            f"Press [b $secondary]{self.keys_panel_key}[/] to show or hide the "
+            "Keys panel, which lists the keys for the focused widget."
+        )
 
     def on_mount(self) -> None:
         container = self.query_one("#modal_outer")
