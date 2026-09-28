@@ -43,7 +43,7 @@ dependencies = [
     # but transitively via prompt_toolkit -- which is one of the packages the
     # headless import graph exists to keep out, so inheriting it from there is
     # exactly backwards. It is pure Python with no dependencies of its own.
-    "wcwidth>=0.2.13,<0.9",
+    "wcwidth>=0.9.1,<0.10",
 
     # other deps
     "duckdb>=1.1.1; python_version < '3.14'",
@@ -76,7 +76,7 @@ dependencies = [
 
 [project.optional-dependencies]
 
-s3 = ["boto3==1.43.93"]
+s3 = ["boto3==1.43.103"]
 postgres = ["harlequin-postgres"]
 mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
@@ -112,7 +112,7 @@ test = [
     "pytest-asyncio==1.4.0",
     "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@a2c6763b45283f76757a123342900accefcf04e8",
-    "boto3==1.43.93",
+    "boto3==1.43.103",
     # extension tests require consistent version of duckdb.
     "duckdb==1.5.5",
     "flaky>=3.8.1",
