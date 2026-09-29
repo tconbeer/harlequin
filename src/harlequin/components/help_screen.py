@@ -5,13 +5,13 @@ from pathlib import Path
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
-from textual.screen import ModalScreen
 from textual.widgets import Markdown, Static
 
+from harlequin.components.modal import HarlequinModal
 from harlequin.components.text_modal import VerticalSuppressClicks
 
 
-class HelpScreen(ModalScreen):
+class HelpScreen(HarlequinModal[None]):
     header_text = """
         Welcome to Harlequin! This screen contains a small subset of the online
         docs, available at https://harlequin.sh/docs/getting-started
@@ -73,7 +73,7 @@ class HelpScreen(ModalScreen):
         elif event.key == "pagedown":
             self.body.scroll_page_down()
         else:
-            self.app.pop_screen()
+            self.dismiss()
 
     def on_click(self) -> None:
-        self.app.pop_screen()
+        self.dismiss()

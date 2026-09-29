@@ -24,9 +24,12 @@ from textual.worker import Worker, WorkerState
 
 from harlequin import Harlequin
 from harlequin.autocomplete.completers import BUFFER_TYPE_LABEL
-from harlequin.catalog import CatalogItem, InteractiveCatalogItem
+from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.components import ErrorModal, ExportScreen
-from harlequin.components.data_catalog.database_tree import DatabaseTree
+from harlequin.components.data_catalog.database_tree import (
+    DEMAND_PRIORITY,
+    DatabaseTree,
+)
 from harlequin_duckdb.adapter import DuckDbAdapter
 from tests.functional_tests.helpers import (
     expand_catalog_node,
@@ -35,7 +38,7 @@ from tests.functional_tests.helpers import (
     wait_for_editor,
     wait_for_error_modal,
 )
-from tests.waiting import POLL_INTERVAL, wait_for, wait_for_value
+from tests.waiting import POLL_INTERVAL, settle_app, wait_for, wait_for_value
 
 
 class MockS3Object(NamedTuple):
@@ -773,3 +776,64 @@ async def test_background_loader_failure_is_surfaced_without_crashing(
         # the failure stopped the loader: it is terminal, not waiting for work
         assert loader.state == WorkerState.ERROR
         assert app.is_running
+
+
+class UnreachableCatalogItem(InteractiveCatalogItem):
+    """A catalog item whose fetch_children() fails while `unreachable` is set."""
+
+    unreachable: ClassVar[bool] = True
+    fetch_count: ClassVar[int] = 0
+
+    def fetch_children(self) -> List[CatalogItem]:
+        type(self).fetch_count += 1
+        if type(self).unreachable:
+            raise RuntimeError("connection is gone")
+        return []
+
+
+@pytest.mark.asyncio
+async def test_failed_fetch_pauses_prefetch_until_one_succeeds(
+    duckdb_adapter: Type[DuckDbAdapter],
+) -> None:
+    """One failed fetch stops the speculative loads that would fail the same
+    way, so a dropped connection raises one error, not one per node in view.
+
+    Regression test for #1171.
+    """
+    UnreachableCatalogItem.unreachable = True
+    UnreachableCatalogItem.fetch_count = 0
+    items = [
+        UnreachableCatalogItem(
+            qualified_identifier=f"item_{index}",
+            query_name=f"item_{index}",
+            label=f"item_{index}",
+            type_label="t",
+        )
+        for index in range(10)
+    ]
+
+    app = Harlequin(duckdb_adapter((":memory:",)), connection_hash="unreachable")
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_editor(pilot, app)
+        tree = await wait_for_catalog_tree(pilot, app)
+
+        tree.catalog = Catalog(items=list(items))
+        modal = await wait_for_error_modal(pilot, app)
+        assert "connection is gone" in str(modal.error)
+        await pilot.press("space")
+        await settle_app(pilot)
+        assert UnreachableCatalogItem.fetch_count == 1
+        assert len(app.screen_stack) == 1
+
+        # a node the user asks for is still fetched, and its success resumes
+        # prefetch for the nodes the pause skipped
+        UnreachableCatalogItem.unreachable = False
+        unloaded_item = next(item for item in items if not item.loaded)
+        tree._add_to_load_queue(unloaded_item, priority=DEMAND_PRIORITY)
+        await wait_for(
+            pilot,
+            lambda: all(item.loaded for item in items),
+            description="prefetch to resume and load every item",
+        )
+        assert UnreachableCatalogItem.fetch_count == len(items)
+        assert len(app.screen_stack) == 1

@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-- Fixes a crash when closing an error modal, and shows a repeated error once instead of stacking a modal for every catalog node that failed to load, e.g., after an SSH tunnel closes ([#1171](https://github.com/tconbeer/harlequin/issues/1171)).
+- Fixes a crash when closing an error modal. A lost connection (e.g., a closed SSH tunnel) now shows one Data Catalog error instead of one for every node Harlequin tried to load ([#1171](https://github.com/tconbeer/harlequin/issues/1171)).
 
 ### Refactoring
 

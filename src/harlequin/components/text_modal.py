@@ -7,8 +7,9 @@ from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
 from textual.widgets import Static
+
+from harlequin.components.modal import HarlequinModal
 
 
 class VerticalSuppressClicks(Vertical):
@@ -22,7 +23,7 @@ class ClickableStatic(Static):
         cast("TextModal", self.screen).copy()
 
 
-class TextModal(ModalScreen[None]):
+class TextModal(HarlequinModal[None]):
     """Base for the modals that show a block of text -- a result cell's whole
     value, an error message -- in a scrollable pane. The arrow and page keys
     scroll it, clicking the text or pressing c copies it, and any other key
@@ -75,10 +76,6 @@ class TextModal(ModalScreen[None]):
         # on the widget underneath (e.g. a results-table shortcut).
         event.stop()
         event.prevent_default()
-        if not self.is_active:
-            # a key queued before another modal covered this one; dismissing
-            # would pop that modal and leave this one up with its result spent
-            return
         scroll_action = self.SCROLL_ACTIONS.get(event.key)
         if scroll_action is not None:
             getattr(self.body, scroll_action)()
@@ -90,8 +87,7 @@ class TextModal(ModalScreen[None]):
     def on_click(self) -> None:
         # the modal's own container suppresses clicks, so this is a click
         # outside it
-        if self.is_active:
-            self.dismiss()
+        self.dismiss()
 
     def copy(self) -> None:
         # OSC 52 works over ssh and where pyperclip has no backend

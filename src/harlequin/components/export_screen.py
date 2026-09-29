@@ -8,12 +8,12 @@ from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import QueryError
-from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
 from textual_fastdatatable.backend import ArrowBackend
 from textual_textarea import PathInput
 
+from harlequin.components.modal import HarlequinModal
 from harlequin.components.results_viewer import ResultsTable
 from harlequin.components.text_modal import ErrorModal
 from harlequin.exception import HarlequinCopyError
@@ -24,7 +24,7 @@ ExportOptions = Dict[str, Any]
 
 
 def export_callback(
-    screen_data: Tuple[Path, str, ExportOptions],
+    screen_data: Tuple[Path, str, ExportOptions] | None,
     table: ResultsTable,
     success_callback: Callable[[], None],
     error_callback: Callable[[Exception], None],
@@ -44,7 +44,11 @@ def export_callback(
     nothing else, or an empty array. That is a true account of what the query
     returned, and it is what tells a reader "nothing matched" apart from
     "the query failed".
+
+    None is a dialog the user cancelled.
     """
+    if screen_data is None:
+        return
     path, format_name, options = screen_data
     try:
         assert isinstance(table.backend, ArrowBackend)
@@ -128,7 +132,7 @@ class CopyOptionsMenu(Widget, can_focus=False):
             return None
 
 
-class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
+class ExportScreen(HarlequinModal[Tuple[Path, str, ExportOptions]]):
     def __init__(
         self,
         formats: list[HarlequinCopyFormat],
@@ -189,14 +193,14 @@ class ExportScreen(ModalScreen[Tuple[Path, str, ExportOptions]]):
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "escape":
-            self.app.pop_screen()
+            self.dismiss()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button = event.button
         if button.id == "export":
             self._export()
         else:
-            self.app.pop_screen()
+            self.dismiss()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         event.stop()

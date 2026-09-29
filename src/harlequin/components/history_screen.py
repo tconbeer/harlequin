@@ -10,12 +10,12 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.message import Message
-from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Footer, Input, OptionList, Select
 from textual.widgets.option_list import Option
 from textual_textarea import TextEditor
 
+from harlequin.components.modal import HarlequinModal
 from harlequin.history import History, QueryExecution
 from harlequin.messages import WidgetMounted
 from harlequin.query_log import PROGRAMS, STATUSES
@@ -74,7 +74,7 @@ class QueryPreview(TextEditor, inherit_bindings=False):
     """
 
 
-class HistoryScreen(ModalScreen[str]):
+class HistoryScreen(HarlequinModal[str]):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "history-screen--error-label",
     }
@@ -193,7 +193,7 @@ class HistoryScreen(ModalScreen[str]):
     def action_cancel(self) -> None:
         """Empty the filter, put the controls away, or leave the screen."""
         if not self._filters_have_focus:
-            self.app.pop_screen()
+            self.dismiss()
         elif self.filter_input.value:
             self.filter_input.value = ""
         else:
