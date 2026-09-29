@@ -4,12 +4,14 @@ from types import SimpleNamespace
 from typing import Awaitable, Callable, cast
 
 import pytest
+from textual import events
 from textual.message import Message
 from textual.worker import Worker, WorkerState
 
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
+from harlequin.components.data_catalog.tree import HarlequinTree
 from tests.functional_tests.helpers import (
     wait_for_any_table,
     wait_for_editor,
@@ -579,4 +581,74 @@ async def test_worker_state_change_without_error_is_ignored(
         await app.handle_worker_error(worker_error_message("some_future_worker", None))
         await pilot.pause()
         assert len(app.screen_stack) == 1
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_identical_errors_raise_one_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Every catalog node a dropped connection fails to load is one modal.
+
+    Regression test for #1171.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        for _ in range(3):
+            app.post_message(
+                HarlequinTree.CatalogError(
+                    catalog_type="database", error=RuntimeError("tunnel closed")
+                )
+            )
+        app.post_message(
+            HarlequinTree.CatalogError(
+                catalog_type="database", error=RuntimeError("something else")
+            )
+        )
+        await wait_for(
+            pilot,
+            lambda: len(_modal_errors_on_screen(app)) == 2,
+            description="one modal per distinct error",
+        )
+        await pilot.pause()
+        assert [str(modal.error) for modal in _modal_errors_on_screen(app)] == [
+            "tunnel closed",
+            "something else",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_key_queued_for_a_covered_error_modal_does_not_crash(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A key a modal received after another covered it must not dismiss either.
+
+    Regression test for #1171: it popped the modal on top and spent the covered
+    one's result, so the next key to reach it raised InvalidStateError.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        app._push_error_modal("Catalog Error", "first", RuntimeError("first"))
+        covered_modal = await wait_for_error_modal(pilot, app)
+        covered_modal.post_message(events.Key("space", " "))
+        app._push_error_modal("Catalog Error", "second", RuntimeError("second"))
+        await pilot.pause()
+        assert [str(modal.error) for modal in _modal_errors_on_screen(app)] == [
+            "first",
+            "second",
+        ]
+
+        await pilot.press("space")
+        await pilot.press("space")
+        await wait_for(
+            pilot,
+            lambda: len(app.screen_stack) == 1,
+            description="both modals to be dismissed",
+        )
         assert app.is_running

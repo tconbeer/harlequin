@@ -1625,6 +1625,17 @@ class Harlequin(AppBase):
         return self.editor.selected_queries()
 
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
+        error_text = str(error)
+        for screen in self.screen_stack:
+            if (
+                isinstance(screen, ErrorModal)
+                and screen.title == title
+                and screen.header == header
+                and screen.text == error_text
+            ):
+                # one failure hit many times, like every catalog node a dropped
+                # connection could not load, is one modal to dismiss, not dozens
+                return
         self.push_screen(
             ErrorModal(
                 title=title,

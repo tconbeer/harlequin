@@ -75,6 +75,10 @@ class TextModal(ModalScreen[None]):
         # on the widget underneath (e.g. a results-table shortcut).
         event.stop()
         event.prevent_default()
+        if not self.is_active:
+            # a key queued before another modal covered this one; dismissing
+            # would pop that modal and leave this one up with its result spent
+            return
         scroll_action = self.SCROLL_ACTIONS.get(event.key)
         if scroll_action is not None:
             getattr(self.body, scroll_action)()
@@ -86,7 +90,8 @@ class TextModal(ModalScreen[None]):
     def on_click(self) -> None:
         # the modal's own container suppresses clicks, so this is a click
         # outside it
-        self.dismiss()
+        if self.is_active:
+            self.dismiss()
 
     def copy(self) -> None:
         # OSC 52 works over ssh and where pyperclip has no backend

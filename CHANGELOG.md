@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - DuckDB geometry columns now show as text, like `POINT (-117.93367 34.34613)`, instead of as raw bytes, in the Results Viewer and everywhere else; the spatial extension's types also get a `geo` label in the Data Catalog ([#302](https://github.com/tconbeer/harlequin/issues/302)).
 - Press `F7` (bindable as `toggle_keys_panel`) to show or hide the Keys panel, which is restyled to match Harlequin's other panels and can now be focused and scrolled ([#753](https://github.com/tconbeer/harlequin/issues/753)).
 
+### Bug Fixes
+
+- Fixes a crash when closing an error modal, and shows a repeated error once instead of stacking a modal for every catalog node that failed to load, e.g., after an SSH tunnel closes ([#1171](https://github.com/tconbeer/harlequin/issues/1171)).
+
 ### Refactoring
 
 - Harlequin and `hsql` now declare their own CLI options in one place, where each option also says which command takes it and how it may be used ([#1145](https://github.com/tconbeer/harlequin/issues/1145)).
