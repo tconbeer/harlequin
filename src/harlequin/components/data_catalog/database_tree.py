@@ -101,13 +101,8 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         self._node_ids: dict[int, NodeID] = {}
         """The id of the node built for each item, keyed by id(item)."""
         self._prefetch_timer: Timer | None = None
-        self._speculation_paused = False
-        """Whether a fetch failed since the last one that succeeded.
-
-        One failure usually means the connection is gone, and speculative loads
-        on it would each fail too, so only the nodes the user expands are
-        fetched until one of them succeeds or the catalog is replaced.
-        """
+        self._prefetch_paused = False
+        """Prevents the loader from prefetching new nodes."""
         super().__init__(
             label="Root",
             data=CatalogItem(
@@ -223,7 +218,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         gets.
         """
         self._prefetch_timer = None
-        if self._speculation_paused:
+        if self._prefetch_paused:
             return
         first, last = self._prefetch_window()
         lines = self._tree_lines
@@ -250,7 +245,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         columns of the relation the buffer also names -- so this runs again
         whenever the loader delivers more of the catalog.
         """
-        if not self._symbol_names or self.root.data is None or self._speculation_paused:
+        if not self._symbol_names or self.root.data is None or self._prefetch_paused:
             return
         queued = 0
         frontier: deque[CatalogItem] = deque(self.root.data.children)
@@ -283,7 +278,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
         """
         # Orphan the old queue...
         self._load_queue = PriorityQueue()
-        self._speculation_paused = False
+        self._prefetch_paused = False
         self._queued_priority.clear()
         self._loading.clear()
         self._node_ids.clear()
@@ -498,11 +493,11 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
             try:
                 children = list(item.fetch_children())
             except BaseException as e:
-                self._speculation_paused = True
+                self._prefetch_paused = True
                 self.post_message(self.CatalogError(catalog_type="database", error=e))
                 return []
             else:
-                self._speculation_paused = False
+                self._prefetch_paused = False
                 item.children = children
                 self.post_message(NewCatalogItems(parent=item, items=children))
             finally:
@@ -538,7 +533,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                     # (or has since been loaded), so it is handled elsewhere.
                     continue
                 del self._queued_priority[key]
-                if priority != DEMAND_PRIORITY and self._speculation_paused:
+                if priority != DEMAND_PRIORITY and self._prefetch_paused:
                     # queued before a fetch failed; the next scan re-queues it
                     # once a fetch succeeds
                     continue
@@ -547,7 +542,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                     # the speculation no longer pays for itself.
                     continue
                 self._loading.add(key)
-                was_paused = self._speculation_paused
+                was_paused = self._prefetch_paused
                 try:
                     # Spin up a short-lived thread that will load the item's
                     # children. The tree lock is deliberately not held here: an
@@ -565,7 +560,7 @@ class DatabaseTree(HarlequinTree[CatalogItem], inherit_bindings=False):
                     continue
                 finally:
                     self._loading.discard(key)
-                if was_paused and not self._speculation_paused:
+                if was_paused and not self._prefetch_paused:
                     # a fetch succeeded, so re-queue what the pause skipped
                     self._schedule_prefetch_scan()
                 # the children we just loaded may include more of what the
