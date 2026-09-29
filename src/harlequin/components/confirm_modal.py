@@ -3,11 +3,12 @@ from __future__ import annotations
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
+from harlequin.components.modal import HarlequinModal
 
-class ConfirmModal(ModalScreen[bool]):
+
+class ConfirmModal(HarlequinModal[bool]):
     def __init__(self, prompt: str) -> None:
         super().__init__()
         self.prompt = prompt

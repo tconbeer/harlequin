@@ -7,8 +7,9 @@ from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
 from textual.widgets import Static
+
+from harlequin.components.modal import HarlequinModal
 
 
 class VerticalSuppressClicks(Vertical):
@@ -22,7 +23,7 @@ class ClickableStatic(Static):
         cast("TextModal", self.screen).copy()
 
 
-class TextModal(ModalScreen[None]):
+class TextModal(HarlequinModal[None]):
     """Base for the modals that show a block of text -- a result cell's whole
     value, an error message -- in a scrollable pane. The arrow and page keys
     scroll it, clicking the text or pressing c copies it, and any other key

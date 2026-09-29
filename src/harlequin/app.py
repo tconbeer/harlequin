@@ -454,7 +454,6 @@ class Harlequin(AppBase):
         if self.editor is not None and self.editor._has_focus_within:
             self.editor.pause_blink(visible=True)
 
-        ## TODO: PREVENT DUPLICATE SCREENS HERE.
         return super().push_screen(  # type: ignore[no-any-return,call-overload]
             screen,
             callback=callback,
@@ -1625,6 +1624,19 @@ class Harlequin(AppBase):
         return self.editor.selected_queries()
 
     def _push_error_modal(self, title: str, header: str, error: BaseException) -> None:
+        error_text = str(error)
+        for screen in self.screen_stack:
+            if (
+                isinstance(screen, ErrorModal)
+                and screen.title == title
+                and screen.header == header
+                and screen.text == error_text
+            ):
+                # one failure reported many times is one modal to dismiss
+                self.log.warning(
+                    "Repeated error modal suppressed", title=title, error=error
+                )
+                return
         self.push_screen(
             ErrorModal(
                 title=title,

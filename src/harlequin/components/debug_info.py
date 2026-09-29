@@ -8,9 +8,9 @@ import tomlkit
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
-from textual.screen import ModalScreen
 from textual.widgets import Collapsible, Markdown, Static
 
+from harlequin.components.modal import HarlequinModal
 from harlequin.components.text_modal import VerticalSuppressClicks
 from harlequin.config import Config, Profile
 from harlequin.options import AbstractOption
@@ -242,7 +242,7 @@ class AdapterDebugInfo:
         ]
 
 
-class DebugInfoScreen(ModalScreen):
+class DebugInfoScreen(HarlequinModal[None]):
     def __init__(
         self,
         harlequin_details: List[DebugWidget],
@@ -327,7 +327,7 @@ class DebugInfoScreen(ModalScreen):
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "escape":
-            self.app.pop_screen()
+            self.dismiss()
             event.stop()
         elif event.key == "pageup":
             container = self.query_one("#modal_outer")
@@ -339,4 +339,4 @@ class DebugInfoScreen(ModalScreen):
             event.stop()
 
     def on_click(self) -> None:
-        self.app.pop_screen()
+        self.dismiss()

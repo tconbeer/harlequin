@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
 from types import SimpleNamespace
 from typing import Awaitable, Callable, cast
 
 import pytest
+from textual import events
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.worker import Worker, WorkerState
 
+import harlequin.components as components
 from harlequin import Harlequin
 from harlequin.app import QueriesExecuted, QuerySubmitted, ResultsFetched
 from harlequin.components import ErrorModal
+from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.data_catalog.tree import HarlequinTree
+from harlequin.components.modal import HarlequinModal
 from tests.functional_tests.helpers import (
     wait_for_any_table,
     wait_for_editor,
     wait_for_error_modal,
 )
-from tests.waiting import wait_for, wait_for_messages
+from tests.waiting import wait_for, wait_for_messages, wait_for_value
 
 
 @pytest.mark.asyncio
@@ -580,3 +588,159 @@ async def test_worker_state_change_without_error_is_ignored(
         await pilot.pause()
         assert len(app.screen_stack) == 1
         assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_identical_errors_raise_one_modal(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """Every catalog node a dropped connection fails to load is one modal.
+
+    Regression test for #1171.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        for _ in range(3):
+            app.post_message(
+                HarlequinTree.CatalogError(
+                    catalog_type="database", error=RuntimeError("tunnel closed")
+                )
+            )
+        app.post_message(
+            HarlequinTree.CatalogError(
+                catalog_type="database", error=RuntimeError("something else")
+            )
+        )
+        await wait_for(
+            pilot,
+            lambda: len(_modal_errors_on_screen(app)) == 2,
+            description="one modal per distinct error",
+        )
+        await pilot.pause()
+        assert [str(modal.error) for modal in _modal_errors_on_screen(app)] == [
+            "tunnel closed",
+            "something else",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_key_queued_for_a_covered_error_modal_does_not_crash(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A key a modal received after another covered it must not dismiss either.
+
+    Regression test for #1171: it popped the modal on top and spent the covered
+    one's result, so the next key to reach it raised InvalidStateError.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        app._push_error_modal("Catalog Error", "first", RuntimeError("first"))
+        covered_modal = await wait_for_error_modal(pilot, app)
+        covered_modal.post_message(events.Key("space", " "))
+        app._push_error_modal("Catalog Error", "second", RuntimeError("second"))
+        await pilot.pause()
+        assert [str(modal.error) for modal in _modal_errors_on_screen(app)] == [
+            "first",
+            "second",
+        ]
+
+        await pilot.press("space")
+        await pilot.press("space")
+        await wait_for(
+            pilot,
+            lambda: len(app.screen_stack) == 1,
+            description="both modals to be dismissed",
+        )
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_click_queued_for_a_covered_error_modal_does_not_dismiss_either(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A click outside a modal that another has since covered changes nothing.
+
+    Regression test for #1171.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        app._push_error_modal("Catalog Error", "first", RuntimeError("first"))
+        covered_modal = await wait_for_error_modal(pilot, app)
+        app._push_error_modal("Catalog Error", "second", RuntimeError("second"))
+        # what a click the covered modal was already handling runs
+        covered_modal.on_click()
+        await pilot.pause()
+        assert [str(modal.error) for modal in _modal_errors_on_screen(app)] == [
+            "first",
+            "second",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_confirm_pressed_under_an_error_modal_waits_for_the_user(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A confirmation that lands after an error modal covered the prompt is
+    dropped, rather than popping the error modal unseen and leaving the prompt
+    up with its answer spent.
+
+    Regression test for #1171.
+    """
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+
+        answers: list[bool | None] = []
+        app.push_screen(ConfirmModal(prompt="Run it?"), callback=answers.append)
+        confirm_modal = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ConfirmModal) else None,
+            description="the confirm modal",
+        )
+        app._push_error_modal("Catalog Error", "covering", RuntimeError("covering"))
+        confirm_modal.action_continue()
+        await pilot.pause()
+        assert isinstance(app.screen, ErrorModal)
+        assert answers == []
+
+        await pilot.press("space")
+        await wait_for(
+            pilot,
+            lambda: app.screen is confirm_modal,
+            description="the error modal to be dismissed",
+        )
+        confirm_modal.action_cancel()
+        await wait_for(
+            pilot,
+            lambda: len(app.screen_stack) == 1 and answers == [False],
+            description="the confirm modal to be answered once, with No",
+        )
+        assert app.is_running
+
+
+def test_every_modal_dismisses_only_from_the_top() -> None:
+    """Each of Harlequin's modals has the guard against a stale dismiss."""
+    modal_classes: set[type[ModalScreen[object]]] = set()
+    for module_info in pkgutil.walk_packages(
+        components.__path__, prefix=f"{components.__name__}."
+    ):
+        module = importlib.import_module(module_info.name)
+        modal_classes.update(
+            member
+            for member in vars(module).values()
+            if isinstance(member, type)
+            and issubclass(member, ModalScreen)
+            and member.__module__.startswith("harlequin")
+        )
+    assert ConfirmModal in modal_classes
+    assert [cls for cls in modal_classes if not issubclass(cls, HarlequinModal)] == []
