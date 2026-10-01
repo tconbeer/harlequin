@@ -130,3 +130,34 @@ async def test_alt_letter_binding_beats_the_focused_editor(
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.active == "tab-1"
         assert editor.text == "select 1"
+
+
+@pytest.mark.asyncio
+async def test_keymap_binds_the_editor_text_area(
+    duckdb_adapter: type[HarlequinAdapter],
+    data_dir: Path,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """A keymap's code_editor.delete_word_left beats vscode's ctrl+w close_buffer."""
+    config_path = (
+        data_dir / "functional_tests" / "test_keymap_from_config" / "config.toml"
+    )
+    profile, my_keymaps = load_profile_and_keymaps(
+        config_path=config_path, profile_name="word_keys"
+    )
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        keymap_names=profile["keymap_name"],
+        user_defined_keymaps=my_keymaps,
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        editor = await wait_for_editor(pilot, app)
+
+        editor.text = "select foo"
+        editor.focus()
+        await pilot.press("ctrl+end")
+        await pilot.press("ctrl+w")
+        await pilot.pause()
+
+        assert editor.text == "select "

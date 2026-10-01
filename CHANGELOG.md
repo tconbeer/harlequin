@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Keymap bindings for the Query Editor's text-editing actions, like `code_editor.delete_word_left`, now take effect; they were silently ignored before.
+
 ## [2.16.0] - 2026-09-29
 
 ### Features
