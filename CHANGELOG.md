@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.16.1] - 2026-10-01
+
 ### Bug Fixes
 
 - Keymap bindings for the Query Editor's text-editing actions, like `code_editor.delete_word_left`, now take effect; they were silently ignored before.
@@ -1144,7 +1146,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.1...HEAD
+[2.16.1]: https://github.com/tconbeer/harlequin/compare/2.16.0...2.16.1
 [2.16.0]: https://github.com/tconbeer/harlequin/compare/2.15.0...2.16.0
 [2.15.0]: https://github.com/tconbeer/harlequin/compare/2.14.0...2.15.0
 [2.14.0]: https://github.com/tconbeer/harlequin/compare/2.13.0...2.14.0
