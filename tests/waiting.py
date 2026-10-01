@@ -7,10 +7,12 @@ is the only duration: establishing that nothing *else* happens takes one.
 
 from __future__ import annotations
 
+import errno
 import random
 import socket
 import time
-from typing import TYPE_CHECKING, Callable, Sequence, TypeVar, Union
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Callable, Iterator, Sequence, TypeVar, Union
 
 if TYPE_CHECKING:
     from textual.message import Message
@@ -160,7 +162,8 @@ def free_port() -> int:
     """A loopback port nothing is listening on, drawn from below the ephemeral range.
 
     It can only report a port that was free a moment ago; a caller that hands
-    one to a child has `on_a_free_port`.
+    one to a child has `on_a_free_port`, and one whose child never binds it has
+    `held_port`.
     """
     low, high = _PORT_RANGE
     for _ in range(100):
@@ -175,6 +178,60 @@ def free_port() -> int:
         _handed_out.add(port)
         return port
     raise AssertionError(f"no free port between {low} and {high}")
+
+
+@contextmanager
+def held_port() -> Iterator[int]:
+    """A loopback port bound but never listened on, for as long as the block runs.
+
+    Connecting to it is refused and nothing else can bind it, so a child that
+    never opens its forward cannot borrow another worker's listener. `localhost`
+    can resolve to either family, so both are held where the host has both.
+    """
+    low, high = _PORT_RANGE
+    for _ in range(100):
+        port = _draw.randrange(low, high)
+        if port in _handed_out:
+            continue
+        held_sockets: list[socket.socket] = []
+        try:
+            held_sockets.append(_bind_exclusively(socket.AF_INET, "127.0.0.1", port))
+            if socket.has_ipv6:
+                try:
+                    held_sockets.append(_bind_exclusively(socket.AF_INET6, "::1", port))
+                except OSError as e:
+                    # a host without IPv6 loopback resolves localhost to IPv4 alone
+                    if e.errno not in (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT):
+                        raise
+        except OSError:
+            for sock in held_sockets:
+                sock.close()
+            continue
+        _handed_out.add(port)
+        try:
+            yield port
+        finally:
+            for sock in held_sockets:
+                sock.close()
+        return
+    raise AssertionError(f"no free port between {low} and {high}")
+
+
+def _bind_exclusively(
+    family: socket.AddressFamily, host: str, port: int
+) -> socket.socket:
+    """A socket bound to `host:port` that no other socket may bind over."""
+    sock = socket.socket(family)
+    try:
+        # Windows lets a SO_REUSEADDR bind take a port that is already bound
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        sock.bind((host, port))
+    except OSError:
+        sock.close()
+        raise
+    return sock
 
 
 def accepts(port: int, *, timeout: float = 1.0) -> bool:

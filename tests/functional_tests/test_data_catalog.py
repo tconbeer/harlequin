@@ -508,8 +508,12 @@ async def test_reload_while_loader_is_fetching(
         # the assertion: marking the replacement instead leaves this at 1, and
         # raises "task_done() called too many times" over there
         def item_marked_done() -> bool:
-            # the count `task_done()` decrements; asyncio.Queue keeps it private
-            return bool(getattr(queue_it_came_from, "_unfinished_tasks") == 0)  # noqa: B009
+            # the count `task_done()` decrements; asyncio.Queue keeps it private.
+            # A prefetch scan can queue more behind the item before the reload
+            # orphans this queue, and those are never taken, so only what was
+            # taken has to be done.
+            unfinished = getattr(queue_it_came_from, "_unfinished_tasks")  # noqa: B009
+            return bool(unfinished - queue_it_came_from.qsize() == 0)
 
         await wait_for(
             pilot,
