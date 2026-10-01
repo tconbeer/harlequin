@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
-from harlequin.app import Harlequin
+from harlequin.app import Harlequin, ResultsFetched
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.components import ErrorModal
 from harlequin.components.code_editor import CodeEditor
 from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.results_viewer import ResultsTable
-from tests.waiting import wait_for, wait_for_value
+from tests.waiting import wait_for, wait_for_messages, wait_for_value
 
 if TYPE_CHECKING:
+    from textual.message import Message
     from textual.pilot import Pilot
     from textual.widgets._tree import TreeNode
 
@@ -39,6 +40,23 @@ async def wait_for_any_table(pilot: Pilot, app: Harlequin) -> ResultsTable:
         pilot,
         app.results_viewer.get_visible_table,
         description="the Results Viewer to show a table",
+    )
+
+
+async def wait_for_results(
+    pilot: Pilot, app: Harlequin, messages: Sequence[Message], *, count: int = 1
+) -> None:
+    """Wait until the app has finished handling the `count`th ResultsFetched.
+
+    The message hook fires before the handler runs, and the handler awaits each
+    table's mount before it moves focus to the Results Viewer; `loading` clears
+    alongside that focus change.
+    """
+    await wait_for_messages(pilot, messages, ResultsFetched, count=count)
+    await wait_for(
+        pilot,
+        lambda: not app.results_viewer.loading,
+        description="the Results Viewer to finish loading",
     )
 
 

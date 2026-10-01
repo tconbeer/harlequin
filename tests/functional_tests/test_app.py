@@ -22,6 +22,7 @@ from tests.functional_tests.helpers import (
     wait_for_any_table,
     wait_for_editor,
     wait_for_error_modal,
+    wait_for_results,
 )
 from tests.waiting import wait_for, wait_for_messages, wait_for_value
 
@@ -172,6 +173,7 @@ async def test_multiple_queries(
             pilot, messages, QuerySubmitted, exactly=True
         )
         assert query_submitted_message.queries == ["select 1;"]
+        await wait_for_results(pilot, app, messages)
         table = await wait_for_any_table(pilot, app)
         assert table.row_count == table.source_row_count == 1
         assert "hide-tabs" in app.results_viewer.classes
@@ -192,7 +194,7 @@ async def test_multiple_queries(
             description="the Results Viewer to show a tab per query",
         )
         assert "hide-tabs" not in app.results_viewer.classes
-        await wait_for_messages(pilot, messages, ResultsFetched, count=2)
+        await wait_for_results(pilot, app, messages, count=2)
         await pilot.wait_for_scheduled_animations()
         snap_results.append(await app_snapshot(app, "Both queries"))
         assert app.results_viewer.active == "result-1"
@@ -232,7 +234,7 @@ async def test_single_query_terminated_with_semicolon(
             pilot, messages, QuerySubmitted, exactly=True
         )
         assert query_submitted_message.queries == ["select 1;"]
-        await wait_for_any_table(pilot, app)
+        await wait_for_results(pilot, app, messages)
         assert app.results_viewer.tab_count == 1
 
         editor.focus()
@@ -245,7 +247,7 @@ async def test_single_query_terminated_with_semicolon(
             pilot, messages, QuerySubmitted, count=2, exactly=True
         )
         assert query_submitted_message.queries == ["select 1;"]
-        await wait_for_workers(app)
+        await wait_for_results(pilot, app, messages, count=2)
         assert app.results_viewer.tab_count == 1
 
         editor.focus()
@@ -256,7 +258,7 @@ async def test_single_query_terminated_with_semicolon(
             pilot, messages, QuerySubmitted, count=3, exactly=True
         )
         assert query_submitted_message.queries == ["select 1;"]
-        await wait_for_workers(app)
+        await wait_for_results(pilot, app, messages, count=3)
         assert app.results_viewer.tab_count == 1
 
 
