@@ -24,8 +24,15 @@ key_display="➡"
 keys="alt+n"
 action="code_editor.new_buffer"
 
+[[keymaps.word_keys]]
+keys="ctrl+w"
+action="code_editor.delete_word_left"
+
 [profiles.more_keys]
 keymap_name=["vscode", "more_arrows"]
 
 [profiles.alt_keys]
 keymap_name=["vscode", "alt_keys"]
+
+[profiles.word_keys]
+keymap_name=["vscode", "word_keys"]
