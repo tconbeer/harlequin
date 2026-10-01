@@ -42,7 +42,14 @@ from harlequin.ssh import (
     resolve_config,
 )
 from tests.tunnels import ssh_child_exited
-from tests.waiting import accepts, free_port, on_a_free_port, settle, wait_until
+from tests.waiting import (
+    accepts,
+    free_port,
+    held_port,
+    on_a_free_port,
+    settle,
+    wait_until,
+)
 
 FAKE_SSH = Path(__file__).parent.parent / "data" / "unit_tests" / "ssh" / "ssh"
 
@@ -58,6 +65,17 @@ def listener() -> Iterator[int]:
         sock.bind(("127.0.0.1", 0))
         sock.listen(8)
         yield int(sock.getsockname()[1])
+
+
+@pytest.fixture
+def unanswered_port() -> Iterator[int]:
+    """A port nothing answers on for the whole test, for a child that never binds.
+
+    A port `free_port` named would look free to every other xdist worker while
+    such a child runs, and one of their tunnels could start answering on it.
+    """
+    with held_port() as port:
+        yield port
 
 
 def child_tunnel(*ports: int, **kwargs: object) -> SshTunnel:
@@ -332,10 +350,10 @@ def test_a_forward_that_takes_a_moment_is_waited_for(
 
 
 def test_a_child_that_never_opens_the_forward_names_batch_mode(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, unanswered_port: int
 ) -> None:
     monkeypatch.setenv("FAKE_SSH_HANG", "1")
-    tunnel = child_tunnel(free_port(), timeout=0.5)
+    tunnel = child_tunnel(unanswered_port, timeout=0.5)
     with pytest.raises(HarlequinSshError, match="--ssh-batch-mode"):
         tunnel.start()
     assert not tunnel.running
@@ -391,7 +409,9 @@ def test_a_bound_port_that_ssh_never_answers_for_names_the_flag(
 
 
 def test_what_ssh_says_while_it_waits_is_shown_while_it_waits(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unanswered_port: int,
 ) -> None:
     """A helper's instructions are worthless after the timeout they caused.
 
@@ -405,7 +425,7 @@ def test_what_ssh_says_while_it_waits_is_shown_while_it_waits(
         "# To authenticate, visit: https://login.tailscale.com/a/l4fc5f072",
     )
     monkeypatch.setenv("FAKE_SSH_HANG", "1")
-    tunnel = child_tunnel(free_port(), timeout=0.5)
+    tunnel = child_tunnel(unanswered_port, timeout=0.5)
     with pytest.raises(HarlequinSshError) as excinfo:
         tunnel.start()
     printed = capsys.readouterr().err
@@ -416,7 +436,9 @@ def test_what_ssh_says_while_it_waits_is_shown_while_it_waits(
 
 
 def test_what_a_helper_says_on_stdout_is_shown_on_stderr(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unanswered_port: int,
 ) -> None:
     """A `ProxyCommand` helper inherits ssh's streams and picks its own.
 
@@ -426,20 +448,22 @@ def test_what_a_helper_says_on_stdout_is_shown_on_stderr(
     monkeypatch.setenv("FAKE_SSH_STDOUT", "To authenticate, visit: https://example/a")
     monkeypatch.setenv("FAKE_SSH_HANG", "1")
     with pytest.raises(HarlequinSshError):
-        child_tunnel(free_port(), timeout=0.5).start()
+        child_tunnel(unanswered_port, timeout=0.5).start()
     captured = capsys.readouterr()
     assert "To authenticate, visit: https://example/a" in captured.err
     assert captured.out == ""
 
 
 def test_a_line_ssh_left_unfinished_is_still_shown(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unanswered_port: int,
 ) -> None:
     """A prompt has no newline of its own, and is the point of the line."""
     monkeypatch.setenv("FAKE_SSH_STDERR_PARTIAL", "Enter passphrase for key '/k/id':")
     monkeypatch.setenv("FAKE_SSH_HANG", "1")
     with pytest.raises(HarlequinSshError):
-        child_tunnel(free_port(), timeout=0.5).start()
+        child_tunnel(unanswered_port, timeout=0.5).start()
     assert "Enter passphrase for key" in capsys.readouterr().err
 
 
@@ -486,9 +510,11 @@ def test_allow_reuse_connects_through_the_existing_listener(listener: int) -> No
     assert accepts(listener)
 
 
-def test_a_half_open_reuse_fails_like_any_other(listener: int) -> None:
+def test_a_half_open_reuse_fails_like_any_other(
+    listener: int, unanswered_port: int
+) -> None:
     """Some ports answering and some not is a state nobody meant."""
-    tunnel = child_tunnel(listener, free_port(), allow_reuse=True)
+    tunnel = child_tunnel(listener, unanswered_port, allow_reuse=True)
     with pytest.raises(HarlequinSshError):
         tunnel.start()
     assert not tunnel.reused
