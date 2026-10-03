@@ -24,6 +24,7 @@ from harlequin.autocomplete import (
     WordCompleter,
     find_symbols,
 )
+from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.text_modal import ErrorModal
 from harlequin.editor_cache import BufferState, adopt_recovery, load_cache
 from harlequin.exception import HarlequinExternalError
@@ -490,6 +491,42 @@ class EditorCollection(Vertical):
                 self.tabs.remove_tab(closed_buffer_id)
         else:
             self.editor.load_state(EditorState())
+        self.editor.focus()
+
+    async def action_close_all_buffers(self) -> None:
+        """Close every buffer, leaving one empty one; confirms if any hold text."""
+        if not any(buffer.text.strip() for buffer in self.buffers):
+            await self._close_all_buffers()
+            return
+
+        async def close_if_confirmed(confirmed: bool | None) -> None:
+            if confirmed:
+                await self._close_all_buffers()
+
+        if self.tab_count > 1:
+            prompt = (
+                f"Close all {self.tab_count} buffers? Their text will be discarded."
+            )
+            confirm_label = "Close All"
+        else:
+            prompt = "Close this buffer? Its text will be discarded."
+            confirm_label = "Close"
+        self.app.push_screen(
+            ConfirmModal(
+                prompt=prompt, confirm_label=confirm_label, cancel_label="Cancel"
+            ),
+            callback=close_if_confirmed,
+        )
+
+    async def _close_all_buffers(self) -> None:
+        kept_buffer_id = self.active
+        for buffer_id in list(self.buffer_states):
+            if buffer_id != kept_buffer_id:
+                # a second close-all can be part way through the same loop
+                if self.buffer_states.pop(buffer_id, None) is not None:
+                    await self.tabs.remove_tab(buffer_id)
+        self.add_class("hide-tabs")
+        self.editor.load_state(EditorState())
         self.editor.focus()
 
     def action_next_buffer(self) -> None:

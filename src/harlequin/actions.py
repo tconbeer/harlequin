@@ -94,11 +94,30 @@ HARLEQUIN_ACTIONS = {
     "cancel_query": Action(
         target=None, action="cancel_query", description="Cancel Query"
     ),
+    "change_theme": Action(
+        target=None, action="change_theme", description="Change Theme"
+    ),
+    "toggle_transaction_mode": Action(
+        target=None,
+        action="toggle_transaction_mode",
+        description="Toggle Transaction Mode",
+    ),
+    "commit_transaction": Action(
+        target=None, action="commit_transaction", description="Commit Transaction"
+    ),
+    "rollback_transaction": Action(
+        target=None,
+        action="rollback_transaction",
+        description="Rollback Transaction",
+    ),
     #######################################################
     # CodeEditor ACTIONS
     #######################################################
     "code_editor.new_buffer": Action(target=EditorCollection, action="new_buffer"),
     "code_editor.close_buffer": Action(target=EditorCollection, action="close_buffer"),
+    "code_editor.close_all_buffers": Action(
+        target=EditorCollection, action="close_all_buffers"
+    ),
     "code_editor.next_buffer": Action(target=EditorCollection, action="next_buffer"),
     "code_editor.run_query": Action(
         target=CodeEditor, action="submit", description="Run Query", show=True

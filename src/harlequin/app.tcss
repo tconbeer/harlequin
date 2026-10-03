@@ -711,6 +711,7 @@ ConfirmModal Horizontal#button_row {
 
 ConfirmModal Horizontal#button_row Button {
     background: $primary;
+    color: $background;
     height: 3;
     margin: 0 4;
     padding: 0 1;
@@ -729,4 +730,65 @@ ConfirmModal Horizontal#button_row Button#no{
     &:hover {
         background: $secondary;
     }
+}
+
+/* Command Palette */
+
+CommandPalette #--container {
+    visibility: visible;
+    height: auto;
+    width: 100%;
+    max-width: 88;
+    margin: 2 4;
+    padding: 1 2;
+    border: round $border-color-focus;
+    background: $background;
+}
+
+CommandPalette #--input {
+    border: none;
+}
+
+CommandPalette SearchIcon {
+    margin: 0 0 0 1;
+}
+
+CommandPalette CommandInput,
+CommandPalette CommandInput:focus {
+    border: none;
+    height: 1;
+}
+
+CommandPalette #--results {
+    overlay: none;
+}
+
+CommandPalette CommandList {
+    display: none;
+    border: none;
+    border-top: solid $border-color-nofocus;
+    margin: 1 0 0 0;
+}
+
+CommandPalette CommandList.--visible {
+    display: block;
+}
+
+CommandPalette CommandList > .option-list--option {
+    padding: 0 1;
+}
+
+CommandPalette CommandList > .option-list--option-highlighted {
+    color: $text;
+    background: $secondary;
+    text-style: bold;
+}
+
+CommandPalette LoadingIndicator {
+    display: none;
+    border: none;
+}
+
+CommandPalette LoadingIndicator.--visible {
+    display: block;
 }

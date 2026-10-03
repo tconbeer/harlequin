@@ -15,6 +15,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     Optional,
     Sequence,
     Type,
@@ -22,7 +23,7 @@ from typing import (
 )
 
 from textual import on, work
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.containers import Horizontal, Vertical
 from textual.css.query import DOMQuery
 from textual.dom import DOMNode
@@ -100,6 +101,7 @@ from harlequin.exception import (
 )
 from harlequin.history import History, migrate_pickled_history
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
+from harlequin.palette import PALETTE_COMMANDS
 from harlequin.plugins import load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
 from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog
@@ -384,6 +386,8 @@ class Harlequin(AppBase):
         self._last_checkpointed_cache: Cache | None = None
         """What the recovery file holds, so an idle session stops rewriting it."""
         self.connection: HarlequinConnection | None = None
+        self.transaction_mode: HarlequinTransactionMode | None = None
+        """The connection's transaction mode, as the Run Query Bar shows it."""
         self._recovery_lock = threading.Lock()
         """Held across reopening the tunnel and the connection through it.
 
@@ -1045,6 +1049,7 @@ class Harlequin(AppBase):
     @on(TransactionModeChanged)
     def update_transaction_button_label(self, message: TransactionModeChanged) -> None:
         message.stop()
+        self.transaction_mode = message.new_mode
         if message.new_mode is not None:
             self.run_query_bar.transaction_button.remove_class("hidden")
             self.run_query_bar.transaction_button.label = (
@@ -1133,6 +1138,52 @@ class Harlequin(AppBase):
 
     def action_cancel_query(self) -> None:
         self._cancel_query()
+
+    def action_toggle_transaction_mode(self) -> None:
+        self.toggle_transaction_mode()
+
+    def action_commit_transaction(self) -> None:
+        self.commit()
+
+    def action_rollback_transaction(self) -> None:
+        self.rollback()
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        """The command palette's commands, each with the key it is bound to."""
+        on_main_screen = screen is self.main_row.screen
+        for command in PALETTE_COMMANDS:
+            if not command.over_modals and not on_main_screen:
+                continue
+            if command.is_available is not None and not command.is_available(self):
+                continue
+            action = HARLEQUIN_ACTIONS[command.action]
+            target: App | Widget | None = (
+                self
+                if action.target is None
+                else next(iter(self.query(action.target)), None)
+            )
+            # e.g. the Query Editor while the Results Viewer is full screen
+            if target is None or (isinstance(target, Widget) and target.is_disabled):
+                continue
+            key_display = next(
+                (
+                    self.get_key_display(binding)
+                    for _, binding in target._bindings
+                    if binding.action == action.action
+                ),
+                None,
+            )
+            yield SystemCommand(
+                command.title,
+                f"{command.help} ({key_display})" if key_display else command.help,
+                partial(self.run_action, action.action, target),
+            )
+        # after a beat, so the palette is gone from the screenshot
+        yield SystemCommand(
+            "Screenshot",
+            "Save an SVG screenshot of the current screen",
+            lambda: self.set_timer(0.1, self.deliver_screenshot),
+        )
 
     def action_export(self) -> None:
         show_export_error = partial(
