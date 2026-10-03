@@ -711,6 +711,7 @@ ConfirmModal Horizontal#button_row {
 
 ConfirmModal Horizontal#button_row Button {
     background: $primary;
+    color: $background;
     height: 3;
     margin: 0 4;
     padding: 0 1;
@@ -720,7 +721,7 @@ ConfirmModal Horizontal#button_row Button {
         background: $secondary;
     }
     &:focus {
-        text-style: reverse;
+        text-style: bold underline;
     }
 }
 

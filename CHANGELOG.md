@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - The command palette (`ctrl+p`) now lists Harlequin's own commands, each with its key, and matches Harlequin's look ([#223](https://github.com/tconbeer/harlequin/issues/223)).
 - New bindable actions: `change_theme`, `code_editor.close_all_buffers`, `toggle_transaction_mode`, `commit_transaction`, and `rollback_transaction` ([#223](https://github.com/tconbeer/harlequin/issues/223)).
 
+### Bug Fixes
+
+- The focused button in confirmation dialogs is now readable.
+
 ## [2.16.1] - 2026-10-01
 
 ### Bug Fixes

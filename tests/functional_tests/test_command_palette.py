@@ -7,6 +7,7 @@ from typing import Awaitable, Callable
 import pytest
 from textual.command import CommandList, CommandPalette
 from textual.pilot import Pilot
+from textual.widgets import Button
 
 from harlequin import Harlequin
 from harlequin.components import HelpScreen
@@ -188,6 +189,18 @@ async def test_palette_runs_buffer_commands(
         )
 
         await run_palette_command(pilot, app, "Close All Buffers")
+        await wait_for(
+            pilot,
+            lambda: (
+                isinstance(app.screen, ConfirmModal)
+                and len(app.screen.query(Button)) == 2
+            ),
+            description="a prompt before discarding text",
+        )
+        assert [str(button.label) for button in app.screen.query(Button)] == [
+            "Cancel",
+            "Close All",
+        ]
         await click_confirm_modal(pilot, app, "no")
         await wait_for(
             pilot,

@@ -503,13 +503,17 @@ class EditorCollection(Vertical):
             if confirmed:
                 await self._close_all_buffers()
 
+        if self.tab_count > 1:
+            prompt = (
+                f"Close all {self.tab_count} buffers? Their text will be discarded."
+            )
+            confirm_label = "Close All"
+        else:
+            prompt = "Close this buffer? Its text will be discarded."
+            confirm_label = "Close"
         self.app.push_screen(
             ConfirmModal(
-                prompt=(
-                    f"Close all {self.tab_count} buffers? Their text will be discarded."
-                    if self.tab_count > 1
-                    else "Close this buffer? Its text will be discarded."
-                )
+                prompt=prompt, confirm_label=confirm_label, cancel_label="Cancel"
             ),
             callback=close_if_confirmed,
         )
