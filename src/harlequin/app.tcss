@@ -721,7 +721,7 @@ ConfirmModal Horizontal#button_row Button {
         background: $secondary;
     }
     &:focus {
-        text-style: bold underline;
+        text-style: reverse;
     }
 }
 
