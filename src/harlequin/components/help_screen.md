@@ -65,6 +65,8 @@ harlequin -f .
 
 Harlequin can also show remote objects in S3 or a similar service. For more information, see https://harlequin.sh/docs/files/remote
 
+While Harlequin is running, the command palette's **Show Files** and **Show S3** commands add either tab or point it somewhere else.
+
 ### Using Config Files
 
 Any command-line options for Harlequin can be loaded as a profile from TOML config files. For more information, see https://harlequin.sh/docs/config-file

@@ -71,8 +71,17 @@ from harlequin.components import (
     RunQueryBar,
     export_callback,
 )
+from harlequin.components.catalog_source_screen import (
+    FilesSourceScreen,
+    S3SourceScreen,
+)
 from harlequin.components.confirm_modal import ConfirmModal
-from harlequin.components.data_catalog import ContextMenu
+from harlequin.components.data_catalog import (
+    ContextMenu,
+    S3Tree,
+    boto3_is_installed,
+    missing_boto3_error,
+)
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
 from harlequin.config import (
@@ -121,6 +130,14 @@ if TYPE_CHECKING:
 
 
 class CatalogCacheLoaded(Message):
+    def __init__(self, cache: CatalogCache) -> None:
+        super().__init__()
+        self.cache = cache
+
+
+class S3CacheLoaded(Message):
+    """The cache, read again after the S3 tab changed location."""
+
     def __init__(self, cache: CatalogCache) -> None:
         super().__init__()
         self.cache = cache
@@ -268,6 +285,7 @@ own budget in `harlequin.windows_timezone`."""
 
 _PARTIAL_FAILURE_WORKER_NOTIFICATIONS: dict[str, str] = {
     "_load_catalog_cache": "Harlequin could not load its cache.",
+    "_swap_s3_cache": "Harlequin could not update its S3 cache.",
     "_load_query_history": "Harlequin could not read your query history.",
     "_extend_and_merge_completers": "Harlequin could not update completions.",
     "_build_completers": "Harlequin could not build completions.",
@@ -555,6 +573,10 @@ class Harlequin(AppBase):
             self.post_message(NewCatalog(catalog=cached_db))
         if self.show_s3 is not None:
             self.data_catalog.load_s3_tree_from_cache(message.cache)
+
+    @on(S3CacheLoaded)
+    def build_s3_tree_from_cache(self, message: S3CacheLoaded) -> None:
+        self.data_catalog.load_s3_tree_from_cache(message.cache)
 
     @on(CodeEditor.Submitted)
     def submit_query_from_editor(self, message: CodeEditor.Submitted) -> None:
@@ -953,6 +975,10 @@ class Harlequin(AppBase):
                     except HarlequinBindingError as e:
                         pretty_print_error(e)
                         self.exit(return_code=2)
+        # a widget that took focus before its keys were bound, like a Data
+        # Catalog tab added at run time, would otherwise keep a stale footer
+        if message.widget.has_focus_within:
+            message.widget.refresh_bindings()
 
     def watch_full_screen(self, full_screen: bool) -> None:
         full_screen_widgets = [self.editor_collection, self.results_viewer]
@@ -1472,6 +1498,42 @@ class Harlequin(AppBase):
         self.data_catalog.update_file_tree()
         self.data_catalog.update_s3_tree()
 
+    def action_show_files(self) -> None:
+        async def show_directory(directory: str | None) -> None:
+            if directory is None:
+                return
+            self.show_files = Path(directory)
+            await self.data_catalog.show_file_tree(self.show_files)
+            self.action_focus_data_catalog()
+
+        self.push_screen(
+            FilesSourceScreen(
+                current_location=(
+                    str(self.show_files) if self.show_files is not None else None
+                ),
+                id="files_source_screen",
+            ),
+            show_directory,
+        )
+
+    def action_show_s3(self) -> None:
+        if not boto3_is_installed():
+            self.post_message(missing_boto3_error())
+            return
+
+        async def show_bucket(uri: str | None) -> None:
+            if uri is None:
+                return
+            self.show_s3 = uri
+            replaced_tree = await self.data_catalog.show_s3_tree(uri)
+            self._swap_s3_cache(replaced_tree)
+            self.action_focus_data_catalog()
+
+        self.push_screen(
+            S3SourceScreen(current_location=self.show_s3, id="s3_source_screen"),
+            show_bucket,
+        )
+
     def _sync_run_button_text(self) -> None:
         if self._validate_selection():
             self.run_query_bar.run_button.label = "Run Selection"
@@ -1509,6 +1571,20 @@ class Harlequin(AppBase):
         cache = get_catalog_cache()
         if cache is not None:
             self.post_message(CatalogCacheLoaded(cache=cache))
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="s3_cache",
+        description="Caching the S3 listing",
+    )
+    def _swap_s3_cache(self, replaced_tree: S3Tree | None) -> None:
+        """Cache the listing the S3 tab replaced, then read the new one's."""
+        update_catalog_cache(connection_hash=None, catalog=None, s3_tree=replaced_tree)
+        cache = get_catalog_cache()
+        if cache is not None:
+            self.post_message(S3CacheLoaded(cache=cache))
 
     @work(
         thread=True,

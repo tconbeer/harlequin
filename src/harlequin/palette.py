@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
+from harlequin.components.data_catalog import boto3_is_installed
+
 if TYPE_CHECKING:
     from harlequin.app import Harlequin
 
@@ -40,6 +42,10 @@ def _can_rollback(app: Harlequin) -> bool:
 
 def _has_many_buffers(app: Harlequin) -> bool:
     return app.editor_collection.tab_count > 1
+
+
+def _can_show_s3(app: Harlequin) -> bool:
+    return boto3_is_installed()
 
 
 PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
@@ -155,5 +161,16 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         "Refresh Data Catalog",
         "Reload databases, files and S3 objects",
         "refresh_catalog",
+    ),
+    PaletteCommand(
+        "Show Files",
+        "Show a directory in the Data Catalog's Files tab",
+        "show_files",
+    ),
+    PaletteCommand(
+        "Show S3",
+        "Show an S3 bucket in the Data Catalog's S3 tab",
+        "show_s3",
+        is_available=_can_show_s3,
     ),
 )

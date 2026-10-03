@@ -20,6 +20,25 @@ try:
 except ImportError:
     boto3 = None  # type: ignore
 
+S3_SCHEMES = ("s3", "http", "https")
+
+
+def s3_uri_error(uri: str) -> str | None:
+    """Why `S3Tree` cannot list `uri`, or None if it can."""
+    if not uri:
+        return "Enter a bucket, an S3 URI, or all."
+    try:
+        scheme = urlsplit(uri).scheme
+        endpoint_url, bucket, _ = S3Tree._parse_s3_uri(uri)
+    except (AssertionError, ValueError):
+        return f"{uri} is not a bucket or an S3 URI."
+    if scheme and scheme not in S3_SCHEMES:
+        return f"{scheme}:// is not an S3 URI; use s3://, http:// or https://."
+    # an endpoint with no bucket lists every bucket; s3:// with none names nothing
+    if endpoint_url is None and bucket == "":
+        return f"{uri} names no bucket."
+    return None
+
 
 class S3Tree(HarlequinTree[str], inherit_bindings=False):
     COMPONENT_CLASSES: ClassVar[set[str]] = {
@@ -108,7 +127,6 @@ class S3Tree(HarlequinTree[str], inherit_bindings=False):
 
         def _is_prefixed_aws_url(netloc: str) -> bool:
             parts = netloc.split(".")
-            print(parts)
             if ".".join(parts[1:]) == "s3.amazonaws.com":
                 return True
             return False
