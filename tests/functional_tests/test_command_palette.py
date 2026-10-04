@@ -20,6 +20,7 @@ from harlequin.components import HelpScreen
 from harlequin.components.catalog_source_screen import CatalogSourceScreen
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import S3Tree
+from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 from harlequin_duckdb.adapter import DuckDbAdapter
 from tests.functional_tests.helpers import wait_for_editor, wait_for_error_modal
 from tests.waiting import wait_for, wait_for_value
@@ -560,3 +561,74 @@ async def test_show_files_twice_opens_one_prompt(
         ]
         assert len(source_screens) == 1
         assert app._exception is None
+
+
+def footer_keys(app: Harlequin) -> list[tuple[str, str]]:
+    """The keys the footer lists, in its order; the snapshots cover how."""
+    return [
+        (app.get_key_display(active.binding), active.binding.description)
+        for active in app.screen.active_bindings.values()
+        if active.binding.show
+    ]
+
+
+@pytest.mark.asyncio
+async def test_footer_shows_palette_key(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+        await wait_for(
+            pilot,
+            lambda: len(footer_keys(app)) > 3,
+            description="the footer to list its keys",
+        )
+        descriptions = [description for _, description in footer_keys(app)]
+        assert descriptions[:3] == ["Quit", "Help", "Commands"]
+
+        await pilot.press("ctrl+p")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, CommandPalette),
+            description="ctrl+p to open the palette",
+        )
+
+
+@pytest.mark.asyncio
+async def test_palette_key_is_configurable(
+    duckdb_adapter: Type[DuckDbAdapter],
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    keymap = HarlequinKeyMap(
+        name="palette_on_f11",
+        bindings=[
+            HarlequinKeyBinding("ctrl+q", "quit"),
+            HarlequinKeyBinding("f11", "command_palette"),
+        ],
+    )
+    app = Harlequin(
+        duckdb_adapter([":memory:"], no_init=True),
+        keymap_names=["palette_on_f11"],
+        user_defined_keymaps=[keymap],
+    )
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+        await wait_for(
+            pilot,
+            lambda: ("f11", "Commands") in footer_keys(app),
+            description="the footer to show the palette on f11",
+        )
+
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        assert not isinstance(app.screen, CommandPalette)
+
+        await pilot.press("f11")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, CommandPalette),
+            description="f11 to open the palette",
+        )

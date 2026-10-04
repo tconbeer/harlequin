@@ -46,6 +46,13 @@ HARLEQUIN_ACTIONS = {
         description="Help",
         show=True,
     ),
+    "command_palette": Action(
+        target=None,
+        action="command_palette",
+        description="Commands",
+        show=True,
+        priority=True,
+    ),
     "toggle_keys_panel": Action(
         target=None,
         action="toggle_keys_panel",
