@@ -301,6 +301,8 @@ class Harlequin(AppBase):
     """
 
     CSS_PATH = ["global.tcss", "app.tcss"]
+    # the palette's key comes from the keymaps, like every other action's
+    ENABLE_COMMAND_PALETTE = False
 
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
@@ -333,8 +335,8 @@ class Harlequin(AppBase):
             css_path=css_path,
             watch_css=watch_css,
         )
-        # the palette's key comes from the keymaps, like every other action's
-        self._bindings.key_to_bindings.pop(self.COMMAND_PALETTE_BINDING, None)
+        # ENABLE_COMMAND_PALETTE only stops Textual binding a key to the palette
+        self.use_command_palette = True
         self.adapter = adapter
         self.adapter_name = adapter_name
         self.profile_name = profile_name
