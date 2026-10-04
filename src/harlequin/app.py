@@ -333,6 +333,8 @@ class Harlequin(AppBase):
             css_path=css_path,
             watch_css=watch_css,
         )
+        # the palette's key comes from the keymaps, like every other action's
+        self._bindings.key_to_bindings.pop(self.COMMAND_PALETTE_BINDING, None)
         self.adapter = adapter
         self.adapter_name = adapter_name
         self.profile_name = profile_name
@@ -1407,15 +1409,23 @@ class Harlequin(AppBase):
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
-        keys_panel_key = next(
-            (
-                self.get_key_display(binding)
-                for _, binding in self._bindings
-                if binding.action == "toggle_keys_panel"
-            ),
-            None,
+        def key_for(action: str) -> str | None:
+            return next(
+                (
+                    self.get_key_display(binding)
+                    for _, binding in self._bindings
+                    if binding.action == action
+                ),
+                None,
+            )
+
+        self.push_screen(
+            HelpScreen(
+                keys_panel_key=key_for("toggle_keys_panel"),
+                command_palette_key=key_for("command_palette"),
+                id="help_screen",
+            )
         )
-        self.push_screen(HelpScreen(keys_panel_key=keys_panel_key, id="help_screen"))
 
     def action_show_help_panel(self) -> None:
         if self.screen.query(KeysPanel):

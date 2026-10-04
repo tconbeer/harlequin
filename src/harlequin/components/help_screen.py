@@ -20,12 +20,14 @@ class HelpScreen(HarlequinModal[None]):
     def __init__(
         self,
         keys_panel_key: str | None = None,
+        command_palette_key: str | None = None,
         name: str | None = None,
         id: str | None = None,  # noqa: A002
         classes: str | None = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self.keys_panel_key = keys_panel_key
+        self.command_palette_key = command_palette_key
 
     def compose(self) -> ComposeResult:
         markdown_path = Path(__file__).parent / "help_screen.md"
@@ -44,9 +46,14 @@ class HelpScreen(HarlequinModal[None]):
 
     def _keys_panel_tip(self) -> str:
         if self.keys_panel_key is None:
+            palette = (
+                f"the command palette ([b $secondary]{self.command_palette_key}[/])"
+                if self.command_palette_key is not None
+                else "the command palette"
+            )
             return (
                 "To see the keys for the focused widget, open the Keys panel from "
-                "the command palette ([b $secondary]ctrl+p[/])."
+                f"{palette}."
             )
         return (
             f"Press [b $secondary]{self.keys_panel_key}[/] to show or hide the "
