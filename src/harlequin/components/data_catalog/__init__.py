@@ -167,7 +167,8 @@ class DataCatalog(TabbedContent, can_focus=True):
 
         if self.show_files is None and self.show_s3 is None:
             self.add_class("hide-tabs")
-        self.query_one(Tabs).can_focus = False
+        self.tabs = self.query_one(Tabs)
+        self.tabs.can_focus = False
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
@@ -210,9 +211,8 @@ class DataCatalog(TabbedContent, can_focus=True):
     async def show_s3_tree(self, uri: str) -> S3Tree | None:
         """Show `uri` in the S3 tab, adding the tab if there is none.
 
-        Returns the tree it replaced, whose listing the caller may cache. The
-        tree is replaced rather than repointed, so a listing still in flight for
-        the old location lands on a widget that is gone.
+        Returns the tree it replaced, whose listing the caller may cache. A
+        listing still in flight for the old location lands on the removed tree.
         """
         self.show_s3 = uri
         replaced_tree = self.s3_tree
@@ -260,11 +260,10 @@ class DataCatalog(TabbedContent, can_focus=True):
         if not self.active or self.tab_count == 1:
             return
         # by position: a tab added at run time can sit before an older one
-        tabs = self.query_one(Tabs)
         if offset < 0:
-            tabs.action_previous_tab()
+            self.tabs.action_previous_tab()
         else:
-            tabs.action_next_tab()
+            self.tabs.action_next_tab()
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):

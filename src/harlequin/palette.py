@@ -44,10 +44,6 @@ def _has_many_buffers(app: Harlequin) -> bool:
     return app.editor_collection.tab_count > 1
 
 
-def _can_show_s3(app: Harlequin) -> bool:
-    return boto3_is_installed()
-
-
 PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
     # app
     PaletteCommand("Help", "Show Harlequin's help", "help"),
@@ -171,6 +167,6 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         "Show S3",
         "Show an S3 bucket in the Data Catalog's S3 tab",
         "show_s3",
-        is_available=_can_show_s3,
+        is_available=lambda app: boto3_is_installed(),
     ),
 )

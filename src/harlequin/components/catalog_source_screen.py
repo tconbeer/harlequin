@@ -12,7 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, Label, Static
 from textual_textarea import PathInput
 
-from harlequin.components.data_catalog.s3_tree import s3_uri_error
+from harlequin.components.data_catalog.s3_tree import S3Tree
 from harlequin.components.modal import HarlequinModal
 
 
@@ -112,6 +112,7 @@ class FilesSourceScreen(CatalogSourceScreen):
             dir_okay=True,
             file_okay=True,
             must_exist=False,
+            tab_advances_focus=True,
         )
 
     def on_mount(self) -> None:
@@ -150,4 +151,11 @@ class S3SourceScreen(CatalogSourceScreen):
         )
 
     def location_error(self, location: str) -> str | None:
-        return s3_uri_error(location)
+        if not location:
+            return "Enter a bucket, an S3 URI, or all."
+        # anything --show-s3 takes; the bucket itself is checked when it is listed
+        try:
+            S3Tree._parse_s3_uri(location)
+        except (AssertionError, ValueError):
+            return f"{location} is not a bucket or an S3 URI."
+        return None

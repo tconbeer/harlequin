@@ -464,12 +464,15 @@ async def test_show_s3_command(
             )
 
             await run_palette_command(pilot, app, "Show S3")
-            source_screen = await submit_location(pilot, app, "ftp://other-bucket")
+            source_screen = await submit_location(pilot, app, "//other-bucket")
             assert source_screen.current_location == "my-bucket"
             await wait_for(
                 pilot,
-                lambda: "is not an S3 URI" in str(source_screen.error_label.content),
-                description="the prompt to refuse a non-S3 URI",
+                lambda: (
+                    "is not a bucket or an S3 URI"
+                    in str(source_screen.error_label.content)
+                ),
+                description="the prompt to refuse a location it cannot parse",
             )
 
             await submit_location(pilot, app, "s3://other-bucket")
@@ -530,3 +533,30 @@ async def test_show_s3_without_boto3(
         app.action_show_s3()
         error_modal = await wait_for_error_modal(pilot, app)
         assert "boto3" in error_modal.text
+
+
+@pytest.mark.asyncio
+async def test_show_files_twice_opens_one_prompt(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test(size=(120, 36)) as pilot:
+        await wait_for_workers(app)
+        await wait_for_editor(pilot, app)
+        app.action_show_files()
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, CatalogSourceScreen),
+            description="the location prompt to open",
+        )
+        # as a priority key binding would, over the open prompt
+        app.action_show_files()
+        app.action_show_s3()
+        await pilot.pause()
+        source_screens = [
+            screen
+            for screen in app.screen_stack
+            if isinstance(screen, CatalogSourceScreen)
+        ]
+        assert len(source_screens) == 1
+        assert app._exception is None

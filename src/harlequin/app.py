@@ -1498,7 +1498,17 @@ class Harlequin(AppBase):
         self.data_catalog.update_file_tree()
         self.data_catalog.update_s3_tree()
 
+    def _catalog_source_screen_is_open(self) -> bool:
+        """One location prompt at a time: a priority key still fires over one."""
+        return any(
+            screen.id in ("files_source_screen", "s3_source_screen")
+            for screen in self.screen_stack
+        )
+
     def action_show_files(self) -> None:
+        if self._catalog_source_screen_is_open():
+            return
+
         async def show_directory(directory: str | None) -> None:
             if directory is None:
                 return
@@ -1517,6 +1527,8 @@ class Harlequin(AppBase):
         )
 
     def action_show_s3(self) -> None:
+        if self._catalog_source_screen_is_open():
+            return
         if not boto3_is_installed():
             self.post_message(missing_boto3_error())
             return
