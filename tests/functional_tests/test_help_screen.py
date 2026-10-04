@@ -39,5 +39,8 @@ async def test_help_screen(
 
 
 def test_help_screen_keys_panel_tip_without_a_binding() -> None:
-    keys_panel_tip = HelpScreen(keys_panel_key=None)._keys_panel_tip()
-    assert "command palette ([b $secondary]ctrl+p[/])" in keys_panel_tip
+    keys_panel_tip = HelpScreen(
+        keys_panel_key=None, command_palette_key="^p"
+    )._keys_panel_tip()
+    assert "command palette ([b $secondary]^p[/])" in keys_panel_tip
+    assert "command palette." in HelpScreen()._keys_panel_tip()

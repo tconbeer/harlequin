@@ -3,6 +3,7 @@ from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 VSCODE_APP_BINDINGS = [
     HarlequinKeyBinding("ctrl+q", "quit"),
     HarlequinKeyBinding("f1", "help"),
+    HarlequinKeyBinding("ctrl+p", "command_palette"),
     HarlequinKeyBinding("f2", "focus_query_editor"),
     HarlequinKeyBinding("f5", "focus_results_viewer"),
     HarlequinKeyBinding("f6", "focus_data_catalog"),

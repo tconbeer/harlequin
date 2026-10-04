@@ -301,6 +301,8 @@ class Harlequin(AppBase):
     """
 
     CSS_PATH = ["global.tcss", "app.tcss"]
+    # the palette's key comes from the keymaps, like every other action's
+    ENABLE_COMMAND_PALETTE = False
 
     full_screen: reactive[bool] = reactive(False)
     sidebar_hidden: reactive[bool] = reactive(False)
@@ -333,6 +335,8 @@ class Harlequin(AppBase):
             css_path=css_path,
             watch_css=watch_css,
         )
+        # ENABLE_COMMAND_PALETTE only stops Textual binding a key to the palette
+        self.use_command_palette = True
         self.adapter = adapter
         self.adapter_name = adapter_name
         self.profile_name = profile_name
@@ -1407,15 +1411,23 @@ class Harlequin(AppBase):
         await super().action_quit()
 
     def action_show_help_screen(self) -> None:
-        keys_panel_key = next(
-            (
-                self.get_key_display(binding)
-                for _, binding in self._bindings
-                if binding.action == "toggle_keys_panel"
-            ),
-            None,
+        def key_for(action: str) -> str | None:
+            return next(
+                (
+                    self.get_key_display(binding)
+                    for _, binding in self._bindings
+                    if binding.action == action
+                ),
+                None,
+            )
+
+        self.push_screen(
+            HelpScreen(
+                keys_panel_key=key_for("toggle_keys_panel"),
+                command_palette_key=key_for("command_palette"),
+                id="help_screen",
+            )
         )
-        self.push_screen(HelpScreen(keys_panel_key=keys_panel_key, id="help_screen"))
 
     def action_show_help_panel(self) -> None:
         if self.screen.query(KeysPanel):

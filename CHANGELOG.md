@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - The command palette (`ctrl+p`) now lists Harlequin's own commands, each with its key, and matches Harlequin's look ([#223](https://github.com/tconbeer/harlequin/issues/223)).
 - New bindable actions: `change_theme`, `code_editor.close_all_buffers`, `toggle_transaction_mode`, `commit_transaction`, and `rollback_transaction` ([#223](https://github.com/tconbeer/harlequin/issues/223)).
 - The command palette's **Show Files** and **Show S3** commands (bindable as `show_files` and `show_s3`) add the Data Catalog's Files or S3 tab, or point it at a different directory or bucket, without restarting Harlequin ([#223](https://github.com/tconbeer/harlequin/issues/223)).
+- The footer shows the command palette's key, `^p Commands`, and the palette can be bound to any key as `command_palette` ([#223](https://github.com/tconbeer/harlequin/issues/223)).
 
 ### Bug Fixes
 
