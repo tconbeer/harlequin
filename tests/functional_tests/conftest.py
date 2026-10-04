@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from contextlib import suppress
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, NamedTuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,6 +10,10 @@ from textual.worker import WorkerCancelled
 
 from harlequin.app import Harlequin
 from harlequin.autocomplete import HarlequinCompletion
+
+
+class MockS3Object(NamedTuple):
+    key: str
 
 
 @pytest.fixture(autouse=True)
@@ -228,3 +232,26 @@ def transaction_button_visible() -> Callable[[Harlequin], bool]:
         )
 
     return fn
+
+
+@pytest.fixture
+def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replace boto3 with a mock whose one bucket, my-bucket, holds three objects."""
+    mock_boto3 = MagicMock(name="mock_boto3")
+    mock_s3 = MagicMock(name="mock_s3")
+    mock_boto3.resource.return_value = mock_s3
+    mock_bucket = MagicMock(name="mock_bucket")
+    mock_bucket.name = "my-bucket"
+    mock_s3.Bucket.return_value = mock_bucket
+    mock_s3.buckets.all.return_value = [mock_bucket]
+    objects = [
+        MockS3Object(key="one/alpha/foo.csv"),
+        MockS3Object(key="one/bravo/bar.csv"),
+        MockS3Object(key="two/apple/baz/qux.csv"),
+    ]
+    mock_bucket.objects.all.return_value = objects
+    mock_bucket.objects.filter.return_value = objects
+
+    monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
+    monkeypatch.setattr("harlequin.components.data_catalog.s3_tree.boto3", mock_boto3)
+    return mock_boto3

@@ -6,7 +6,6 @@ from typing import (
     Callable,
     ClassVar,
     List,
-    NamedTuple,
     Set,
     Type,
     cast,
@@ -41,33 +40,8 @@ from tests.functional_tests.helpers import (
 from tests.waiting import POLL_INTERVAL, settle_app, wait_for, wait_for_value
 
 
-class MockS3Object(NamedTuple):
-    key: str
-
-
 class SimpleCatalogItem(InteractiveCatalogItem):
     """An interactive item whose children fetch as an empty list."""
-
-
-@pytest.fixture
-def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_boto3 = MagicMock(name="mock_boto3")
-    mock_s3 = MagicMock(name="mock_s3")
-    mock_boto3.resource.return_value = mock_s3
-    mock_bucket = MagicMock(name="mock_bucket")
-    mock_bucket.name = "my-bucket"
-    mock_s3.Bucket.return_value = mock_bucket
-    mock_s3.buckets.all.return_value = [mock_bucket]
-    objects = [
-        MockS3Object(key="one/alpha/foo.csv"),
-        MockS3Object(key="one/bravo/bar.csv"),
-        MockS3Object(key="two/apple/baz/qux.csv"),
-    ]
-    mock_bucket.objects.all.return_value = objects
-    mock_bucket.objects.filter.return_value = objects
-
-    monkeypatch.setattr("harlequin.components.data_catalog.boto3", mock_boto3)
-    monkeypatch.setattr("harlequin.components.data_catalog.s3_tree.boto3", mock_boto3)
 
 
 @pytest.mark.asyncio
@@ -260,7 +234,7 @@ async def test_s3_tree(
     app_snapshot: Callable[..., Awaitable[bool]],
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
     mock_pyperclip: MagicMock,
-    mock_boto3: None,
+    mock_boto3: MagicMock,
 ) -> None:
     snap_results: List[bool] = []
     app = Harlequin(

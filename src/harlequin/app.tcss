@@ -732,6 +732,72 @@ ConfirmModal Horizontal#button_row Button#no{
     }
 }
 
+/* Files and S3 source prompts */
+
+CatalogSourceScreen {
+    align: center middle;
+    padding: 0;
+}
+
+#catalog_source_outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    height: auto;
+    max-width: 88;
+}
+
+#catalog_source_prompt {
+    padding: 0 1;
+}
+
+CatalogSourceScreen Input {
+    margin: 1 0 0 0;
+    border: round $border-color-nofocus;
+    background: transparent;
+    &:focus {
+        border: round $border-color-focus;
+    }
+}
+
+#catalog_source_error {
+    color: $error;
+    text-style: italic;
+    height: 1;
+    margin: 0 0 0 3;
+}
+
+#catalog_source_button_row {
+    height: auto;
+    width: 100%;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+#catalog_source_button_row Button {
+    background: $primary;
+    color: $background;
+    height: 3;
+    margin: 0 4;
+    padding: 0 1;
+    min-width: 16;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+#catalog_source_button_row Button#cancel {
+    background: $error;
+    &:hover {
+        background: $secondary;
+    }
+}
+
 /* Command Palette */
 
 CommandPalette #--container {

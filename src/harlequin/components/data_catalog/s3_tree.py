@@ -108,7 +108,6 @@ class S3Tree(HarlequinTree[str], inherit_bindings=False):
 
         def _is_prefixed_aws_url(netloc: str) -> bool:
             parts = netloc.split(".")
-            print(parts)
             if ".".join(parts[1:]) == "s3.amazonaws.com":
                 return True
             return False

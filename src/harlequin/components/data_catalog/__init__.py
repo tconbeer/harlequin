@@ -8,6 +8,7 @@ from textual import on
 from textual.content import ContentType
 from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
+from textual.widget import Widget
 from textual.widgets import (
     DirectoryTree,
     OptionList,
@@ -32,6 +33,21 @@ try:
     import boto3
 except ImportError:
     boto3 = None  # type: ignore
+
+
+def boto3_is_installed() -> bool:
+    return boto3 is not None
+
+
+def missing_boto3_error() -> S3Tree.CatalogError:
+    return S3Tree.CatalogError(
+        catalog_type="s3",
+        error=Exception(
+            "Could not load s3 catalog because boto3 is not available.\n\n"
+            "Re-install harlequin with the s3 extra, like this:\n"
+            "uv tool install harlequin[s3]"
+        ),
+    )
 
 
 def insert_name_at_cursor(item: CatalogItem, driver: HarlequinDriver) -> None:
@@ -144,23 +160,15 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.s3_tree: S3Tree | None = S3Tree(uri=self.show_s3)
             self.add_pane(TabPane("S3", self.s3_tree))
         elif self.show_s3 is not None and boto3 is None:
-            self.post_message(
-                S3Tree.CatalogError(
-                    catalog_type="s3",
-                    error=Exception(
-                        "Could not load s3 catalog because boto3 is not available.\n\n"
-                        "Re-install harlequin with the s3 extra, like this:\n"
-                        "uv tool install harlequin[s3]"
-                    ),
-                )
-            )
+            self.post_message(missing_boto3_error())
             self.s3_tree = None
         else:
             self.s3_tree = None
 
         if self.show_files is None and self.show_s3 is None:
             self.add_class("hide-tabs")
-        self.query_one(Tabs).can_focus = False
+        self.tabs = self.query_one(Tabs)
+        self.tabs.can_focus = False
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
@@ -187,6 +195,43 @@ class DataCatalog(TabbedContent, can_focus=True):
         event.stop()
         self.database_context_menu.reload(node=event.node)
 
+    async def show_file_tree(self, path: Path) -> None:
+        """Show `path` in the Files tab, adding the tab if there is none."""
+        self.show_files = path
+        if self.file_tree is None:
+            self.file_tree = FileTree(path=path)
+            # Files sits between Databases and S3
+            s3_pane = self.s3_tree.parent if self.s3_tree is not None else None
+            assert s3_pane is None or isinstance(s3_pane, TabPane)
+            await self.add_pane(TabPane("Files", self.file_tree), before=s3_pane)
+        else:
+            self.file_tree.path = path
+        self._activate_pane_of(self.file_tree)
+
+    async def show_s3_tree(self, uri: str) -> S3Tree | None:
+        """Show `uri` in the S3 tab, adding the tab if there is none.
+
+        Returns the tree it replaced, whose listing the caller may cache. A
+        listing still in flight for the old location lands on the removed tree.
+        """
+        self.show_s3 = uri
+        replaced_tree = self.s3_tree
+        self.s3_tree = S3Tree(uri=uri)
+        if replaced_tree is None:
+            await self.add_pane(TabPane("S3", self.s3_tree))
+        else:
+            s3_pane = replaced_tree.parent
+            assert isinstance(s3_pane, TabPane)
+            await replaced_tree.remove()
+            await s3_pane.mount(self.s3_tree)
+        self._activate_pane_of(self.s3_tree)
+        return replaced_tree
+
+    def _activate_pane_of(self, tree: Widget) -> None:
+        self.remove_class("hide-tabs")
+        if tree.parent is not None and tree.parent.id is not None:
+            self.active = tree.parent.id
+
     def update_database_tree(self, catalog: Catalog) -> None:
         self.database_tree.catalog = catalog
 
@@ -199,7 +244,12 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.s3_tree.reload()
 
     def load_s3_tree_from_cache(self, cache: CatalogCache) -> None:
-        if self.show_s3 is None or self.s3_tree is None:
+        # a tree with data already has the live listing, which is newer
+        if (
+            self.show_s3 is None
+            or self.s3_tree is None
+            or self.s3_tree.catalog_data is not None
+        ):
             return
         cache_data = cache.get_s3(self.s3_tree.cache_key)
         if cache_data is None:
@@ -207,20 +257,13 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.s3_tree.build_tree(data=cache_data)
 
     def action_switch_tab(self, offset: int) -> None:
-        if not self.active:
+        if not self.active or self.tab_count == 1:
             return
-        if self.tab_count == 1:
-            return
-        tab_number = int(self.active.split("-")[1])
-        unsafe_tab_number = tab_number + offset
-        if unsafe_tab_number < 1:
-            new_tab_number = self.tab_count
-        elif unsafe_tab_number > self.tab_count:
-            new_tab_number = 1
+        # by position: a tab added at run time can sit before an older one
+        if offset < 0:
+            self.tabs.action_previous_tab()
         else:
-            new_tab_number = unsafe_tab_number
-        self.active = f"tab-{new_tab_number}"
-        self.focus()
+            self.tabs.action_next_tab()
 
     def action_focus_results_viewer(self) -> None:
         if hasattr(self.app, "action_focus_results_viewer"):
