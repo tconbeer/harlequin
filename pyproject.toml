@@ -63,7 +63,7 @@ dependencies = [
 
 [project.optional-dependencies]
 
-s3 = ["boto3==1.43.103"]
+s3 = ["boto3==1.43.108"]
 postgres = ["harlequin-postgres"]
 mysql = ["harlequin-mysql"]
 odbc = ["harlequin-odbc"]
@@ -86,7 +86,7 @@ dev = [
 ]
 static = [
     "ruff>=0.14.1",
-    "mypy==2.3.1,<3",
+    "mypy==2.4.0,<3",
     "boto3-stubs>=1.34.23,<2",
     "import-linter>=2.5",
     # jsonschema ships no py.typed, and the config-schema tests call it
@@ -99,9 +99,9 @@ test = [
     "pytest-asyncio==1.4.0",
     "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@a2c6763b45283f76757a123342900accefcf04e8",
-    "boto3==1.43.103",
+    "boto3==1.43.108",
     # extension tests require consistent version of duckdb.
-    "duckdb==1.5.5",
+    "duckdb==1.5.6",
     "flaky>=3.8.1",
     # runs the schema `hsql --config schema` generates against real config
     # files, so a schema that is not a schema fails here rather than in an
