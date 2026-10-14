@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rich.style import Style
 from rich.text import Text
+from textual.command import CommandPalette, DiscoveryHit, Hit, Hits, Provider
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -228,6 +230,47 @@ class ResultsViewer(TabbedContent, can_focus=True):
             new_tab_number = unsafe_tab_number
         self.active = f"{name_prefix}-{new_tab_number}"
         self._focus_on_visible_table()
+
+    def action_jump_to_column(self) -> None:
+        """Search the visible result's column names and jump within the current row."""
+        visible_table = self.get_visible_table()
+        if (
+            visible_table is None
+            or not visible_table.row_count
+            or not visible_table.plain_column_labels
+        ):
+            return
+        table = visible_table
+        viewer = self
+
+        class ColumnProvider(Provider):
+            async def discover(self) -> Hits:
+                for index, label in enumerate(table.plain_column_labels):
+                    yield DiscoveryHit(
+                        Text(label),
+                        partial(viewer._jump_to_column, table, index),
+                        help=f"Column {index + 1}",
+                    )
+
+            async def search(self, query: str) -> Hits:
+                matcher = self.matcher(query)
+                for index, label in enumerate(table.plain_column_labels):
+                    if score := matcher.match(label):
+                        yield Hit(
+                            score,
+                            matcher.highlight(label),
+                            partial(viewer._jump_to_column, table, index),
+                            help=f"Column {index + 1}",
+                        )
+
+        self.app.push_screen(
+            CommandPalette(providers=[ColumnProvider], placeholder="Jump to column…")
+        )
+
+    def _jump_to_column(self, table: ResultsTable, column: int) -> None:
+        if table is self.get_visible_table() and table.row_count:
+            table.move_cursor(column=column)
+            table.focus()
 
     def action_focus_data_catalog(self) -> None:
         if hasattr(self.app, "action_focus_data_catalog"):
