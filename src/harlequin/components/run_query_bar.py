@@ -44,15 +44,22 @@ class RunQueryBar(Horizontal):
         self.commit_button.tooltip = "Commit transaction"
         self.rollback_button = Button("⮌", id="rollback_button", classes="hidden")
         self.rollback_button.tooltip = "Roll back transaction"
-        self.limit_checkbox = Checkbox("Limit ", id="limit_checkbox")
-        self.limit_input = Input(
-            str(self.query_limit if self.query_limit is not None else DEFAULT_LIMIT),
-            id="limit_input",
-            validators=Integer(
-                minimum=0,
-                failure_description="Please enter a whole number of rows.",
-            ),
+        self.limit_checkbox = Checkbox(
+            "Limit ", value=self.query_limit is not None, id="limit_checkbox"
         )
+        # an initial value posts Changed, whose handler would check the box for
+        # the number offered when nothing configured a limit
+        with self.prevent(Input.Changed):
+            self.limit_input = Input(
+                str(
+                    self.query_limit if self.query_limit is not None else DEFAULT_LIMIT
+                ),
+                id="limit_input",
+                validators=Integer(
+                    minimum=0,
+                    failure_description="Please enter a whole number of rows.",
+                ),
+            )
         self.run_button = Button("Run Query", id="run_query")
         self.cancel_button = Button("Cancel Query", id="cancel_query")
         self.cancel_button.add_class("hidden")
@@ -69,16 +76,6 @@ class RunQueryBar(Horizontal):
     def on_mount(self) -> None:
         if self.app.is_headless:
             self.limit_input.cursor_blink = False
-
-    def apply_configured_limit(self) -> None:
-        """Put the box in the state `--limit` asked for.
-
-        Called by the app once the bar has mounted, and not from `on_mount`:
-        initializing the Input posts a `Changed` message, and the handler below
-        checks the box for any valid value in it -- including the number this
-        widget offers when nothing configured a limit at all.
-        """
-        self.limit_checkbox.value = self.query_limit is not None
 
     @on(Input.Changed, "#limit_input")
     def handle_new_limit_value(self, message: Input.Changed) -> None:
