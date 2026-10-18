@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.16.2] - 2026-10-18
+
 ### Features
 
 - The command palette (`ctrl+p`) now lists Harlequin's own commands, each with its key, and matches Harlequin's look ([#223](https://github.com/tconbeer/harlequin/issues/223)).
@@ -1159,7 +1161,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.1...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.2...HEAD
+[2.16.2]: https://github.com/tconbeer/harlequin/compare/2.16.1...2.16.2
 [2.16.1]: https://github.com/tconbeer/harlequin/compare/2.16.0...2.16.1
 [2.16.0]: https://github.com/tconbeer/harlequin/compare/2.15.0...2.16.0
 [2.15.0]: https://github.com/tconbeer/harlequin/compare/2.14.0...2.15.0
