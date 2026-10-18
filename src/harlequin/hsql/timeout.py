@@ -102,12 +102,12 @@ class Deadline:
             # the same cancel, and 130 rather than 4: an interrupted run is one
             # the caller stopped, not one that ran too long
             self._cancel(connection)
-            if not finished.wait(self.grace):
+            if not self._stopped_in_grace(finished):
                 halt(ExitCode.INTERRUPT)
             raise
         if not in_time:
             self._cancel(connection)
-            if not finished.wait(self.grace):
+            if not self._stopped_in_grace(finished):
                 if self.abandon is None:
                     diagnostics.report_timeout(self.seconds)
                     halt(ExitCode.TIMEOUT)
@@ -116,6 +116,18 @@ class Deadline:
         if failure:
             raise failure[0]
         return done[0]
+
+    def _stopped_in_grace(self, finished: threading.Event) -> bool:
+        """Whether cancelled work finished within the grace period.
+
+        A second interrupt during the wait ends the process, as a grace period
+        that runs out does: the worker is still inside the driver, and
+        unwinding would close the connection under it.
+        """
+        try:
+            return finished.wait(self.grace)
+        except KeyboardInterrupt:
+            halt(ExitCode.INTERRUPT)
 
     def _cancel(self, connection: HarlequinConnection) -> None:
         """Ask the database to stop, having marked the run over.

@@ -16,7 +16,8 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Callable, Sequence, cast
+from types import SimpleNamespace
+from typing import Any, Callable, NoReturn, Sequence, cast
 from unittest.mock import MagicMock
 
 import click
@@ -824,6 +825,91 @@ def test_a_connection_failure_exits_three(hsql: Hsql, tmp_path: Path) -> None:
     )
     assert res.exit_code == ExitCode.CONNECTION
     assert res.stdout == ""
+
+
+# --- closing the connection a run opened -------------------------------------
+
+
+@pytest.fixture
+def duckdb_events(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """What happened to DuckDB connections at the end of a run, in order.
+
+    DuckDB's connection inherits the ABC's no-op `close()`, so recording one is
+    all a patch has to do.
+    """
+    from harlequin_duckdb.adapter import DuckDbConnection
+
+    events: list[str] = []
+
+    def record_close(self: DuckDbConnection) -> None:
+        events.append("close")
+
+    monkeypatch.setattr(DuckDbConnection, "close", record_close)
+    return events
+
+
+@pytest.mark.parametrize(
+    "mode,expected_code",
+    [
+        (["-c", "select 1"], ExitCode.OK),
+        (["-c", "select * from no_such_table"], ExitCode.QUERY),
+        (["--catalog"], ExitCode.OK),
+        (["--catalog-search", "anything"], ExitCode.OK),
+    ],
+    ids=["query", "query-error", "catalog", "catalog-search"],
+)
+def test_a_run_closes_the_connection_it_opened(
+    hsql: Hsql,
+    duck: list[str],
+    duckdb_events: list[str],
+    mode: list[str],
+    expected_code: ExitCode,
+) -> None:
+    """Closed by the run rather than by interpreter shutdown, where a driver's
+    pool cannot join its threads and prints a traceback over a run that
+    succeeded."""
+    assert hsql(*duck, *mode).exit_code == expected_code
+    assert duckdb_events == ["close"]
+
+
+def test_a_close_that_raises_does_not_change_how_the_run_ends(
+    hsql: Hsql, duck: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from harlequin_duckdb.adapter import DuckDbConnection
+
+    def refuse_to_close(self: DuckDbConnection) -> None:
+        raise RuntimeError("the pool would not close")
+
+    monkeypatch.setattr(DuckDbConnection, "close", refuse_to_close)
+    res = hsql(*duck, "-tAc", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert res.stdout == "1\n"
+    assert res.stderr == ""
+
+
+def test_the_connection_closes_before_the_tunnel_it_ran_over(
+    hsql: Hsql,
+    duck: list[str],
+    duckdb_events: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeTunnel:
+        def notice(self) -> str:
+            return "localhost:15432 -> bastion"
+
+        def warnings(self) -> tuple[str, ...]:
+            return ()
+
+        def cache_material(self) -> tuple[str, ...]:
+            return ("bastion",)
+
+        def stop(self) -> None:
+            duckdb_events.append("stop")
+
+    monkeypatch.setattr("harlequin.ssh.open_tunnel", lambda config: _FakeTunnel())
+    res = hsql(*duck, "--ssh-host", "bastion", "-c", "select 1")
+    assert res.exit_code == ExitCode.OK
+    assert duckdb_events == ["close", "stop"]
 
 
 # --- pointing back at the IDE ------------------------------------------------
@@ -4001,8 +4087,8 @@ class _StuckCursor:
     hsql attributes the timeout itself.
     """
 
-    def __init__(self, released: threading.Event) -> None:
-        self.released = released
+    def __init__(self, block: Callable[[], None]) -> None:
+        self.block = block
 
     def columns(self) -> list[tuple[str, str]]:
         return [("n", "##")]
@@ -4011,7 +4097,7 @@ class _StuckCursor:
         return self
 
     def fetchall(self) -> None:
-        self.released.wait(timeout=30)
+        self.block()
         return None
 
 
@@ -4022,12 +4108,26 @@ class _StuckConnection:
         self.stoppable = stoppable
         self.released = threading.Event()
         self.cancelled = False
+        self.left_driver = threading.Event()
+        self.close_called = threading.Event()
+        self.closes_after_leaving: list[bool] = []
+        """One entry per `close()`: whether the blocked call had returned."""
+
+    def block(self) -> None:
+        """Wait until cancelled, then linger briefly on the way out.
+
+        The linger is where a close that does not wait for the run to stop
+        would land, so one that comes too early is recorded rather than raced.
+        """
+        self.released.wait(timeout=30)
+        self.close_called.wait(timeout=0.05)
+        self.left_driver.set()
 
     def execute(self, query: str) -> _StuckCursor:
-        return _StuckCursor(self.released)
+        return _StuckCursor(self.block)
 
     def get_catalog(self) -> Any:
-        self.released.wait(timeout=30)
+        self.block()
         from harlequin.catalog import Catalog
 
         return Catalog(items=[])
@@ -4036,6 +4136,10 @@ class _StuckConnection:
         self.cancelled = True
         if self.stoppable:
             self.released.set()
+
+    def close(self) -> None:
+        self.closes_after_leaving.append(self.left_driver.is_set())
+        self.close_called.set()
 
 
 @pytest.fixture
@@ -4085,6 +4189,73 @@ def test_timeout_cancels_the_run_and_attributes_it(
     assert res.stdout == ""
     assert "timed out after 0.1s" in res.stderr
     assert stuck_adapter[0].cancelled
+
+
+@pytest.mark.parametrize(
+    "mode", [["-c", "select 1"], ["--catalog"]], ids=["query", "catalog"]
+)
+def test_a_timed_out_run_closes_its_connection_once_the_work_stopped(
+    hsql: Hsql, stuck_adapter: list[_StuckConnection], mode: list[str]
+) -> None:
+    """Never while the worker is still inside the driver: a run whose cancel
+    does not land ends in `os._exit()`, before anything is closed."""
+    res = hsql("-a", "stuck", "--timeout", "0.1", *mode)
+    assert res.exit_code == ExitCode.TIMEOUT
+    assert stuck_adapter[0].closes_after_leaving == [True]
+
+
+class _Halted(Exception):
+    """Stands in for `os._exit()`, carrying the code it was given."""
+
+    def __init__(self, code: ExitCode) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+DEADLINE_SECONDS = 0.01
+GRACE_SECONDS = 0.02
+"""Distinct, so a fake event can tell the deadline's wait from the grace's."""
+
+
+@pytest.mark.parametrize(
+    "interrupted_waits",
+    [{DEADLINE_SECONDS, GRACE_SECONDS}, {GRACE_SECONDS}],
+    ids=["second-interrupt", "interrupt-after-expiry"],
+)
+def test_an_interrupt_during_the_grace_period_halts(
+    monkeypatch: pytest.MonkeyPatch, interrupted_waits: set[float]
+) -> None:
+    """The worker is still inside the driver then, and unwinding around it
+    would close the connection under it."""
+    from harlequin.hsql import timeout
+
+    class InterruptingEvent(threading.Event):
+        def wait(self, timeout: float | None = None) -> bool:
+            if timeout in interrupted_waits:
+                raise KeyboardInterrupt
+            return super().wait(timeout)
+
+    def fake_halt(code: ExitCode) -> NoReturn:
+        raise _Halted(code)
+
+    monkeypatch.setattr(
+        timeout,
+        "threading",
+        SimpleNamespace(Thread=threading.Thread, Event=InterruptingEvent),
+    )
+    monkeypatch.setattr(timeout, "halt", fake_halt)
+    never_released = threading.Event()
+    deadline = timeout.Deadline(DEADLINE_SECONDS, grace=GRACE_SECONDS)
+    try:
+        deadline.run(lambda: never_released.wait(30), connection=MagicMock())
+    except _Halted as halted:
+        assert halted.code == ExitCode.INTERRUPT
+    except KeyboardInterrupt:
+        pytest.fail("the interrupt escaped while the worker was inside the driver")
+    else:
+        pytest.fail("the run returned while the worker was inside the driver")
+    finally:
+        never_released.set()
 
 
 def test_timeout_stops_the_statements_after_the_one_it_cancelled(

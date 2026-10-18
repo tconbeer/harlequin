@@ -699,6 +699,25 @@ def test_a_served_request_runs_on_the_sessions_connection(
     assert res.stdout == "1\n"
 
 
+@pytest.mark.parametrize(
+    "mode", [["-c", "select 1"], ["--catalog"]], ids=["query", "catalog"]
+)
+def test_a_served_request_leaves_the_sessions_connection_open(
+    hsql: Hsql,
+    in_process_server: Server,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: list[str],
+) -> None:
+    """The connection is the server's to close, and a request that closed it
+    would leave every later one without a database."""
+    closes: list[str] = []
+    monkeypatch.setattr(
+        in_process_server.connection(), "close", lambda: closes.append("close")
+    )
+    assert hsql(*mode, obj=served_by(in_process_server)).exit_code == ExitCode.OK
+    assert closes == []
+
+
 def test_a_dash_f_dash_with_no_stdin_is_refused(
     hsql: Hsql, in_process_server: Server
 ) -> None:
