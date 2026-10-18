@@ -39,7 +39,11 @@ class CatalogSourceScreen(HarlequinModal[str]):
     def compose(self) -> ComposeResult:
         with Vertical(id="catalog_source_outer"):
             yield Static(self.PROMPT, id="catalog_source_prompt")
-            yield self.compose_location_input()
+            location_input = self.compose_location_input()
+            # on_mount fills in the location, which may land before or after the
+            # input handles its focus, so selecting on focus would depend on timing
+            location_input.select_on_focus = False
+            yield location_input
             yield Label("", id="catalog_source_error")
             with Horizontal(id="catalog_source_button_row"):
                 yield Button(label="Cancel", id="cancel")

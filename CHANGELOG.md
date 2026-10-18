@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - The focused button in confirmation dialogs is now readable.
+- The Limit checkbox no longer sometimes starts checked, limiting queries to 500 rows, when no limit is configured ([#1190](https://github.com/tconbeer/harlequin/issues/1190)).
 - `hsql` no longer prints a connection-pool error at exit when querying Postgres on Python 3.14 ([#1188](https://github.com/tconbeer/harlequin/issues/1188)).
 
 ## [2.16.1] - 2026-10-01

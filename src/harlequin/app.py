@@ -508,8 +508,6 @@ class Harlequin(AppBase):
         self.notify(self.query_log.failure, title="Query History", severity="warning")
 
     async def on_mount(self) -> None:
-        self.run_query_bar.apply_configured_limit()
-
         if self.ssh_tunnel is not None:
             # which database this session is actually looking at
             warnings = self.ssh_tunnel.warnings()

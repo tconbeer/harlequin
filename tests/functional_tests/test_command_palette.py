@@ -10,7 +10,7 @@ from typing import Awaitable, Callable, Type
 from unittest.mock import MagicMock
 
 import pytest
-from textual.command import CommandList, CommandPalette
+from textual.command import CommandInput, CommandList, CommandPalette
 from textual.pilot import Pilot
 from textual.widgets import Button, Tab, Tabs
 
@@ -155,10 +155,17 @@ async def test_palette_snapshots(
             description="the theme picker to open",
         )
         await pilot.press(*"nord")
+        # "n" alone already ranks nord first, so the highlight does not say
+        # which search the list is showing
         await wait_for(
             pilot,
-            lambda: highlighted_command(app) == "nord",
-            description="the theme picker to highlight nord",
+            lambda: (
+                isinstance(app.screen, CommandPalette)
+                and app.screen.query_one(CommandInput).value == "nord"
+                and app.screen.query_one(CommandList).option_count == 1
+                and highlighted_command(app) == "nord"
+            ),
+            description="the theme picker to list only nord",
         )
         snap_results.append(await app_snapshot(app, "Theme Picker"))
 
@@ -320,9 +327,14 @@ async def press_next_catalog_tab(pilot: Pilot, app: Harlequin, expected: str) ->
 async def submit_location(
     pilot: Pilot, app: Harlequin, location: str
 ) -> CatalogSourceScreen:
+    # on_mount is what finds the location input
     source_screen = await wait_for_value(
         pilot,
-        lambda: app.screen if isinstance(app.screen, CatalogSourceScreen) else None,
+        lambda: (
+            app.screen
+            if isinstance(app.screen, CatalogSourceScreen) and app.screen.is_mounted
+            else None
+        ),
         description="the location prompt to open",
     )
     source_screen.location_input.value = location
@@ -367,16 +379,25 @@ async def test_show_files_command(
         )
 
         await submit_location(pilot, app, str(files_dir))
-        await wait_for(
+        # the tree lists the directory on its own, before the tab is shown
+        file_tree = await wait_for_value(
             pilot,
-            lambda: "bar.csv" in file_tree_names(app),
-            description="the Files tab to list the directory",
+            lambda: (
+                catalog.file_tree
+                if catalog.file_tree is not None
+                and "bar.csv" in file_tree_names(app)
+                and not catalog.has_class("hide-tabs")
+                and catalog_tab_labels(app) == ["Databases", "Files"]
+                and catalog.active_pane is catalog.file_tree.parent
+                else None
+            ),
+            description=lambda: (
+                "the Files tab to be shown, active and listing the directory; saw "
+                f"tabs {catalog_tab_labels(app)}, "
+                f"hide-tabs={catalog.has_class('hide-tabs')}, "
+                f"files {sorted(file_tree_names(app))}"
+            ),
         )
-        assert not catalog.has_class("hide-tabs")
-        assert catalog_tab_labels(app) == ["Databases", "Files"]
-        file_tree = catalog.file_tree
-        assert file_tree is not None
-        assert catalog.active_pane is file_tree.parent
         await wait_for(
             pilot,
             lambda: app.focused is file_tree,
