@@ -1051,7 +1051,18 @@ def _connect(
         ctx, adapter=adapter, conn_str=conn_str, read_only=read_only, values=values
     )
     keyed = _keyed_connection(adapter_instance, conn_str, values, tunnel=tunnel)
-    return _connected(ctx, adapter_instance), keyed
+    connection = _connected(ctx, adapter_instance)
+    # closed with the run, ahead of the tunnel it may run over, rather than by
+    # the interpreter at shutdown, where a driver's pool can no longer join its
+    # threads
+    ctx.call_on_close(partial(_close_quietly, connection))
+    return connection, keyed
+
+
+def _close_quietly(connection: "HarlequinConnection") -> None:
+    """Close a connection without letting the adapter change how the run ends."""
+    with contextlib.suppress(Exception):  # adapters are third-party code
+        connection.close()
 
 
 def _adapter_instance(
