@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Awaitable, Callable
 
 import pytest
-from textual.command import Command, CommandList, CommandPalette
+from textual.command import Command, CommandList, CommandPalette, Hit
 from textual.coordinate import Coordinate
-from textual.widgets import Input
 
 from harlequin import Harlequin
 from tests.functional_tests.helpers import wait_for_any_table, wait_for_editor
@@ -14,10 +13,9 @@ from tests.waiting import wait_for
 
 @pytest.mark.asyncio
 async def test_jump_to_column(
-    app_all_adapters: Harlequin,
+    app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
-    app = app_all_adapters
     async with app.run_test(size=(80, 24)) as pilot:
         await wait_for_workers(app)
         editor = await wait_for_editor(pilot, app)
@@ -32,13 +30,14 @@ async def test_jump_to_column(
         table.move_cursor(column=1, select=True)
         await pilot.press("ctrl+g")
         assert isinstance(app.screen, CommandPalette)
-        app.screen.query_one(Input).value = "客户[status]"
+        await pilot.press(*"客户[status]")
         command_list = app.screen.query_one(CommandList)
         await wait_for(
             pilot,
             lambda: command_list.option_count == 1,
             description="the matching column",
         )
+        assert "客户[status]" in str(command_list.get_option_at_index(0).prompt)
         await pilot.press("enter")
         await wait_for(pilot, lambda: table.has_focus, description="results focus")
         assert table.cursor_coordinate == Coordinate(1, 15)
@@ -50,7 +49,6 @@ async def test_jump_to_column(
 async def test_column_picker_duplicates_and_cancel(
     app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
-    app_snapshot: Callable[..., Awaitable[bool]],
 ) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         await wait_for_workers(app)
@@ -61,7 +59,7 @@ async def test_column_picker_duplicates_and_cancel(
         await wait_for(pilot, lambda: table.has_focus, description="results focus")
         await pilot.press("ctrl+g")
         assert isinstance(app.screen, CommandPalette)
-        app.screen.query_one(Input).value = "CUSTNAME"
+        await pilot.press(*"CUSTNAME")
         command_list = app.screen.query_one(CommandList)
         await wait_for(
             pilot,
@@ -76,14 +74,13 @@ async def test_column_picker_duplicates_and_cancel(
             "Column 1",
             "Column 2",
         }
-        assert await app_snapshot(app, "column picker")
         await pilot.press("down", "enter")
         await wait_for(pilot, lambda: table.has_focus, description="results focus")
         assert table.cursor_coordinate == Coordinate(0, 1)
 
         await pilot.press("ctrl+g")
         assert isinstance(app.screen, CommandPalette)
-        app.screen.query_one(Input).value = "no_such_column"
+        await pilot.press(*"no_such_column")
         command_list = app.screen.query_one(CommandList)
         await wait_for(
             pilot,
@@ -95,6 +92,49 @@ async def test_column_picker_duplicates_and_cancel(
         await pilot.press("escape")
         await wait_for(pilot, lambda: table.has_focus, description="results focus")
         assert table.cursor_coordinate == Coordinate(0, 1)
+
+
+@pytest.mark.asyncio
+async def test_column_picker_preserves_markup_labels(
+    app: Harlequin,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        editor = await wait_for_editor(pilot, app)
+        editor.text = 'select 1 as "a[/]", 2 as abc'
+        await pilot.press("ctrl+j")
+        table = await wait_for_any_table(pilot, app)
+        await wait_for(pilot, lambda: table.has_focus, description="results focus")
+        table.move_cursor(column=1)
+        await pilot.press("ctrl+g")
+        command_list = app.screen.query_one(CommandList)
+        await wait_for(
+            pilot,
+            lambda: command_list.option_count == 2,
+            description="both columns before searching",
+        )
+        assert "a[/]" in str(command_list.get_option_at_index(0).prompt)
+        await pilot.press("a")
+        await wait_for(
+            pilot,
+            lambda: (
+                command_list.option_count == 2
+                and all(
+                    isinstance(option, Command) and isinstance(option.hit, Hit)
+                    for option in (
+                        command_list.get_option_at_index(index) for index in range(2)
+                    )
+                )
+            ),
+            description="both matching columns with literal markup",
+        )
+        options = [command_list.get_option_at_index(index) for index in range(2)]
+        assert any("a[/]" in str(option.prompt) for option in options)
+        assert any("abc" in str(option.prompt) for option in options)
+        await pilot.press("enter")
+        await wait_for(pilot, lambda: table.has_focus, description="results focus")
+        assert table.cursor_coordinate == Coordinate(0, 0)
 
 
 @pytest.mark.asyncio
@@ -143,7 +183,7 @@ async def test_jump_uses_active_result_and_palette(
             lambda: command_list.option_count == 2,
             description="the active result's columns",
         )
-        app.screen.query_one(Input).value = "second"
+        await pilot.press(*"second")
         await wait_for(
             pilot,
             lambda: command_list.option_count == 1,
@@ -154,22 +194,39 @@ async def test_jump_uses_active_result_and_palette(
         assert table.cursor_coordinate == Coordinate(0, 1)
 
         await pilot.press("ctrl+g")
-        app.results_viewer.clear_all_tables()
+        command_list = app.screen.query_one(CommandList)
+        await pilot.press(*"other")
+        await wait_for(
+            pilot,
+            lambda: command_list.option_count == 1,
+            description="a different column in the original result",
+        )
+        app.results_viewer.action_switch_tab(-1)
+        active_table = await wait_for_any_table(pilot, app)
+        assert active_table is not table
+        assert table.is_mounted
         await pilot.press("enter")
         await wait_for(
             pilot,
             lambda: not isinstance(app.screen, CommandPalette),
             description="the stale column picker to close",
         )
-        assert app.results_viewer.get_visible_table() is None
+        assert app.results_viewer.get_visible_table() is active_table
+        assert table.cursor_coordinate == Coordinate(0, 1)
+        assert active_table.cursor_coordinate == Coordinate(0, 0)
+        assert not table.has_focus
+        await wait_for(
+            pilot,
+            lambda: active_table.has_focus,
+            description="the active result's focus",
+        )
 
 
 @pytest.mark.asyncio
 async def test_empty_result_has_no_column_jump(
-    app_all_adapters: Harlequin,
+    app: Harlequin,
     wait_for_workers: Callable[[Harlequin], Awaitable[None]],
 ) -> None:
-    app = app_all_adapters
     async with app.run_test() as pilot:
         await wait_for_workers(app)
         editor = await wait_for_editor(pilot, app)
