@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
+
 ## [2.16.2] - 2026-10-18
 
 ### Features

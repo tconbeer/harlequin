@@ -44,6 +44,11 @@ def _has_many_buffers(app: Harlequin) -> bool:
     return app.editor_collection.tab_count > 1
 
 
+def _has_result_columns(app: Harlequin) -> bool:
+    table = app.results_viewer.get_visible_table()
+    return table is not None and table.row_count > 0
+
+
 PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
     # app
     PaletteCommand("Help", "Show Harlequin's help", "help"),
@@ -82,6 +87,12 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
     ),
     PaletteCommand(
         "Export Data", "Export the visible results to a file", "show_data_exporter"
+    ),
+    PaletteCommand(
+        "Jump to Column",
+        "Find a result column by name and move to it in the current row",
+        "results_viewer.jump_to_column",
+        is_available=_has_result_columns,
     ),
     # transactions
     PaletteCommand(
