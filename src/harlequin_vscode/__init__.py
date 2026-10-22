@@ -20,6 +20,7 @@ VSCODE_APP_BINDINGS = [
 VSCODE_EDITOR_BINDINGS = [
     HarlequinKeyBinding("ctrl+n", "code_editor.new_buffer"),
     HarlequinKeyBinding("ctrl+w", "code_editor.close_buffer"),
+    HarlequinKeyBinding("ctrl+shift+t", "code_editor.reopen_buffer"),
     HarlequinKeyBinding("ctrl+k", "code_editor.next_buffer"),
     HarlequinKeyBinding(
         "ctrl+enter,ctrl+j",

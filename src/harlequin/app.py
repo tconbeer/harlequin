@@ -1290,7 +1290,7 @@ class Harlequin(AppBase):
         self.results_viewer.focus()
 
     def _build_editor_cache(self) -> Cache | None:
-        """The open buffers, or None when there is nothing worth writing.
+        """The retained buffers, or None when there is nothing worth writing.
 
         `editor_collection` is assigned in `compose()`, so before the app
         mounts the attribute does not exist at all -- and a crash before that
@@ -1299,19 +1299,20 @@ class Harlequin(AppBase):
         Blank buffers are nothing either: writing them over a recovery file
         would destroy exactly the work this exists to save.
         """
-        editor_collection = getattr(self, "editor_collection", None)
+        editor_collection: EditorCollection | None = getattr(
+            self, "editor_collection", None
+        )
         if editor_collection is None or not editor_collection.is_mounted:
             return None
-        cache = Cache(
-            focus_index=editor_collection.active_buffer_index,
-            buffers=editor_collection.buffers,
-        )
-        if not any(buffer.text.strip() for buffer in cache.buffers):
+        cache = editor_collection.cache
+        if not any(
+            buffer.text.strip() for buffer in (*cache.buffers, *cache.closed_buffers)
+        ):
             return None
         return cache
 
     def _checkpoint_editor_cache(self) -> None:
-        """Write the open buffers to this session's recovery file, if they moved.
+        """Write retained buffers to this session's recovery file if they changed.
 
         Synchronously, on the message pump: pickling a few SQL buffers is
         microseconds, and a thread worker would only add the hazard of two
@@ -1324,6 +1325,14 @@ class Harlequin(AppBase):
         if write_recovery(cache):
             self._last_checkpointed_cache = cache
 
+    @on(EditorCollection.BuffersChanged)
+    def checkpoint_buffer_change(
+        self, message: EditorCollection.BuffersChanged
+    ) -> None:
+        """Checkpoint explicit buffer changes, including deletion of all text."""
+        if write_recovery(message.cache):
+            self._last_checkpointed_cache = message.cache
+
     def _save_work_on_crash(self) -> bool:
         """Save the buffers a crash would otherwise lose.
 
@@ -1335,7 +1344,7 @@ class Harlequin(AppBase):
         saved = False
         try:
             # the crash may be *in* the editor, and building this reads it
-            cache = self._build_editor_cache()
+            cache = self._build_editor_cache() or self._last_checkpointed_cache
         except Exception:
             cache = self._last_checkpointed_cache
         if cache is not None and write_recovery(cache):
@@ -1391,13 +1400,8 @@ class Harlequin(AppBase):
         # first, so a download in flight starts unwinding while the caches
         # below are written rather than after
         self._tzdata_stop.set()
-        write_editor_cache(
-            Cache(
-                focus_index=self.editor_collection.active_buffer_index,
-                buffers=self.editor_collection.buffers,
-            )
-        )
-        clear_recovery()
+        if write_editor_cache(self.editor_collection.cache):
+            clear_recovery()
         update_catalog_cache(
             connection_hash=self.connection_hash,
             catalog=None,  # TODO: cache completions instead.
