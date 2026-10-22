@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 import pickle
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Union
 
 from platformdirs import user_cache_dir
 from textual.widgets.text_area import Selection
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 CHECKPOINT_INTERVAL_SECONDS = 60.0
 """How often a running Harlequin writes its buffers to its recovery file."""
@@ -34,6 +34,7 @@ class BufferState:
 class Cache:
     focus_index: int
     buffers: List[BufferState]
+    closed_buffers: List[BufferState] = field(default_factory=list)
 
 
 def get_cache_file() -> Path:
@@ -60,25 +61,38 @@ def _get_cache_dir() -> Path:
 
 
 def load_cache() -> Union[Cache, None]:
-    """
-    Returns a Cache (a list of strings) by loading
-    from a pickle saved to disk
-    """
+    """Load saved buffers, migrating the previous cache format if necessary."""
     cache_file = get_cache_file()
+    migrating = not cache_file.exists()
+    if migrating:
+        cache_file = _get_cache_dir() / "cache-1.pickle"
     try:
         with cache_file.open("rb") as f:
-            cache: Cache = pickle.load(f)
-            assert isinstance(cache, Cache)
+            cache = _normalize_cache(pickle.load(f))
     except (
         pickle.UnpicklingError,
         ValueError,
         IndexError,
-        FileNotFoundError,
-        AssertionError,
+        OSError,
+        EOFError,
+        AttributeError,
+        TypeError,
     ):
         return None
-    else:
-        return cache
+    if migrating:
+        write_cache(cache)
+    return cache
+
+
+def _normalize_cache(value: object) -> Cache:
+    """Give clean caches and recovery files the current buffer representation."""
+    if not isinstance(value, Cache):
+        raise TypeError("Not an editor cache")
+    return Cache(
+        focus_index=value.focus_index,
+        buffers=value.buffers,
+        closed_buffers=getattr(value, "closed_buffers", []),
+    )
 
 
 def _write_pickle(cache: Cache, path: Path) -> bool:
@@ -113,7 +127,13 @@ def write_cache(cache: Cache) -> bool:
     """
     Dumps buffer contents to disk. Returns False if they could not be written.
     """
-    return _write_pickle(cache, get_cache_file())
+    if not _write_pickle(cache, get_cache_file()):
+        return False
+    try:
+        (_get_cache_dir() / "cache-1.pickle").unlink(missing_ok=True)
+    except OSError:
+        pass
+    return True
 
 
 def write_recovery(cache: Cache) -> bool:
@@ -150,8 +170,7 @@ def adopt_recovery() -> tuple[Union[Cache, None], Union[Path, None]]:
             continue
         try:
             with replayed.open("rb") as f:
-                cache = pickle.load(f)
-            assert isinstance(cache, Cache)
+                cache = _normalize_cache(pickle.load(f))
         except Exception:
             continue
         return cache, replayed

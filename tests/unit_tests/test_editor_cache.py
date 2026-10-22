@@ -50,6 +50,70 @@ def test_write_cache_round_trips(mock_user_cache_dir: Path, cache: Cache) -> Non
     assert load_cache() == cache
 
 
+def test_closed_buffers_round_trip_in_closing_order(
+    mock_user_cache_dir: Path, cache: Cache
+) -> None:
+    cache.closed_buffers = [
+        BufferState(Selection((0, 2), (0, 5)), "select 2"),
+        BufferState(Selection(), "select 3"),
+    ]
+    assert write_cache(cache)
+    assert load_cache() == cache
+    assert write_recovery(cache)
+    recovery = get_recovery_file()
+    os.utime(recovery, (0, 0))
+    assert adopt_recovery()[0] == cache
+
+
+def legacy_pickle(cache: Cache) -> bytes:
+    """Serialize the fields present in a version-one editor cache."""
+    del cache.closed_buffers
+    return pickle.dumps(cache)
+
+
+def test_load_migrates_legacy_buffers_without_discarding_them(
+    mock_user_cache_dir: Path, cache: Cache
+) -> None:
+    legacy_file = mock_user_cache_dir / "cache-1.pickle"
+    legacy_file.parent.mkdir(parents=True)
+    legacy_file.write_bytes(legacy_pickle(cache))
+    migrated = load_cache()
+    assert migrated == Cache(focus_index=cache.focus_index, buffers=cache.buffers)
+    assert get_cache_file().exists()
+    assert not legacy_file.exists()
+    assert load_cache() == migrated
+
+
+@pytest.mark.usefixtures("failing_dump")
+def test_failed_migration_preserves_the_legacy_file(
+    mock_user_cache_dir: Path, cache: Cache
+) -> None:
+    legacy_file = mock_user_cache_dir / "cache-1.pickle"
+    legacy_file.parent.mkdir(parents=True)
+    legacy_file.write_bytes(legacy_pickle(cache))
+    assert load_cache() == Cache(focus_index=cache.focus_index, buffers=cache.buffers)
+    assert legacy_file.exists()
+    assert not get_cache_file().exists()
+
+
+def test_a_current_cache_wins_over_a_stale_legacy_cache(
+    mock_user_cache_dir: Path, cache: Cache
+) -> None:
+    assert write_cache(Cache(focus_index=0, buffers=[]))
+    legacy_file = mock_user_cache_dir / "cache-1.pickle"
+    legacy_file.write_bytes(legacy_pickle(cache))
+    assert load_cache() == Cache(focus_index=0, buffers=[])
+
+
+def test_legacy_recovery_is_normalized(mock_user_cache_dir: Path, cache: Cache) -> None:
+    legacy_file = mock_user_cache_dir / "recovered-legacy.pickle"
+    legacy_file.parent.mkdir(parents=True)
+    legacy_file.write_bytes(legacy_pickle(cache))
+    assert adopt_recovery()[0] == Cache(
+        focus_index=cache.focus_index, buffers=cache.buffers
+    )
+
+
 def test_write_cache_leaves_no_temp_file(
     mock_user_cache_dir: Path, cache: Cache
 ) -> None:
