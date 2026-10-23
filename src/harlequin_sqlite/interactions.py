@@ -48,12 +48,26 @@ def execute_drop_view_statement(
     execute_drop_relation_statement(item=item, driver=driver, relation_type="view")
 
 
+def _quote_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _quote_literal(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
+
+
 def show_describe_relation(
     item: "RelationCatalogItem",
     driver: "HarlequinDriver",
 ) -> None:
+    if item.parent is None:
+        return
+    # a pragma's argument is a bare name; the database qualifies the pragma itself
     driver.insert_text_in_new_buffer(
-        text=f"pragma table_info({item.qualified_identifier})"
+        text=(
+            f"pragma {_quote_identifier(item.parent.label)}"
+            f".table_info({_quote_identifier(item.label)})"
+        )
     )
 
 
@@ -63,11 +77,12 @@ def show_relation_ddl(
 ) -> None:
     if item.parent is None or item.connection is None:
         return
+    # every attached database has its own sqlite_schema
     cursor = item.connection.execute(
         f"""
         select sql
-        from sqlite_schema
-        where tbl_name = '{item.label}'
+        from {_quote_identifier(item.parent.label)}.sqlite_schema
+        where name = {_quote_literal(item.label)}
         limit 1
         """
     )

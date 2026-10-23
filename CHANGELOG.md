@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
+### Bug Fixes
+
+- For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
+
 ## [2.16.2] - 2026-10-18
 
 ### Features
