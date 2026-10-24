@@ -304,3 +304,14 @@ def _create_sqlite_db_from_data_dir(data_dir: Path, db_path: Path) -> None:
                     ]
                     conn.execute(f"insert into {p.stem} values({', '.join(quoted)})")
                 conn.commit()
+
+
+@pytest.fixture(autouse=True)
+def editor_store_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Keep editor state and legacy migration away from the user's buffers."""
+    store_dir = tmp_path / "editor-state"
+    monkeypatch.setattr("harlequin.editor_cache.user_state_path", lambda **_: store_dir)
+    monkeypatch.setattr(
+        "harlequin.editor_cache.user_cache_dir", lambda **_: tmp_path / "editor-cache"
+    )
+    return store_dir

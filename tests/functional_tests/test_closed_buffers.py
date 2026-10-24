@@ -29,7 +29,7 @@ async def test_close_and_reopen_preserves_selection_and_undo(
         assert collection.tab_count == 1
         assert [state.text for state in collection.closed_buffer_states] == ["select 1"]
 
-        await pilot.press("ctrl+shift+t")
+        await pilot.press("ctrl+f2")
         assert editor is collection.current_editor
         assert len(app.query(CodeEditor)) == 1
         assert editor.text == "select 1"
@@ -38,7 +38,7 @@ async def test_close_and_reopen_preserves_selection_and_undo(
         assert not collection.closed_buffer_states
         await pilot.press("ctrl+z")
         assert editor.text == ""
-        await pilot.press("ctrl+w", "ctrl+shift+t")
+        await pilot.press("ctrl+w", "ctrl+f2")
         assert editor.text == ""
         assert collection.tab_count == 1
         assert not collection.closed_buffer_states
@@ -58,7 +58,7 @@ async def test_reopen_preserves_scroll_away_from_cursor(
         scroll_offset = editor.text_input.scroll_offset
         assert scroll_offset.y > 0
         assert editor.selection == Selection()
-        await pilot.press("ctrl+w", "ctrl+shift+t")
+        await pilot.press("ctrl+w", "ctrl+f2")
         assert editor.text_input.scroll_offset == scroll_offset
         assert editor.selection == Selection()
 
@@ -74,7 +74,7 @@ async def test_empty_buffers_are_deleted(
         await wait_for_workers(app)
         editor = await wait_for_editor(pilot, app)
         editor.text = text
-        await pilot.press("ctrl+w", "ctrl+shift+t", "ctrl+z")
+        await pilot.press("ctrl+w", "ctrl+f2", "ctrl+z")
         assert editor.text == ""
         assert app.editor_collection.tab_count == 1
         assert not app.editor_collection.closed_buffer_states
@@ -96,7 +96,7 @@ async def test_close_saves_the_loaded_buffer_before_switching(
         assert [state.text for state in app.editor_collection.closed_buffer_states] == [
             "second"
         ]
-        await pilot.press("ctrl+shift+t")
+        await pilot.press("ctrl+f2")
         assert editor.text == "second"
         assert [buffer.text for buffer in app.editor_collection.buffers] == [
             "first",
@@ -137,7 +137,7 @@ async def test_close_all_retains_buffers_and_restores_active_one_first(
             "second",
         ]
         for expected in ("second", "third", "first", "already closed"):
-            await pilot.press("ctrl+shift+t")
+            await pilot.press("ctrl+f2")
             assert editor.text == expected
         assert not collection.closed_buffer_states
         assert collection.tab_count == 5
@@ -264,7 +264,35 @@ async def test_reopen_actions_do_nothing_without_closed_buffers(
             command.title for command in app.get_system_commands(app.screen)
         }
         app.editor_collection.action_show_closed_buffers()
-        await pilot.press("ctrl+shift+t")
+        await pilot.press("ctrl+f2")
         assert not isinstance(app.screen, CommandPalette)
         assert editor.text == ""
         assert app.editor_collection.tab_count == 1
+
+
+@pytest.mark.parametrize("close_all", [False, True])
+@pytest.mark.asyncio
+async def test_closed_buffer_retention_evicts_the_oldest(
+    app: Harlequin, monkeypatch: pytest.MonkeyPatch, close_all: bool
+) -> None:
+    monkeypatch.setattr("harlequin.components.code_editor.CLOSED_BUFFER_LIMIT", 3)
+    async with app.run_test() as pilot:
+        editor = await wait_for_editor(pilot, app)
+        collection = app.editor_collection
+        for index in range(5):
+            editor.text = str(index)
+            if close_all:
+                await collection.action_new_buffer()
+            else:
+                await collection.action_close_buffer()
+        if close_all:
+            await collection.action_close_all_buffers()
+        assert [state.text for state in collection.closed_buffer_states] == [
+            "2",
+            "3",
+            "4",
+        ]
+        for index in (4, 3, 2):
+            await pilot.press("ctrl+f2")
+            assert editor.text == str(index)
+        assert not collection.closed_buffer_states
