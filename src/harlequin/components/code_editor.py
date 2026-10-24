@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from functools import partial
 from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
 from textual import on, work
 from textual.app import ComposeResult
+from textual.command import CommandPalette, SimpleCommand
 from textual.containers import Vertical
 from textual.geometry import Offset
 from textual.message import Message
@@ -24,9 +27,15 @@ from harlequin.autocomplete import (
     WordCompleter,
     find_symbols,
 )
-from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.command_provider import PlainTextProvider
 from harlequin.components.text_modal import ErrorModal
-from harlequin.editor_cache import BufferState, adopt_recovery, load_cache
+from harlequin.editor_cache import (
+    CLOSED_BUFFER_LIMIT,
+    BufferState,
+    Cache,
+    adopt_recovery,
+    load_cache,
+)
 from harlequin.exception import HarlequinExternalError
 from harlequin.external import launch_external_editor
 from harlequin.messages import WidgetMounted
@@ -315,6 +324,13 @@ class EditorCollection(Vertical):
             self.active_editor = active_editor
             super().__init__()
 
+    class BuffersChanged(Message):
+        """A completed close or restore, including an intentional deletion."""
+
+        def __init__(self, cache: Cache) -> None:
+            self.cache = cache
+            super().__init__()
+
     def __init__(
         self,
         name: Union[str, None] = None,
@@ -323,6 +339,7 @@ class EditorCollection(Vertical):
         disabled: bool = False,
         language: str = "sql",
         theme: str = "harlequin",
+        connection_hash: str = "",
     ):
         super().__init__(
             name=name,
@@ -335,9 +352,11 @@ class EditorCollection(Vertical):
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
         self._buffer_symbols: BufferSymbols = NO_SYMBOLS
-        self.startup_cache = load_cache()
-        self.recovered_cache, self.recovered_from = adopt_recovery()
+        self.startup_cache = load_cache(connection_hash)
+        self.recovered_cache, self.recovered_from = adopt_recovery(connection_hash)
         self.buffer_states: dict[str, EditorState] = {}
+        self.closed_buffer_states: list[EditorState] = []
+        self._buffer_lock = asyncio.Lock()
         self.loaded_buffer_id: str | None = None
         self.tabs = Tabs()
         self.tabs.can_focus = False
@@ -363,12 +382,33 @@ class EditorCollection(Vertical):
 
     @property
     def buffers(self) -> List[BufferState]:
-        """The state of every buffer, in tab order, for the editor cache."""
+        """The visible buffers, in tab order, for the editor cache."""
         self._save_loaded_buffer()
         return [
-            BufferState(selection=state.selection, text=state.text)
+            BufferState(
+                selection=state.selection,
+                text=state.text,
+                scroll_offset=state.scroll_offset,
+            )
             for state in self.buffer_states.values()
         ]
+
+    @property
+    def cache(self) -> Cache:
+        """Visible and closed buffers, in their tab and closing order."""
+        buffers = self.buffers
+        return Cache(
+            focus_index=self.active_buffer_index,
+            buffers=buffers,
+            closed_buffers=[
+                BufferState(
+                    selection=state.selection,
+                    text=state.text,
+                    scroll_offset=state.scroll_offset,
+                )
+                for state in self.closed_buffer_states
+            ],
+        )
 
     @property
     def active_buffer_index(self) -> int:
@@ -413,6 +453,15 @@ class EditorCollection(Vertical):
     async def on_mount(self) -> None:
         # a recovered session started from the cache, so it is strictly newer
         cache = self.recovered_cache or self.startup_cache
+        if cache is not None:
+            self.closed_buffer_states = [
+                EditorState(
+                    text=buffer.text,
+                    selection=buffer.selection,
+                    scroll_offset=buffer.scroll_offset,
+                )
+                for buffer in cache.closed_buffers
+            ]
         if cache is not None and cache.buffers:
             for buffer in cache.buffers:
                 await self.action_new_buffer(state=buffer, activate=False)
@@ -436,13 +485,21 @@ class EditorCollection(Vertical):
     def on_tabs_tab_activated(self, message: Tabs.TabActivated) -> None:
         message.stop()
         new_buffer_id = message.tab.id
-        if new_buffer_id is None or new_buffer_id == self.loaded_buffer_id:
+        if (
+            new_buffer_id is None
+            or new_buffer_id not in self.buffer_states
+            or new_buffer_id != self.active
+        ):
+            return
+        self._activate_buffer(new_buffer_id)
+
+    def _activate_buffer(self, new_buffer_id: str) -> None:
+        if new_buffer_id == self.loaded_buffer_id:
             return
         self._save_loaded_buffer()
         self.loaded_buffer_id = new_buffer_id
-        state = self.buffer_states.get(new_buffer_id)
-        if state is not None:
-            self.editor.load_state(state)
+        self.tabs.active = new_buffer_id
+        self.editor.load_state(self.buffer_states[new_buffer_id])
         self.post_message(self.EditorSwitched(active_editor=self.editor))
         self.editor.focus()
 
@@ -455,7 +512,7 @@ class EditorCollection(Vertical):
         await self.action_new_buffer(state=state)
 
     async def action_new_buffer(
-        self, state: Union[BufferState, None] = None, activate: bool = True
+        self, state: BufferState | EditorState | None = None, activate: bool = True
     ) -> CodeEditor:
         if self._closing or self._pruning:
             # a collection on its way out mounts nothing, and `Tabs` raises
@@ -464,7 +521,13 @@ class EditorCollection(Vertical):
         self.counter += 1
         new_buffer_id = f"tab-{self.counter}"
         self.buffer_states[new_buffer_id] = (
-            EditorState(text=state.text, selection=state.selection)
+            state
+            if isinstance(state, EditorState)
+            else EditorState(
+                text=state.text,
+                selection=state.selection,
+                scroll_offset=state.scroll_offset,
+            )
             if state is not None
             else EditorState()
         )
@@ -472,62 +535,90 @@ class EditorCollection(Vertical):
         if activate:
             # adding the first tab activates it; any later tab has to be
             # activated here to swap its state into the editor.
-            self.tabs.active = new_buffer_id
+            self._activate_buffer(new_buffer_id)
             self.editor.focus()
-        if self.counter > 1:
-            self.remove_class("hide-tabs")
+        self.set_class(self.tab_count < 2, "hide-tabs")
         return self.editor
 
-    def action_close_buffer(self) -> None:
-        if self.tab_count > 1:
-            if self.tab_count == 2:
-                self.add_class("hide-tabs")
+    async def action_close_buffer(self) -> None:
+        """Retain the current buffer if it holds text, otherwise delete it."""
+        async with self._buffer_lock:
+            if self._closing or self._pruning:
+                return
+            self._save_loaded_buffer()
             closed_buffer_id = self.active
-            # the editor's contents belong to the buffer being closed, so they
-            # are dropped rather than saved when the next tab is activated.
+            if closed_buffer_id is None:
+                return
+            state = self.buffer_states.pop(closed_buffer_id)
+            if state.text.strip():
+                self.closed_buffer_states.append(state)
+                del self.closed_buffer_states[:-CLOSED_BUFFER_LIMIT]
             self.loaded_buffer_id = None
-            if closed_buffer_id is not None:
-                self.buffer_states.pop(closed_buffer_id, None)
-                self.tabs.remove_tab(closed_buffer_id)
-        else:
-            self.editor.load_state(EditorState())
-        self.editor.focus()
+            await self.tabs.remove_tab(closed_buffer_id)
+            if not self.buffer_states:
+                await self.action_new_buffer()
+            elif self.active is not None:
+                self._activate_buffer(self.active)
+            self.set_class(self.tab_count < 2, "hide-tabs")
+            self.editor.focus()
+            self.post_message(self.BuffersChanged(self.cache))
 
     async def action_close_all_buffers(self) -> None:
-        """Close every buffer, leaving one empty one; confirms if any hold text."""
-        if not any(buffer.text.strip() for buffer in self.buffers):
-            await self._close_all_buffers()
-            return
-
-        async def close_if_confirmed(confirmed: bool | None) -> None:
-            if confirmed:
-                await self._close_all_buffers()
-
-        if self.tab_count > 1:
-            prompt = (
-                f"Close all {self.tab_count} buffers? Their text will be discarded."
+        """Retain buffers holding text and leave one new empty buffer."""
+        async with self._buffer_lock:
+            if self._closing or self._pruning:
+                return
+            self._save_loaded_buffer()
+            buffer_ids = [key for key in self.buffer_states if key != self.active]
+            if self.active is not None:
+                buffer_ids.append(self.active)
+            self.closed_buffer_states.extend(
+                self.buffer_states[key]
+                for key in buffer_ids
+                if self.buffer_states[key].text.strip()
             )
-            confirm_label = "Close All"
-        else:
-            prompt = "Close this buffer? Its text will be discarded."
-            confirm_label = "Close"
-        self.app.push_screen(
-            ConfirmModal(
-                prompt=prompt, confirm_label=confirm_label, cancel_label="Cancel"
-            ),
-            callback=close_if_confirmed,
-        )
+            del self.closed_buffer_states[:-CLOSED_BUFFER_LIMIT]
+            self.loaded_buffer_id = None
+            self.buffer_states.clear()
+            await self.tabs.clear()
+            await self.action_new_buffer()
+            self.post_message(self.BuffersChanged(self.cache))
 
-    async def _close_all_buffers(self) -> None:
-        kept_buffer_id = self.active
-        for buffer_id in list(self.buffer_states):
-            if buffer_id != kept_buffer_id:
-                # a second close-all can be part way through the same loop
-                if self.buffer_states.pop(buffer_id, None) is not None:
-                    await self.tabs.remove_tab(buffer_id)
-        self.add_class("hide-tabs")
-        self.editor.load_state(EditorState())
-        self.editor.focus()
+    async def action_reopen_buffer(self) -> None:
+        """Reopen the most recently closed buffer."""
+        if self.closed_buffer_states:
+            await self._reopen_buffer(self.closed_buffer_states[-1])
+
+    async def _reopen_buffer(self, state: EditorState) -> None:
+        async with self._buffer_lock:
+            if self._closing or self._pruning:
+                return
+            for index, closed_state in enumerate(self.closed_buffer_states):
+                if closed_state is state:
+                    await self.action_new_buffer(state=state)
+                    self.closed_buffer_states.pop(index)
+                    self.post_message(self.BuffersChanged(self.cache))
+                    break
+
+    def action_show_closed_buffers(self) -> None:
+        """Choose a closed buffer by its first nonblank line."""
+        if not self.closed_buffer_states:
+            return
+        commands = [
+            SimpleCommand(
+                next(line.strip() for line in state.text.splitlines() if line.strip()),
+                partial(self._reopen_buffer, state),
+                f"Closed buffer {index + 1}",
+            )
+            for index, state in reversed(list(enumerate(self.closed_buffer_states)))
+        ]
+        self.app.push_screen(
+            CommandPalette(
+                # Textual's provider type omits SimpleProvider instances.
+                providers=[PlainTextProvider(self.screen, commands)],  # type: ignore[list-item]
+                placeholder="Reopen a closed buffer…",
+            )
+        )
 
     def action_next_buffer(self) -> None:
         if self.tab_count < 2:
@@ -542,7 +633,7 @@ class EditorCollection(Vertical):
             return
         if not 0 <= focus_index < len(buffer_ids):
             focus_index = 0
-        self.tabs.active = buffer_ids[focus_index]
+        self._activate_buffer(buffer_ids[focus_index])
 
     def _save_loaded_buffer(self) -> None:
         """Copies the editor's contents back into the buffer they were loaded from."""
