@@ -29,7 +29,13 @@ from harlequin.autocomplete import (
 )
 from harlequin.components.command_provider import PlainTextProvider
 from harlequin.components.text_modal import ErrorModal
-from harlequin.editor_cache import BufferState, Cache, adopt_recovery, load_cache
+from harlequin.editor_cache import (
+    CLOSED_BUFFER_LIMIT,
+    BufferState,
+    Cache,
+    adopt_recovery,
+    load_cache,
+)
 from harlequin.exception import HarlequinExternalError
 from harlequin.external import launch_external_editor
 from harlequin.messages import WidgetMounted
@@ -333,6 +339,7 @@ class EditorCollection(Vertical):
         disabled: bool = False,
         language: str = "sql",
         theme: str = "harlequin",
+        connection_hash: str = "",
     ):
         super().__init__(
             name=name,
@@ -345,8 +352,8 @@ class EditorCollection(Vertical):
         self._word_completer: WordCompleter | None = None
         self._member_completer: MemberCompleter | None = None
         self._buffer_symbols: BufferSymbols = NO_SYMBOLS
-        self.startup_cache = load_cache()
-        self.recovered_cache, self.recovered_from = adopt_recovery()
+        self.startup_cache = load_cache(connection_hash)
+        self.recovered_cache, self.recovered_from = adopt_recovery(connection_hash)
         self.buffer_states: dict[str, EditorState] = {}
         self.closed_buffer_states: list[EditorState] = []
         self._buffer_lock = asyncio.Lock()
@@ -378,7 +385,11 @@ class EditorCollection(Vertical):
         """The visible buffers, in tab order, for the editor cache."""
         self._save_loaded_buffer()
         return [
-            BufferState(selection=state.selection, text=state.text)
+            BufferState(
+                selection=state.selection,
+                text=state.text,
+                scroll_offset=state.scroll_offset,
+            )
             for state in self.buffer_states.values()
         ]
 
@@ -390,7 +401,11 @@ class EditorCollection(Vertical):
             focus_index=self.active_buffer_index,
             buffers=buffers,
             closed_buffers=[
-                BufferState(selection=state.selection, text=state.text)
+                BufferState(
+                    selection=state.selection,
+                    text=state.text,
+                    scroll_offset=state.scroll_offset,
+                )
                 for state in self.closed_buffer_states
             ],
         )
@@ -440,7 +455,11 @@ class EditorCollection(Vertical):
         cache = self.recovered_cache or self.startup_cache
         if cache is not None:
             self.closed_buffer_states = [
-                EditorState(text=buffer.text, selection=buffer.selection)
+                EditorState(
+                    text=buffer.text,
+                    selection=buffer.selection,
+                    scroll_offset=buffer.scroll_offset,
+                )
                 for buffer in cache.closed_buffers
             ]
         if cache is not None and cache.buffers:
@@ -504,7 +523,11 @@ class EditorCollection(Vertical):
         self.buffer_states[new_buffer_id] = (
             state
             if isinstance(state, EditorState)
-            else EditorState(text=state.text, selection=state.selection)
+            else EditorState(
+                text=state.text,
+                selection=state.selection,
+                scroll_offset=state.scroll_offset,
+            )
             if state is not None
             else EditorState()
         )
@@ -529,6 +552,7 @@ class EditorCollection(Vertical):
             state = self.buffer_states.pop(closed_buffer_id)
             if state.text.strip():
                 self.closed_buffer_states.append(state)
+                del self.closed_buffer_states[:-CLOSED_BUFFER_LIMIT]
             self.loaded_buffer_id = None
             await self.tabs.remove_tab(closed_buffer_id)
             if not self.buffer_states:
@@ -553,6 +577,7 @@ class EditorCollection(Vertical):
                 for key in buffer_ids
                 if self.buffer_states[key].text.strip()
             )
+            del self.closed_buffer_states[:-CLOSED_BUFFER_LIMIT]
             self.loaded_buffer_id = None
             self.buffer_states.clear()
             await self.tabs.clear()

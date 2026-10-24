@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Closing a query buffer now keeps its text for later; press `ctrl+shift+t` to reopen the last one, or choose **Closed Buffers** from the command palette. To delete a buffer permanently, empty its text and close it.
+- Closed query buffers are saved per connection, retaining the latest 1,000; reopen one with `ctrl+f2` or **Closed Buffers** in the command palette. To delete a buffer permanently, empty its text and close it.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
 ## [2.16.2] - 2026-10-18
