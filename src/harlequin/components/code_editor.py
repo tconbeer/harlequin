@@ -690,7 +690,7 @@ class EditorCollection(Vertical):
 
             self.app.push_screen(
                 ConfirmModal(
-                    prompt=f"Overwrite {resolved.name}?",
+                    prompt=f"Overwrite {resolved}?",
                     confirm_label="Overwrite",
                     cancel_label="Cancel",
                 ),

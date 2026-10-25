@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- The overwrite confirm shows the file path as literal text, so a path containing brackets does not crash the dialog or hide part of the name.
+
 ### Features
 
 - Enter on a text file in the Files tree opens it in the query editor. The tab is named for that file, unsaved edits are marked, save writes the same path, and closing a dirty file asks before discarding it.

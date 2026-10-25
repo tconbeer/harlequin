@@ -8,7 +8,7 @@ from typing import Type
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets import Input
+from textual.widgets import Input, Label
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
@@ -327,6 +327,68 @@ async def test_save_refuses_a_second_buffer_and_asks_before_overwrite(
             )
             == 0
         )
+
+
+@pytest.mark.asyncio
+async def test_save_overwrite_confirm_shows_bracketed_names(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """An existing path with brackets is asked literally, and No leaves the bytes."""
+    folder = tmp_path / "sql"
+    folder.mkdir()
+    dim = folder / "x[dim]y.sql"
+    tagged = folder / "a[/b].sql"
+    dim_bytes = b"dim-bytes\n"
+    tag_bytes = b"tag-bytes\n"
+    dim.write_bytes(dim_bytes)
+    tagged.parent.mkdir(parents=True)
+    tagged.write_bytes(tag_bytes)
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=folder)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        assert _location(app) == "Not a file"
+        editor.text = "replacement\n"
+
+        await _save_as(pilot, app, folder, dim.name)
+        await _decline_overwrite(pilot, app, dim, dim_bytes)
+
+        await _save_as(pilot, app, tagged.parent, tagged.name)
+        await _decline_overwrite(pilot, app, tagged, tag_bytes)
+
+
+async def _decline_overwrite(
+    pilot: Pilot, app: Harlequin, target: Path, original: bytes
+) -> None:
+    """The confirm is up. It shows `target` literally, and No writes nothing."""
+    await wait_for(
+        pilot,
+        lambda: isinstance(app.screen, ConfirmModal),
+        description=f"overwrite confirm for {target.name}",
+    )
+    await pilot.pause()
+    assert app._exception is None
+    plain = _confirm_plain(app)
+    assert plain == f"Overwrite {target.resolve()}?"
+    assert target.name in plain
+    await click_confirm_modal(pilot, app, "no")
+    await wait_for(
+        pilot,
+        lambda: not isinstance(app.screen, ConfirmModal),
+        description="overwrite to be declined",
+    )
+    assert target.read_bytes() == original
+    assert _location(app) == "Not a file"
+    assert app._exception is None
+
+
+def _confirm_plain(app: Harlequin) -> str:
+    """The overwrite question as the modal actually draws it."""
+    label = app.screen.query_one("#prompt_label", Label)
+    plain = getattr(label.visual, "plain", None)
+    assert isinstance(plain, str)
+    return plain
 
 
 @pytest.mark.use_cache

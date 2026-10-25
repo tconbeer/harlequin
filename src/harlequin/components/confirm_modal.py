@@ -3,6 +3,7 @@ from __future__ import annotations
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.content import Content
 from textual.widgets import Button, Label
 
 from harlequin.components.modal import HarlequinModal
@@ -19,7 +20,11 @@ class ConfirmModal(HarlequinModal[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="outer"):
-            yield Label(self.prompt, id="prompt_label")
+            # A path may contain "[/b]" or "[dim]". Those are characters.
+            yield Label(
+                Content.from_text(self.prompt, markup=False),
+                id="prompt_label",
+            )
             with Horizontal(id="button_row"):
                 yield Button(label=self.cancel_label, id="no")
                 yield Button(label=self.confirm_label, variant="primary", id="yes")
