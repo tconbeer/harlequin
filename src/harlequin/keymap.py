@@ -34,14 +34,9 @@ class HarlequinKeyBinding:
         """
         Returns a dictionary that can be written to a TOML config file.
         """
-
-        class Missing:
-            def __bool__(self) -> bool:
-                return True
-
-        all_keys: RawKeyBinding = self.__dict__  # type: ignore[assignment]
-        if not all_keys.get("key_display", Missing):
-            all_keys.pop("key_display")
+        all_keys: RawKeyBinding = {"keys": self.keys, "action": self.action}
+        if self.key_display:
+            all_keys["key_display"] = self.key_display
         return all_keys
 
 
@@ -53,22 +48,19 @@ class HarlequinKeyMap:
     @classmethod
     def from_config(cls, name: str, bindings: list[RawKeyBinding]) -> "HarlequinKeyMap":
         try:
-            keymap = cls(
-                name=name,
-                bindings=[HarlequinKeyBinding(**binding) for binding in bindings],
-            )
+            parsed_bindings = [HarlequinKeyBinding(**binding) for binding in bindings]
         except TypeError as e:
             bad_key = str(e).split("argument ")[-1].strip("'")
             raise HarlequinConfigError(
                 title="Harlequin could not load your keymap.",
                 msg=(
                     "Key bindings must be defined in config files with "
-                    "only three properties: `keys`, `action`, and `key_profile`. "
+                    "only three properties: `keys`, `action`, and `key_display`. "
                     f"Got a binding in the map named {name} that tried to define "
                     f"a property: {bad_key!r}"
                 ),
             ) from e
-        return keymap
+        return cls(name=name, bindings=parsed_bindings)
 
     def to_dict(self) -> RawKeyMap:
         return {"name": self.name, "bindings": [b.to_dict() for b in self.bindings]}

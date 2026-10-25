@@ -414,3 +414,11 @@ def test_an_existing_value_is_still_offered(
             "db.example.com"
         )
     assert captured["default"] == "db.example.com"
+
+
+def test_option_name_validation_fullmatch() -> None:
+    TextOption(name="valid-name_1", description="desc")
+    with pytest.raises(ValueError):
+        TextOption(name="invalid name with spaces", description="desc")
+    with pytest.raises(ValueError):
+        TextOption(name="invalid@name!", description="desc")
