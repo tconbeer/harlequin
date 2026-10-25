@@ -798,6 +798,59 @@ CatalogSourceScreen Input {
     }
 }
 
+#buffer-path {
+    height: 1;
+    width: 100%;
+    color: $text-muted;
+    padding: 0 1;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+SaveQueryScreen {
+    align: center middle;
+}
+
+#save_query_outer {
+    width: 72;
+    height: 28;
+    border: round $border-color-focus;
+    background: $background;
+    padding: 1 2;
+}
+
+#save_query_tree {
+    height: 1fr;
+    border: round $border-color-nofocus;
+}
+
+#save_query_name {
+    margin: 1 0 0 0;
+}
+
+#save_query_destination {
+    height: 1;
+    color: $text-muted;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+#save_query_error {
+    height: 1;
+    color: $error;
+}
+
+#save_query_button_row {
+    height: auto;
+    width: 100%;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+#save_query_button_row Button {
+    margin: 0 1;
+}
+
 /* Command Palette */
 
 CommandPalette #--container {

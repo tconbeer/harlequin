@@ -29,6 +29,7 @@ from harlequin.components.data_catalog.database_tree import (
     DEMAND_PRIORITY,
     DatabaseTree,
 )
+from harlequin.components.save_query_screen import SaveQueryScreen
 from harlequin_duckdb.adapter import DuckDbAdapter
 from tests.functional_tests.helpers import (
     expand_catalog_node,
@@ -373,9 +374,14 @@ async def test_file_tree_refreshes_after_editor_save(
         editor.focus()
         editor.text = "select 1"
         await pilot.press("ctrl+s")
-        await pilot.pause()
-        save_input = editor.query_one("#textarea__save_input", Input)
-        save_input.value = str(new_file)
+        save_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, SaveQueryScreen) else None,
+            description="the folder-and-name save dialog",
+        )
+        name_input = save_screen.query_one("#save_query_name", Input)
+        name_input.value = new_file.name
+        name_input.focus()
         await pilot.press("enter")
 
         await wait_for(

@@ -40,6 +40,11 @@ def _can_rollback(app: Harlequin) -> bool:
     )
 
 
+def _files_are_shown(app: Harlequin) -> bool:
+    catalog = getattr(app, "data_catalog", None)
+    return catalog is not None and getattr(catalog, "file_tree", None) is not None
+
+
 def _has_many_buffers(app: Harlequin) -> bool:
     return app.editor_collection.tab_count > 1
 
@@ -171,8 +176,14 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
     ),
     PaletteCommand(
         "Show Files",
-        "Show a directory in the Data Catalog's Files tab",
+        "Add a directory to the Data Catalog's Files tab",
         "show_files",
+    ),
+    PaletteCommand(
+        "Close Folder",
+        "Remove the selected directory from the Files tab",
+        "close_folder",
+        is_available=_files_are_shown,
     ),
     PaletteCommand(
         "Show S3",

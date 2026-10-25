@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from asyncio import Queue
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Sequence
 
 from rich.markup import escape
 from textual import on
+from textual.await_complete import AwaitComplete
 from textual.content import ContentType
 from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
@@ -16,6 +18,7 @@ from textual.widgets import (
     TabPane,
     Tabs,
 )
+from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TreeNode
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
@@ -195,8 +198,19 @@ class DataCatalog(TabbedContent, can_focus=True):
         event.stop()
         self.database_context_menu.reload(node=event.node)
 
+    @property
+    def file_mounts(self) -> list[Path]:
+        """Directories currently shown in the Files tab, in attach order."""
+        if self.file_tree is None:
+            return []
+        return list(self.file_tree.mounts)
+
     async def show_file_tree(self, path: Path) -> None:
-        """Show `path` in the Files tab, adding the tab if there is none."""
+        """Add `path` to the Files tab, leaving directories already mounted.
+
+        The tab is created the first time. A path that is already mounted
+        stays where it is.
+        """
         self.show_files = path
         if self.file_tree is None:
             self.file_tree = FileTree(path=path)
@@ -205,8 +219,35 @@ class DataCatalog(TabbedContent, can_focus=True):
             assert s3_pane is None or isinstance(s3_pane, TabPane)
             await self.add_pane(TabPane("Files", self.file_tree), before=s3_pane)
         else:
-            self.file_tree.path = path
+            await self.file_tree.attach(path)
         self._activate_pane_of(self.file_tree)
+
+    async def close_current_folder(self) -> None:
+        """Unmount the directory under the Files cursor.
+
+        Other mounted directories stay. Query buffers are left alone, including
+        a buffer that was opened from the directory being closed. The last
+        directory removes the Files tab.
+        """
+        tree = self.file_tree
+        if tree is None:
+            return
+        mount = tree.mount_at_cursor()
+        if mount is None:
+            return
+        remaining = [path for path in tree.mounts if path != mount]
+        tree.mounts = remaining
+        if remaining:
+            self.show_files = remaining[-1]
+            await tree.reload()
+            return
+        pane = tree.parent
+        self.file_tree = None
+        self.show_files = None
+        if isinstance(pane, TabPane) and pane.id is not None:
+            await self.remove_pane(pane.id)
+        if self.show_s3 is None:
+            self.add_class("hide-tabs")
 
     async def show_s3_tree(self, uri: str) -> S3Tree | None:
         """Show `uri` in the S3 tab, adding the tab if there is none.
@@ -275,6 +316,8 @@ class DataCatalog(TabbedContent, can_focus=True):
 
 
 class FileTree(HarlequinTree, DirectoryTree, inherit_bindings=False):
+    """A directory listing. One mount is that directory. Several are its roots."""
+
     COMPONENT_CLASSES: ClassVar[set[str]] = {
         "directory-tree--extension",
         "directory-tree--file",
@@ -282,7 +325,93 @@ class FileTree(HarlequinTree, DirectoryTree, inherit_bindings=False):
         "directory-tree--hidden",
     }
 
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        name: str | None = None,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        self.mounts: list[Path] = [Path(path).expanduser().resolve()]
+        super().__init__(
+            path,
+            name=name,
+            id=id,
+            classes=classes,
+            disabled=disabled,
+        )
+
     def on_mount(self) -> None:
         self.guide_depth = 3
         self.root.expand()
         self.post_message(WidgetMounted(widget=self))
+
+    async def attach(self, path: Path) -> None:
+        """Show `path` as another root. A directory already shown stays put."""
+        resolved = path.expanduser().resolve()
+        if resolved in self.mounts:
+            return
+        if not resolved.is_dir():
+            return
+        self.mounts.append(resolved)
+        await self.reload()
+
+    def mount_at_cursor(self) -> Path | None:
+        """The mounted directory that contains the cursor, if there is one."""
+        if not self.mounts:
+            return None
+        node = self.cursor_node
+        if node is None or node.data is None:
+            return self.mounts[0] if len(self.mounts) == 1 else None
+        try:
+            chosen = Path(node.data.path).expanduser().resolve()
+        except OSError:
+            return None
+        for mount in self.mounts:
+            if chosen == mount or mount in chosen.parents:
+                return mount
+        return None
+
+    def reload(self) -> AwaitComplete:
+        """Reload every mounted directory. One mount keeps a single root."""
+        if len(self.mounts) <= 1:
+            if len(self.mounts) == 1:
+                only = self.mounts[0]
+                root_path = None if self.root.data is None else self.root.data.path
+                if root_path is None or Path(root_path).expanduser().resolve() != only:
+                    self.reset_node(self.root, str(only), DirEntry(only))
+            return super().reload()
+        return AwaitComplete(self._reload_mounts())
+
+    async def watch_path(self) -> None:
+        """A new `path` is another mount when several directories are open.
+
+        A single mount still repopulates from that path, as a DirectoryTree does.
+        """
+        resolved = Path(self.path).expanduser().resolve()
+        if resolved not in self.mounts:
+            self.mounts.append(resolved)
+        if self.mounts == [resolved]:
+            await super().watch_path()
+            return
+        await self._reload_mounts()
+
+    async def _reload_mounts(self) -> None:
+        """Show one node per mount under a Files root, and list each mount."""
+        self._load_queue = Queue()
+        names = [mount.name for mount in self.mounts]
+        async with self.lock:
+            self.clear_node(self.root)
+            self.root.data = None
+            self.root.label = "Files"
+            self.root.allow_expand = True
+            for mount in self.mounts:
+                label = str(mount) if names.count(mount.name) > 1 else mount.name
+                self.root.add(label, data=DirEntry(mount), allow_expand=True)
+            self.root.expand()
+        for node in list(self.root.children):
+            self._add_to_load_queue(node)
+        self._loader()
+        await self._load_queue.join()

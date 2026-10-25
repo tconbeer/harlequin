@@ -411,8 +411,10 @@ async def test_show_files_command(
         assert source_screen.current_location == f"{files_dir}{os.sep}"
         await wait_for(
             pilot,
-            lambda: file_tree_names(app) == {"other.csv"},
-            description="the Files tab to list the other directory",
+            lambda: (
+                set(catalog.file_mounts) == {files_dir.resolve(), other_dir.resolve()}
+            ),
+            description="the Files tab to keep both directories",
         )
         assert catalog.file_tree is file_tree
         assert app.show_files == other_dir
@@ -429,7 +431,7 @@ async def test_show_files_command(
             lambda: not isinstance(app.screen, CatalogSourceScreen),
             description="escape to close the prompt",
         )
-        assert file_tree_names(app) == {"other.csv"}
+        assert set(catalog.file_mounts) == {files_dir.resolve(), other_dir.resolve()}
 
         assert all(snap_results)
 

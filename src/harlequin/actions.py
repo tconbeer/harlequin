@@ -98,6 +98,9 @@ HARLEQUIN_ACTIONS = {
         target=None, action="refresh_catalog", description="Refresh Data Catalog"
     ),
     "show_files": Action(target=None, action="show_files", description="Show Files"),
+    "close_folder": Action(
+        target=None, action="close_folder", description="Close Folder"
+    ),
     "show_s3": Action(target=None, action="show_s3", description="Show S3"),
     "run_query": Action(target=None, action="run_query", description="Run Query"),
     "cancel_query": Action(

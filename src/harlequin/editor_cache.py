@@ -10,7 +10,7 @@ from typing import List, Union
 from platformdirs import user_cache_dir
 from textual.widgets.text_area import Selection
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 CHECKPOINT_INTERVAL_SECONDS = 60.0
 """How often a running Harlequin writes its buffers to its recovery file."""
@@ -28,6 +28,16 @@ PID reuse.
 class BufferState:
     selection: Selection
     text: str
+    path: Union[str, None] = None
+    """File this buffer is bound to. None for an anonymous query tab.
+
+    A version-1 cache has no path field. Loading one leaves this None.
+    """
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self.__dict__.update(state)
+        if "path" not in state:
+            self.path = None
 
 
 @dataclass
@@ -62,11 +72,26 @@ def _get_cache_dir() -> Path:
 def load_cache() -> Union[Cache, None]:
     """
     Returns a Cache (a list of strings) by loading
-    from a pickle saved to disk
+    from a pickle saved to disk.
+
+    The current file is `cache-<CACHE_VERSION>.pickle`. When that file is
+    absent, a version-1 `cache-1.pickle` still loads. Version 1 stored
+    selection and text only, so those buffers come back with no path.
     """
-    cache_file = get_cache_file()
+    directory = _get_cache_dir()
+    current = directory / f"cache-{CACHE_VERSION}.pickle"
+    if current.exists():
+        return _read_cache(current)
+    if CACHE_VERSION != 1:
+        legacy = directory / "cache-1.pickle"
+        if legacy.exists():
+            return _read_cache(legacy)
+    return None
+
+
+def _read_cache(path: Path) -> Union[Cache, None]:
     try:
-        with cache_file.open("rb") as f:
+        with path.open("rb") as f:
             cache: Cache = pickle.load(f)
             assert isinstance(cache, Cache)
     except (

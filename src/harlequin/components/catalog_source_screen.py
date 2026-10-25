@@ -106,7 +106,7 @@ class CatalogSourceScreen(HarlequinModal[str]):
 
 class FilesSourceScreen(CatalogSourceScreen):
     MODAL_TITLE = "Show Files"
-    PROMPT = "Show a directory in the Data Catalog's Files tab."
+    PROMPT = "Add a directory to the Files tab. Directories already shown stay."
 
     def compose_location_input(self) -> Input:
         # the error label reports what is wrong, on submit, not while typing

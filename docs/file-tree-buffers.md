@@ -1,11 +1,16 @@
 # File tree and query tabs
 
-Harlequin's Files tree is a directory listing. Enter expands a directory, and
-copy copies a path. Query tabs are anonymous buffers labeled `Tab N`. Nothing
-loads a file into a tab, and nothing writes a tab back to a file.
+Harlequin's Files tree lists one or more directories. Enter expands a directory,
+and copy copies a path. A text file opens into one query tab named for that
+file. A query tab labeled `Tab N` is not a file until it is saved into a folder.
 
-This note records how four terminal file/editor tools connect a file to a
-buffer, and the small slice of that behavior Harlequin implements.
+neo-tree.nvim (MIT), Fresh (GPL-3.0-or-later, https://github.com/sinelaw/fresh),
+Helix (MPL-2.0), and micro (MIT) are inspiration only. No source from those
+projects is copied. The behavior here is original Harlequin code under
+Harlequin's MIT license.
+
+This note records how those tools connect a file to a buffer, and the slice of
+that behavior Harlequin implements.
 
 ## How a file becomes a buffer
 
@@ -36,13 +41,21 @@ From the existing Files tree:
   binds that path. A later save writes the file that was opened.
 - Unsaved edits are not discarded without an explicit confirm.
 - A blank query buffer can still be created and can still submit SQL.
-
-Anonymous buffers keep today's save prompt. Paths are remembered for the
-session only; the on-disk buffer cache is unchanged.
+- Show Files adds a directory and leaves directories already mounted. Close
+  Folder removes the directory under the cursor. Closing a directory does not
+  discard query buffers.
+- Save on a tab that is not a file asks for a mounted folder and a file name.
+  The tab then shows that file's name, the full path is on the line under the
+  tabs, and a later save writes that file. A tab with no path reads
+  "Not a file". One buffer per path. Saving onto an existing file asks first.
+- Quit stores the path in cache version 2. A version-1 cache, which has
+  selection and text only, still loads, and those buffers stay not a file.
+  The set of mounted folders is not written to the config profile.
 
 ## Deferred
 
-These are the rest of each product, and they are not part of this change:
+These stay deferred. They are the rest of each product, and they are not part
+of this change:
 
 - neo-tree: git decorations, filters, fuzzy find, preview-without-open,
   drag-and-drop, and create/rename/delete/move.

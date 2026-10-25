@@ -1525,6 +1525,10 @@ class Harlequin(AppBase):
             for screen in self.screen_stack
         )
 
+    async def action_close_folder(self) -> None:
+        """Unmount the Files directory under the cursor. Query tabs stay."""
+        await self.data_catalog.close_current_folder()
+
     def action_show_files(self) -> None:
         if self._catalog_source_screen_is_open():
             return
