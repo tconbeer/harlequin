@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Type
 
 import pytest
+from textual.content import Content
 from textual.message import Message
 from textual.pilot import Pilot
 from textual.widgets import Tab
+from textual.widgets._toast import Toast
 from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
@@ -27,6 +29,12 @@ UNSAVED = "select 99;\n"
 BLANK_QUERY = "select 7 as opened_file"
 DIM_NAME = "x[dim]y.sql"
 FINAL_NAME = "report[final].sql"
+# A slash cannot be a filename: directory "a[" and file "b].sql".
+TAG_DIR = "a["
+TAG_SQL_NAME = "b].sql"
+TAG_BIN_NAME = "b].bin"
+TAG_SQL = "a[/b].sql"
+TAG_BIN = "a[/b].bin"
 
 
 def write_exact(path: Path, text: str) -> None:
@@ -61,6 +69,36 @@ async def activate(pilot: Pilot, tree: FileTree, name: str) -> TreeNode:
     tree.move_cursor_to_line(line)
     await pilot.press("enter")
     return node
+
+
+async def expand_directory(pilot: Pilot, tree: FileTree, name: str) -> TreeNode:
+    """Expand `name` when it is collapsed. Enter toggles an open folder."""
+    line = await _line_of(pilot, tree, name)
+    node = tree.get_node_at_line(line)
+    assert node is not None
+    if node.is_expanded:
+        return node
+    tree.focus()
+    tree.move_cursor_to_line(line)
+    await pilot.press("enter")
+    await wait_for(
+        pilot,
+        lambda: node.is_expanded,
+        description=f"{name} to expand",
+    )
+    return node
+
+
+def _toast_plain(app: Harlequin) -> str:
+    """The text of every visible toast, rendered the way the toast renders it."""
+    lines: list[str] = []
+    for toast in app.screen.query(Toast):
+        if isinstance(toast, Toast):
+            rendered = toast.render()
+            lines.append(
+                rendered.plain if isinstance(rendered, Content) else str(rendered)
+            )
+    return "\n".join(lines)
 
 
 def _label(app: Harlequin) -> str:
@@ -305,3 +343,73 @@ async def test_bracketed_filename_is_a_literal_label(
         )
         assert final_path.read_bytes() == crlf_edited.encode("utf-8")
         assert b"\r\r\n" not in final_path.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_closing_tag_path_is_a_literal_toast(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Saving and rejecting a path that contains ``a[/b]`` does not crash.
+
+    Notifications are on, so the toast actually renders. The tab keeps the
+    file's own name, and the warning keeps the brackets in the path.
+    """
+    sql_path = tmp_path / TAG_SQL
+    bin_path = tmp_path / TAG_BIN
+    sql_path.parent.mkdir(parents=True)
+    write_exact(sql_path, ORIGINAL)
+    bin_path.write_bytes(b"\x00\xffnot text")
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
+    async with app.run_test(size=(120, 36), notifications=True) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        await pilot.press("f6")
+        await pilot.press("k")
+        tree = app.data_catalog.file_tree
+        assert tree is not None
+
+        await expand_directory(pilot, tree, TAG_DIR)
+        await activate(pilot, tree, TAG_SQL_NAME)
+        await wait_for(
+            pilot,
+            lambda: editor.text == ORIGINAL and _label(app) == TAG_SQL_NAME,
+            description="the file under a[/b] to open under its own name",
+        )
+
+        editor.focus()
+        editor.text = EDITED
+        await wait_for(
+            pilot,
+            lambda: _label(app) == f"{TAG_SQL_NAME} *",
+            description="the unsaved mark on the bracketed path",
+        )
+        await pilot.press("ctrl+s")
+        await wait_for(
+            pilot,
+            lambda: (
+                sql_path.read_bytes() == EDITED.encode("utf-8")
+                and _label(app) == TAG_SQL_NAME
+                and TAG_SQL in _toast_plain(app)
+                and app._exception is None
+            ),
+            description="the save toast to show a[/b].sql without crashing",
+        )
+        assert sql_path.read_bytes() == EDITED.encode("utf-8")
+        assert app._exception is None
+
+        await expand_directory(pilot, tree, TAG_DIR)
+        await activate(pilot, tree, TAG_BIN_NAME)
+        await wait_for(
+            pilot,
+            lambda: (
+                TAG_BIN in _toast_plain(app)
+                and "not a text file" in _toast_plain(app)
+                and editor.text == EDITED
+                and _label(app) == TAG_SQL_NAME
+                and app._exception is None
+            ),
+            description="the non-text warning to show a[/b].bin without crashing",
+        )
+        assert editor.text == EDITED
+        assert app._exception is None

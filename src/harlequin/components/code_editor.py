@@ -226,7 +226,11 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self.post_message(EditorCollection.EditorSwitched(active_editor=None))
 
     def on_text_area_saved(self, message: TextAreaSaved) -> None:
-        self.app.notify(f"Editor contents saved to {message.path}")
+        # The path is literal text. "[/b]" in it is not markup.
+        self.app.notify(
+            f"Editor contents saved to {message.path}",
+            markup=False,
+        )
         if hasattr(self.app, "data_catalog"):
             self.app.data_catalog.update_file_tree()
 
@@ -692,13 +696,17 @@ class EditorCollection(Vertical):
             state.saved_text = previous.saved_text
             self.buffer_states[self.loaded_buffer_id] = state
 
+    def _notify_path(self, message: str) -> None:
+        """Show `message` as typed. A path can contain brackets."""
+        self.notify(message, severity="warning", markup=False)
+
     def _resolve_file(self, path: Path) -> Union[Path, None]:
         try:
             resolved = path.expanduser().resolve()
             if resolved.is_dir():
                 return None
         except OSError as exc:
-            self.notify(f"Could not open {path.name}: {exc}", severity="warning")
+            self._notify_path(f"Could not open {path.name}: {exc}")
             return None
         return resolved
 
@@ -706,15 +714,15 @@ class EditorCollection(Vertical):
         try:
             data = path.read_bytes()
         except OSError as exc:
-            self.notify(f"Could not open {path.name}: {exc}", severity="warning")
+            self._notify_path(f"Could not open {path.name}: {exc}")
             return None
         if b"\x00" in data:
-            self.notify(f"{path.name} is not a text file.", severity="warning")
+            self._notify_path(f"{path} is not a text file.")
             return None
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError:
-            self.notify(f"{path.name} is not a text file.", severity="warning")
+            self._notify_path(f"{path} is not a text file.")
             return None
 
     def _focus_open_path(self, path: Path) -> bool:
