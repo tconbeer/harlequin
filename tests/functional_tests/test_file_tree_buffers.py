@@ -8,6 +8,7 @@ from typing import Type
 import pytest
 from textual.message import Message
 from textual.pilot import Pilot
+from textual.widgets import Tab
 from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
@@ -17,12 +18,20 @@ from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import FileTree
 from harlequin_duckdb.adapter import DuckDbAdapter
 from tests.functional_tests.helpers import wait_for_editor
+from tests.functional_tests.test_command_palette import run_palette_command
 from tests.waiting import wait_for, wait_for_messages, wait_for_value
 
 ORIGINAL = "select 1;\n"
 EDITED = "select 42;\n"
 UNSAVED = "select 99;\n"
 BLANK_QUERY = "select 7 as opened_file"
+DIM_NAME = "x[dim]y.sql"
+FINAL_NAME = "report[final].sql"
+
+
+def write_exact(path: Path, text: str) -> None:
+    """Write `text` as its utf-8 bytes, with no newline translation."""
+    path.write_bytes(text.encode("utf-8"))
 
 
 async def _line_of(pilot: Pilot, tree: FileTree, name: str) -> int:
@@ -76,10 +85,10 @@ async def test_file_tree_opens_edits_and_saves_one_buffer(
     A new blank buffer can still submit its SQL.
     """
     sql_path = tmp_path / "orders.sql"
-    sql_path.write_text(ORIGINAL, encoding="utf-8")
+    write_exact(sql_path, ORIGINAL)
     nested = tmp_path / "nested"
     nested.mkdir()
-    (nested / "inside.sql").write_text("select 2;\n", encoding="utf-8")
+    write_exact(nested / "inside.sql", "select 2;\n")
     (tmp_path / "blob.bin").write_bytes(b"\x00\xffnot text")
 
     messages: list[Message] = []
@@ -142,12 +151,33 @@ async def test_file_tree_opens_edits_and_saves_one_buffer(
         await wait_for(
             pilot,
             lambda: (
-                sql_path.read_text(encoding="utf-8") == EDITED
+                sql_path.read_bytes() == EDITED.encode("utf-8")
                 and _label(app) == "orders.sql"
             ),
             description="orders.sql to be saved and the unsaved mark to clear",
         )
+
+        editor.text = "   "
+        await wait_for(
+            pilot,
+            lambda: _label(app) == "orders.sql *",
+            description="the unsaved mark after the file was wiped to whitespace",
+        )
+        await run_palette_command(pilot, app, "Close All Buffers")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, ConfirmModal),
+            description="a confirm before discarding a blanked file",
+        )
+        assert editor.text == "   "
         assert sql_path.read_bytes() == EDITED.encode("utf-8")
+        await pilot.click("#no")
+        await wait_for(
+            pilot,
+            lambda: not isinstance(app.screen, ConfirmModal),
+            description="the close-all prompt to close",
+        )
+        assert editor.text == "   "
 
         editor.text = UNSAVED
         await wait_for(
@@ -162,7 +192,7 @@ async def test_file_tree_opens_edits_and_saves_one_buffer(
             description="a confirm before discarding unsaved edits",
         )
         assert editor.text == UNSAVED
-        assert sql_path.read_text(encoding="utf-8") == EDITED
+        assert sql_path.read_bytes() == EDITED.encode("utf-8")
 
         await pilot.click("#no")
         await wait_for(
@@ -191,7 +221,7 @@ async def test_file_tree_opens_edits_and_saves_one_buffer(
             ),
             description="the discarded file buffer to be emptied",
         )
-        assert sql_path.read_text(encoding="utf-8") == EDITED
+        assert sql_path.read_bytes() == EDITED.encode("utf-8")
 
         def blank_buffer_ready() -> bool:
             tab_id = collection.active
@@ -214,3 +244,64 @@ async def test_file_tree_opens_edits_and_saves_one_buffer(
         assert {message.text for message in submitted} == {BLANK_QUERY}
         queries = await wait_for_messages(pilot, messages, QuerySubmitted)
         assert {tuple(message.queries) for message in queries} == {(BLANK_QUERY,)}
+
+
+@pytest.mark.asyncio
+async def test_bracketed_filename_is_a_literal_label(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """A file name with brackets is the tab text, and save writes the editor bytes."""
+    crlf_original = "select 2;\r\n"
+    crlf_edited = "select 9;\r\n"
+    dim_path = tmp_path / DIM_NAME
+    final_path = tmp_path / FINAL_NAME
+    write_exact(dim_path, ORIGINAL)
+    write_exact(final_path, crlf_original)
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        collection = app.editor_collection
+        await pilot.press("f6")
+        await pilot.press("k")
+        tree = app.data_catalog.file_tree
+        assert tree is not None
+
+        await activate(pilot, tree, DIM_NAME)
+        await wait_for(
+            pilot,
+            lambda: editor.text == ORIGINAL and _label(app) == DIM_NAME,
+            description="the bracketed file name to be the tab label",
+        )
+        assert collection.tab_count == 1
+
+        await activate(pilot, tree, FINAL_NAME)
+        await wait_for(
+            pilot,
+            lambda: editor.text == crlf_original and _label(app) == FINAL_NAME,
+            description="the second bracketed name to title its own tab",
+        )
+        assert collection.tab_count == 2
+        assert DIM_NAME in {
+            tab.label_text for tab in collection.tabs.query(Tab) if isinstance(tab, Tab)
+        }
+
+        editor.focus()
+        editor.text = "select 9;\n"
+        await wait_for(
+            pilot,
+            lambda: editor.text == crlf_edited and _label(app) == f"{FINAL_NAME} *",
+            description="the edit to keep CRLF and mark the bracketed tab",
+        )
+        await pilot.press("ctrl+s")
+        await wait_for(
+            pilot,
+            lambda: (
+                final_path.read_bytes() == editor.text.encode("utf-8")
+                and _label(app) == FINAL_NAME
+            ),
+            description="the saved bytes to match the editor, including CRLF",
+        )
+        assert final_path.read_bytes() == crlf_edited.encode("utf-8")
+        assert b"\r\r\n" not in final_path.read_bytes()

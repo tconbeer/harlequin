@@ -9,6 +9,7 @@ from sqlfmt.exception import SqlfmtError
 from textual import on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.content import Content
 from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
@@ -49,6 +50,11 @@ class EditorState:
     """File this buffer was opened from. None for an anonymous query tab."""
     saved_text: str = ""
     """Editor text at the last successful load or save of `path`."""
+
+
+def _literal_tab_label(text: str) -> Content:
+    """A tab label that shows `text` as typed, including brackets."""
+    return Content.from_text(text, markup=False)
 
 
 def _blank_history(template: EditHistory) -> EditHistory:
@@ -533,7 +539,9 @@ class EditorCollection(Vertical):
         self.buffer_states[new_buffer_id] = EditorState(
             text=text, path=resolved, saved_text=text
         )
-        await self.tabs.add_tab(Tab(resolved.name, id=new_buffer_id))
+        await self.tabs.add_tab(
+            Tab(_literal_tab_label(resolved.name), id=new_buffer_id)
+        )
         self._update_tab_visibility()
         self.tabs.active = new_buffer_id
         self.editor.focus()
@@ -558,7 +566,9 @@ class EditorCollection(Vertical):
         if state is None or state.path is None:
             return
         try:
-            state.path.write_text(state.text, encoding="utf-8")
+            # Path.write_text translates \n to \r\n on Windows, so a buffer that
+            # already holds \r\n would be saved as \r\r\n.
+            state.path.write_bytes(state.text.encode("utf-8"))
         except (OSError, UnicodeError) as exc:
             self.app.push_screen(
                 ErrorModal(
@@ -611,8 +621,13 @@ class EditorCollection(Vertical):
         self.editor.focus()
 
     async def action_close_all_buffers(self) -> None:
-        """Close every buffer, leaving one empty one; confirms if any hold text."""
-        if not any(buffer.text.strip() for buffer in self.buffers):
+        """Close every buffer, leaving one empty one.
+
+        Confirms when any buffer holds text, and when a file buffer differs
+        from its last loaded or saved text. A file wiped to blank or
+        whitespace is still an unsaved edit.
+        """
+        if not self._close_all_would_discard_work():
             await self._close_all_buffers()
             return
 
@@ -732,6 +747,16 @@ class EditorCollection(Vertical):
         self._update_tab_visibility()
         self.editor.focus()
 
+    def _close_all_would_discard_work(self) -> bool:
+        """True when close-all would drop text or an unsaved edit of a file."""
+        self._save_loaded_buffer()
+        for state in self.buffer_states.values():
+            if state.text.strip():
+                return True
+            if state.path is not None and state.text != state.saved_text:
+                return True
+        return False
+
     def _loaded_file_is_dirty(self) -> bool:
         buffer_id = self.loaded_buffer_id
         if buffer_id is None:
@@ -757,7 +782,8 @@ class EditorCollection(Vertical):
             if text != state.saved_text:
                 label = f"{label} *"
         if tab.label_text != label:
-            tab.label = label
+            # A file name is literal text. "[dim]" in the name is not markup.
+            tab.label = _literal_tab_label(label)
 
     def _update_tab_visibility(self) -> None:
         """Show the tab bar when there is more than one buffer, or a named file.
