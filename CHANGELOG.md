@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Enter on a text file in the Files tree opens it in the query editor. The tab is named for that file, unsaved edits are marked, save writes the same path, and closing a dirty file asks before discarding it.
+- Opening a file into a query tab that already has a path binds the opened file, so saving writes that file.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
 ### Bug Fixes

@@ -9,7 +9,7 @@ import pytest
 from textual.content import Content
 from textual.message import Message
 from textual.pilot import Pilot
-from textual.widgets import Tab
+from textual.widgets import Input, Tab
 from textual.widgets._toast import Toast
 from textual.widgets._tree import TreeNode
 
@@ -413,3 +413,74 @@ async def test_closing_tag_path_is_a_literal_toast(
         )
         assert editor.text == EDITED
         assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_open_query_does_not_overwrite_the_previous_file(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Ctrl+O into a path-backed buffer binds the opened file.
+
+    Saving afterwards writes that file. orders.sql keeps the bytes it had.
+    """
+    other_text = "select 2;\n"
+    edited = "select 9;\n"
+    orders = tmp_path / "orders.sql"
+    other = tmp_path / "other.sql"
+    write_exact(orders, ORIGINAL)
+    write_exact(other, other_text)
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=tmp_path)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        collection = app.editor_collection
+        await pilot.press("f6")
+        await pilot.press("k")
+        tree = app.data_catalog.file_tree
+        assert tree is not None
+
+        await activate(pilot, tree, "orders.sql")
+        await wait_for(
+            pilot,
+            lambda: editor.text == ORIGINAL and _label(app) == "orders.sql",
+            description="orders.sql to load into the query editor",
+        )
+        assert collection.tab_count == 1
+
+        editor.focus()
+        await pilot.press("ctrl+o")
+        await wait_for(
+            pilot,
+            lambda: bool(editor.query("#textarea__open_input")),
+            description="the open prompt",
+        )
+        editor.query_one("#textarea__open_input", Input).value = str(other)
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: editor.text == other_text and _label(app) == "other.sql",
+            description="other.sql to replace the buffer and its path",
+        )
+        assert collection.tab_count == 1
+        assert collection.active_file_path() == other.resolve()
+
+        editor.focus()
+        editor.text = edited
+        await wait_for(
+            pilot,
+            lambda: _label(app) == "other.sql *",
+            description="the unsaved mark on other.sql",
+        )
+        await pilot.press("ctrl+s")
+        await wait_for(
+            pilot,
+            lambda: (
+                other.read_bytes() == edited.encode("utf-8")
+                and orders.read_bytes() == ORIGINAL.encode("utf-8")
+                and _label(app) == "other.sql"
+            ),
+            description="the save to write other.sql and leave orders.sql alone",
+        )
+        assert orders.read_bytes() == ORIGINAL.encode("utf-8")
+        assert other.read_bytes() == edited.encode("utf-8")

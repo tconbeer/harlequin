@@ -32,6 +32,8 @@ From the existing Files tree:
 - The tab shows that file's name. While the buffer differs from the last
   loaded or saved text, the tab shows an unsaved mark. Save writes the buffer
   back to the same path and clears the mark.
+- The query editor's open prompt loads a file into the current buffer and
+  binds that path. A later save writes the file that was opened.
 - Unsaved edits are not discarded without an explicit confirm.
 - A blank query buffer can still be created and can still submit SQL.
 

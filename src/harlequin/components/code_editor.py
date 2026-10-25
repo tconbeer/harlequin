@@ -14,7 +14,7 @@ from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widgets import Tab, Tabs, TextArea
+from textual.widgets import Input, Tab, Tabs, TextArea
 from textual.widgets.text_area import EditHistory, Location, Selection
 from textual.worker import Worker, WorkerState
 from textual_textarea import TextAreaSaved, TextEditor
@@ -244,6 +244,22 @@ class CodeEditor(TextEditor, inherit_bindings=False):
             parent.save_active_file()
             return
         await super().action_save()
+
+    @on(Input.Submitted, "#textarea__open_input")
+    async def open_submitted_file(self, message: Input.Submitted) -> None:
+        """Load the chosen file into this buffer and bind that path to it.
+
+        The text editor's own open handler replaces the text and leaves the
+        buffer's path alone, so the next save would write these bytes onto
+        the previous file.
+        """
+        message.prevent_default()
+        message.stop()
+        chosen = Path(message.input.value).expanduser()
+        await self._clear_footer_input()
+        parent = self.parent
+        if isinstance(parent, EditorCollection):
+            parent.load_into_active_buffer(chosen)
 
     def on_text_area_clipboard_error(self) -> None:
         if not self.has_shown_clipboard_error:
@@ -549,6 +565,38 @@ class EditorCollection(Vertical):
         self._update_tab_visibility()
         self.tabs.active = new_buffer_id
         self.editor.focus()
+
+    def load_into_active_buffer(self, path: Path) -> None:
+        """Replace the active buffer with `path`, or focus a buffer that has it.
+
+        The active buffer's path becomes `path`. A later save writes `path`,
+        not the file this buffer used to be. A dirty file buffer asks first.
+        """
+        resolved = self._resolve_file(path)
+        if resolved is None or self._focus_open_path(resolved):
+            return
+        text = self._read_text_file(resolved)
+        if text is None:
+            return
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return
+
+        def replace_if_confirmed(confirmed: Union[bool, None]) -> None:
+            if confirmed and self.loaded_buffer_id == buffer_id:
+                self._load_file_into(buffer_id, resolved, text)
+
+        if self._loaded_file_is_dirty():
+            self.app.push_screen(
+                ConfirmModal(
+                    prompt="Discard unsaved changes to this file?",
+                    confirm_label="Discard",
+                    cancel_label="Cancel",
+                ),
+                callback=replace_if_confirmed,
+            )
+            return
+        self._load_file_into(buffer_id, resolved, text)
 
     def active_file_path(self) -> Union[Path, None]:
         """The path bound to the loaded buffer, if it was opened from a file."""
