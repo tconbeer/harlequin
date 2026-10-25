@@ -266,7 +266,7 @@ class MemberCompleter(WordCompleter):
         )
 
         context_completions = [
-            c for c in self._candidates(match_val) if c.context == match_context
+            c for c in self._candidates(match_val) if c.match_context == match_context
         ]
 
         exact = [c for c in context_completions if c.match_val == match_val]
