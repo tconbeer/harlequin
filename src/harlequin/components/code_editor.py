@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
@@ -44,6 +45,10 @@ class EditorState:
     selection: Selection = field(default_factory=Selection)
     scroll_offset: Offset = field(default_factory=Offset)
     undo_history: Union[EditHistory, None] = None
+    path: Union[Path, None] = None
+    """File this buffer was opened from. None for an anonymous query tab."""
+    saved_text: str = ""
+    """Editor text at the last successful load or save of `path`."""
 
 
 def _blank_history(template: EditHistory) -> EditHistory:
@@ -218,6 +223,17 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         self.app.notify(f"Editor contents saved to {message.path}")
         if hasattr(self.app, "data_catalog"):
             self.app.data_catalog.update_file_tree()
+
+    async def action_save(self) -> None:
+        """Save the open file, or prompt for a path when the buffer has none."""
+        parent = self.parent
+        if (
+            isinstance(parent, EditorCollection)
+            and parent.active_file_path() is not None
+        ):
+            parent.save_active_file()
+            return
+        await super().action_save()
 
     def on_text_area_clipboard_error(self) -> None:
         if not self.has_shown_clipboard_error:
@@ -446,6 +462,21 @@ class EditorCollection(Vertical):
         self.post_message(self.EditorSwitched(active_editor=self.editor))
         self.editor.focus()
 
+    @on(TextArea.Changed)
+    def mark_unsaved_edits(self, _message: TextArea.Changed) -> None:
+        """Refresh the open file's tab while it differs from the saved text.
+
+        Not stopped: the editor still re-reads symbols from the same event.
+        Anonymous tabs stay unlabeled, so typing in one does not mark it dirty.
+        """
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return
+        state = self.buffer_states.get(buffer_id)
+        if state is None or state.path is None:
+            return
+        self._refresh_tab_label(buffer_id)
+
     def watch_theme(self, theme: str) -> None:
         if self.editor.is_mounted:
             self.editor.theme = theme
@@ -474,14 +505,92 @@ class EditorCollection(Vertical):
             # activated here to swap its state into the editor.
             self.tabs.active = new_buffer_id
             self.editor.focus()
-        if self.counter > 1:
-            self.remove_class("hide-tabs")
+        self._update_tab_visibility()
         return self.editor
 
+    async def open_file(self, path: Path) -> None:
+        """Load `path` into one query tab, or focus the tab that already has it.
+
+        A directory is ignored: the tree expands and collapses those itself.
+        A binary or unreadable file notifies and leaves the editor alone.
+        """
+        resolved = self._resolve_file(path)
+        if resolved is None or self._focus_open_path(resolved):
+            return
+        text = self._read_text_file(resolved)
+        if text is None:
+            return
+        self._save_loaded_buffer()
+        if self._can_reuse_blank():
+            assert self.loaded_buffer_id is not None
+            self._load_file_into(self.loaded_buffer_id, resolved, text)
+            return
+        # FileSelected is posted again when the file node expands. The path has
+        # to be registered before the first await, or that second message opens
+        # a duplicate tab.
+        self.counter += 1
+        new_buffer_id = f"tab-{self.counter}"
+        self.buffer_states[new_buffer_id] = EditorState(
+            text=text, path=resolved, saved_text=text
+        )
+        await self.tabs.add_tab(Tab(resolved.name, id=new_buffer_id))
+        self._update_tab_visibility()
+        self.tabs.active = new_buffer_id
+        self.editor.focus()
+
+    def active_file_path(self) -> Union[Path, None]:
+        """The path bound to the loaded buffer, if it was opened from a file."""
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return None
+        state = self.buffer_states.get(buffer_id)
+        if state is None:
+            return None
+        return state.path
+
+    def save_active_file(self) -> None:
+        """Write the loaded buffer to its path and clear the unsaved mark."""
+        self._save_loaded_buffer()
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return
+        state = self.buffer_states.get(buffer_id)
+        if state is None or state.path is None:
+            return
+        try:
+            state.path.write_text(state.text, encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            self.app.push_screen(
+                ErrorModal(
+                    title="Save File Error",
+                    header="There was an error when attempting to save your file:",
+                    error=exc,
+                )
+            )
+            return
+        state.saved_text = state.text
+        self._refresh_tab_label(buffer_id)
+        self.editor.post_message(TextAreaSaved(path=state.path))
+
     def action_close_buffer(self) -> None:
+        if self._loaded_file_is_dirty():
+            self.app.push_screen(
+                ConfirmModal(
+                    prompt="Discard unsaved changes to this file?",
+                    confirm_label="Discard",
+                    cancel_label="Cancel",
+                ),
+                callback=self._discard_if_confirmed,
+            )
+            return
+        self._close_loaded_buffer()
+
+    def _discard_if_confirmed(self, confirmed: Union[bool, None]) -> None:
+        if confirmed:
+            self._close_loaded_buffer()
+
+    def _close_loaded_buffer(self) -> None:
         if self.tab_count > 1:
-            if self.tab_count == 2:
-                self.add_class("hide-tabs")
             closed_buffer_id = self.active
             # the editor's contents belong to the buffer being closed, so they
             # are dropped rather than saved when the next tab is activated.
@@ -490,7 +599,15 @@ class EditorCollection(Vertical):
                 self.buffer_states.pop(closed_buffer_id, None)
                 self.tabs.remove_tab(closed_buffer_id)
         else:
-            self.editor.load_state(EditorState())
+            blank = EditorState()
+            buffer_id = self.loaded_buffer_id
+            if buffer_id is not None:
+                previous = self.buffer_states.get(buffer_id)
+                if previous is not None and previous.path is not None:
+                    self.buffer_states[buffer_id] = blank
+                    self._refresh_tab_label(buffer_id)
+            self.editor.load_state(blank)
+        self._update_tab_visibility()
         self.editor.focus()
 
     async def action_close_all_buffers(self) -> None:
@@ -525,7 +642,12 @@ class EditorCollection(Vertical):
                 # a second close-all can be part way through the same loop
                 if self.buffer_states.pop(buffer_id, None) is not None:
                     await self.tabs.remove_tab(buffer_id)
-        self.add_class("hide-tabs")
+        if kept_buffer_id is not None:
+            # the emptied buffer is anonymous again, so a later save of its
+            # text does not write the file this tab used to be.
+            self.buffer_states[kept_buffer_id] = EditorState()
+            self._refresh_tab_label(kept_buffer_id)
+        self._update_tab_visibility()
         self.editor.load_state(EditorState())
         self.editor.focus()
 
@@ -550,4 +672,101 @@ class EditorCollection(Vertical):
             return
         state = self.editor.capture_state()
         if state is not None and self.loaded_buffer_id in self.buffer_states:
+            previous = self.buffer_states[self.loaded_buffer_id]
+            state.path = previous.path
+            state.saved_text = previous.saved_text
             self.buffer_states[self.loaded_buffer_id] = state
+
+    def _resolve_file(self, path: Path) -> Union[Path, None]:
+        try:
+            resolved = path.expanduser().resolve()
+            if resolved.is_dir():
+                return None
+        except OSError as exc:
+            self.notify(f"Could not open {path.name}: {exc}", severity="warning")
+            return None
+        return resolved
+
+    def _read_text_file(self, path: Path) -> Union[str, None]:
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            self.notify(f"Could not open {path.name}: {exc}", severity="warning")
+            return None
+        if b"\x00" in data:
+            self.notify(f"{path.name} is not a text file.", severity="warning")
+            return None
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            self.notify(f"{path.name} is not a text file.", severity="warning")
+            return None
+
+    def _focus_open_path(self, path: Path) -> bool:
+        """Focus the buffer already bound to `path`. True when one exists."""
+        for buffer_id, state in self.buffer_states.items():
+            if state.path != path:
+                continue
+            # the tab may still be mounting; activating it early raises.
+            if self.tabs.get_tab(buffer_id) is not None and self.active != buffer_id:
+                self.tabs.active = buffer_id
+            self.editor.focus()
+            return True
+        return False
+
+    def _can_reuse_blank(self) -> bool:
+        """The only buffer is an untouched anonymous tab, so a file can take it."""
+        if self.tab_count != 1 or self.loaded_buffer_id is None:
+            return False
+        state = self.buffer_states.get(self.loaded_buffer_id)
+        if state is None:
+            return False
+        return state.path is None and state.text == "" and state.saved_text == ""
+
+    def _load_file_into(self, buffer_id: str, path: Path, text: str) -> None:
+        state = EditorState(text=text, path=path, saved_text=text)
+        self.buffer_states[buffer_id] = state
+        if self.loaded_buffer_id == buffer_id:
+            self.editor.load_state(state)
+        self._refresh_tab_label(buffer_id)
+        self._update_tab_visibility()
+        self.editor.focus()
+
+    def _loaded_file_is_dirty(self) -> bool:
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return False
+        state = self.buffer_states.get(buffer_id)
+        if state is None or state.path is None:
+            return False
+        return self.editor.text != state.saved_text
+
+    def _refresh_tab_label(self, buffer_id: str) -> None:
+        state = self.buffer_states.get(buffer_id)
+        tab = self.tabs.get_tab(buffer_id)
+        if state is None or tab is None:
+            return
+        if state.path is None:
+            label = f"Tab {buffer_id.removeprefix('tab-')}"
+        else:
+            if buffer_id == self.loaded_buffer_id:
+                text = self.editor.text
+            else:
+                text = state.text
+            label = state.path.name
+            if text != state.saved_text:
+                label = f"{label} *"
+        if tab.label_text != label:
+            tab.label = label
+
+    def _update_tab_visibility(self) -> None:
+        """Show the tab bar when there is more than one buffer, or a named file.
+
+        A single anonymous query stays unlabeled. A single open file would
+        otherwise hide its name and unsaved mark.
+        """
+        named = any(state.path is not None for state in self.buffer_states.values())
+        if self.tab_count > 1 or named:
+            self.remove_class("hide-tabs")
+        else:
+            self.add_class("hide-tabs")

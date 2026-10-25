@@ -35,7 +35,7 @@ from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.timer import Timer
 from textual.types import CSSPathType
 from textual.widget import AwaitMount, Widget
-from textual.widgets import Button, Footer, Input
+from textual.widgets import Button, DirectoryTree, Footer, Input
 from textual.worker import Worker, WorkerState
 from textual_fastdatatable import DataTable
 
@@ -642,6 +642,16 @@ class Harlequin(AppBase):
         self._copy_to_clipboard(
             message.copy_name, "Selected label copied to clipboard."
         )
+
+    @on(DirectoryTree.FileSelected)
+    async def open_file_from_tree(self, message: DirectoryTree.FileSelected) -> None:
+        """Load a file chosen in the Files tree into the query editor."""
+        message.stop()
+        editor_collection = getattr(self, "editor_collection", None)
+        if editor_collection is None or not editor_collection.is_mounted:
+            self._recycle_message(message)
+            return
+        await editor_collection.open_file(message.path)
 
     @on(HarlequinDriver.InsertTextAtSelection)
     def driver_insert_text_into_editor(
