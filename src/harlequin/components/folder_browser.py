@@ -167,6 +167,15 @@ class FolderBrowser(HarlequinTree, DirectoryTree, inherit_bindings=False):
         _ = self._tree_lines
         self.move_cursor(node, animate=False)
 
+    def action_submit(self) -> None:
+        """A catalog insert. This browser only chooses a path."""
+        return
+
+    @on(HarlequinTree.NodeSubmitted)
+    def keep_the_query(self, message: HarlequinTree.NodeSubmitted) -> None:
+        """Double-click posts this. It must not change the query text."""
+        message.stop()
+
     def action_browse_up(self) -> None:
         """List the parent of the current root. One level, and only when asked."""
         try:

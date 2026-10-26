@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - The overwrite confirm shows the file path as literal text, so a path containing brackets does not crash the dialog or hide part of the name.
+- Choosing a path in the save, Open Folder, or Open File browser does not insert that path into the query.
 
 ### Features
 

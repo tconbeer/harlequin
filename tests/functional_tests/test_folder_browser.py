@@ -47,6 +47,51 @@ def _has_name(node: TreeNode[DirEntry], name: str) -> bool:
     return any(_has_name(child, name) for child in node.children)
 
 
+def _tree_has_submit(tree: DirectoryTree) -> bool:
+    """Ctrl+J on a Harlequin tree is bound to insert-name (`submit`)."""
+    bindings = tree._bindings.key_to_bindings.get("ctrl+j", [])
+    return any(binding.action == "submit" for binding in bindings)
+
+
+async def _double_click_line(pilot: Pilot, tree: DirectoryTree, line: int) -> None:
+    """Double-click the rendered row `line`, the same cells a user would."""
+    await pilot.pause()
+    region = tree.region
+    found: tuple[int, int] | None = None
+    for y in range(region.y, region.y + region.height):
+        for x in range(region.x, region.x + region.width):
+            meta = tree.app.screen.get_style_at(x, y).meta
+            if meta is not None and meta.get("line") == line:
+                found = (x - region.x, y - region.y)
+                break
+        if found is not None:
+            break
+    assert found is not None
+    await pilot.double_click(tree, offset=found)
+
+
+async def _do_not_insert(
+    pilot: Pilot, tree: DirectoryTree, editor_text: str, app: Harlequin
+) -> None:
+    """Ctrl+J and a double-click must leave the query text alone."""
+    tree.focus()
+    await wait_for(
+        pilot,
+        lambda: _tree_has_submit(tree),
+        description="insert-name to bind on the browser",
+    )
+    await pilot.press("ctrl+j")
+    await pilot.press("ctrl+enter")
+    await pilot.pause()
+    editor = app.editor
+    assert editor is not None
+    assert editor.text == editor_text
+    assert tree.cursor_line >= 0
+    await _double_click_line(pilot, tree, tree.cursor_line)
+    await pilot.pause()
+    assert editor.text == editor_text
+
+
 async def _cursor_on(
     pilot: Pilot, tree: DirectoryTree, name: str
 ) -> TreeNode[DirEntry]:
@@ -338,4 +383,76 @@ async def test_browser_lists_one_directory_level(
         )
         assert nested_node.is_expanded
         assert _entry(nested_node) is not None
+        assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_browser_does_not_insert_a_path_into_the_query(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Ctrl+J and a double-click leave the query alone, and save writes those bytes."""
+    mounted = tmp_path / "mounted"
+    mounted.mkdir()
+    kept = mounted / "kept.sql"
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=mounted)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.focus()
+        editor.text = TEXT
+        await pilot.press("ctrl+s")
+        screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, SaveQueryScreen) else None,
+            description="the save browser",
+        )
+        await _do_not_insert(pilot, screen.file_tree, TEXT, app)
+        assert editor.text == TEXT
+        name_input = screen.query_one("#save_query_name", Input)
+        name_input.value = kept.name
+        name_input.focus()
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: kept.is_file() and _location(app) == str(kept.resolve()),
+            description="the original query to be saved",
+        )
+        assert kept.read_bytes() == TEXT.encode("utf-8")
+        assert editor.text == TEXT
+        assert _label(app) == kept.name
+
+        await run_palette_command(pilot, app, "Open Folder")
+        folder_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFolderScreen) else None,
+            description="the open-folder browser",
+        )
+        await _do_not_insert(pilot, folder_screen.file_tree, TEXT, app)
+        await pilot.press("escape")
+        await wait_for(
+            pilot,
+            lambda: not isinstance(app.screen, OpenFolderScreen),
+            description="open folder to cancel",
+        )
+        assert editor.text == TEXT
+        assert app.data_catalog.file_mounts == [mounted.resolve()]
+
+        await run_palette_command(pilot, app, "Open File")
+        file_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFileScreen) else None,
+            description="the open-file browser",
+        )
+        await _do_not_insert(pilot, file_screen.file_tree, TEXT, app)
+        await pilot.press("escape")
+        await wait_for(
+            pilot,
+            lambda: not isinstance(app.screen, OpenFileScreen),
+            description="open file to cancel",
+        )
+        assert editor.text == TEXT
+        assert _label(app) == kept.name
+        assert app.editor_collection.tab_count == 1
+        assert kept.read_bytes() == TEXT.encode("utf-8")
         assert app._exception is None
