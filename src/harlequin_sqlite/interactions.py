@@ -59,7 +59,7 @@ def show_describe_relation(
 ) -> None:
     if item.parent is None:
         return
-    # a pragma's argument is a bare name; the database qualifies the pragma itself
+    # a pragma's argument can't be schema-qualified; the schema prefixes the pragma
     driver.insert_text_in_new_buffer(
         text=(
             f"pragma {quote_identifier(item.parent.label)}"
