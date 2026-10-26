@@ -511,6 +511,7 @@ def build_cli(argv: Sequence[str]) -> click.Command:
                 adapter_name=adapter_name,
                 keymap_names=keymap_names,
                 user_defined_keymaps=user_defined_keymaps,
+                conn_str=tuple(conn_str),
                 connection_hash=keyed_connection,
                 record_history=not no_write_history,
                 viewer_max_rows=viewer_max_rows,

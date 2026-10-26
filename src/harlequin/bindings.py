@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
+
+from textual.binding import Binding
 
 from harlequin.exception import HarlequinBindingError
 
 if TYPE_CHECKING:
     from textual.app import App
     from textual.widget import Widget
+
+KEYMAP_BINDING_ID = "harlequin.keymap"
+"""Marks a binding `bind` added, so a keymap reload can drop it and no others."""
 
 
 def key_needs_priority(key: str) -> bool:
@@ -28,6 +34,30 @@ def key_needs_priority(key: str) -> bool:
     return (
         modifier_names in ({"alt"}, {"alt", "shift"}) and unmodified_key.isprintable()
     )
+
+
+def clear_keymap_bindings(target: Widget | App) -> None:
+    """Drop bindings added from a keymap. A class binding, whose id is unset, stays.
+
+    `BindingsMap.bind` appends, so loading a keymap again would stack a second
+    copy of every key. Clearing the tagged ones first keeps a reload to one.
+    """
+    kept: dict[str, list[Binding]] = {}
+    for key, bindings in target._bindings.key_to_bindings.items():
+        remaining = [binding for binding in bindings if binding.id != KEYMAP_BINDING_ID]
+        if remaining:
+            kept[key] = remaining
+    target._bindings.key_to_bindings = kept
+
+
+def _tag_last(target: Widget | App, key: str, action: str) -> None:
+    """The binding just appended for `key` came from a keymap."""
+    found = target._bindings.key_to_bindings.get(key)
+    if not found:
+        return
+    last = found[-1]
+    if last.action == action and last.id is None:
+        found[-1] = replace(last, id=KEYMAP_BINDING_ID)
 
 
 def bind(
@@ -67,6 +97,8 @@ def bind(
                 key_display=key_display,
                 priority=keys_are_priority,
             )
+            for key in grouped_keys:
+                _tag_last(target, key, action)
     except Exception as e:
         raise HarlequinBindingError(
             title="Error configuring key bindings",

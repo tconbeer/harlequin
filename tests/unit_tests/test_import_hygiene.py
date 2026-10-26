@@ -23,6 +23,8 @@ HEADLESS_IMPORTS = [
     "import harlequin.autocomplete",
     "import harlequin.catalog",
     "import harlequin.config",
+    "import harlequin.connections",
+    "import harlequin.editor_modes",
     "import harlequin.crash",
     "import harlequin.environment",
     "import harlequin.exception",
@@ -43,6 +45,7 @@ HEADLESS_IMPORTS = [
     "import harlequin.statements",
     "import harlequin.transaction_mode",
     "import harlequin_duckdb",
+    "import harlequin_keys",
     "import harlequin_sqlite",
     "from textual_fastdatatable.backend import create_backend",
 ]

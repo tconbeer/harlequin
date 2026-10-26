@@ -135,6 +135,12 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         is_available=_has_many_buffers,
     ),
     PaletteCommand(
+        "Previous Buffer",
+        "Switch to the previous buffer",
+        "code_editor.previous_buffer",
+        is_available=_has_many_buffers,
+    ),
+    PaletteCommand(
         "Save Query", "Save the current buffer to a file", "code_editor.save_buffer"
     ),
     PaletteCommand(
@@ -224,5 +230,47 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         "Show an S3 bucket in the Data Catalog's S3 tab",
         "show_s3",
         is_available=lambda app: boto3_is_installed(),
+    ),
+    # keymaps. None of these bind a key: ctrl+p already opens the palette.
+    PaletteCommand(
+        "Keymap: VS Code",
+        "Use the author's VS Code shortcuts",
+        "use_vscode_keymap",
+    ),
+    PaletteCommand(
+        "Keymap: VS Code and Files",
+        "Keep the VS Code shortcuts and add keys for files, focus, and transactions",
+        "use_files_keymap",
+    ),
+    PaletteCommand(
+        "Keymap: Vim",
+        "Edit queries with vim keys. Escape leaves insert mode",
+        "use_vim_keymap",
+    ),
+    PaletteCommand(
+        "Keymap: Emacs",
+        "Edit queries with emacs keys, including a ctrl+x prefix",
+        "use_emacs_keymap",
+    ),
+    # connections
+    PaletteCommand(
+        "Open Connection",
+        "Connect to another database and keep this one open",
+        "open_connection",
+    ),
+    PaletteCommand(
+        "Switch Connection",
+        "Run queries on another open connection",
+        "switch_connection",
+    ),
+    PaletteCommand(
+        "Close Connection",
+        "Close an open connection. The last one stays until you quit",
+        "close_connection",
+    ),
+    PaletteCommand(
+        "Save Connection",
+        "Save this connection as a profile, including the keymaps in use",
+        "save_connection",
     ),
 )

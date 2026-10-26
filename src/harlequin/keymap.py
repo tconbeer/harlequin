@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from typing_extensions import NotRequired
 
@@ -45,10 +45,19 @@ class HarlequinKeyBinding:
         return all_keys
 
 
+InputMode = Literal["default", "vim", "emacs"]
+
+
 @dataclass
 class HarlequinKeyMap:
     name: str
     bindings: list[HarlequinKeyBinding]
+    input_mode: InputMode = "default"
+    """How the query editor reads keys. `default` leaves them to the bindings.
+
+    `vim` and `emacs` are opt-in. The VS Code keymap stays `default`, so loading
+    it does not take over the editor.
+    """
 
     @classmethod
     def from_config(cls, name: str, bindings: list[RawKeyBinding]) -> "HarlequinKeyMap":

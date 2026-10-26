@@ -22,10 +22,10 @@ from typing import (
     Union,
 )
 
-from textual import on, work
+from platformdirs import user_config_path
+from textual import events, on, work
 from textual.app import App, ComposeResult, SystemCommand
 from textual.containers import Horizontal, Vertical
-from textual.css.query import DOMQuery
 from textual.dom import DOMNode
 from textual.driver import Driver
 from textual.lazy import Lazy
@@ -45,7 +45,7 @@ from harlequin.adapter import HarlequinAdapter
 from harlequin.app_base import AppBase
 from harlequin.autocomplete import completer_factory
 from harlequin.autocomplete.completers import MemberCompleter, WordCompleter
-from harlequin.bindings import bind
+from harlequin.bindings import bind, clear_keymap_bindings
 from harlequin.catalog import (
     Catalog,
     CatalogItem,
@@ -76,6 +76,11 @@ from harlequin.components.catalog_source_screen import (
     S3SourceScreen,
 )
 from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.connection_screens import (
+    ConnectionListScreen,
+    OpenConnectionScreen,
+    SaveConnectionScreen,
+)
 from harlequin.components.data_catalog import (
     ContextMenu,
     S3Tree,
@@ -105,6 +110,14 @@ from harlequin.config import (
     load_config,
     load_profile_and_keymaps,
 )
+from harlequin.connections import (
+    MAX_OPEN_CONNECTIONS,
+    ConnectionShelf,
+    OpenConnection,
+    canonical_adapter_name,
+    connection_label,
+    save_connection_profile,
+)
 from harlequin.copy_formats import HARLEQUIN_COPY_FORMATS, WINDOWS_COPY_FORMATS
 from harlequin.crash import ACTIVE_BUFFER
 from harlequin.driver import HarlequinDriver
@@ -116,6 +129,7 @@ from harlequin.editor_cache import (
     write_recovery,
 )
 from harlequin.editor_cache import write_cache as write_editor_cache
+from harlequin.editor_modes import InputMode, fresh_chord, handle_key
 from harlequin.exception import (
     HarlequinBindingError,
     HarlequinConfigError,
@@ -127,9 +141,9 @@ from harlequin.exception import (
 from harlequin.history import History, migrate_pickled_history
 from harlequin.messages import NewCatalog, NewCatalogItems, WidgetMounted
 from harlequin.palette import PALETTE_COMMANDS
-from harlequin.plugins import load_keymap_plugins
+from harlequin.plugins import adapter_names, load_adapter, load_keymap_plugins
 from harlequin.query import ExecutedStatement, ResultSet, RowLimit, execute, fetch
-from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog
+from harlequin.query_log import UI_BUSY_TIMEOUT_MS, QueryLog, connection_id
 from harlequin.statements import Statement
 from harlequin.transaction_mode import HarlequinTransactionMode
 from harlequin.windows_timezone import (
@@ -331,6 +345,7 @@ class Harlequin(AppBase):
         adapter_name: str | None = None,
         keymap_names: Sequence[str] | None = None,
         user_defined_keymaps: Sequence[HarlequinKeyMap] | None = None,
+        conn_str: Sequence[str] | None = None,
         connection_hash: str | None = None,
         record_history: bool = True,
         theme: str = "harlequin",
@@ -445,12 +460,19 @@ class Harlequin(AppBase):
             user_defined_keymaps = []
 
         self.keymap_names = keymap_names
+        self.all_keymaps: dict[str, HarlequinKeyMap] = {}
         try:
             self.all_keymaps = load_keymap_plugins(
                 user_defined_keymaps=user_defined_keymaps
             )
         except HarlequinConfigError as e:
             self.exit(return_code=2, message=pretty_error_message(e))
+        # what the first connection was opened with, so saving it writes that
+        self.conn_str = tuple(conn_str or ())
+        self.connections = ConnectionShelf()
+        self._connection_request = 0
+        self.input_mode: InputMode = "default"
+        self._editor_chord = fresh_chord()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -522,6 +544,54 @@ class Harlequin(AppBase):
             return
         self._reported_query_log_failure = True
         self.notify(self.query_log.failure, title="Query History", severity="warning")
+
+    async def on_event(self, event: events.Event) -> None:
+        if isinstance(event, events.Key) and await self._handle_editor_mode(event):
+            return
+        await super().on_event(event)
+
+    async def _handle_editor_mode(self, event: events.Key) -> bool:
+        """Vim and emacs keys in the query editor. Every other key stays a binding.
+
+        A modal keeps Escape and ctrl+x, and a key that the mode does not claim
+        falls through so insert mode still types and the loaded keymap still runs.
+        """
+        if self.input_mode == "default" or len(self.screen_stack) != 1:
+            return False
+        editor = self.editor
+        if (
+            editor is None
+            or editor.text_input is None
+            or self.focused is not editor.text_input
+        ):
+            return False
+        result = handle_key(self.input_mode, self._editor_chord, event.key)
+        self._editor_chord = result.state
+        if not result.handled:
+            return False
+        event.stop()
+        event.prevent_default()
+        for command in result.commands:
+            for _ in range(result.repeat):
+                if command.target == "app":
+                    await self.run_action(command.action)
+                    continue
+                widget = self._editor_command_widget(command.target)
+                if widget is not None:
+                    await widget.run_action(command.action)
+        return True
+
+    def _editor_command_widget(self, target: str) -> Widget | None:
+        editor = self.editor
+        if editor is None:
+            return None
+        if target == "text":
+            return editor.text_input
+        if target == "code":
+            return editor
+        if target == "buffers":
+            return self.editor_collection
+        return None
 
     async def on_mount(self) -> None:
         if self.ssh_tunnel is not None:
@@ -611,6 +681,18 @@ class Harlequin(AppBase):
     @on(DatabaseConnected)
     def initialize_app(self, message: DatabaseConnected) -> None:
         self.connection = message.connection
+        # once: a tunnel reconnect is a different message and must not add a slot
+        if len(self.connections) == 0:
+            self.connections.add(
+                OpenConnection(
+                    label=connection_label(self.adapter_name, self.conn_str),
+                    adapter_name=self.adapter_name,
+                    adapter=self.adapter,
+                    connection=message.connection,
+                    connection_hash=self.connection_hash,
+                    conn_str=self.conn_str,
+                )
+            )
         self.post_message(
             TransactionModeChanged(new_mode=message.connection.transaction_mode)
         )
@@ -981,28 +1063,10 @@ class Harlequin(AppBase):
         When widgets are first mounted, they will have their default bindings.
         Here we add the bindings from the keymap.
         """
-        for keymap_name in self.keymap_names:
-            keymap = self._get_keymap(keymap_name=keymap_name)
-            if keymap is None:
-                continue
-            for binding in keymap.bindings:
-                action = HARLEQUIN_ACTIONS[binding.action]
-                if action.target is not None and isinstance(
-                    message.widget, action.target
-                ):
-                    try:
-                        bind(
-                            target=message.widget,
-                            keys=binding.keys,
-                            action=action.action,
-                            description=action.description,
-                            show=action.show,
-                            key_display=binding.key_display,
-                            priority=action.priority,
-                        )
-                    except HarlequinBindingError as e:
-                        pretty_print_error(e)
-                        self.exit(return_code=2)
+        loaded = self._loaded_keymaps(self.keymap_names)
+        if loaded is None:
+            return
+        self._apply_keymaps(loaded, message.widget)
         # a widget that took focus before its keys were bound, like a Data
         # Catalog tab added at run time, would otherwise keep a stale footer
         if message.widget.has_focus_within:
@@ -1074,6 +1138,9 @@ class Harlequin(AppBase):
             # here -- thread pools, temp files -- and may raise on the way out
             with contextlib.suppress(Exception):
                 replaced.close()
+            slot = self.connections.current()
+            if slot is not None and slot.connection is replaced:
+                slot.connection = message.connection
         self.post_message(
             TransactionModeChanged(new_mode=message.connection.transaction_mode)
         )
@@ -1137,53 +1204,139 @@ class Harlequin(AppBase):
         """
         Binds the action/key pairs in the keymaps to the currently-mounted
         widgets in Harlequin.
+
+        The previous keymap's bindings are removed first. Loading the same
+        keymap again replaces them, so a hot reload does not stack a second
+        copy of every key.
         """
-        required_bindings = {"quit": "ctrl+q"}
+        loaded = self._loaded_keymaps(keymap_names)
+        if loaded is None:
+            return
         self.keymap_names = keymap_names
+        self.input_mode = "default"
+        for keymap in loaded:
+            if keymap.input_mode != "default":
+                self.input_mode = keymap.input_mode
+        self._editor_chord = fresh_chord()
+        # `query("*")` does not return the screen itself, and focus keys are
+        # bound on the screen. The stack is what a modal is too.
+        seen = {id(self)}
+        targets: list[Widget | App] = [self]
+        for widget in (*self.query("*"), *self.screen_stack):
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
+            targets.append(widget)
+        for target in targets:
+            self._apply_keymaps(loaded, target)
+        self.refresh_bindings()
+        if self.focused is not None:
+            self.focused.refresh_bindings()
+
+    def _loaded_keymaps(
+        self, keymap_names: Sequence[str]
+    ) -> list[HarlequinKeyMap] | None:
+        """The named keymaps, in order.
+
+        None when one is missing and the app is exiting.
+        """
+        loaded: list[HarlequinKeyMap] = []
         for keymap_name in keymap_names:
             keymap = self._get_keymap(keymap_name=keymap_name)
             if keymap is None:
-                continue
+                return None
+            loaded.append(keymap)
+        return loaded
+
+    def _apply_keymaps(
+        self, keymaps: Sequence[HarlequinKeyMap], target: Widget | App
+    ) -> None:
+        """Replace the keymap bindings on `target` with `keymaps`."""
+        clear_keymap_bindings(target)
+        required = {"quit": "ctrl+q"} if target is self else {}
+        for keymap in keymaps:
             for binding in keymap.bindings:
-                required_bindings.pop(binding.action, None)
                 action = HARLEQUIN_ACTIONS[binding.action]
-                if action.target is not None:
-                    targets: DOMQuery[Widget] | list[App] = self.query(action.target)
-                    if not targets:
-                        # some widgets are not yet mounted... we'll get them
-                        # by listening for their mount event
-                        continue
-                else:
-                    targets = [self]
-                for target in targets:
-                    try:
-                        bind(
-                            target=target,
-                            keys=binding.keys,
-                            action=action.action,
-                            description=action.description,
-                            show=action.show,
-                            key_display=binding.key_display,
-                            priority=action.priority,
-                        )
-                    except HarlequinBindingError as e:
-                        pretty_print_error(e)
-                        self.exit(return_code=2)
-        for action_name, key in required_bindings.items():
-            action = HARLEQUIN_ACTIONS[action_name]
-            try:
-                bind(
-                    target=self,
-                    keys=key,
-                    action=action.action,
-                    description=action.description,
-                    show=action.show,
-                    key_display=None,
-                    priority=action.priority,
+                if not self._binding_targets(action.target, target):
+                    continue
+                required.pop(binding.action, None)
+                self._bind_one(
+                    target,
+                    binding.keys,
+                    action.action,
+                    action.description,
+                    action.show,
+                    binding.key_display,
+                    action.priority,
                 )
-            except HarlequinBindingError as e:
-                pretty_print_error(e)
-                self.exit(return_code=2)
+        for action_name, key in required.items():
+            action = HARLEQUIN_ACTIONS[action_name]
+            self._bind_one(
+                target,
+                key,
+                action.action,
+                action.description,
+                action.show,
+                None,
+                action.priority,
+            )
+
+    def _binding_targets(
+        self, action_target: type[Widget] | None, target: Widget | App
+    ) -> bool:
+        """Whether this keymap binding belongs on `target`."""
+        if action_target is None:
+            return target is self
+        return isinstance(target, action_target)
+
+    def _bind_one(
+        self,
+        target: Widget | App,
+        keys: str,
+        action: str,
+        description: str | None,
+        show: bool,
+        key_display: str | None,
+        priority: bool,
+    ) -> None:
+        try:
+            bind(
+                target=target,
+                keys=keys,
+                action=action,
+                description=description,
+                show=show,
+                key_display=key_display,
+                priority=priority,
+            )
+        except HarlequinBindingError as e:
+            pretty_print_error(e)
+            self.exit(return_code=2)
+
+    def _switch_keymap(self, *keymap_names: str) -> None:
+        """Load `keymap_names` from the palette. A missing plugin is a notice."""
+        missing = [name for name in keymap_names if name not in self.all_keymaps]
+        if missing:
+            self.notify(
+                f"Harlequin could not find a keymap named {missing[0]}.",
+                title="Keymap",
+                severity="error",
+            )
+            return
+        self.action_bind_keymaps(*keymap_names)
+        self.notify(", ".join(keymap_names), title="Keymap")
+
+    def action_use_vscode_keymap(self) -> None:
+        self._switch_keymap("vscode")
+
+    def action_use_files_keymap(self) -> None:
+        self._switch_keymap("vscode", "files")
+
+    def action_use_vim_keymap(self) -> None:
+        self._switch_keymap("vim")
+
+    def action_use_emacs_keymap(self) -> None:
+        self._switch_keymap("emacs")
 
     async def action_run_query(self) -> None:
         if self.editor is None:
@@ -1430,9 +1583,275 @@ class Harlequin(AppBase):
             s3_tree=self.data_catalog.s3_tree,
         )
         self.query_log.close()
-        if self.connection:
-            self.connection.close()
+        closed: set[int] = set()
+        for slot in self.connections.close_all():
+            self._close_connection_once(slot.connection, closed)
+        if self.connection is not None:
+            self._close_connection_once(self.connection, closed)
         await super().action_quit()
+
+    def _close_connection_once(
+        self, connection: HarlequinConnection, closed: set[int]
+    ) -> None:
+        """Close `connection` one time. A slot and `self.connection` can be the same."""
+        identity = id(connection)
+        if identity in closed:
+            return
+        closed.add(identity)
+        with contextlib.suppress(Exception):
+            connection.close()
+
+    def _query_is_running(self) -> bool:
+        """A query is in flight, or the first connection has not finished opening."""
+        bar = getattr(self, "run_query_bar", None)
+        return bar is not None and bar.has_class("non-responsive")
+
+    def _activate_connection(self, slot: OpenConnection) -> None:
+        """Point queries, history, and the catalog at `slot`."""
+        same = self.connection is slot.connection
+        self.adapter = slot.adapter
+        self.connection = slot.connection
+        self.connection_hash = slot.connection_hash
+        self.adapter_name = slot.adapter_name
+        self.conn_str = slot.conn_str
+        self.query_log.connection = slot.connection_hash
+        self.query_log.adapter = slot.adapter_name
+        self.run_query_bar.show_cancel_button = slot.adapter.IMPLEMENTS_CANCEL
+        if same:
+            return
+        self.post_message(
+            TransactionModeChanged(new_mode=slot.connection.transaction_mode)
+        )
+        self.data_catalog.database_tree.loading = True
+        self.update_schema_data()
+
+    def action_open_connection(self) -> None:
+        if len(self.connections) >= MAX_OPEN_CONNECTIONS:
+            self.notify(
+                f"Harlequin keeps at most {MAX_OPEN_CONNECTIONS} connections open.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        if self._query_is_running():
+            self.notify(
+                "Wait for the running query to finish.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        names = adapter_names()
+        if not names:
+            self.notify(
+                "No database adapters are installed.",
+                title="Connections",
+                severity="error",
+            )
+            return
+        self.push_screen(
+            OpenConnectionScreen(adapter_names=names, current=self.adapter_name),
+            self._open_connection_from_form,
+        )
+
+    def _open_connection_from_form(self, result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        if self._query_is_running():
+            self.notify(
+                "Wait for the running query to finish.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        requested, raw = result
+        adapter_name = canonical_adapter_name(requested, adapter_names())
+        if adapter_name is None:
+            self.notify(
+                "That adapter is not installed.",
+                title="Connections",
+                severity="error",
+            )
+            return
+        conn_str = () if not raw.strip() else (raw.strip(),)
+        self._connection_request += 1
+        self.open_extra_connection(self._connection_request, adapter_name, conn_str)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        exit_on_error=False,
+        group="extra_connections",
+        description="Opening another database",
+    )
+    def open_extra_connection(
+        self, token: int, adapter_name: str, conn_str: tuple[str, ...]
+    ) -> None:
+        """Connect on a worker that is not the primary `_connect` worker.
+
+        A failure here stays in the app. The primary connect worker exits the
+        app when it fails, and this one must not be named `_connect`.
+        """
+        connection: HarlequinConnection | None = None
+        try:
+            adapter_cls = load_adapter(adapter_name)
+            adapter = adapter_cls(conn_str=conn_str)
+            connection = adapter.connect()
+            self.call_from_thread(
+                self._install_extra_connection,
+                token,
+                adapter_name,
+                adapter,
+                connection,
+                conn_str,
+            )
+            connection = None
+        except Exception as exc:
+            if connection is not None:
+                with contextlib.suppress(Exception):
+                    connection.close()
+            with contextlib.suppress(RuntimeError):
+                self.call_from_thread(
+                    self._push_error_modal,
+                    "Connection Error",
+                    "Harlequin could not open that connection.",
+                    exc,
+                )
+
+    def _install_extra_connection(
+        self,
+        token: int,
+        adapter_name: str,
+        adapter: HarlequinAdapter,
+        connection: HarlequinConnection,
+        conn_str: tuple[str, ...],
+    ) -> None:
+        """Take ownership of `connection`, or close it when it no longer fits."""
+        if token != self._connection_request or len(self.connections) >= (
+            MAX_OPEN_CONNECTIONS
+        ):
+            with contextlib.suppress(Exception):
+                connection.close()
+            if token == self._connection_request:
+                self.notify(
+                    f"Harlequin keeps at most {MAX_OPEN_CONNECTIONS} connections open.",
+                    title="Connections",
+                    severity="warning",
+                )
+            return
+        slot = OpenConnection(
+            label=connection_label(adapter_name, conn_str),
+            adapter_name=adapter_name,
+            adapter=adapter,
+            connection=connection,
+            connection_hash=connection_id(adapter.connection_id, conn_str, {}),
+            conn_str=conn_str,
+        )
+        if not self.connections.add(slot):
+            with contextlib.suppress(Exception):
+                connection.close()
+            self.notify(
+                f"Harlequin keeps at most {MAX_OPEN_CONNECTIONS} connections open.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        self._activate_connection(slot)
+        self.notify(f"Connected with {adapter_name}.", title="Connections")
+
+    def action_switch_connection(self) -> None:
+        self._prompt_connection_list()
+
+    def action_close_connection(self) -> None:
+        self._prompt_connection_list()
+
+    def _prompt_connection_list(self) -> None:
+        if len(self.connections) < 2:
+            self.notify(
+                "Open another connection first. The last one stays until you quit.",
+                title="Connections",
+            )
+            return
+        if self._query_is_running():
+            self.notify(
+                "Wait for the running query to finish.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        self.push_screen(
+            ConnectionListScreen(
+                labels=tuple(slot.label for slot in self.connections.slots),
+                active=self.connections.active,
+            ),
+            self._apply_connection_choice,
+        )
+
+    def _apply_connection_choice(self, result: tuple[str, int] | None) -> None:
+        if result is None:
+            return
+        action, index = result
+        if action == "close":
+            self._close_connection_at(index)
+            return
+        self._switch_connection_at(index)
+
+    def _switch_connection_at(self, index: int) -> None:
+        if self._query_is_running():
+            self.notify(
+                "Wait for the running query to finish.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        slot = self.connections.select(index)
+        if slot is None:
+            return
+        self._activate_connection(slot)
+
+    def _close_connection_at(self, index: int) -> None:
+        if self._query_is_running():
+            self.notify(
+                "Wait for the running query to finish.",
+                title="Connections",
+                severity="warning",
+            )
+            return
+        slot = self.connections.close_at(index)
+        if slot is None:
+            self.notify(
+                "The last connection stays open until you quit.",
+                title="Connections",
+            )
+            return
+        with contextlib.suppress(Exception):
+            slot.connection.close()
+        current = self.connections.current()
+        if current is not None:
+            self._activate_connection(current)
+        self.notify("Closed a connection.", title="Connections")
+
+    def action_save_connection(self) -> None:
+        self.push_screen(SaveConnectionScreen(), self._save_connection_from_form)
+
+    def _save_connection_from_form(self, name: str | None) -> None:
+        if not name:
+            return
+        path = user_config_path(appname="harlequin", appauthor=False) / "config.toml"
+        try:
+            save_connection_profile(
+                path,
+                name,
+                adapter_name=self.adapter_name,
+                conn_str=self.conn_str,
+                keymap_names=self.keymap_names,
+            )
+        except OSError as exc:
+            self.notify(str(exc), title="Save Connection", severity="error")
+            return
+        self.notify(
+            f"Saved profile {name}. Start it with harlequin --profile {name}",
+            title="Save Connection",
+        )
 
     def action_show_help_screen(self) -> None:
         def key_for(action: str) -> str | None:

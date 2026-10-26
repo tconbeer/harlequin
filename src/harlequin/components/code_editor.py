@@ -1058,6 +1058,11 @@ class EditorCollection(Vertical):
             return
         self.tabs.action_next_tab()
 
+    def action_previous_buffer(self) -> None:
+        if self.tab_count < 2:
+            return
+        self.tabs.action_previous_tab()
+
     def _activate_cached_buffer(self, focus_index: int) -> None:
         """Reopens the buffer that was active when the cache was written."""
         buffer_ids = list(self.buffer_states)

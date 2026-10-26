@@ -145,6 +145,9 @@ sqlite = "harlequin_sqlite:HarlequinSqliteAdapter"
 [project.entry-points."harlequin.keymap"]
 
 vscode = "harlequin_vscode:VSCODE"
+files = "harlequin_keys:FILES"
+vim = "harlequin_keys:VIM"
+emacs = "harlequin_keys:EMACS"
 
 
 [build-system]
@@ -164,6 +167,7 @@ packages = [
     "src/harlequin_duckdb",
     "src/harlequin_sqlite",
     "src/harlequin_vscode",
+    "src/harlequin_keys",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -256,6 +260,8 @@ source_modules = [
     "harlequin.environment",
     "harlequin.exception",
     "harlequin.keymap",
+    "harlequin.connections",
+    "harlequin.editor_modes",
     "harlequin.navigate",
     "harlequin.options",
     "harlequin.plugins",

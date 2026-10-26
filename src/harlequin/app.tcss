@@ -863,6 +863,83 @@ CatalogSourceScreen Input {
     }
 }
 
+/* Open, switch, close, and save connection */
+
+OpenConnectionScreen, ConnectionListScreen, SaveConnectionScreen {
+    align: center middle;
+    padding: 0;
+}
+
+#connection_outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 4;
+    padding: 1 2;
+    height: auto;
+    max-height: 28;
+    max-width: 88;
+}
+
+#connection_prompt {
+    padding: 0 1;
+}
+
+#connection_outer Input, #connection_outer Select {
+    margin: 1 0 0 0;
+    border: round $border-color-nofocus;
+    background: transparent;
+    &:focus {
+        border: round $border-color-focus;
+    }
+}
+
+#connection_list {
+    height: 10;
+    margin: 1 0 0 0;
+    border: round $border-color-nofocus;
+    background: transparent;
+    &:focus {
+        border: round $border-color-focus;
+    }
+}
+
+#connection_error {
+    color: $error;
+    text-style: italic;
+    height: 1;
+    margin: 0 0 0 3;
+}
+
+#connection_buttons {
+    height: auto;
+    width: 100%;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+#connection_buttons Button {
+    background: $primary;
+    color: $background;
+    height: 3;
+    margin: 0 2;
+    padding: 0 1;
+    min-width: 16;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+#connection_buttons Button#connection_cancel {
+    background: $error;
+    &:hover {
+        background: $secondary;
+    }
+}
+
 #buffer-path {
     height: 1;
     width: 100%;

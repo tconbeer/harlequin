@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 - A query tab has a close control. Closing unsaved text, including a query that is not a file, asks to save, close without saving, or cancel. A file that still matches its last load or save closes without asking. Save writes the editor bytes and then closes the tab.
 - Fuzzy find, project-wide search, move, drag-and-drop, git decorations, preview-without-open, reloading a file changed on disk, and editing S3 objects stay deferred.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
+- Keymaps are plugins, and the author's VS Code keymap is unchanged and still the default. The command palette can load VS Code, VS Code and Files, Vim, or Emacs. Loading a keymap again replaces its bindings. A profile's `keymap_name` is the list that profile starts with, which is how a default set of plugins is chosen.
+- The Files keymap adds shortcuts for files, buffers, focus, transactions, cancel, and the theme. Load it after VS Code: `--keymap-name vscode --keymap-name files`.
+- Vim and Emacs are full keymaps. Vim starts in insert mode; Escape enters normal mode, and Space then a letter reaches the rest of the app. Emacs uses emacs cursor keys in the editor and a `ctrl+x` prefix for save, quit, open, and buffers.
+- Harlequin can keep eight database connections open. Open Connection, Switch Connection, and Close Connection are in the command palette. The last connection stays open until quit, and quit closes each open connection once. Save Connection writes a profile, including the keymaps in use.
 
 ### Bug Fixes
 

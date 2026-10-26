@@ -114,23 +114,62 @@ HARLEQUIN_ACTIONS = {
     "show_s3": Action(target=None, action="show_s3", description="Show S3"),
     "run_query": Action(target=None, action="run_query", description="Run Query"),
     "cancel_query": Action(
-        target=None, action="cancel_query", description="Cancel Query"
+        target=None,
+        action="cancel_query",
+        description="Cancel Query",
+        # ctrl+alt+c is not a single character, so it is not priority on its own,
+        # and the editor would otherwise see the key first
+        priority=True,
     ),
     "change_theme": Action(
-        target=None, action="change_theme", description="Change Theme"
+        target=None,
+        action="change_theme",
+        description="Change Theme",
+        priority=True,
     ),
     "toggle_transaction_mode": Action(
         target=None,
         action="toggle_transaction_mode",
         description="Toggle Transaction Mode",
+        priority=True,
     ),
     "commit_transaction": Action(
-        target=None, action="commit_transaction", description="Commit Transaction"
+        target=None,
+        action="commit_transaction",
+        description="Commit Transaction",
+        priority=True,
     ),
     "rollback_transaction": Action(
         target=None,
         action="rollback_transaction",
         description="Rollback Transaction",
+        priority=True,
+    ),
+    "use_vscode_keymap": Action(
+        target=None, action="use_vscode_keymap", description="Keymap: VS Code"
+    ),
+    "use_files_keymap": Action(
+        target=None,
+        action="use_files_keymap",
+        description="Keymap: VS Code and Files",
+    ),
+    "use_vim_keymap": Action(
+        target=None, action="use_vim_keymap", description="Keymap: Vim"
+    ),
+    "use_emacs_keymap": Action(
+        target=None, action="use_emacs_keymap", description="Keymap: Emacs"
+    ),
+    "open_connection": Action(
+        target=None, action="open_connection", description="Open Connection"
+    ),
+    "switch_connection": Action(
+        target=None, action="switch_connection", description="Switch Connection"
+    ),
+    "close_connection": Action(
+        target=None, action="close_connection", description="Close Connection"
+    ),
+    "save_connection": Action(
+        target=None, action="save_connection", description="Save Connection"
     ),
     #######################################################
     # CodeEditor ACTIONS
@@ -141,6 +180,9 @@ HARLEQUIN_ACTIONS = {
         target=EditorCollection, action="close_all_buffers"
     ),
     "code_editor.next_buffer": Action(target=EditorCollection, action="next_buffer"),
+    "code_editor.previous_buffer": Action(
+        target=EditorCollection, action="previous_buffer"
+    ),
     "code_editor.run_query": Action(
         target=CodeEditor, action="submit", description="Run Query", show=True
     ),
