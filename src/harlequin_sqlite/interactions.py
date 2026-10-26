@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal, Sequence
 
 from harlequin.catalog import CatalogItem
 from harlequin.exception import HarlequinQueryError
+from harlequin_sqlite.quoting import quote_identifier
 
 if TYPE_CHECKING:
     from harlequin.driver import HarlequinDriver
@@ -48,10 +49,6 @@ def execute_drop_view_statement(
     execute_drop_relation_statement(item=item, driver=driver, relation_type="view")
 
 
-def _quote_identifier(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
 def _quote_literal(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
@@ -65,8 +62,8 @@ def show_describe_relation(
     # a pragma's argument is a bare name; the database qualifies the pragma itself
     driver.insert_text_in_new_buffer(
         text=(
-            f"pragma {_quote_identifier(item.parent.label)}"
-            f".table_info({_quote_identifier(item.label)})"
+            f"pragma {quote_identifier(item.parent.label)}"
+            f".table_info({quote_identifier(item.label)})"
         )
     )
 
@@ -81,7 +78,7 @@ def show_relation_ddl(
     cursor = item.connection.execute(
         f"""
         select sql
-        from {_quote_identifier(item.parent.label)}.sqlite_schema
+        from {quote_identifier(item.parent.label)}.sqlite_schema
         where name = {_quote_literal(item.label)} and type in ('table', 'view')
         limit 1
         """
