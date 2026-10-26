@@ -84,6 +84,7 @@ from harlequin.components.data_catalog import (
 )
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
+from harlequin.components.folder_browser import OpenFileScreen, OpenFolderScreen
 from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
@@ -1521,13 +1522,66 @@ class Harlequin(AppBase):
     def _catalog_source_screen_is_open(self) -> bool:
         """One location prompt at a time: a priority key still fires over one."""
         return any(
-            screen.id in ("files_source_screen", "s3_source_screen")
+            screen.id
+            in (
+                "files_source_screen",
+                "s3_source_screen",
+                "open_folder_screen",
+                "open_file_screen",
+            )
             for screen in self.screen_stack
         )
+
+    def _browser_start(self) -> Path:
+        """Where a folder browser opens: the first mount, or the home directory."""
+        mounts = self.data_catalog.file_mounts
+        if mounts:
+            return mounts[0]
+        try:
+            home = Path.home()
+            if home.is_dir():
+                return home
+        except OSError:
+            pass
+        return Path.cwd()
 
     async def action_close_folder(self) -> None:
         """Unmount the Files directory under the cursor. Query tabs stay."""
         await self.data_catalog.close_current_folder()
+
+    def action_open_folder(self) -> None:
+        """Browse to a directory and add it beside the folders already shown."""
+        if self._catalog_source_screen_is_open():
+            return
+
+        async def mount_directory(directory: Path | None) -> None:
+            if directory is None:
+                return
+            await self.data_catalog.show_file_tree(directory)
+            self.action_focus_data_catalog()
+
+        self.push_screen(
+            OpenFolderScreen(self._browser_start(), id="open_folder_screen"),
+            mount_directory,
+        )
+
+    def action_open_file(self) -> None:
+        """Browse to a file and load it into one query buffer."""
+        if self._catalog_source_screen_is_open():
+            return
+
+        async def load_file(path: Path | None) -> None:
+            if path is None:
+                return
+            editor_collection = getattr(self, "editor_collection", None)
+            if editor_collection is None or not editor_collection.is_mounted:
+                return
+            await editor_collection.open_file(path)
+
+        self.push_screen(
+            OpenFileScreen(self._browser_start(), id="open_file_screen"),
+            load_file,
+        )
 
     def action_show_files(self) -> None:
         if self._catalog_source_screen_is_open():

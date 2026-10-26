@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 - Opening a file into a query tab that already has a path binds the opened file, so saving writes that file.
 - The Files tab can show several directories at once. Show Files adds a directory and leaves the ones already shown. Close Folder removes the selected directory and leaves query tabs alone.
 - Save on a query tab that is not a file asks for a folder in that tree and a file name. The tab becomes that file, its full path is shown, and the next save writes it. Quit restores the binding from a new buffer-cache version. A version-1 cache still loads as text with no path.
+- That save can browse to a folder that is not already shown. The browser lists one directory level at a time, and Up lists the parent.
+- Open Folder browses to a directory and adds it to the Files tab. Open File browses to a text file and opens one query tab. Show Files still types a path.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
 ### Bug Fixes

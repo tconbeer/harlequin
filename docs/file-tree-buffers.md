@@ -41,13 +41,20 @@ From the existing Files tree:
   binds that path. A later save writes the file that was opened.
 - Unsaved edits are not discarded without an explicit confirm.
 - A blank query buffer can still be created and can still submit SQL.
-- Show Files adds a directory and leaves directories already mounted. Close
+- Show Files adds a directory by a typed path and leaves directories already
+  mounted. Open Folder browses to a directory and adds it the same way. A file
+  in that browser is not mounted and does not change the query editor. Close
   Folder removes the directory under the cursor. Closing a directory does not
   discard query buffers.
-- Save on a tab that is not a file asks for a mounted folder and a file name.
-  The tab then shows that file's name, the full path is on the line under the
-  tabs, and a later save writes that file. A tab with no path reads
-  "Not a file". One buffer per path. Saving onto an existing file asks first.
+- Open File browses to a text file and loads one query buffer for that path.
+  A directory in that browser only expands or collapses. A non-text file does
+  not replace the editor text.
+- Save on a tab that is not a file browses to a folder and asks for a file
+  name. The folder does not have to be one already shown. Up lists the parent
+  folder, and only the folder on screen is listed. The tab then shows that
+  file's name, the full path is on the line under the tabs, and a later save
+  writes that file. A tab with no path reads "Not a file". One buffer per
+  path. Saving onto an existing file asks first. Type a path is still there.
 - Quit stores the path in cache version 2. A version-1 cache, which has
   selection and text only, still loads, and those buffers stay not a file.
   The set of mounted folders is not written to the config profile.

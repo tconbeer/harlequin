@@ -644,7 +644,10 @@ class EditorCollection(Vertical):
         label.update(Content.from_text(self.location_text(), markup=False))
 
     async def save_unbound_buffer(self) -> None:
-        """Ask for a mounted folder and a file name, then bind this buffer."""
+        """Browse to a folder and a file name, then bind this buffer.
+
+        With no folder mounted yet, ask for a path instead.
+        """
         catalog = getattr(self.app, "data_catalog", None)
         mounts = list(catalog.file_mounts) if catalog is not None else []
         if not mounts:

@@ -8,12 +8,11 @@ from typing import Type
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets import Input, Label
+from textual.widgets import DirectoryTree, Input, Label
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
 from harlequin.components.confirm_modal import ConfirmModal
-from harlequin.components.data_catalog import FileTree
 from harlequin.components.save_query_screen import SaveQueryScreen
 from harlequin.editor_cache import BufferState, Cache, get_cache_file, load_cache
 from harlequin_duckdb.adapter import DuckDbAdapter
@@ -73,7 +72,7 @@ async def _save_as(pilot: Pilot, app: Harlequin, folder: Path, name: str) -> Non
     await pilot.press("enter")
 
 
-def _line_named(tree: FileTree, name: str) -> int | None:
+def _line_named(tree: DirectoryTree, name: str) -> int | None:
     for line in range(tree.last_line + 1):
         node = tree.get_node_at_line(line)
         if node is None or node.data is None:

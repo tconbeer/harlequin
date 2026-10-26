@@ -807,11 +807,11 @@ CatalogSourceScreen Input {
     text-overflow: ellipsis;
 }
 
-SaveQueryScreen {
+SaveQueryScreen, OpenFolderScreen, OpenFileScreen {
     align: center middle;
 }
 
-#save_query_outer {
+#save_query_outer, #open_folder_outer, #open_file_outer {
     width: 72;
     height: 28;
     border: round $border-color-focus;
@@ -819,7 +819,7 @@ SaveQueryScreen {
     padding: 1 2;
 }
 
-#save_query_tree {
+#save_query_tree, #open_folder_tree, #open_file_tree {
     height: 1fr;
     border: round $border-color-nofocus;
 }
@@ -828,26 +828,26 @@ SaveQueryScreen {
     margin: 1 0 0 0;
 }
 
-#save_query_destination {
+#save_query_destination, #open_folder_destination, #open_file_destination {
     height: 1;
     color: $text-muted;
     text-wrap: nowrap;
     text-overflow: ellipsis;
 }
 
-#save_query_error {
+#save_query_error, #open_folder_error, #open_file_error {
     height: 1;
     color: $error;
 }
 
-#save_query_button_row {
+#save_query_button_row, #open_folder_button_row, #open_file_button_row {
     height: auto;
     width: 100%;
     align: center bottom;
     margin: 1 0 0 0;
 }
 
-#save_query_button_row Button {
+#save_query_button_row Button, #open_folder_button_row Button, #open_file_button_row Button {
     margin: 0 1;
 }
 

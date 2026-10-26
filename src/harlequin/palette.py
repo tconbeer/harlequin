@@ -180,6 +180,16 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         "show_files",
     ),
     PaletteCommand(
+        "Open Folder",
+        "Browse to a directory and add it to the Files tab",
+        "open_folder",
+    ),
+    PaletteCommand(
+        "Open File",
+        "Browse to a text file and open it in a query tab",
+        "open_file",
+    ),
+    PaletteCommand(
         "Close Folder",
         "Remove the selected directory from the Files tab",
         "close_folder",

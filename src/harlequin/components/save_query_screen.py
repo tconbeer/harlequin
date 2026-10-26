@@ -1,4 +1,4 @@
-"""Save an unbound query by picking a mounted folder and a file name."""
+"""Save an unbound query by browsing to a folder and typing a file name."""
 
 from __future__ import annotations
 
@@ -10,10 +10,8 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.content import Content
 from textual.widgets import Button, DirectoryTree, Input, Label, Static, Tree
-from textual.widgets._directory_tree import DirEntry
-from textual.widgets._tree import TreeNode
 
-from harlequin.components.data_catalog import FileTree
+from harlequin.components.folder_browser import FolderBrowser
 from harlequin.components.modal import HarlequinModal
 
 
@@ -22,10 +20,11 @@ class TypeAPath:
 
 
 class SaveQueryScreen(HarlequinModal[Path | TypeAPath]):
-    """Pick a mounted folder in the tree and type only the file name.
+    """Browse to a folder and type only the file name.
 
-    Dismisses with the file path, with `TypeAPath` when the user wants to
-    type a whole path, or with None when they cancel.
+    The folder does not have to be one the Files tab is showing. Dismisses
+    with the file path, with `TypeAPath` when the user wants to type a whole
+    path, or with None when they cancel.
     """
 
     def __init__(
@@ -37,13 +36,12 @@ class SaveQueryScreen(HarlequinModal[Path | TypeAPath]):
     ) -> None:
         super().__init__(name, id, classes)
         self._mounts = list(mounts)
-        first = self._mounts[0]
-        self.file_tree = FileTree(path=first, id="save_query_tree")
+        self.file_tree = FolderBrowser(self._mounts[0], id="save_query_tree")
 
     def compose(self) -> ComposeResult:
         with Vertical(id="save_query_outer"):
             yield Static(
-                "Choose a folder in the tree, then name the file.",
+                "Browse to a folder, then name the file.",
                 id="save_query_prompt",
             )
             yield self.file_tree
@@ -55,28 +53,18 @@ class SaveQueryScreen(HarlequinModal[Path | TypeAPath]):
             yield Label("", id="save_query_error")
             with Horizontal(id="save_query_button_row"):
                 yield Button(label="Cancel", id="save_query_cancel")
+                yield Button(label="Up", id="save_query_up")
                 yield Button(label="Type a path", id="save_query_type_path")
                 yield Button(label="Save", variant="primary", id="save_query_save")
 
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
         self.query_one("#save_query_outer").border_title = "Save Query"
-        for extra in self._mounts[1:]:
-            await self.file_tree.attach(extra)
         self.query_one("#save_query_name", Input).focus()
         self._show_destination()
 
     def chosen_directory(self) -> Path | None:
         """The folder the tree cursor is on, or that file's parent."""
-        node: TreeNode[DirEntry] | None = self.file_tree.cursor_node
-        if node is not None and node.data is not None:
-            path = node.data.path
-            if path.is_dir():
-                return path
-            if path.parent.is_dir():
-                return path.parent
-        if self.file_tree.mounts:
-            return self.file_tree.mounts[0]
-        return None
+        return self.file_tree.cursor_directory()
 
     def _clean_name(self, raw: str) -> str | None:
         name = raw.strip()
@@ -127,6 +115,10 @@ class SaveQueryScreen(HarlequinModal[Path | TypeAPath]):
     @on(Button.Pressed, "#save_query_cancel")
     def cancel_from_button(self) -> None:
         self.dismiss()
+
+    @on(Button.Pressed, "#save_query_up")
+    def browse_up(self) -> None:
+        self.file_tree.action_browse_up()
 
     @on(Button.Pressed, "#save_query_type_path")
     def type_a_path(self) -> None:

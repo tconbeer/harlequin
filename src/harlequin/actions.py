@@ -98,6 +98,8 @@ HARLEQUIN_ACTIONS = {
         target=None, action="refresh_catalog", description="Refresh Data Catalog"
     ),
     "show_files": Action(target=None, action="show_files", description="Show Files"),
+    "open_folder": Action(target=None, action="open_folder", description="Open Folder"),
+    "open_file": Action(target=None, action="open_file", description="Open File"),
     "close_folder": Action(
         target=None, action="close_folder", description="Close Folder"
     ),
