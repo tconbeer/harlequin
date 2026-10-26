@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
+from tests.waiting import wait_until
 
 
 def test_connect(tiny_duck: Path, small_duck: Path, tmp_path: Path) -> None:
@@ -489,3 +492,43 @@ def test_an_init_script_that_ends_in_a_query_leaves_the_connection_usable(
     cur = conn.execute("select 1")
     assert cur is not None
     assert cur.relation.fetchall() == [(1,)]
+
+
+def _busy(connection: DuckDbConnection) -> bool:
+    """Whether another thread is using the connection."""
+    try:
+        connection.conn.extract_statements("select 1")
+    except Exception as e:
+        return type(e).__name__ == "ResourceInUseException"
+    return False
+
+
+@pytest.mark.skipif(
+    not hasattr(duckdb, "ResourceInUseException"),
+    reason="before duckdb 2, a busy connection is not refused",
+)
+def test_a_query_submitted_while_one_runs_interrupts_it() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    slow_results: list[object] = []
+
+    def run_slow_query() -> None:
+        cursor = conn.execute(
+            "select count(*) from range(100_000_000_000) t(i) where i % 7 = 3"
+        )
+        assert cursor is not None
+        slow_results.append(cursor.fetchall())
+
+    slow_query = threading.Thread(target=run_slow_query, daemon=True)
+    slow_query.start()
+    wait_until(lambda: _busy(conn), description="the slow query to start")
+
+    try:
+        cursor = conn.execute("select 42")
+    finally:
+        conn.cancel()  # so a failure here does not leave the slow query running
+    assert cursor is not None
+    assert cursor.relation.fetchall() == [(42,)]
+    slow_query.join(timeout=10)
+    assert not slow_query.is_alive()
+    # an interrupted fetch returns no data
+    assert slow_results == [None]

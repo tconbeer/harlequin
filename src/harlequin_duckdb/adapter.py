@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -40,6 +41,14 @@ if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_RESOURCE_IN_USE: type[Exception] | None = getattr(
+    duckdb, "ResourceInUseException", None
+)
+"""What duckdb 2 raises for a call on a connection another thread is using."""
+
+_BUSY_TIMEOUT_SECONDS = 5.0
+"""How long a query waits for an interrupted one to give up the connection."""
 
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
@@ -234,7 +243,7 @@ class DuckDbConnection(HarlequinConnection):
 
     def execute(self, query: str) -> DuckDbCursor | None:
         try:
-            rel = self.conn.sql(query)
+            rel = self._sql(query)
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:
@@ -254,6 +263,23 @@ class DuckDbConnection(HarlequinConnection):
 
     def cancel(self) -> None:
         self.conn.interrupt()
+
+    def _sql(self, query: str) -> duckdb.DuckDBPyRelation | None:
+        """`query` as a relation, interrupting a query another thread is running.
+
+        duckdb 2 refuses a call while another thread uses the connection rather
+        than waiting, so a query submitted while one runs replaces it, as in 1.x.
+        """
+        deadline = time.monotonic() + _BUSY_TIMEOUT_SECONDS
+        while True:
+            try:
+                return self.conn.sql(query)
+            except duckdb.Error as e:
+                busy = _RESOURCE_IN_USE is not None and isinstance(e, _RESOURCE_IN_USE)
+                if not busy or time.monotonic() > deadline:
+                    raise
+                self.conn.interrupt()
+                time.sleep(0.01)
 
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
@@ -337,7 +363,6 @@ class DuckDbConnection(HarlequinConnection):
         cur = self.conn.cursor()
         escaped = text.replace("'", "''")
         try:
-            # all of it, since duckdb 2 holds the cursor until a result is read out
             [(parsed,)] = cur.execute(
                 f"select json_serialize_sql('{escaped}')"
             ).fetchall()
