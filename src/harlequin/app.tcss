@@ -824,7 +824,7 @@ SaveQueryScreen, OpenFolderScreen, OpenFileScreen {
     border: round $border-color-nofocus;
 }
 
-#save_query_name {
+#save_query_name, #open_folder_name, #open_file_name {
     margin: 1 0 0 0;
 }
 
@@ -848,6 +848,57 @@ SaveQueryScreen, OpenFolderScreen, OpenFileScreen {
 }
 
 #save_query_button_row Button, #open_folder_button_row Button, #open_file_button_row Button {
+    margin: 0 1;
+}
+
+#save_query_ops_row, #open_folder_ops_row, #open_file_ops_row {
+    height: auto;
+    width: 100%;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+#save_query_ops_row Button, #open_folder_ops_row Button, #open_file_ops_row Button {
+    min-width: 14;
+    margin: 0 1;
+}
+
+NamePrompt {
+    align: center middle;
+}
+
+#name_prompt_outer {
+    width: 72;
+    height: auto;
+    border: round $border-color-focus;
+    background: $background;
+    padding: 1 2;
+}
+
+#name_prompt_prompt {
+    width: 100%;
+    height: auto;
+    max-height: 3;
+    color: $text-muted;
+}
+
+#name_prompt_input {
+    margin: 1 0 0 0;
+}
+
+#name_prompt_error {
+    height: 1;
+    color: $error;
+}
+
+#name_prompt_button_row {
+    height: auto;
+    width: 100%;
+    align: center bottom;
+    margin: 1 0 0 0;
+}
+
+#name_prompt_button_row Button {
     margin: 0 1;
 }
 

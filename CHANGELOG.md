@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Save on a query tab that is not a file asks for a folder in that tree and a file name. The tab becomes that file, its full path is shown, and the next save writes it. Quit restores the binding from a new buffer-cache version. A version-1 cache still loads as text with no path.
 - That save can browse to a folder that is not already shown. The browser lists one directory level at a time, and Up lists the parent.
 - Open Folder browses to a directory and adds it to the Files tab. Open File browses to a text file and opens one query tab. Show Files still types a path.
+- Open Folder and Open File use the same name and path lines as save. New File, New Folder, Rename, and Delete work there and on the Files tab. Delete asks with the full path. Rename keeps an open query on the new path. Delete keeps the query text and clears the path. The list is still one directory at a time.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
 ### Bug Fixes

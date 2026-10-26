@@ -49,6 +49,13 @@ From the existing Files tree:
 - Open File browses to a text file and loads one query buffer for that path.
   A directory in that browser only expands or collapses. A non-text file does
   not replace the editor text.
+- Open Folder and Open File show a name and the full path, in the same
+  dialog as save. New File and New Folder create that name in the folder on
+  screen. Rename changes the cursor entry's name. Delete asks with the full
+  path, then removes the file, or the folder and what is inside it. The Files
+  tab offers the same four commands for the folder under the cursor. One
+  directory level is listed. An open query keeps its text: rename follows the
+  file, and delete leaves the text with no path.
 - Save on a tab that is not a file browses to a folder and asks for a file
   name. The folder does not have to be one already shown. Up lists the parent
   folder, and only the folder on screen is listed. The tab then shows that
@@ -65,7 +72,7 @@ These stay deferred. They are the rest of each product, and they are not part
 of this change:
 
 - neo-tree: git decorations, filters, fuzzy find, preview-without-open,
-  drag-and-drop, and create/rename/delete/move.
+  drag-and-drop, and move.
 - Fresh: LSP, diagnostics, AI, and multi-cursor editing.
 - Helix: modal editing (the modal keymap) and multi-cursor selections.
 - micro's broader editor surface, and turning Harlequin into a general-purpose

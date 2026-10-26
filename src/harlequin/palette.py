@@ -196,6 +196,30 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
         is_available=_files_are_shown,
     ),
     PaletteCommand(
+        "New File",
+        "Create an empty file in the Files folder under the cursor",
+        "new_file",
+        is_available=_files_are_shown,
+    ),
+    PaletteCommand(
+        "New Folder",
+        "Create an empty folder in the Files folder under the cursor",
+        "new_folder",
+        is_available=_files_are_shown,
+    ),
+    PaletteCommand(
+        "Rename File or Folder",
+        "Rename the file or folder under the Files cursor",
+        "rename_path",
+        is_available=_files_are_shown,
+    ),
+    PaletteCommand(
+        "Delete File or Folder",
+        "Delete the file or folder under the Files cursor",
+        "delete_path",
+        is_available=_files_are_shown,
+    ),
+    PaletteCommand(
         "Show S3",
         "Show an S3 bucket in the Data Catalog's S3 tab",
         "show_s3",

@@ -26,6 +26,7 @@ from harlequin.catalog_cache import CatalogCache
 from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.data_catalog.s3_tree import S3Tree as S3Tree
 from harlequin.components.data_catalog.tree import HarlequinTree as HarlequinTree
+from harlequin.components.file_ops import find_node, relist_one_level
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
@@ -236,18 +237,74 @@ class DataCatalog(TabbedContent, can_focus=True):
         if mount is None:
             return
         remaining = [path for path in tree.mounts if path != mount]
-        tree.mounts = remaining
-        if remaining:
-            self.show_files = remaining[-1]
-            await tree.reload()
+        await self._apply_mounts(remaining)
+
+    async def _apply_mounts(self, mounts: list[Path]) -> None:
+        """Show `mounts`, or remove the Files tab when none remain."""
+        tree = self.file_tree
+        if tree is None:
             return
-        pane = tree.parent
-        self.file_tree = None
-        self.show_files = None
-        if isinstance(pane, TabPane) and pane.id is not None:
-            await self.remove_pane(pane.id)
-        if self.show_s3 is None:
-            self.add_class("hide-tabs")
+        if not mounts:
+            pane = tree.parent
+            self.file_tree = None
+            self.show_files = None
+            if isinstance(pane, TabPane) and pane.id is not None:
+                await self.remove_pane(pane.id)
+            if self.show_s3 is None:
+                self.add_class("hide-tabs")
+            return
+        tree.mounts = mounts
+        self.show_files = mounts[-1]
+        await tree.reload()
+
+    async def refresh_listed_directory(
+        self, directory: Path, select_name: str | None
+    ) -> None:
+        """List `directory` again when it is already on screen. One level."""
+        tree = self.file_tree
+        if tree is None or find_node(tree, directory) is None:
+            return
+        await relist_one_level(tree, directory, select_name)
+
+    async def note_filesystem_change(self, source: Path, dest: Path | None) -> None:
+        """Refresh after a rename or delete.
+
+        A mount that moved is reloaded. Anything else relists only its parent.
+        `dest` is None when `source` was deleted.
+        """
+        tree = self.file_tree
+        if tree is None:
+            return
+        try:
+            old = source.expanduser().resolve()
+        except OSError:
+            return
+        new: Path | None = None
+        if dest is not None:
+            try:
+                new = dest.expanduser().resolve()
+            except OSError:
+                return
+        mounts: list[Path] = []
+        touched = False
+        for mount in tree.mounts:
+            if mount == old or old in mount.parents:
+                touched = True
+                if new is None:
+                    continue
+                if mount == old:
+                    mounts.append(new)
+                else:
+                    mounts.append(new / mount.relative_to(old))
+            else:
+                mounts.append(mount)
+        if touched:
+            await self._apply_mounts(mounts)
+            return
+        parent = new.parent if new is not None else old.parent
+        if find_node(tree, parent) is None:
+            return
+        await relist_one_level(tree, parent, None if new is None else new.name)
 
     async def show_s3_tree(self, uri: str) -> S3Tree | None:
         """Show `uri` in the S3 tab, adding the tab if there is none.

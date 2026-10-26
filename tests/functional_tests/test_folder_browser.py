@@ -12,11 +12,19 @@ from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TreeNode
 
 from harlequin import Harlequin
-from harlequin.components.folder_browser import OpenFileScreen, OpenFolderScreen
+from harlequin.components.confirm_modal import ConfirmModal
+from harlequin.components.folder_browser import (
+    NamePrompt,
+    OpenFileScreen,
+    OpenFolderScreen,
+)
 from harlequin.components.save_query_screen import SaveQueryScreen
 from harlequin_duckdb.adapter import DuckDbAdapter
 from tests.functional_tests.helpers import wait_for_editor
-from tests.functional_tests.test_command_palette import run_palette_command
+from tests.functional_tests.test_command_palette import (
+    click_confirm_modal,
+    run_palette_command,
+)
 from tests.functional_tests.test_file_mounts import _line_named, _location
 from tests.functional_tests.test_file_tree_buffers import _label, activate, write_exact
 from tests.waiting import wait_for, wait_for_value
@@ -455,4 +463,416 @@ async def test_browser_does_not_insert_a_path_into_the_query(
         assert _label(app) == kept.name
         assert app.editor_collection.tab_count == 1
         assert kept.read_bytes() == TEXT.encode("utf-8")
+        assert app._exception is None
+
+
+def _chrome(screen: OpenFileScreen | OpenFolderScreen, prefix: str) -> None:
+    """The open dialog has the save dialog's name, path, and action rows."""
+    assert screen.query_one(f"#{prefix}_name", Input)
+    assert screen.query_one(f"#{prefix}_destination")
+    assert screen.query_one(f"#{prefix}_error")
+    for suffix in (
+        "new_file",
+        "new_folder",
+        "rename",
+        "delete",
+        "cancel",
+        "up",
+        "open",
+    ):
+        assert screen.query(f"#{prefix}_{suffix}")
+
+
+async def _type_name(pilot: Pilot, field: Input, name: str) -> None:
+    """Let a cursor highlight land, then replace the name."""
+    await pilot.pause()
+    field.value = name
+
+
+@pytest.mark.asyncio
+async def test_open_file_creates_renames_and_deletes(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Open File can create, rename, and delete a file or folder, then read one."""
+    docs = tmp_path / "docs"
+    nested = docs / "nested"
+    nested.mkdir(parents=True)
+    notes = docs / "notes.sql"
+    write_exact(notes, NOTES)
+    secret = nested / "secret.sql"
+    write_exact(secret, "secret\n")
+    # "a[" and "b].sql" join to a path whose text contains a closing tag.
+    bracket_dir = docs / "a["
+    bracket_file = bracket_dir / "b].sql"
+    dim_name = "x[dim]y.sql"
+    draft = docs / "draft.sql"
+    renamed = docs / "renamed.sql"
+    box = docs / "box"
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=docs)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        await run_palette_command(pilot, app, "Open File")
+        screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFileScreen) else None,
+            description="the open-file browser",
+        )
+        _chrome(screen, "open_file")
+        assert screen.query_one("#open_file_outer").border_title == "Open File"
+        tree = screen.file_tree
+        docs_node = await _cursor_on(pilot, tree, docs.name)
+        nested_node = _child(docs_node, "nested")
+        assert nested_node is not None and not nested_node.children
+        nested_entry = _entry(nested_node)
+        assert nested_entry is not None and nested_entry.loaded is False
+
+        name = screen.query_one("#open_file_name", Input)
+        await _type_name(pilot, name, bracket_dir.name)
+        await pilot.click("#open_file_new_folder")
+        await wait_for(
+            pilot,
+            lambda: bracket_dir.is_dir(),
+            description="the bracket folder to be created",
+        )
+        await _type_name(pilot, name, bracket_file.name)
+        await pilot.click("#open_file_new_file")
+        await wait_for(
+            pilot,
+            lambda: bracket_file.is_file() and bracket_file.read_bytes() == b"",
+            description="the bracket file to be created empty",
+        )
+        assert editor.text == ""
+        assert isinstance(app.screen, OpenFileScreen)
+        docs_node = await _cursor_on(pilot, tree, docs.name)
+        nested_node = _child(docs_node, "nested")
+        assert nested_node is not None and not nested_node.children
+        assert not _has_name(tree.root, secret.name)
+
+        await _cursor_on(pilot, tree, bracket_file.name)
+        await pilot.pause()
+        await pilot.click("#open_file_delete")
+        confirm = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ConfirmModal) else None,
+            description="the delete confirm",
+        )
+        assert str(bracket_file.resolve()) in confirm.prompt
+        await click_confirm_modal(pilot, app, "no")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, OpenFileScreen) and bracket_file.is_file(),
+            description="delete to be declined",
+        )
+
+        await pilot.click("#open_file_delete")
+        await click_confirm_modal(pilot, app, "yes")
+        await wait_for(
+            pilot,
+            lambda: (
+                isinstance(app.screen, OpenFileScreen) and not bracket_file.exists()
+            ),
+            description="the bracket file to be deleted",
+        )
+        assert editor.text == ""
+        assert app._exception is None
+
+        screen = app.screen
+        assert isinstance(screen, OpenFileScreen)
+        name = screen.query_one("#open_file_name", Input)
+        await _cursor_on(pilot, screen.file_tree, docs.name)
+        await _type_name(pilot, name, dim_name)
+        await pilot.click("#open_file_new_file")
+        dim_file = docs / dim_name
+        await wait_for(
+            pilot,
+            lambda: dim_file.is_file(),
+            description="the dim file to be created",
+        )
+        await pilot.click("#open_file_delete")
+        confirm = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ConfirmModal) else None,
+            description="the dim delete confirm",
+        )
+        assert str(dim_file.resolve()) in confirm.prompt
+        await click_confirm_modal(pilot, app, "yes")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, OpenFileScreen) and not dim_file.exists(),
+            description="the dim file to be deleted",
+        )
+
+        screen = app.screen
+        assert isinstance(screen, OpenFileScreen)
+        name = screen.query_one("#open_file_name", Input)
+        await _type_name(pilot, name, draft.name)
+        await pilot.click("#open_file_new_file")
+        await wait_for(
+            pilot,
+            lambda: draft.is_file() and draft.read_bytes() == b"",
+            description="draft.sql to be created",
+        )
+        await _type_name(pilot, name, renamed.name)
+        await pilot.click("#open_file_rename")
+        await wait_for(
+            pilot,
+            lambda: renamed.is_file() and not draft.exists(),
+            description="draft.sql to be renamed",
+        )
+        assert renamed.read_bytes() == b""
+
+        await _type_name(pilot, name, box.name)
+        await pilot.click("#open_file_new_folder")
+        await wait_for(
+            pilot,
+            lambda: box.is_dir(),
+            description="box to be created",
+        )
+        assert isinstance(app.screen, OpenFileScreen)
+        await pilot.click("#open_file_delete")
+        confirm = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ConfirmModal) else None,
+            description="the folder delete confirm",
+        )
+        assert "everything inside" in confirm.prompt
+        assert str(box.resolve()) in confirm.prompt
+        await click_confirm_modal(pilot, app, "yes")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, OpenFileScreen) and not box.exists(),
+            description="box to be deleted",
+        )
+
+        await _cursor_on(pilot, tree, notes.name)
+        await pilot.pause()
+        await pilot.click("#open_file_open")
+        await wait_for(
+            pilot,
+            lambda: editor.text == NOTES and _label(app) == notes.name,
+            description="notes.sql to be read into one buffer",
+        )
+        assert _location(app) == str(notes.resolve())
+        assert app.editor_collection.tab_count == 1
+        assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_open_folder_creates_a_folder_then_mounts_it(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Open Folder creates a folder and mounts it. A new file is not a mount."""
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    loose = alpha / "loose.sql"
+    gamma = alpha / "gamma"
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=alpha)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.text = TEXT
+        await run_palette_command(pilot, app, "Open Folder")
+        screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFolderScreen) else None,
+            description="the open-folder browser",
+        )
+        _chrome(screen, "open_folder")
+        assert screen.query_one("#open_folder_outer").border_title == "Open Folder"
+        name = screen.query_one("#open_folder_name", Input)
+        await _type_name(pilot, name, loose.name)
+        await pilot.click("#open_folder_new_file")
+        await wait_for(
+            pilot,
+            lambda: loose.is_file() and loose.read_bytes() == b"",
+            description="loose.sql to be created",
+        )
+        assert isinstance(app.screen, OpenFolderScreen)
+        assert app.data_catalog.file_mounts == [alpha.resolve()]
+        assert editor.text == TEXT
+
+        await _type_name(pilot, name, gamma.name)
+        await pilot.click("#open_folder_new_folder")
+        await wait_for(
+            pilot,
+            lambda: gamma.is_dir(),
+            description="gamma to be created",
+        )
+        await pilot.click("#open_folder_open")
+        await wait_for(
+            pilot,
+            lambda: app.data_catalog.file_mounts == [alpha.resolve(), gamma.resolve()],
+            description="gamma to mount beside alpha",
+        )
+        assert editor.text == TEXT
+        assert app.editor_collection.tab_count == 1
+        assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_save_can_create_a_folder_then_write_the_file(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Save can make a folder, then write the query into a file inside it."""
+    mounted = tmp_path / "mounted"
+    mounted.mkdir()
+    box = mounted / "box"
+    notes = box / "notes.sql"
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=mounted)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.focus()
+        editor.text = TEXT
+        await pilot.press("ctrl+s")
+        screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, SaveQueryScreen) else None,
+            description="the save browser",
+        )
+        assert screen.query("#save_query_new_folder")
+        assert screen.query("#save_query_type_path")
+        name = screen.query_one("#save_query_name", Input)
+        await _type_name(pilot, name, box.name)
+        await pilot.click("#save_query_new_folder")
+        await wait_for(
+            pilot,
+            lambda: box.is_dir(),
+            description="box to be created from save",
+        )
+        assert isinstance(app.screen, SaveQueryScreen)
+        name.value = notes.name
+        name.focus()
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: notes.is_file() and _location(app) == str(notes.resolve()),
+            description="the query to be saved inside box",
+        )
+        assert notes.read_bytes() == TEXT.encode("utf-8")
+        assert _label(app) == notes.name
+        assert app.data_catalog.file_mounts == [mounted.resolve()]
+        assert app._exception is None
+
+
+@pytest.mark.asyncio
+async def test_files_tab_creates_reads_renames_and_deletes(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """The Files tab creates, reads, renames, and deletes without closing a query."""
+    docs = tmp_path / "docs"
+    nested = docs / "nested"
+    nested.mkdir(parents=True)
+    secret = nested / "secret.sql"
+    write_exact(secret, "secret\n")
+    created = docs / "created.sql"
+    moved = docs / "moved.sql"
+    extra = docs / "extra"
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=docs)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        await run_palette_command(pilot, app, "New File")
+        prompt = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, NamePrompt) else None,
+            description="the new-file prompt",
+        )
+        field = prompt.query_one("#name_prompt_input", Input)
+        field.value = created.name
+        field.focus()
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: created.is_file() and created.read_bytes() == b"",
+            description="created.sql to appear",
+        )
+        write_exact(created, NOTES)
+        tree = app.data_catalog.file_tree
+        assert tree is not None
+        nested_node = _child(tree.root, "nested")
+        assert nested_node is not None and not nested_node.children
+        nested_entry = _entry(nested_node)
+        assert nested_entry is not None and nested_entry.loaded is False
+        assert not _has_name(tree.root, secret.name)
+
+        await activate(pilot, tree, created.name)
+        await wait_for(
+            pilot,
+            lambda: editor.text == NOTES and _label(app) == created.name,
+            description="created.sql to be read",
+        )
+        assert _location(app) == str(created.resolve())
+
+        await run_palette_command(pilot, app, "Rename File or Folder")
+        prompt = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, NamePrompt) else None,
+            description="the rename prompt",
+        )
+        assert str(created.resolve()) in prompt.prompt_text
+        field = prompt.query_one("#name_prompt_input", Input)
+        field.value = moved.name
+        field.focus()
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: (
+                moved.is_file()
+                and not created.exists()
+                and _label(app) == moved.name
+                and _location(app) == str(moved.resolve())
+            ),
+            description="the open query to follow the rename",
+        )
+        assert moved.read_bytes() == NOTES.encode("utf-8")
+        assert editor.text == NOTES
+
+        await run_palette_command(pilot, app, "Delete File or Folder")
+        confirm = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, ConfirmModal) else None,
+            description="the files delete confirm",
+        )
+        assert str(moved.resolve()) in confirm.prompt
+        await click_confirm_modal(pilot, app, "yes")
+        await wait_for(
+            pilot,
+            lambda: not moved.exists() and _location(app) == "Not a file",
+            description="the file to be deleted and the query to keep its text",
+        )
+        assert editor.text == NOTES
+        assert app.editor_collection.tab_count == 1
+        assert app.data_catalog.file_mounts == [docs.resolve()]
+
+        await run_palette_command(pilot, app, "New Folder")
+        prompt = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, NamePrompt) else None,
+            description="the new-folder prompt",
+        )
+        field = prompt.query_one("#name_prompt_input", Input)
+        field.value = extra.name
+        field.focus()
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: extra.is_dir(),
+            description="extra to be created",
+        )
+        await run_palette_command(pilot, app, "Delete File or Folder")
+        await click_confirm_modal(pilot, app, "yes")
+        await wait_for(
+            pilot,
+            lambda: not extra.exists(),
+            description="extra to be deleted",
+        )
+        assert editor.text == NOTES
+        assert app.editor_collection.tab_count == 1
+        assert not _has_name(tree.root, secret.name)
         assert app._exception is None

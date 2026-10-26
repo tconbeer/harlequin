@@ -103,6 +103,14 @@ HARLEQUIN_ACTIONS = {
     "close_folder": Action(
         target=None, action="close_folder", description="Close Folder"
     ),
+    "new_file": Action(target=None, action="new_file", description="New File"),
+    "new_folder": Action(target=None, action="new_folder", description="New Folder"),
+    "rename_path": Action(
+        target=None, action="rename_path", description="Rename File or Folder"
+    ),
+    "delete_path": Action(
+        target=None, action="delete_path", description="Delete File or Folder"
+    ),
     "show_s3": Action(target=None, action="show_s3", description="Show S3"),
     "run_query": Action(target=None, action="run_query", description="Run Query"),
     "cancel_query": Action(

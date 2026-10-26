@@ -643,6 +643,49 @@ class EditorCollection(Vertical):
         label = self.query_one("#buffer-path", Label)
         label.update(Content.from_text(self.location_text(), markup=False))
 
+    def note_path_renamed(self, source: Path, dest: Path) -> None:
+        """Point open buffers at `dest` after a rename. Editor text stays."""
+        try:
+            old = source.expanduser().resolve()
+            new = dest.expanduser().resolve()
+        except OSError:
+            return
+        for buffer_id, state in self.buffer_states.items():
+            path = state.path
+            if path is None:
+                continue
+            try:
+                current = path.expanduser().resolve()
+            except OSError:
+                continue
+            if current == old:
+                state.path = new
+            elif old in current.parents:
+                state.path = new / current.relative_to(old)
+            else:
+                continue
+            self._refresh_tab_label(buffer_id)
+        self._update_tab_visibility()
+
+    def note_path_deleted(self, removed: Path) -> None:
+        """Drop the path on buffers whose file was deleted. The text stays."""
+        try:
+            old = removed.expanduser().resolve()
+        except OSError:
+            old = removed
+        for buffer_id, state in self.buffer_states.items():
+            path = state.path
+            if path is None:
+                continue
+            try:
+                current = path.expanduser().resolve()
+            except OSError:
+                current = path
+            if current == old or old in current.parents:
+                state.path = None
+                self._refresh_tab_label(buffer_id)
+        self._update_tab_visibility()
+
     async def save_unbound_buffer(self) -> None:
         """Browse to a folder and a file name, then bind this buffer.
 

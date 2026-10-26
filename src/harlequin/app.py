@@ -84,7 +84,22 @@ from harlequin.components.data_catalog import (
 )
 from harlequin.components.data_catalog.tree import HarlequinTree
 from harlequin.components.debug_info import AdapterDebugInfo, HarlequinDebugInfo
-from harlequin.components.folder_browser import OpenFileScreen, OpenFolderScreen
+from harlequin.components.file_ops import (
+    FileOpError,
+    create_file,
+    create_folder,
+    delete_entry,
+    directory_at_cursor,
+    is_directory,
+    is_filesystem_root,
+    path_at_cursor,
+    rename_entry,
+)
+from harlequin.components.folder_browser import (
+    NamePrompt,
+    OpenFileScreen,
+    OpenFolderScreen,
+)
 from harlequin.config import (
     get_highest_priority_existing_config_file,
     load_config,
@@ -1582,6 +1597,138 @@ class Harlequin(AppBase):
             OpenFileScreen(self._browser_start(), id="open_file_screen"),
             load_file,
         )
+
+    def action_new_file(self) -> None:
+        """Create an empty file in the Files folder under the cursor."""
+        self._prompt_new_entry(folder=False)
+
+    def action_new_folder(self) -> None:
+        """Create an empty folder in the Files folder under the cursor."""
+        self._prompt_new_entry(folder=True)
+
+    def _files_tree(self) -> Any:
+        catalog = getattr(self, "data_catalog", None)
+        if catalog is None:
+            return None
+        return getattr(catalog, "file_tree", None)
+
+    def _prompt_new_entry(self, *, folder: bool) -> None:
+        if self._catalog_source_screen_is_open():
+            return
+        tree = self._files_tree()
+        if tree is None:
+            return
+        directory = directory_at_cursor(tree)
+        if directory is None:
+            self.notify("Choose a folder in the Files tab.", markup=False)
+            return
+        noun = "folder" if folder else "file"
+        title = "New Folder" if folder else "New File"
+
+        def named(name: str | None) -> None:
+            if name is None:
+                return
+            self.run_worker(self._create_files_entry(directory, name, folder=folder))
+
+        self.push_screen(
+            NamePrompt(
+                title=title,
+                prompt=f"Create a {noun} in {directory}",
+                confirm_label="Create",
+            ),
+            named,
+        )
+
+    async def _create_files_entry(
+        self, directory: Path, name: str, *, folder: bool
+    ) -> None:
+        try:
+            if folder:
+                created = create_folder(directory, name)
+            else:
+                created = create_file(directory, name)
+        except FileOpError as exc:
+            self.notify(exc.message, severity="error", markup=False)
+            return
+        await self.data_catalog.refresh_listed_directory(directory, created.name)
+        self.notify(f"Created {created}", markup=False)
+
+    def action_rename_path(self) -> None:
+        """Rename the file or folder under the Files cursor."""
+        if self._catalog_source_screen_is_open():
+            return
+        tree = self._files_tree()
+        if tree is None:
+            return
+        source = path_at_cursor(tree)
+        if source is None or is_filesystem_root(source):
+            self.notify("Choose a file or folder in the Files tab.", markup=False)
+            return
+
+        def named(name: str | None) -> None:
+            if name is None:
+                return
+            self.run_worker(self._rename_files_entry(source, name))
+
+        self.push_screen(
+            NamePrompt(
+                title="Rename",
+                prompt=str(source),
+                initial=source.name,
+                confirm_label="Rename",
+                reject=source.name,
+            ),
+            named,
+        )
+
+    async def _rename_files_entry(self, source: Path, name: str) -> None:
+        try:
+            dest = rename_entry(source, name)
+        except FileOpError as exc:
+            self.notify(exc.message, severity="error", markup=False)
+            return
+        collection = getattr(self, "editor_collection", None)
+        if collection is not None:
+            collection.note_path_renamed(source, dest)
+        await self.data_catalog.note_filesystem_change(source, dest)
+        self.notify(f"Renamed to {dest}", markup=False)
+
+    def action_delete_path(self) -> None:
+        """Delete the file or folder under the Files cursor, after a confirm."""
+        if self._catalog_source_screen_is_open():
+            return
+        tree = self._files_tree()
+        if tree is None:
+            return
+        source = path_at_cursor(tree)
+        if source is None or is_filesystem_root(source):
+            self.notify("Choose a file or folder in the Files tab.", markup=False)
+            return
+        if is_directory(source):
+            prompt = f"Delete folder {source} and everything inside it?"
+        else:
+            prompt = f"Delete {source}?"
+
+        def decided(confirmed: bool | None) -> None:
+            if confirmed:
+                self.run_worker(self._delete_files_entry(source))
+
+        self.push_screen(
+            ConfirmModal(prompt=prompt, confirm_label="Delete", cancel_label="Cancel"),
+            decided,
+        )
+
+    async def _delete_files_entry(self, source: Path) -> None:
+        try:
+            delete_entry(source)
+        except FileOpError as exc:
+            self.notify(exc.message, severity="error", markup=False)
+            return
+        collection = getattr(self, "editor_collection", None)
+        if collection is not None:
+            collection.note_path_deleted(source)
+        await self.data_catalog.note_filesystem_change(source, None)
+        self.notify(f"Deleted {source}", markup=False)
 
     def action_show_files(self) -> None:
         if self._catalog_source_screen_is_open():
