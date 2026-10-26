@@ -898,6 +898,45 @@ async def _leave_browser(
     )
 
 
+async def _type_from_here(
+    pilot: Pilot,
+    tree: DirectoryTree,
+    search: Input,
+    text: str,
+    *,
+    present: tuple[str, ...],
+    absent: tuple[str, ...],
+    restored: tuple[str, ...],
+) -> None:
+    """Type `text` at the cursor the tree already has, then clear it.
+
+    The field must keep every character. A name that contains the whole
+    query stays on screen, including a child of the folder the cursor is on.
+    """
+
+    def names() -> list[str]:
+        return _visible_names(tree)
+
+    tree.focus()
+    await pilot.pause()
+    await pilot.press(*text)
+    await wait_for(
+        pilot,
+        lambda: (
+            search.value == text
+            and all(name in names() for name in present)
+            and all(name not in names() for name in absent)
+        ),
+        description=f"{text} to stay in the field and narrow the listing",
+    )
+    await pilot.press(*(["backspace"] * len(text)))
+    await wait_for(
+        pilot,
+        lambda: search.value == "" and all(name in names() for name in restored),
+        description=f"clearing {text} to restore the directory",
+    )
+
+
 def _visible_names(tree: DirectoryTree) -> list[str]:
     """Entry names on screen, in list order. A filtered row is not a line."""
     names: list[str] = []
@@ -947,9 +986,36 @@ async def _exercise_browser(
             "mounted" in names()
             and "other" in names()
             and "alpha" in names()
+            and "Beta" in names()
+            and "gamma" in names()
+            and "assets" in names()
+            and "logs" in names()
+            and "plans" in names()
             and "keep.sql" not in names()
         ),
         description="one directory level, with the start folder listed",
+    )
+    # The browser opens with the cursor on the expanded start folder. Do not
+    # move it: a child of that folder is already on screen.
+    search = screen.query_one(f"#{search_id}", Input)
+    restored = ("alpha", "Beta", "gamma", "assets", "logs", "plans", "other")
+    await _type_from_here(
+        pilot,
+        tree,
+        search,
+        "ga",
+        present=("gamma",),
+        absent=("alpha", "Beta"),
+        restored=restored,
+    )
+    await _type_from_here(
+        pilot,
+        tree,
+        search,
+        "as",
+        present=("assets",),
+        absent=("logs", "plans"),
+        restored=restored,
     )
     before = names()
     name_input = screen.query_one(f"#{name_id}", Input)
@@ -973,7 +1039,10 @@ async def _exercise_browser(
     await wait_for(
         pilot,
         lambda: (
-            "other" in names() and "mounted" not in names() and "alpha" not in names()
+            search.value == "oth"
+            and "other" in names()
+            and "mounted" not in names()
+            and "alpha" not in names()
         ),
         description="the listing to narrow to other",
     )
@@ -990,7 +1059,6 @@ async def _exercise_browser(
         lambda: "mounted" in names() and "other" in names() and "alpha" in names(),
         description="clearing the search to restore the directory",
     )
-    search = screen.query_one(f"#{search_id}", Input)
     assert search.value == ""
 
     other_line = await wait_for_value(
@@ -1032,7 +1100,9 @@ async def _exercise_browser(
     await pilot.press(*"[dim")
     await wait_for(
         pilot,
-        lambda: BRACKET in names() and "alpha" not in names(),
+        lambda: (
+            search.value == "[dim" and BRACKET in names() and "alpha" not in names()
+        ),
         description="a bracketed name to match as literal text",
     )
     gamma = _node_named(tree.root, "gamma")
@@ -1067,9 +1137,12 @@ async def test_type_to_search_filters_one_directory(
     other = shelf / "other"
     for directory in (
         mounted / "alpha",
+        mounted / "assets",
         mounted / "Beta",
         mounted / "gamma",
         mounted / "jars",
+        mounted / "logs",
+        mounted / "plans",
         other,
     ):
         directory.mkdir(parents=True)
@@ -1155,6 +1228,39 @@ async def test_type_to_search_filters_one_directory(
         def file_names() -> list[str]:
             return _visible_names(file_tree)
 
+        await wait_for(
+            pilot,
+            lambda: (
+                "alpha" in file_names()
+                and "Beta" in file_names()
+                and "gamma" in file_names()
+                and "assets" in file_names()
+                and "logs" in file_names()
+                and "plans" in file_names()
+            ),
+            description="the Files directory to list its folders",
+        )
+        file_search = app.query_one("#file_tree_search", Input)
+        files_back = ("alpha", "Beta", "gamma", "assets", "logs", "plans")
+        await _type_from_here(
+            pilot,
+            file_tree,
+            file_search,
+            "ga",
+            present=("gamma",),
+            absent=("alpha", "Beta"),
+            restored=files_back,
+        )
+        await _type_from_here(
+            pilot,
+            file_tree,
+            file_search,
+            "as",
+            present=("assets",),
+            absent=("logs", "plans"),
+            restored=files_back,
+        )
+
         alpha_line = await wait_for_value(
             pilot,
             lambda: _line_named(file_tree, "alpha"),
@@ -1167,7 +1273,8 @@ async def test_type_to_search_filters_one_directory(
         await wait_for(
             pilot,
             lambda: (
-                "alpha" in file_names()
+                file_search.value == "alp"
+                and "alpha" in file_names()
                 and "Beta" not in file_names()
                 and "gamma" not in file_names()
                 and "jars" not in file_names()
@@ -1238,7 +1345,11 @@ async def test_type_to_search_filters_one_directory(
         await pilot.press(*"bet")
         await wait_for(
             pilot,
-            lambda: "Beta" in file_names() and "alpha" not in file_names(),
+            lambda: (
+                file_search.value == "bet"
+                and "Beta" in file_names()
+                and "alpha" not in file_names()
+            ),
             description="a folder name to match regardless of case",
         )
         await pilot.press("enter")
@@ -1264,7 +1375,11 @@ async def test_type_to_search_filters_one_directory(
         await pilot.press(*"jar")
         await wait_for(
             pilot,
-            lambda: "jars" in file_names() and "alpha" not in file_names(),
+            lambda: (
+                file_search.value == "jar"
+                and "jars" in file_names()
+                and "alpha" not in file_names()
+            ),
             description="jar to search, not to switch catalog tabs",
         )
         assert catalog.active_pane is file_tree.parent

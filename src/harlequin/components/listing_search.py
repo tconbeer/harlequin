@@ -60,6 +60,10 @@ class ListingSearchInput(Input):
             id=id,
             classes=merged,
             disabled=disabled,
+            # Focus selects the whole value by default. The first character is
+            # inserted, then this field is focused, so the next key would
+            # replace that character and "ga" would be stored as "a".
+            select_on_focus=False,
         )
         self._tree = tree
         self.display = False
@@ -98,7 +102,6 @@ class FilterableTree(HarlequinTree, DirectoryTree):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._name_query = ""
-        self._query_node: TreeNode[DirEntry] | None = None
         self._search: ListingSearchInput | None = None
         super().__init__(*args, **kwargs)
 
@@ -119,8 +122,8 @@ class FilterableTree(HarlequinTree, DirectoryTree):
         event.stop()
         event.prevent_default()
         search.display = True
-        search.focus()
         search.insert_text_at_cursor(typed)
+        search.focus()
 
     def on_directory_tree_directory_selected(
         self, _message: DirectoryTree.DirectorySelected
@@ -138,7 +141,6 @@ class FilterableTree(HarlequinTree, DirectoryTree):
                     self.focus()
             return
         self._name_query = query
-        self._query_node = self._listing_node()
         self._keep_cursor_on_a_shown_row()
         self._invalidate()
         if search is None or query:
@@ -163,56 +165,68 @@ class FilterableTree(HarlequinTree, DirectoryTree):
         if search.has_focus:
             self.focus()
 
-    def _listing_node(self) -> TreeNode[DirEntry]:
-        """The directory whose immediate children are the list on screen."""
-        cursor = self.cursor_node
-        if cursor is None or cursor.parent is None:
-            return self.root
-        return cursor.parent
-
-    def _shown_children(self, node: TreeNode[DirEntry]) -> list[TreeNode[DirEntry]]:
-        children = list(node.children)
+    def _name_matches(self, node: TreeNode[DirEntry]) -> bool:
+        """Whether this row's own name contains the query."""
         if not self._name_query:
-            return children
-        names = [_entry_name(child) for child in children]
-        allowed = set(names_matching(names, self._name_query))
-        return [
-            child
-            for child, name in zip(children, names, strict=True)
-            if name in allowed
-        ]
+            return True
+        return bool(names_matching([_entry_name(node)], self._name_query))
+
+    def _shown_in_filter(self, node: TreeNode[DirEntry]) -> bool:
+        """A visible name stays when it matches, or a loaded child does.
+
+        The cursor often sits on an expanded folder. That folder's children
+        are on screen, so a child named gamma stays when the query is "ga"
+        even though the folder's own name does not match.
+        """
+        if self._name_matches(node):
+            return True
+        return any(self._shown_in_filter(child) for child in node.children)
+
+    def _first_match(self, node: TreeNode[DirEntry]) -> TreeNode[DirEntry] | None:
+        """The first loaded row under `node` whose name contains the query."""
+        for child in node.children:
+            if not self._shown_in_filter(child):
+                continue
+            if self._name_matches(child):
+                return child
+            found = self._first_match(child)
+            if found is not None:
+                return found
+        return None
 
     def _keep_cursor_on_a_shown_row(self) -> None:
         if not self._name_query:
             return
-        node = self._listing_node()
-        shown = self._shown_children(node)
         cursor = self.cursor_node
-        if cursor is None or cursor is node or cursor in shown:
+        if cursor is None or cursor is self.root or self._shown_in_filter(cursor):
             return
-        if shown:
-            self.move_cursor(shown[0], animate=False)
+        match = self._first_match(self.root)
+        if match is not None:
+            self.move_cursor(match, animate=False)
         else:
-            self.move_cursor(node, animate=False)
+            self.move_cursor(self.root, animate=False)
 
     def _build(self) -> None:
-        node = self._listing_node()
-        if (
-            self._query_node is not None
-            and node is not self._query_node
-            and self._name_query
-        ):
-            self._name_query = ""
-            self.call_later(self.clear_search)
-        self._query_node = node
         if not self._name_query:
             super()._build()
             return
         # Hide names for this draw only. The nodes stay loaded, and no
-        # directory is listed to produce the shorter view.
-        original = list(node._children)
-        node._children[:] = self._shown_children(node)
+        # directory is listed to produce the shorter view. A folder stays
+        # when a loaded descendant matches, so that name remains on screen.
+        saved: list[tuple[TreeNode[DirEntry], list[TreeNode[DirEntry]]]] = []
+
+        def narrow(node: TreeNode[DirEntry]) -> None:
+            original = list(node._children)
+            shown = [child for child in original if self._shown_in_filter(child)]
+            saved.append((node, original))
+            node._children[:] = shown
+            for child in shown:
+                if child._children:
+                    narrow(child)
+
+        narrow(self.root)
         try:
             super()._build()
         finally:
-            node._children[:] = original
+            for node, original in reversed(saved):
+                node._children[:] = original
