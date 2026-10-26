@@ -532,3 +532,28 @@ def test_a_query_submitted_while_one_runs_interrupts_it() -> None:
     assert not slow_query.is_alive()
     # an interrupted fetch returns no data
     assert slow_results == [None]
+
+
+def test_every_statement_runs_before_any_is_fetched() -> None:
+    """The app executes a whole script, then fetches each cursor, in that order.
+
+    A statement that is not a SELECT but returns rows runs when it is executed,
+    so its rows must not hold the connection against the statements after it.
+    """
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    statements = [
+        "create table t (a bigint)",
+        "insert into t select * from range(100000) returning a",
+        "pragma version",
+        "explain select 1",
+        "delete from t where a >= 10 returning a",
+        "select count(*) from t",
+    ]
+    cursors = [conn.execute(statement) for statement in statements]
+    assert cursors[0] is None
+    returning, version, plan, deleted, count = cursors[1:]
+    assert returning is not None and len(returning.relation.fetchall()) == 100000
+    assert version is not None and version.relation.fetchall()
+    assert plan is not None and plan.relation.fetchall()
+    assert deleted is not None and len(deleted.relation.fetchall()) == 99990
+    assert count is not None and count.relation.fetchall() == [(10,)]
