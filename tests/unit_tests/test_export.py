@@ -248,6 +248,20 @@ class TestOrcOptions:
         with pytest.raises(HarlequinCopyError):
             write_file(data, tmp_path / "out.orc", "orc", {"bloom_filter_columns": "a"})
 
+    @NEEDS_ORC_READER
+    def test_a_column_of_the_null_type_is_written(self, tmp_path: Path) -> None:
+        """ORC has no null type, which is what duckdb gives an untyped NULL."""
+        data = pa.table(
+            {
+                "n": pa.nulls(2),
+                "l": pa.array([[None], None], type=pa.list_(pa.null())),
+                "s": pa.array([{"x": None}, None], type=pa.struct([("x", pa.null())])),
+            }
+        )
+        path = tmp_path / "out.orc"
+        write_file(data, path, "orc", {})
+        assert po.read_table(str(path)).to_pydict() == data.to_pydict()
+
 
 class TestFeatherOptions:
     @pytest.mark.parametrize("codec", ["uncompressed", "lz4", "zstd"])

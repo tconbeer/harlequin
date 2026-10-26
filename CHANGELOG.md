@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
+### Bug Fixes
+
+- Harlequin no longer crashes on every query with duckdb 2.0 installed ([#1204](https://github.com/tconbeer/harlequin/issues/1204)).
+- With duckdb 2.0, statements like `create table` and `set` once again run without opening an empty result tab, and `hsql` no longer prints a `Count` or `Success` table for them.
+- Exporting to ORC no longer fails on a column that holds only `NULL`.
+
 ## [2.16.2] - 2026-10-18
 
 ### Features

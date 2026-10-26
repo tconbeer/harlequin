@@ -418,3 +418,74 @@ def test_transaction_mode() -> None:
 def test_spatial_types_have_a_label(native_type: str, expected: str) -> None:
     """Typed as strings, so this needs no spatial extension to be installed."""
     assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("native_type", "expected"),
+    [
+        ('"NULL"', "\\n"),
+        ('"NULL"[]', "[\\n]"),
+        ("TIMESTAMPTZ_NS", "ttz"),
+        ("TUPLE(INTEGER, INTEGER)", "{}"),
+        ("VARIANT", "var"),
+    ],
+)
+def test_duckdb_2_types_have_a_label(native_type: str, expected: str) -> None:
+    assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "create table t2 (a int)",
+        "create table t2 as select 1 as a",
+        "insert into t values (2)",
+        "update t set a = 3",
+        "delete from t",
+        "use memory",
+        "set threads = 1",
+        "attach ':memory:' as other",
+        "begin",
+    ],
+)
+def test_a_statement_that_returns_no_rows_has_no_cursor(statement: str) -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    conn.conn.execute("create table t as select 1 as a")
+    assert conn.execute(statement) is None
+
+
+def test_a_statement_returning_rows_has_a_cursor_even_if_it_writes() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    conn.conn.execute("create table t (a bigint)")
+    cur = conn.execute('insert into t values (7) returning a as "Count"')
+    assert cur is not None
+    assert cur.relation.fetchall() == [(7,)]
+
+
+def test_fetchone() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute("select * from range(5) t(i) order by i")
+    assert cur is not None
+    assert cur.fetchone() == (0,)
+    empty = conn.execute("select 1 where false")
+    assert empty is not None
+    assert empty.fetchone() is None
+
+
+def test_validate_sql_leaves_the_connection_usable() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    assert conn.validate_sql("select 1") == "select 1"
+    assert conn.validate_sql("selec 1") == ""
+    cur = conn.execute("select 2")
+    assert cur is not None
+    assert cur.relation.fetchall() == [(2,)]
+
+
+def test_an_init_script_that_ends_in_a_query_leaves_the_connection_usable(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "myscript").write_text("select * from range(100000);\n")
+    conn = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
+    cur = conn.execute("select 1")
+    assert cur is not None
+    assert cur.relation.fetchall() == [(1,)]

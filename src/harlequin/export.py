@@ -233,6 +233,37 @@ def _export_parquet(
         ) from e
 
 
+def _writable_by_orc(data_type: "pa.DataType") -> "pa.DataType":
+    """The type with every null type in it replaced by int32, which ORC can write.
+
+    duckdb types an untyped NULL as NULL, which reaches Arrow as the null type.
+    """
+    import pyarrow as pa
+
+    if data_type == pa.null():
+        return pa.int32()
+    if isinstance(data_type, pa.StructType):
+        return pa.struct(
+            [field.with_type(_writable_by_orc(field.type)) for field in data_type]
+        )
+    if isinstance(data_type, pa.MapType):
+        return pa.map_(
+            data_type.key_field.with_type(_writable_by_orc(data_type.key_type)),
+            data_type.item_field.with_type(_writable_by_orc(data_type.item_type)),
+        )
+    if isinstance(data_type, (pa.ListType, pa.LargeListType)):
+        list_type = pa.list_ if isinstance(data_type, pa.ListType) else pa.large_list
+        return list_type(
+            data_type.value_field.with_type(_writable_by_orc(data_type.value_type))
+        )
+    if isinstance(data_type, pa.FixedSizeListType):
+        return pa.list_(
+            data_type.value_field.with_type(_writable_by_orc(data_type.value_type)),
+            data_type.list_size,
+        )
+    return data_type
+
+
 def _export_orc(
     data: "pa.Table",
     dest_path: str,
@@ -246,6 +277,7 @@ def _export_orc(
     bloom_filter_fpp: float | str = 0.05,
     **kwargs: Any,
 ) -> None:
+    import pyarrow as pa
     import pyarrow.lib as pl
     import pyarrow.orc as po
 
@@ -265,8 +297,11 @@ def _export_orc(
             title=("Arrow raised an error when writing your data to an ORC file."),
         ) from e
     try:
+        writable_schema = pa.schema(
+            [field.with_type(_writable_by_orc(field.type)) for field in data.schema]
+        )
         po.write_table(
-            data,
+            data.cast(writable_schema),
             dest_path,
             batch_size=batch_size,
             compression_block_size=compression_block_size,
