@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.16.3] - 2026-10-26
+
 ### Features
 
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
@@ -1171,7 +1173,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.3...HEAD
+[2.16.3]: https://github.com/tconbeer/harlequin/compare/2.16.2...2.16.3
 [2.16.2]: https://github.com/tconbeer/harlequin/compare/2.16.1...2.16.2
 [2.16.1]: https://github.com/tconbeer/harlequin/compare/2.16.0...2.16.1
 [2.16.0]: https://github.com/tconbeer/harlequin/compare/2.15.0...2.16.0
