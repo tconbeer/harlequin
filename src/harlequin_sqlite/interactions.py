@@ -82,7 +82,7 @@ def show_relation_ddl(
         f"""
         select sql
         from {_quote_identifier(item.parent.label)}.sqlite_schema
-        where name = {_quote_literal(item.label)}
+        where name = {_quote_literal(item.label)} and type in ('table', 'view')
         limit 1
         """
     )

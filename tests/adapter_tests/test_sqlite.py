@@ -337,13 +337,20 @@ class NewBufferDriver(HarlequinDriver):
 
 @pytest.fixture
 def two_databases(tmp_path: Path) -> HarlequinSqliteConnection:
-    """main and an attached database, each with a table called orders."""
+    """main and an attached archive, each with a table called orders; archive
+    also has a view with a quote in its name and a trigger called orders."""
     conn = HarlequinSqliteAdapter(
         [str(tmp_path / "sales.sqlite"), str(tmp_path / "archive.sqlite")]
     ).connect()
     conn.execute("create table main.orders (id bigint)")
-    conn.execute("create table archive.orders (id bigint, total real)")
     conn.execute("""create view archive."Bob's orders" as select 1 as id""")
+    # created before archive's table, so it is the first row in archive's
+    # sqlite_schema that is named orders
+    conn.execute(
+        """create trigger archive.orders instead of insert on "Bob's orders" """
+        "begin select 1; end"
+    )
+    conn.execute("create table archive.orders (id bigint, total real)")
     return conn
 
 
