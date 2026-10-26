@@ -100,8 +100,9 @@ test = [
     "pytest-xdist>=3.6",
     "pytest-textual-snapshot @ git+https://github.com/tconbeer/pytest-textual-snapshot.git@a2c6763b45283f76757a123342900accefcf04e8",
     "boto3==1.43.118",
-    # extension tests require consistent version of duckdb.
-    "duckdb==1.5.6",
+    # extension tests require consistent version of duckdb. duckdb 2 requires 3.11.
+    "duckdb==1.5.6; python_version < '3.11'",
+    "duckdb==2.0.0; python_version >= '3.11'",
     "flaky>=3.8.1",
     # runs the schema `hsql --config schema` generates against real config
     # files, so a schema that is not a schema fails here rather than in an

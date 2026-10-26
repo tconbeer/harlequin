@@ -267,10 +267,10 @@ async def test_single_query_terminated_with_semicolon(
     "bad_query",
     [
         "select",  # errors when building cursor
-        "select 0::struct(id int)",  # errors when fetching data
-        "select; select 0::struct(id int)",  # multiple errors
-        "select 1; select 0::struct(id int)",  # one error, mult queries
-        "select 0::struct(id int); select 1",  # one error, mult queries, err first
+        "select error('boom')",  # errors when fetching data
+        "select; select error('boom')",  # multiple errors
+        "select 1; select error('boom')",  # one error, mult queries
+        "select error('boom'); select 1",  # one error, mult queries, err first
     ],
 )
 async def test_query_errors(

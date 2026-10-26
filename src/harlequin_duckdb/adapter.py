@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -40,6 +41,14 @@ if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_RESOURCE_IN_USE: type[Exception] | None = getattr(
+    duckdb, "ResourceInUseException", None
+)
+"""What duckdb 2 raises for a call on a connection another thread is using."""
+
+_BUSY_TIMEOUT_SECONDS = 5.0
+"""How long a query waits for an interrupted one to give up the connection."""
 
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
@@ -155,14 +164,15 @@ class DuckDbCursor(HarlequinCursor):
 
     def fetchone(self) -> tuple | None:
         try:
-            result = self.relation.fetchone()
+            # duckdb 2 relations have no fetchone(), since every read reruns them.
+            rows = self.relation.limit(1).fetchall()
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:
             raise HarlequinQueryError(
                 msg=str(e), title="DuckDB raised an error when running your query:"
             ) from e
-        return result
+        return rows[0] if rows else None
 
 
 class DuckDbConnection(HarlequinConnection):
@@ -174,6 +184,7 @@ class DuckDbConnection(HarlequinConnection):
 
     COLUMN_TYPE_MAPPING = {
         "SQLNULL": "\\n",
+        '"NULL"': "\\n",
         "BOOLEAN": "t/f",
         "TINYINT": "#",
         "UTINYINT": "u#",
@@ -195,6 +206,7 @@ class DuckDbConnection(HarlequinConnection):
         "TIME": "t",
         "TIME_TZ": "ttz",
         "TIMESTAMP_TZ": "ttz",
+        "TIMESTAMPTZ_NS": "ttz",
         "TIMESTAMP WITH TIME ZONE": "ttz",
         "VARCHAR": "s",
         "BLOB": "0b",
@@ -204,6 +216,8 @@ class DuckDbConnection(HarlequinConnection):
         "DECIMAL": "#.#",
         "REAL": "#.#",
         "STRUCT": "{}",
+        "TUPLE": "{}",
+        "VARIANT": "var",
         "MAP": "{m}",
         # the spatial extension's types. WKB_BLOB is bytes and shows as bytes;
         # the rest are geometry, whether stored as a blob or as a struct of
@@ -229,7 +243,7 @@ class DuckDbConnection(HarlequinConnection):
 
     def execute(self, query: str) -> DuckDbCursor | None:
         try:
-            rel = self.conn.sql(query)
+            rel = self._sql(query)
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:
@@ -238,13 +252,34 @@ class DuckDbConnection(HarlequinConnection):
                 title="DuckDB raised an error when compiling or running your query:",
             ) from e
 
-        if rel is not None:
-            return DuckDbCursor(conn=self, relation=rel)
-        else:
+        # duckdb 2 returns a relation over a statement's status (a `Count` or
+        # `Success` column) where 1.x returned None, and keeps only privately
+        # whether the statement returned rows of its own.
+        if rel is None or getattr(rel, "_return_type", "query_result") != (
+            "query_result"
+        ):
             return None
+        return DuckDbCursor(conn=self, relation=rel)
 
     def cancel(self) -> None:
         self.conn.interrupt()
+
+    def _sql(self, query: str) -> duckdb.DuckDBPyRelation | None:
+        """`query` as a relation, interrupting a query another thread is running.
+
+        duckdb 2 refuses a call while another thread uses the connection rather
+        than waiting, so a query submitted while one runs replaces it, as in 1.x.
+        """
+        deadline = time.monotonic() + _BUSY_TIMEOUT_SECONDS
+        while True:
+            try:
+                return self.conn.sql(query)
+            except duckdb.Error as e:
+                busy = _RESOURCE_IN_USE is not None and isinstance(e, _RESOURCE_IN_USE)
+                if not busy or time.monotonic() > deadline:
+                    raise
+                self.conn.interrupt()
+                time.sleep(0.01)
 
     def get_catalog(self) -> Catalog:
         catalog_items: list[CatalogItem] = []
@@ -328,9 +363,9 @@ class DuckDbConnection(HarlequinConnection):
         cur = self.conn.cursor()
         escaped = text.replace("'", "''")
         try:
-            (parsed,) = cur.sql(  # type: ignore
+            [(parsed,)] = cur.execute(
                 f"select json_serialize_sql('{escaped}')"
-            ).fetchone()
+            ).fetchall()
         except HarlequinQueryError:
             return ""
         result = json.loads(parsed)
@@ -534,7 +569,8 @@ class DuckDbAdapter(HarlequinAdapter):
                     rewritten_command = self._rewrite_init_command(command)
                     for cmd in rewritten_command.split(";"):
                         if cmd.strip():
-                            connection.execute(cmd)
+                            # duckdb 2 refuses queries while a result is unread
+                            connection.execute(cmd).fetchall()
                             count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {self.init_path}\n{e}"

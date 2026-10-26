@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
+from tests.waiting import wait_until
 
 
 def test_connect(tiny_duck: Path, small_duck: Path, tmp_path: Path) -> None:
@@ -418,3 +421,139 @@ def test_transaction_mode() -> None:
 def test_spatial_types_have_a_label(native_type: str, expected: str) -> None:
     """Typed as strings, so this needs no spatial extension to be installed."""
     assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("native_type", "expected"),
+    [
+        ('"NULL"', "\\n"),
+        ('"NULL"[]', "[\\n]"),
+        ("TIMESTAMPTZ_NS", "ttz"),
+        ("TUPLE(INTEGER, INTEGER)", "{}"),
+        ("VARIANT", "var"),
+    ],
+)
+def test_duckdb_2_types_have_a_label(native_type: str, expected: str) -> None:
+    assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "create table t2 (a int)",
+        "create table t2 as select 1 as a",
+        "insert into t values (2)",
+        "update t set a = 3",
+        "delete from t",
+        "use memory",
+        "set threads = 1",
+        "attach ':memory:' as other",
+        "begin",
+    ],
+)
+def test_a_statement_that_returns_no_rows_has_no_cursor(statement: str) -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    conn.conn.execute("create table t as select 1 as a")
+    assert conn.execute(statement) is None
+
+
+def test_a_statement_returning_rows_has_a_cursor_even_if_it_writes() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    conn.conn.execute("create table t (a bigint)")
+    cur = conn.execute('insert into t values (7) returning a as "Count"')
+    assert cur is not None
+    assert cur.relation.fetchall() == [(7,)]
+
+
+def test_fetchone() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute("select * from range(5) t(i) order by i")
+    assert cur is not None
+    assert cur.fetchone() == (0,)
+    empty = conn.execute("select 1 where false")
+    assert empty is not None
+    assert empty.fetchone() is None
+
+
+def test_validate_sql_leaves_the_connection_usable() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    assert conn.validate_sql("select 1") == "select 1"
+    assert conn.validate_sql("selec 1") == ""
+    cur = conn.execute("select 2")
+    assert cur is not None
+    assert cur.relation.fetchall() == [(2,)]
+
+
+def test_an_init_script_that_ends_in_a_query_leaves_the_connection_usable(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "myscript").write_text("select * from range(100000);\n")
+    conn = DuckDbAdapter([":memory:"], init_path=tmp_path / "myscript").connect()
+    cur = conn.execute("select 1")
+    assert cur is not None
+    assert cur.relation.fetchall() == [(1,)]
+
+
+def _busy(connection: DuckDbConnection) -> bool:
+    """Whether another thread is using the connection."""
+    try:
+        connection.conn.extract_statements("select 1")
+    except Exception as e:
+        return type(e).__name__ == "ResourceInUseException"
+    return False
+
+
+@pytest.mark.skipif(
+    not hasattr(duckdb, "ResourceInUseException"),
+    reason="before duckdb 2, a busy connection is not refused",
+)
+def test_a_query_submitted_while_one_runs_interrupts_it() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    slow_results: list[object] = []
+
+    def run_slow_query() -> None:
+        cursor = conn.execute(
+            "select count(*) from range(100_000_000_000) t(i) where i % 7 = 3"
+        )
+        assert cursor is not None
+        slow_results.append(cursor.fetchall())
+
+    slow_query = threading.Thread(target=run_slow_query, daemon=True)
+    slow_query.start()
+    wait_until(lambda: _busy(conn), description="the slow query to start")
+
+    try:
+        cursor = conn.execute("select 42")
+    finally:
+        conn.cancel()  # so a failure here does not leave the slow query running
+    assert cursor is not None
+    assert cursor.relation.fetchall() == [(42,)]
+    slow_query.join(timeout=10)
+    assert not slow_query.is_alive()
+    # an interrupted fetch returns no data
+    assert slow_results == [None]
+
+
+def test_every_statement_runs_before_any_is_fetched() -> None:
+    """The app executes a whole script, then fetches each cursor, in that order.
+
+    A statement that is not a SELECT but returns rows runs when it is executed,
+    so its rows must not hold the connection against the statements after it.
+    """
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    statements = [
+        "create table t (a bigint)",
+        "insert into t select * from range(100000) returning a",
+        "pragma version",
+        "explain select 1",
+        "delete from t where a >= 10 returning a",
+        "select count(*) from t",
+    ]
+    cursors = [conn.execute(statement) for statement in statements]
+    assert cursors[0] is None
+    returning, version, plan, deleted, count = cursors[1:]
+    assert returning is not None and len(returning.relation.fetchall()) == 100000
+    assert version is not None and version.relation.fetchall()
+    assert plan is not None and plan.relation.fetchall()
+    assert deleted is not None and len(deleted.relation.fetchall()) == 99990
+    assert count is not None and count.relation.fetchall() == [(10,)]

@@ -178,10 +178,10 @@ async def test_infinity_timestamp(
 ) -> None:
     query = """
         select
-            'infinity'::date,
-            'infinity'::timestamp,
-            '-infinity'::date,
-            '-infinity'::timestamp
+            'infinity'::date as infinite_date,
+            'infinity'::timestamp as infinite_timestamp,
+            '-infinity'::date as negative_infinite_date,
+            '-infinity'::timestamp as negative_infinite_timestamp
         """
     async with app.run_test(size=(120, 36)) as pilot:
         await wait_for_workers(app)
