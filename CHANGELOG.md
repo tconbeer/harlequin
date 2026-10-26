@@ -18,6 +18,9 @@ All notable changes to this project will be documented in this file.
 - That save can browse to a folder that is not already shown. The browser lists one directory level at a time, and Up lists the parent.
 - Open Folder browses to a directory and adds it to the Files tab. Open File browses to a text file and opens one query tab. Show Files still types a path.
 - Open Folder and Open File use the same name and path lines as save. New File, New Folder, Rename, and Delete work there and on the Files tab. Delete asks with the full path. Rename keeps an open query on the new path. Delete keeps the query text and clears the path. The list is still one directory at a time.
+- Typing in the Files tree, or in the save, Open Folder, and Open File browsers, narrows that one directory to names that contain the text. A folder name matches as typed, and clearing the search or moving to another directory shows that directory's own names.
+- A query tab has a close control. Closing unsaved text, including a query that is not a file, asks to save, close without saving, or cancel. A file that still matches its last load or save closes without asking. Save writes the editor bytes and then closes the tab.
+- Fuzzy find, project-wide search, move, drag-and-drop, git decorations, preview-without-open, reloading a file changed on disk, and editing S3 objects stay deferred.
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
 
 ### Bug Fixes

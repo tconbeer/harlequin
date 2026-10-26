@@ -876,3 +876,397 @@ async def test_files_tab_creates_reads_renames_and_deletes(
         assert app.editor_collection.tab_count == 1
         assert not _has_name(tree.root, secret.name)
         assert app._exception is None
+
+
+BRACKET = "x[dim]y.sql"
+
+
+async def _leave_browser(
+    pilot: Pilot,
+    app: Harlequin,
+    screen_type: type[SaveQueryScreen] | type[OpenFolderScreen] | type[OpenFileScreen],
+) -> None:
+    """Escape closes the browser. A focused search field may take the first one."""
+    for _ in range(4):
+        if not isinstance(app.screen, screen_type):
+            return
+        await pilot.press("escape")
+    await wait_for(
+        pilot,
+        lambda: not isinstance(app.screen, screen_type),
+        description="the browser to close",
+    )
+
+
+def _visible_names(tree: DirectoryTree) -> list[str]:
+    """Entry names on screen, in list order. A filtered row is not a line."""
+    names: list[str] = []
+    if tree.last_line < 0:
+        return names
+    for line in range(tree.last_line + 1):
+        node = tree.get_node_at_line(line)
+        entry = _entry(node)
+        if entry is not None:
+            names.append(entry.path.name)
+    return names
+
+
+def _node_named(node: TreeNode[DirEntry], name: str) -> TreeNode[DirEntry] | None:
+    entry = _entry(node)
+    if entry is not None and entry.path.name == name:
+        return node
+    for child in node.children:
+        found = _node_named(child, name)
+        if found is not None:
+            return found
+    return None
+
+
+async def _exercise_browser(
+    pilot: Pilot,
+    app: Harlequin,
+    screen: SaveQueryScreen | OpenFolderScreen | OpenFileScreen,
+    *,
+    search_id: str,
+    name_id: str,
+    up_id: str,
+    editor_text: str,
+    mounted: Path,
+) -> None:
+    """Type-to-search on one dialog: filter, clear, name field, brackets, Up."""
+    tree = screen.file_tree
+    editor = app.editor
+    assert editor is not None
+
+    def names() -> list[str]:
+        return _visible_names(tree)
+
+    await wait_for(
+        pilot,
+        lambda: (
+            "mounted" in names()
+            and "other" in names()
+            and "alpha" in names()
+            and "keep.sql" not in names()
+        ),
+        description="one directory level, with the start folder listed",
+    )
+    before = names()
+    name_input = screen.query_one(f"#{name_id}", Input)
+    name_input.focus()
+    await pilot.pause()
+    await pilot.press(*"zzz")
+    await pilot.pause()
+    assert names() == before
+    assert "zzz" in name_input.value
+    assert editor.text == editor_text
+
+    other_line = await wait_for_value(
+        pilot,
+        lambda: _line_named(tree, "other"),
+        description="other in the browser",
+    )
+    tree.focus()
+    tree.move_cursor_to_line(other_line)
+    await pilot.pause()
+    await pilot.press(*"oth")
+    await wait_for(
+        pilot,
+        lambda: (
+            "other" in names() and "mounted" not in names() and "alpha" not in names()
+        ),
+        description="the listing to narrow to other",
+    )
+    outer = screen.query_one(f"#{search_id.replace('_search', '_outer')}")
+    # `.size` is the content box (border and padding sit outside it). The CSS
+    # outer is 72x28; the search row must not grow past that.
+    assert outer.outer_size.width <= 72
+    assert outer.outer_size.height <= 28
+    assert editor.text == editor_text
+    assert app.data_catalog.file_mounts == [mounted.resolve()]
+    await pilot.press("backspace", "backspace", "backspace")
+    await wait_for(
+        pilot,
+        lambda: "mounted" in names() and "other" in names() and "alpha" in names(),
+        description="clearing the search to restore the directory",
+    )
+    search = screen.query_one(f"#{search_id}", Input)
+    assert search.value == ""
+
+    other_line = await wait_for_value(
+        pilot,
+        lambda: _line_named(tree, "other"),
+        description="other again",
+    )
+    tree.focus()
+    tree.move_cursor_to_line(other_line)
+    await pilot.press(*"oth")
+    await wait_for(
+        pilot,
+        lambda: "other" in names() and "mounted" not in names(),
+        description="other to be the only matching folder",
+    )
+    await pilot.press("enter")
+    await wait_for(
+        pilot,
+        lambda: (
+            "keep.sql" in names()
+            and "mounted" in names()
+            and "alpha" in names()
+            and search.value == ""
+        ),
+        description="opening a folder to show that directory unfiltered",
+    )
+    assert (mounted.parent / "other" / "keep.sql").read_bytes() == NOTES.encode()
+    assert editor.text == editor_text
+    assert app.data_catalog.file_mounts == [mounted.resolve()]
+
+    alpha_line = await wait_for_value(
+        pilot,
+        lambda: _line_named(tree, "alpha"),
+        description="alpha in the browser",
+    )
+    tree.focus()
+    tree.move_cursor_to_line(alpha_line)
+    await pilot.pause()
+    await pilot.press(*"[dim")
+    await wait_for(
+        pilot,
+        lambda: BRACKET in names() and "alpha" not in names(),
+        description="a bracketed name to match as literal text",
+    )
+    gamma = _node_named(tree.root, "gamma")
+    assert gamma is not None
+    gamma_entry = _entry(gamma)
+    assert gamma_entry is not None and gamma_entry.loaded is False
+    assert _node_named(gamma, "hidden.sql") is None
+    assert "hidden.sql" not in names()
+    assert editor.text == editor_text
+    assert outer.outer_size.width <= 72 and outer.outer_size.height <= 28
+
+    await pilot.click(f"#{up_id}")
+    await wait_for(
+        pilot,
+        lambda: "shelf" in names() and search.value == "",
+        description="Up to show the parent directory unfiltered",
+    )
+
+
+@pytest.mark.asyncio
+async def test_type_to_search_filters_one_directory(
+    duckdb_adapter: Type[DuckDbAdapter],
+    tmp_path: Path,
+) -> None:
+    """Typing narrows the directory on screen, on every listing that can save or open.
+
+    The name field does not filter. A new directory is unfiltered. Brackets
+    are literal. The query text, the mounts, and unloaded folders stay put.
+    """
+    shelf = tmp_path / "shelf"
+    mounted = shelf / "mounted"
+    other = shelf / "other"
+    for directory in (
+        mounted / "alpha",
+        mounted / "Beta",
+        mounted / "gamma",
+        mounted / "jars",
+        other,
+    ):
+        directory.mkdir(parents=True)
+    write_exact(mounted / "Beta" / "inside.sql", "select 1;\n")
+    write_exact(mounted / "gamma" / "hidden.sql", "select 2;\n")
+    write_exact(mounted / "notes.sql", NOTES)
+    write_exact(mounted / BRACKET, "select 3;\n")
+    write_exact(other / "keep.sql", NOTES)
+
+    app = Harlequin(duckdb_adapter((":memory:",)), show_files=mounted)
+    async with app.run_test(size=(120, 36)) as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.text = TEXT
+
+        editor.focus()
+        await pilot.press("ctrl+s")
+        save_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, SaveQueryScreen) else None,
+            description="the save browser",
+        )
+        await _exercise_browser(
+            pilot,
+            app,
+            save_screen,
+            search_id="save_query_search",
+            name_id="save_query_name",
+            up_id="save_query_up",
+            editor_text=TEXT,
+            mounted=mounted,
+        )
+        await _leave_browser(pilot, app, SaveQueryScreen)
+        assert editor.text == TEXT
+        assert app.data_catalog.file_mounts == [mounted.resolve()]
+
+        await run_palette_command(pilot, app, "Open Folder")
+        folder_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFolderScreen) else None,
+            description="the open-folder browser",
+        )
+        await _exercise_browser(
+            pilot,
+            app,
+            folder_screen,
+            search_id="open_folder_search",
+            name_id="open_folder_name",
+            up_id="open_folder_up",
+            editor_text=TEXT,
+            mounted=mounted,
+        )
+        await _leave_browser(pilot, app, OpenFolderScreen)
+        assert editor.text == TEXT
+        assert app.data_catalog.file_mounts == [mounted.resolve()]
+
+        await run_palette_command(pilot, app, "Open File")
+        file_screen = await wait_for_value(
+            pilot,
+            lambda: app.screen if isinstance(app.screen, OpenFileScreen) else None,
+            description="the open-file browser",
+        )
+        await _exercise_browser(
+            pilot,
+            app,
+            file_screen,
+            search_id="open_file_search",
+            name_id="open_file_name",
+            up_id="open_file_up",
+            editor_text=TEXT,
+            mounted=mounted,
+        )
+        await _leave_browser(pilot, app, OpenFileScreen)
+        assert editor.text == TEXT
+        assert (mounted / BRACKET).read_bytes() == b"select 3;\n"
+        assert app.data_catalog.file_mounts == [mounted.resolve()]
+
+        await pilot.press("f6")
+        await pilot.press("k")
+        catalog = app.data_catalog
+        file_tree = catalog.file_tree
+        assert file_tree is not None
+
+        def file_names() -> list[str]:
+            return _visible_names(file_tree)
+
+        alpha_line = await wait_for_value(
+            pilot,
+            lambda: _line_named(file_tree, "alpha"),
+            description="alpha in the Files pane",
+        )
+        file_tree.focus()
+        file_tree.move_cursor_to_line(alpha_line)
+        await pilot.pause()
+        await pilot.press(*"alp")
+        await wait_for(
+            pilot,
+            lambda: (
+                "alpha" in file_names()
+                and "Beta" not in file_names()
+                and "gamma" not in file_names()
+                and "jars" not in file_names()
+            ),
+            description="the Files pane to narrow to alpha",
+        )
+        assert "keep.sql" not in file_names()
+        assert editor.text == TEXT
+        gamma = _node_named(file_tree.root, "gamma")
+        assert gamma is not None
+        gamma_entry = _entry(gamma)
+        assert gamma_entry is not None and gamma_entry.loaded is False
+        assert _node_named(gamma, "hidden.sql") is None
+        assert catalog.file_mounts == [mounted.resolve()]
+        assert catalog.active_pane is file_tree.parent
+
+        await pilot.press("backspace", "backspace", "backspace")
+        await wait_for(
+            pilot,
+            lambda: (
+                "alpha" in file_names()
+                and "Beta" in file_names()
+                and "gamma" in file_names()
+                and "jars" in file_names()
+                and "notes.sql" in file_names()
+                and BRACKET in file_names()
+            ),
+            description="clearing the Files search to restore the directory",
+        )
+
+        def match_lines() -> list[int]:
+            found: list[int] = []
+            if file_tree.last_line < 0:
+                return found
+            root_entry = _entry(file_tree.root)
+            root_name = "" if root_entry is None else root_entry.path.name
+            for line in range(file_tree.last_line + 1):
+                node = file_tree.get_node_at_line(line)
+                entry = _entry(node)
+                if entry is None or entry.path.name == root_name:
+                    continue
+                if "a" in entry.path.name.casefold():
+                    found.append(line)
+            return found
+
+        file_tree.focus()
+        await pilot.press("a")
+        await wait_for(
+            pilot,
+            lambda: len(match_lines()) >= 2,
+            description="at least two names containing a",
+        )
+        lines = match_lines()
+        file_tree.move_cursor_to_line(lines[0])
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.pause()
+        assert file_tree.cursor_line == lines[1]
+        assert editor.text == TEXT
+
+        await pilot.press("backspace")
+        await wait_for(
+            pilot,
+            lambda: "alpha" in file_names() and "Beta" in file_names(),
+            description="the Files directory after the arrow keys",
+        )
+        file_tree.focus()
+        await pilot.press(*"bet")
+        await wait_for(
+            pilot,
+            lambda: "Beta" in file_names() and "alpha" not in file_names(),
+            description="a folder name to match regardless of case",
+        )
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: (
+                "inside.sql" in file_names()
+                and "alpha" in file_names()
+                and app.query_one("#file_tree_search", Input).value == ""
+            ),
+            description="opening a Files folder to clear the search",
+        )
+        assert editor.text == TEXT
+
+        jars_line = await wait_for_value(
+            pilot,
+            lambda: _line_named(file_tree, "jars"),
+            description="jars in the Files pane",
+        )
+        file_tree.focus()
+        file_tree.move_cursor_to_line(jars_line)
+        await pilot.pause()
+        await pilot.press(*"jar")
+        await wait_for(
+            pilot,
+            lambda: "jars" in file_names() and "alpha" not in file_names(),
+            description="jar to search, not to switch catalog tabs",
+        )
+        assert catalog.active_pane is file_tree.parent
+        assert editor.text == TEXT
+        assert catalog.file_mounts == [mounted.resolve()]

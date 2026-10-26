@@ -310,6 +310,16 @@ def active_catalog_tab(app: Harlequin) -> str:
     return "" if active_tab is None else str(active_tab.label)
 
 
+async def step_catalog_tab(pilot: Pilot, app: Harlequin, expected: str) -> None:
+    """Move one catalog tab and wait until that tab is the one on screen."""
+    app.data_catalog.action_switch_tab(1)
+    await wait_for(
+        pilot,
+        lambda: active_catalog_tab(app) == expected,
+        description=f"the catalog to show {expected}",
+    )
+
+
 async def press_next_catalog_tab(pilot: Pilot, app: Harlequin, expected: str) -> None:
     await wait_for(
         pilot,
@@ -536,8 +546,31 @@ async def test_show_s3_command(
                 lambda: catalog_tab_labels(app) == ["Databases", "Files", "S3"],
                 description="the Files tab to be added before S3",
             )
-            for expected_tab in ["S3", "Databases", "Files"]:
-                await press_next_catalog_tab(pilot, app, expected_tab)
+            # A letter in the Files listing searches for a name, so k does
+            # not leave that tab. The action k is bound to still cycles
+            # Databases, Files, S3. k itself still cycles from the other
+            # listings.
+            for expected_tab in ("S3", "Databases", "Files"):
+                await step_catalog_tab(pilot, app, expected_tab)
+            catalog.action_switch_tab(-1)
+            await wait_for(
+                pilot,
+                lambda: (
+                    active_catalog_tab(app) == "Databases"
+                    and app.focused is catalog.database_tree
+                ),
+                description="the database listing to take focus",
+            )
+            await press_next_catalog_tab(pilot, app, "Files")
+            catalog.action_switch_tab(1)
+            await wait_for(
+                pilot,
+                lambda: (
+                    active_catalog_tab(app) == "S3" and app.focused is catalog.s3_tree
+                ),
+                description="the S3 listing to take focus",
+            )
+            await press_next_catalog_tab(pilot, app, "Databases")
     finally:
         live_listing_released.set()
 

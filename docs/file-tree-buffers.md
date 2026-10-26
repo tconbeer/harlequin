@@ -65,13 +65,27 @@ From the existing Files tree:
 - Quit stores the path in cache version 2. A version-1 cache, which has
   selection and text only, still loads, and those buffers stay not a file.
   The set of mounted folders is not written to the config profile.
+- Typing while a one-level listing is focused narrows that directory to names
+  that contain the text. Folders match. The match is case-insensitive and
+  literal, so a bracket is a character. Clearing the search shows that
+  directory again. Up, or opening a folder, shows the new directory
+  unfiltered. The name field edits a name and does not filter the list.
+- Each visible query tab has a close control. Close Buffer and `ctrl+w` close
+  the same tab. A tab whose text matches the last loaded or saved file closes
+  with no prompt and leaves the file bytes. Unsaved text, including a query
+  that is not a file and a file wiped to whitespace, asks to Save, close
+  without saving, or Cancel. Save writes the editor bytes and then closes the
+  tab. A query that is not a file uses the folder-and-name save, and leaving
+  that without saving keeps the tab. Cancel keeps the tab. The last tab
+  becomes an empty query that is not a file. The path is shown as literal
+  text. Close All still asks once before discarding every buffer.
 
 ## Deferred
 
 These stay deferred. They are the rest of each product, and they are not part
 of this change:
 
-- neo-tree: git decorations, filters, fuzzy find, preview-without-open,
+- neo-tree: git decorations, fuzzy find, preview-without-open,
   drag-and-drop, and move.
 - Fresh: LSP, diagnostics, AI, and multi-cursor editing.
 - Helix: modal editing (the modal keymap) and multi-cursor selections.

@@ -12,6 +12,7 @@ from textual.widgets import DirectoryTree, Input, Label
 from textual.widgets.text_area import Selection
 
 from harlequin import Harlequin
+from harlequin.components.close_buffer_modal import CloseBufferModal
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.save_query_screen import SaveQueryScreen
 from harlequin.editor_cache import BufferState, Cache, get_cache_file, load_cache
@@ -208,10 +209,15 @@ async def test_save_unbound_by_folder_writes_exact_bytes(
         )
         editor.focus()
         await pilot.press("ctrl+w")
-        await click_confirm_modal(pilot, app, "no")
         await wait_for(
             pilot,
-            lambda: not isinstance(app.screen, ConfirmModal),
+            lambda: isinstance(app.screen, CloseBufferModal),
+            description="a prompt before closing unsaved edits",
+        )
+        await pilot.click("#close_buffer_cancel")
+        await wait_for(
+            pilot,
+            lambda: not isinstance(app.screen, CloseBufferModal),
             description="cancel to leave the dirty file open",
         )
         assert editor.text == EDITED

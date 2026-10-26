@@ -11,6 +11,7 @@ from textual.widgets import Button, DirectoryTree, Input, Label, Static, Tree
 
 from harlequin.components.file_ops import clean_entry_name
 from harlequin.components.folder_browser import DialogOps, FolderBrowser, dialog_ops
+from harlequin.components.listing_search import ListingSearchInput
 from harlequin.components.modal import HarlequinModal
 
 
@@ -44,6 +45,7 @@ class SaveQueryScreen(HarlequinModal[Path | TypeAPath]):
                 id="save_query_prompt",
             )
             yield self.file_tree
+            yield ListingSearchInput(self.file_tree, id="save_query_search")
             yield Input(
                 placeholder="File name",
                 id="save_query_name",

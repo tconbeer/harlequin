@@ -6,18 +6,20 @@ from typing import List, Union
 
 from sqlfmt.api import Mode, format_string
 from sqlfmt.exception import SqlfmtError
-from textual import on, work
+from textual import events, on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.content import Content
+from textual.content import Content, ContentText
+from textual.css.query import NoMatches
 from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widgets import Input, Label, Tab, Tabs, TextArea
+from textual.widgets import Input, Label, Static, Tab, Tabs, TextArea
 from textual.widgets.text_area import EditHistory, Location, Selection
 from textual.worker import Worker, WorkerState
 from textual_textarea import TextAreaSaved, TextEditor
+from textual_textarea.cancellable_input import CancellableInput
 
 from harlequin.autocomplete import (
     NO_SYMBOLS,
@@ -26,6 +28,7 @@ from harlequin.autocomplete import (
     WordCompleter,
     find_symbols,
 )
+from harlequin.components.close_buffer_modal import CloseBufferModal, CloseChoice
 from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.save_query_screen import SaveQueryScreen, TypeAPath
 from harlequin.components.text_modal import ErrorModal
@@ -56,6 +59,87 @@ class EditorState:
 def _literal_tab_label(text: str) -> Content:
     """A tab label that shows `text` as typed, including brackets."""
     return Content.from_text(text, markup=False)
+
+
+def _plain_label(label: ContentText) -> str:
+    plain = getattr(label, "plain", None)
+    if isinstance(plain, str):
+        return plain
+    return str(label)
+
+
+class QueryTabClose(Static):
+    """The mark on a query tab that closes that tab."""
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        tab = self.parent
+        if not isinstance(tab, QueryTab) or tab.id is None:
+            return
+        node = tab.parent
+        while node is not None and not isinstance(node, EditorCollection):
+            node = node.parent
+        if isinstance(node, EditorCollection):
+            node.close_buffer_id(tab.id)
+
+
+class QueryTab(Tab):
+    """One query tab and its close control."""
+
+    DEFAULT_CSS = """
+    QueryTab {
+        layout: horizontal;
+        width: auto;
+        height: 1;
+        padding: 0 1;
+    }
+    QueryTab .query-tab-title {
+        width: auto;
+        height: 1;
+        padding: 0;
+    }
+    QueryTabClose {
+        width: 3;
+        height: 1;
+        content-align: center middle;
+        color: $text-muted;
+    }
+    QueryTabClose:hover {
+        background: $boost;
+        color: $foreground;
+    }
+    """
+
+    def __init__(
+        self,
+        label: ContentText,
+        *,
+        id: str | None = None,  # noqa: A002
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        self._title = ""
+        super().__init__(label, id=id, classes=classes, disabled=disabled)
+        # The title is the child label. The tab's own text would draw it twice.
+        self.update("")
+
+    @property
+    def label(self) -> Content:
+        return self._label
+
+    @label.setter
+    def label(self, label: ContentText) -> None:
+        self._title = _plain_label(label)
+        self._label = _literal_tab_label(self._title)
+        try:
+            self.query_one(".query-tab-title", Label).update(self._label)
+        except NoMatches:
+            pass
+        self.post_message(self.Relabelled(self))
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._label, classes="query-tab-title")
+        yield QueryTabClose("×", id=f"{self.id}-close")
 
 
 def _blank_history(template: EditHistory) -> EditHistory:
@@ -234,6 +318,19 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         )
         if hasattr(self.app, "data_catalog"):
             self.app.data_catalog.update_file_tree()
+        parent = self.parent
+        if isinstance(parent, EditorCollection):
+            parent._finish_close_after_save(message.path, self.text)
+
+    @on(CancellableInput.Cancelled)
+    def abandon_typed_save_for_close(self, message: CancellableInput.Cancelled) -> None:
+        """Leaving the one-line path prompt keeps the tab open."""
+        control = message.control
+        if getattr(control, "id", None) != "textarea__save_input":
+            return
+        parent = self.parent
+        if isinstance(parent, EditorCollection):
+            parent._close_after_save = False
 
     async def action_save(self) -> None:
         """Save the open file, or ask for a folder and a name when it has none."""
@@ -241,6 +338,9 @@ class CodeEditor(TextEditor, inherit_bindings=False):
         if not isinstance(parent, EditorCollection):
             await super().action_save()
             return
+        # A key to save is the save itself. Closing happens only from the
+        # close prompt's Save, after that write succeeds.
+        parent._close_after_save = False
         if parent.active_file_path() is not None:
             parent.save_active_file()
             return
@@ -386,6 +486,7 @@ class EditorCollection(Vertical):
         self.recovered_cache, self.recovered_from = adopt_recovery()
         self.buffer_states: dict[str, EditorState] = {}
         self.loaded_buffer_id: str | None = None
+        self._close_after_save = False
         self.tabs = Tabs()
         self.tabs.can_focus = False
         self.editor = CodeEditor(id="buffer", language=language, theme=theme)
@@ -547,7 +648,7 @@ class EditorCollection(Vertical):
             tab_label: Union[Content, str] = _literal_tab_label(editor_state.path.name)
         else:
             tab_label = f"Tab {self.counter}"
-        await self.tabs.add_tab(Tab(tab_label, id=new_buffer_id))
+        await self.tabs.add_tab(QueryTab(tab_label, id=new_buffer_id))
         if activate:
             # adding the first tab activates it; any later tab has to be
             # activated here to swap its state into the editor.
@@ -582,7 +683,7 @@ class EditorCollection(Vertical):
             text=text, path=resolved, saved_text=text
         )
         await self.tabs.add_tab(
-            Tab(_literal_tab_label(resolved.name), id=new_buffer_id)
+            QueryTab(_literal_tab_label(resolved.name), id=new_buffer_id)
         )
         self._update_tab_visibility()
         self.tabs.active = new_buffer_id
@@ -702,6 +803,7 @@ class EditorCollection(Vertical):
                 self.run_worker(self.editor.prompt_for_typed_path())
                 return
             if result is None:
+                self._close_after_save = False
                 return
             self.save_unbound_as(result)
 
@@ -711,10 +813,12 @@ class EditorCollection(Vertical):
         """Bind the loaded buffer to `path` and write it, after the checks."""
         buffer_id = self.loaded_buffer_id
         if buffer_id is None:
+            self._close_after_save = False
             return
         try:
             resolved = path.expanduser().resolve()
         except OSError as exc:
+            self._close_after_save = False
             self._notify_path(f"Could not save {path.name}: {exc}")
             return
         if any(
@@ -727,12 +831,15 @@ class EditorCollection(Vertical):
                 severity="warning",
                 markup=False,
             )
+            self._close_after_save = False
             return
         if resolved.exists():
 
             def overwrite(confirmed: Union[bool, None]) -> None:
                 if confirmed and self.loaded_buffer_id == buffer_id:
                     self._bind_and_write(buffer_id, resolved)
+                else:
+                    self._close_after_save = False
 
             self.app.push_screen(
                 ConfirmModal(
@@ -755,6 +862,7 @@ class EditorCollection(Vertical):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(text.encode("utf-8"))
         except (OSError, UnicodeError) as exc:
+            self._close_after_save = False
             self.app.push_screen(
                 ErrorModal(
                     title="Save File Error",
@@ -772,6 +880,7 @@ class EditorCollection(Vertical):
         if catalog is not None:
             catalog.update_file_tree()
         self.notify(f"Editor contents saved to {path}", markup=False)
+        self._finish_close_after_save(path, text)
 
     def save_active_file(self) -> None:
         """Write the loaded buffer to its path and clear the unsaved mark."""
@@ -787,6 +896,7 @@ class EditorCollection(Vertical):
             # already holds \r\n would be saved as \r\r\n.
             state.path.write_bytes(state.text.encode("utf-8"))
         except (OSError, UnicodeError) as exc:
+            self._close_after_save = False
             self.app.push_screen(
                 ErrorModal(
                     title="Save File Error",
@@ -800,21 +910,81 @@ class EditorCollection(Vertical):
         self.editor.post_message(TextAreaSaved(path=state.path))
 
     def action_close_buffer(self) -> None:
-        if self._loaded_file_is_dirty():
-            self.app.push_screen(
-                ConfirmModal(
-                    prompt="Discard unsaved changes to this file?",
-                    confirm_label="Discard",
-                    cancel_label="Cancel",
-                ),
-                callback=self._discard_if_confirmed,
-            )
+        """Close the loaded tab. A clean file closes; unsaved text asks first."""
+        buffer_id = self.loaded_buffer_id
+        if buffer_id is None:
+            return
+        self.close_buffer_id(buffer_id)
+
+    def close_buffer_id(self, buffer_id: str) -> None:
+        """Close one tab. Save, close without saving, or Cancel when it is dirty.
+
+        A file whose text matches the last load or save closes with no prompt
+        and leaves the file bytes alone. A query that is not a file is dirty
+        when it holds any text, including whitespace. The only remaining tab
+        becomes an empty query that is not a file.
+        """
+        if buffer_id not in self.buffer_states:
+            return
+        self._activate_for_close(buffer_id)
+        state = self.buffer_states.get(buffer_id)
+        if state is None:
+            return
+        if self.editor.text == state.saved_text:
+            self._close_loaded_buffer()
+            return
+        if state.path is None:
+            prompt = "Save changes to this query?"
+        else:
+            prompt = f"Save changes to {state.path}?"
+
+        def chose(choice: CloseChoice | None) -> None:
+            if choice is CloseChoice.SAVE:
+                self._save_then_close()
+            elif choice is CloseChoice.DISCARD:
+                self._close_loaded_buffer()
+
+        self.app.push_screen(CloseBufferModal(prompt), chose)
+
+    def _activate_for_close(self, buffer_id: str) -> None:
+        """Show `buffer_id` in the editor so Save writes that tab."""
+        if buffer_id == self.loaded_buffer_id:
+            return
+        self._save_loaded_buffer()
+        state = self.buffer_states.get(buffer_id)
+        self.loaded_buffer_id = buffer_id
+        if state is not None:
+            self.editor.load_state(state)
+        if self.tabs.active != buffer_id:
+            self.tabs.active = buffer_id
+        self._refresh_path_line()
+
+    def _save_then_close(self) -> None:
+        """Write the loaded tab, and close it only after the file has those bytes."""
+        self._close_after_save = True
+        if self.active_file_path() is not None:
+            self.save_active_file()
+            return
+        self.run_worker(self.save_unbound_buffer())
+
+    def _finish_close_after_save(self, path: Path | str, text: str) -> None:
+        """Close the loaded tab when `path` now holds `text`.
+
+        `TextAreaSaved.path` is a string. An unbound save passes a `Path`.
+        """
+        if not self._close_after_save:
+            return
+        self._close_after_save = False
+        file_path = Path(path)
+        try:
+            data = file_path.expanduser().read_bytes()
+        except OSError:
+            return
+        if data != text.encode("utf-8"):
+            return
+        if self.loaded_buffer_id is None:
             return
         self._close_loaded_buffer()
-
-    def _discard_if_confirmed(self, confirmed: Union[bool, None]) -> None:
-        if confirmed:
-            self._close_loaded_buffer()
 
     def _close_loaded_buffer(self) -> None:
         if self.tab_count > 1:
@@ -829,10 +999,8 @@ class EditorCollection(Vertical):
             blank = EditorState()
             buffer_id = self.loaded_buffer_id
             if buffer_id is not None:
-                previous = self.buffer_states.get(buffer_id)
-                if previous is not None and previous.path is not None:
-                    self.buffer_states[buffer_id] = blank
-                    self._refresh_tab_label(buffer_id)
+                self.buffer_states[buffer_id] = blank
+                self._refresh_tab_label(buffer_id)
             self.editor.load_state(blank)
         self._update_tab_visibility()
         self._refresh_path_line()

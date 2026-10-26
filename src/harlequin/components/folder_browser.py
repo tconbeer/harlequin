@@ -36,6 +36,7 @@ from harlequin.components.file_ops import (
     relist_one_level,
     rename_entry,
 )
+from harlequin.components.listing_search import FilterableTree, ListingSearchInput
 from harlequin.components.modal import HarlequinModal
 from harlequin.messages import WidgetMounted
 
@@ -75,7 +76,7 @@ def _child_named(node: TreeNode[DirEntry], name: str) -> TreeNode[DirEntry] | No
     return None
 
 
-class FolderBrowser(HarlequinTree, DirectoryTree, inherit_bindings=False):
+class FolderBrowser(FilterableTree, inherit_bindings=False):
     """Lists one directory level. Expanding a folder lists that folder only."""
 
     COMPONENT_CLASSES: ClassVar[set[str]] = {
@@ -125,6 +126,7 @@ class FolderBrowser(HarlequinTree, DirectoryTree, inherit_bindings=False):
             return
         if not self.is_mounted:
             return
+        self.clear_search()
         await super().watch_path()
         if isinstance(self.root.data, DirEntry):
             self.post_message(Tree.NodeHighlighted(self.root))
@@ -543,6 +545,7 @@ class OpenFolderScreen(HarlequinModal[Path]):
                 id="open_folder_prompt",
             )
             yield self.file_tree
+            yield ListingSearchInput(self.file_tree, id="open_folder_search")
             yield Input(placeholder="Name", id="open_folder_name")
             yield Label("", id="open_folder_destination")
             yield Label("", id="open_folder_error")
@@ -654,6 +657,7 @@ class OpenFileScreen(HarlequinModal[Path]):
                 id="open_file_prompt",
             )
             yield self.file_tree
+            yield ListingSearchInput(self.file_tree, id="open_file_search")
             yield Input(placeholder="Name", id="open_file_name")
             yield Label("", id="open_file_destination")
             yield Label("", id="open_file_error")

@@ -15,6 +15,7 @@ from textual.worker import WorkerFailed
 from harlequin import Harlequin
 from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
+from harlequin.components.close_buffer_modal import CloseBufferModal
 from harlequin.components.code_editor import CodeEditor
 from harlequin.statements import find_separators, split
 from tests.functional_tests.helpers import (
@@ -109,6 +110,12 @@ async def test_multiple_buffers(
         snap_results.append(await app_snapshot(app, "Tab 2 of 3"))
 
         await pilot.press("ctrl+w")
+        await wait_for(
+            pilot,
+            lambda: isinstance(app.screen, CloseBufferModal),
+            description="a prompt before closing unsaved query text",
+        )
+        await pilot.click("#close_buffer_discard")
         await loaded_buffer(pilot, app, "tab-3", "tab 3")
         await pilot.wait_for_scheduled_animations()
         assert app.editor_collection.tab_count == 2

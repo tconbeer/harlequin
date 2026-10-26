@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 
 from textual.widgets import DirectoryTree
@@ -32,6 +33,18 @@ def clean_entry_name(raw: str) -> str | None:
     if os.sep in name or "/" in name or "\\" in name:
         return None
     return name
+
+
+def names_matching(names: Iterable[str], query: str) -> list[str]:
+    """Names that contain `query`, in their original order.
+
+    An empty query keeps every name. The match is case-insensitive and
+    literal: brackets and other punctuation are characters, not a pattern.
+    """
+    needle = query.casefold()
+    if not needle:
+        return list(names)
+    return [name for name in names if needle in name.casefold()]
 
 
 def is_directory(path: Path) -> bool:

@@ -76,6 +76,16 @@ DataCatalog S3Tree {
     }
 }
 
+DataCatalog FileTree {
+    height: 1fr;
+}
+
+.listing-search {
+    height: 1;
+    border: none;
+    padding: 0 1;
+}
+
 DataCatalog * .harlequin-tree--type-label {
     color: $foreground-muted;
 }
@@ -726,6 +736,61 @@ ConfirmModal Horizontal#button_row Button {
 }
 
 ConfirmModal Horizontal#button_row Button#no{
+    background: $error;
+    &:hover {
+        background: $secondary;
+    }
+}
+
+/* CloseBufferModal */
+
+CloseBufferModal {
+    align: center middle;
+    padding: 0;
+}
+
+CloseBufferModal Vertical#outer {
+    border: round $border-color-focus;
+    background: $background;
+    margin: 2 0;
+    padding: 1 1;
+    height: auto;
+    max-height: 30;
+    width: auto;
+    max-width: 88;
+}
+
+CloseBufferModal Label {
+    width: 100%;
+    height: auto;
+    text-align: center;
+    text-wrap: wrap;
+}
+
+CloseBufferModal Horizontal#button_row {
+    height: auto;
+    width: auto;
+    align: center bottom;
+    margin: 2 0 1 0;
+}
+
+CloseBufferModal Horizontal#button_row Button {
+    background: $primary;
+    color: $background;
+    height: 3;
+    margin: 0 1;
+    padding: 0 1;
+    min-width: 16;
+    border: none;
+    &:hover {
+        background: $secondary;
+    }
+    &:focus {
+        text-style: reverse;
+    }
+}
+
+CloseBufferModal Horizontal#button_row Button#close_buffer_cancel {
     background: $error;
     &:hover {
         background: $secondary;

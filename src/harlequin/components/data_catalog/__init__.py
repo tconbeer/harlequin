@@ -12,7 +12,6 @@ from textual.css.query import InvalidQueryFormat, NoMatches
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import (
-    DirectoryTree,
     OptionList,
     TabbedContent,
     TabPane,
@@ -27,6 +26,7 @@ from harlequin.components.data_catalog.database_tree import DatabaseTree
 from harlequin.components.data_catalog.s3_tree import S3Tree as S3Tree
 from harlequin.components.data_catalog.tree import HarlequinTree as HarlequinTree
 from harlequin.components.file_ops import find_node, relist_one_level
+from harlequin.components.listing_search import FilterableTree, ListingSearchInput
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
@@ -154,9 +154,11 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.add_pane(
             TabPane("Databases", self.database_tree, self.database_context_menu)
         )
+        self.file_search: ListingSearchInput | None = None
         if self.show_files is not None:
             self.file_tree: FileTree | None = FileTree(path=self.show_files)
-            self.add_pane(TabPane("Files", self.file_tree))
+            self.file_search = ListingSearchInput(self.file_tree, id="file_tree_search")
+            self.add_pane(TabPane("Files", self.file_search, self.file_tree))
         else:
             self.file_tree = None
 
@@ -176,12 +178,17 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.post_message(WidgetMounted(widget=self))
 
     def on_focus(self) -> None:
+        """Focus the pane's listing. A hidden search field is not that listing."""
         try:
-            active_widget = self.query_one(f"#{self.active}").children[0]
+            pane = self.query_one(f"#{self.active}")
         except (NoMatches, InvalidQueryFormat):
             self.database_tree.focus()
-        else:
-            active_widget.focus()
+            return
+        for child in pane.children:
+            if child.focusable:
+                child.focus()
+                return
+        self.database_tree.focus()
 
     @on(TabbedContent.TabActivated)
     def focus_on_widget_in_active_pane(self) -> None:
@@ -215,10 +222,13 @@ class DataCatalog(TabbedContent, can_focus=True):
         self.show_files = path
         if self.file_tree is None:
             self.file_tree = FileTree(path=path)
+            self.file_search = ListingSearchInput(self.file_tree, id="file_tree_search")
             # Files sits between Databases and S3
             s3_pane = self.s3_tree.parent if self.s3_tree is not None else None
             assert s3_pane is None or isinstance(s3_pane, TabPane)
-            await self.add_pane(TabPane("Files", self.file_tree), before=s3_pane)
+            await self.add_pane(
+                TabPane("Files", self.file_search, self.file_tree), before=s3_pane
+            )
         else:
             await self.file_tree.attach(path)
         self._activate_pane_of(self.file_tree)
@@ -247,6 +257,7 @@ class DataCatalog(TabbedContent, can_focus=True):
         if not mounts:
             pane = tree.parent
             self.file_tree = None
+            self.file_search = None
             self.show_files = None
             if isinstance(pane, TabPane) and pane.id is not None:
                 await self.remove_pane(pane.id)
@@ -372,7 +383,7 @@ class DataCatalog(TabbedContent, can_focus=True):
             self.app.action_focus_query_editor()
 
 
-class FileTree(HarlequinTree, DirectoryTree, inherit_bindings=False):
+class FileTree(FilterableTree, inherit_bindings=False):
     """A directory listing. One mount is that directory. Several are its roots."""
 
     COMPONENT_CLASSES: ClassVar[set[str]] = {
@@ -447,6 +458,7 @@ class FileTree(HarlequinTree, DirectoryTree, inherit_bindings=False):
 
         A single mount still repopulates from that path, as a DirectoryTree does.
         """
+        self.clear_search()
         resolved = Path(self.path).expanduser().resolve()
         if resolved not in self.mounts:
             self.mounts.append(resolved)
