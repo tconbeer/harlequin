@@ -31,6 +31,7 @@ from harlequin_sqlite.catalog import (
 )
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
+from harlequin_sqlite.quoting import quote_identifier
 
 if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
@@ -248,7 +249,7 @@ class HarlequinSqliteConnection(HarlequinConnection):
             if db_name in matched_databases:
                 results.append(CatalogSearchResult(item=database_item))
             relations: dict[str, RelationCatalogItem] = {}
-            quoted_db = '"' + db_name.replace('"', '""') + '"'
+            quoted_db = quote_identifier(db_name)
             try:
                 found = self.conn.execute(
                     _SEARCH_SQL[kind].format(db=quoted_db),

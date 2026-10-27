@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
+
+## [2.17.0] - 2026-10-26
+
 ### Features
 
 - Press `ctrl+g` in the Results Viewer to jump to a column by name, with fuzzy matching, while keeping the current row. The command palette also offers **Jump to Column**.
@@ -1172,7 +1178,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.16.2...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.17.0...HEAD
+[2.17.0]: https://github.com/tconbeer/harlequin/compare/2.16.2...2.17.0
 [2.16.2]: https://github.com/tconbeer/harlequin/compare/2.16.1...2.16.2
 [2.16.1]: https://github.com/tconbeer/harlequin/compare/2.16.0...2.16.1
 [2.16.0]: https://github.com/tconbeer/harlequin/compare/2.15.0...2.16.0
