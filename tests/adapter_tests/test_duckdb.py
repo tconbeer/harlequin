@@ -899,19 +899,40 @@ def test_a_user_defined_name_completes_quoted_only_when_it_must_be() -> None:
     conn = DuckDbAdapter([":memory:"], no_init=True).connect()
     conn.execute('create macro "my macro"(a) as a')
     conn.execute('create macro "Select"(a) as a')
+    # a column_name keyword, which is not reserved but cannot name a function
+    conn.execute('create macro "between"(a) as a')
+    # an unreserved keyword, which can
+    conn.execute('create macro "action"(a) as a')
     conn.execute("create macro my_macro(a) as a")
     conn.execute("""create type "my type" as enum ('a')""")
+    user_defined_labels = ("my macro", "Select", "between", "action", "my_macro")
     values = {
         completion.label: completion.value
         for completion in conn.get_completions()
-        if completion.label in ("my macro", "Select", "my_macro", "my type", "sum")
+        if completion.label in (*user_defined_labels, "my type", "sum")
+        and completion.type_label != "kw"
     }
     assert values == {
         "my macro": '"my macro"',
         "Select": '"Select"',
+        "between": '"between"',
+        "action": "action",
         "my_macro": "my_macro",
         "my type": '"my type"',
         "sum": "sum",
     }
-    for value in ('"my macro"', '"Select"', "my_macro"):
+    for value in (values[label] for label in user_defined_labels):
         assert _rows(conn, f"select {value}(1)") == [(1,)]
+
+
+@pytest.mark.parametrize(
+    "script", ["select 1;;\ncreate table after as select 2;", "select 1;\n-- done\n"]
+)
+def test_an_init_script_with_a_statement_that_runs_nothing(
+    tmp_path: Path, script: str
+) -> None:
+    """A lone separator or a trailing comment is a statement with no result."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    assert _rows(conn, "select 1") == [(1,)]

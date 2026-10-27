@@ -80,11 +80,12 @@ def get_completion_data(cur: duckdb.DuckDBPyConnection) -> list[HarlequinComplet
         """
     ).fetchall()
 
-    reserved_keywords = {
+    # only an unreserved keyword can name a function or type without quotes
+    keywords_that_need_quoting = {
         keyword_name.lower()
         for (keyword_name,) in cur.execute(
             "select keyword_name from duckdb_keywords() "
-            "where keyword_category = 'reserved'"
+            "where keyword_category != 'unreserved'"
         ).fetchall()
     }
     # a user-defined function or type can have any name, and is inserted
@@ -95,7 +96,7 @@ def get_completion_data(cur: duckdb.DuckDBPyConnection) -> list[HarlequinComplet
             type_label=type_label,
             value=label
             if context is None
-            else quote_identifier_if_needed(label, reserved_keywords),
+            else quote_identifier_if_needed(label, keywords_that_need_quoting),
             priority=priority,
             context=context,
         )

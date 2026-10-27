@@ -689,10 +689,11 @@ Connected to database `{primary_db}`
 
     @staticmethod
     def _dot_command_arguments(command: str) -> list[str]:
-        """The arguments after a dot command's name, as the sqlite3 CLI reads them.
+        """The arguments after a dot command's name, split on whitespace.
 
         An argument that starts with a single or double quote runs to the
-        matching one, so it can hold whitespace.
+        matching one, so it can hold whitespace. Backslashes are kept as they
+        are, even inside double quotes, so a Windows path survives.
         """
         arguments = [
             next(group for group in match.groups() if group is not None)

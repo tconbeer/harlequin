@@ -25,8 +25,14 @@ def qualified_name(*names: str) -> str:
     return ".".join(quote_identifier(name) for name in names)
 
 
-def quote_identifier_if_needed(name: str, reserved_keywords: set[str]) -> str:
-    """name bare if DuckDB would read it as that identifier unquoted, else quoted."""
-    if _BARE_IDENTIFIER.fullmatch(name) and name.lower() not in reserved_keywords:
+def quote_identifier_if_needed(name: str, keywords_that_need_quoting: set[str]) -> str:
+    """name bare if DuckDB would read it as that identifier unquoted, else quoted.
+
+    keywords_that_need_quoting is lowercase.
+    """
+    if (
+        _BARE_IDENTIFIER.fullmatch(name)
+        and name.lower() not in keywords_that_need_quoting
+    ):
         return name
     return quote_identifier(name)

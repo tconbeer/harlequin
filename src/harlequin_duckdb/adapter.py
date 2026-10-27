@@ -606,8 +606,13 @@ class DuckDbAdapter(HarlequinAdapter):
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command, connection)
                     for statement in split(rewritten_command):
+                        executed = connection.execute(statement.sql)
+                        # a statement that is only a separator or a comment
+                        # runs nothing, and duckdb returns None for it
+                        if executed is None:
+                            continue
                         # duckdb 2 refuses queries while a result is unread
-                        connection.execute(statement.sql).fetchall()
+                        executed.fetchall()
                         count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {self.init_path}\n{e}"
@@ -655,10 +660,11 @@ Connected to database `{primary_db}`
 
     @staticmethod
     def _dot_command_arguments(command: str) -> list[str]:
-        """The arguments after a dot command's name, as the duckdb CLI reads them.
+        """The arguments after a dot command's name, split on whitespace.
 
         An argument that starts with a single or double quote runs to the
-        matching one, so it can hold whitespace.
+        matching one, so it can hold whitespace. Backslashes are kept as they
+        are, even inside double quotes, so a Windows path survives.
         """
         arguments = [
             next(group for group in match.groups() if group is not None)

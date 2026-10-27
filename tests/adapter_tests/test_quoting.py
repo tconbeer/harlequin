@@ -83,10 +83,14 @@ def test_sqlite_reads_back_what_was_quoted(name: str) -> None:
         ("2024_total", '"2024_total"'),
         ("select", '"select"'),
         ("Select", '"Select"'),
+        ("between", '"between"'),
         ('a"b', '"a""b"'),
     ],
 )
 def test_duckdb_quotes_an_identifier_only_when_bare_would_misread_it(
     name: str, expected: str
 ) -> None:
-    assert duckdb_quoting.quote_identifier_if_needed(name, {"select"}) == expected
+    assert (
+        duckdb_quoting.quote_identifier_if_needed(name, {"select", "between"})
+        == expected
+    )

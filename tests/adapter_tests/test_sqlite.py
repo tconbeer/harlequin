@@ -711,3 +711,16 @@ def test_connect_attaches_paths_that_need_quoting(tmp_path: Path) -> None:
         ]
     ).connect()
     assert conn._get_databases() == ["main", "it's;x", "2024-sales"]
+
+
+@pytest.mark.parametrize(
+    "script", ["select 1;;\ncreate table after as select 2;", "select 1;\n-- done\n"]
+)
+def test_an_init_script_with_a_statement_that_runs_nothing(
+    tmp_path: Path, script: str
+) -> None:
+    """A lone separator or a trailing comment is a statement with no result."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    assert conn.conn.execute("select 1").fetchall() == [(1,)]
