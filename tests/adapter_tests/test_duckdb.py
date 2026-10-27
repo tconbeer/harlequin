@@ -8,7 +8,7 @@ import duckdb
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
-from harlequin.exception import HarlequinConnectionError
+from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
 from tests.waiting import wait_until
 
@@ -371,7 +371,9 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     )
     commands = DuckDbAdapter._split_script(script)
     assert len(commands) == 5
-    rewritten = [DuckDbAdapter._rewrite_init_command(cmd) for cmd in commands]
+    rewritten = [
+        DuckDbAdapter._rewrite_init_command(cmd, duckdb.connect()) for cmd in commands
+    ]
     assert rewritten[0] == ""
     assert rewritten[1] == commands[1]
     assert rewritten[2] == ""
@@ -385,6 +387,34 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     cur = conn.execute("select * from test_init")
     assert cur
     assert cur.relation.fetchall() == [(2,)]
+
+
+@pytest.mark.parametrize("primary_is_in_memory", [True, False])
+def test_a_bare_open_switches_to_a_fresh_in_memory_database(
+    tmp_path: Path, primary_is_in_memory: bool
+) -> None:
+    """As it does in the duckdb CLI, whatever the primary database is called."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(
+        "create table before_open as select 1;\n"
+        ".open\n"
+        "create table after_first_open as select 2;\n"
+        ".open\n"
+        "create table after_second_open as select 3;\n"
+    )
+    primary = ":memory:" if primary_is_in_memory else str(tmp_path / "primary.db")
+    conn = DuckDbAdapter([primary], init_path=script_path).connect()
+
+    [(current_database,)] = conn.conn.sql("select current_database()").fetchall()
+    database_by_table = dict(
+        conn.conn.sql(
+            "select table_name, database_name from duckdb_tables()"
+        ).fetchall()
+    )
+    primary_name = "memory" if primary_is_in_memory else "primary"
+    assert database_by_table["before_open"] == primary_name
+    assert database_by_table["after_second_open"] == current_database
+    assert len(set(database_by_table.values())) == 3
 
 
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
@@ -435,6 +465,55 @@ def test_spatial_types_have_a_label(native_type: str, expected: str) -> None:
 )
 def test_duckdb_2_types_have_a_label(native_type: str, expected: str) -> None:
     assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("native_type", "expected"),
+    [
+        ("ENUM('a', 'b')", "enum"),
+        ("ENUM('a', 'b')[]", "[enum]"),
+        ("JSON", "{j}"),
+        ("UHUGEINT", "u###"),
+        ("BIGNUM", "###"),
+        ("VARINT", "###"),
+        ("TIME_NS", "t"),
+        ("TIME WITH TIME ZONE", "ttz"),
+        ("UNION(a INTEGER, b VARCHAR)", "uni"),
+        ("INTEGER[3]", "[#]"),
+        ("STRUCT(a INTEGER)[2]", "[{}]"),
+        ("INTEGER[][]", "[#]"),
+    ],
+)
+def test_more_types_have_a_label(native_type: str, expected: str) -> None:
+    assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("'a'::enum('a', 'b')", "enum"),
+        ("'{}'::json", "{j}"),
+        ("1::uhugeint", "u###"),
+        ("1::varint", "###"),
+        ("'01:02:03'::time_ns", "t"),
+        ("'01:02:03+01'::timetz", "ttz"),
+        ("now()::timestamp_s", "ts"),
+        ("now()::timestamp_ms", "ts"),
+        ("union_value(a := 1)::union(a int, b varchar)", "uni"),
+        ("[1, 2, 3]::int[3]", "[#]"),
+    ],
+)
+def test_every_type_a_query_returns_has_a_label(expression: str, expected: str) -> None:
+    """Spelled by the installed duckdb, not by hand."""
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    try:
+        cur = conn.execute(f"select {expression} as x")
+    except HarlequinQueryError as e:
+        if "Type with name" not in str(e):
+            raise
+        pytest.skip(f"this duckdb has no type for {expression}")
+    assert cur is not None
+    assert cur.columns() == [("x", expected)]
 
 
 @pytest.mark.parametrize(
