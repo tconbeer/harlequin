@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
+- For DuckDB, `BIT` values now show as digits like `101` instead of raw bytes ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
+- For DuckDB, a bare `.open` in an init script no longer fails when the main database is in-memory ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
+- For DuckDB, `ENUM`, `JSON`, `UHUGEINT`, `TIME_NS`, `BIGNUM`, `TIME WITH TIME ZONE` and `UNION` columns now have a type label instead of `?`, and `ARRAY` columns are labeled as lists ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
 
 ## [2.17.0] - 2026-10-26
 
