@@ -19,7 +19,6 @@ All notable changes to this project will be documented in this file.
 - Running selected text or showing a table's DDL no longer crashes with duckdb 2.0 installed ([#1204](https://github.com/tconbeer/harlequin/issues/1204)).
 - With duckdb 2.0, statements like `create table` and `set` no longer open an empty result tab or make `hsql` print a `Count` or `Success` table, and running a query while another is still running replaces it instead of raising an error.
 - Exporting to ORC no longer fails on a column that holds only `NULL`.
-- Ensures `HarlequinKeyBinding.to_dict` does not mutate instance state, corrects `key_display` error message in keymaps, copies builtin themes safely, and enforces option name matching with `fullmatch`.
 
 ## [2.16.2] - 2026-10-18
 

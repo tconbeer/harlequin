@@ -48,7 +48,10 @@ class HarlequinKeyMap:
     @classmethod
     def from_config(cls, name: str, bindings: list[RawKeyBinding]) -> "HarlequinKeyMap":
         try:
-            parsed_bindings = [HarlequinKeyBinding(**binding) for binding in bindings]
+            keymap = cls(
+                name=name,
+                bindings=[HarlequinKeyBinding(**binding) for binding in bindings],
+            )
         except TypeError as e:
             bad_key = str(e).split("argument ")[-1].strip("'")
             raise HarlequinConfigError(
@@ -60,7 +63,7 @@ class HarlequinKeyMap:
                     f"a property: {bad_key!r}"
                 ),
             ) from e
-        return cls(name=name, bindings=parsed_bindings)
+        return keymap
 
     def to_dict(self) -> RawKeyMap:
         return {"name": self.name, "bindings": [b.to_dict() for b in self.bindings]}
