@@ -122,21 +122,11 @@ def show_relation_ddl(
 ) -> None:
     if item.parent is None or item.parent.parent is None or item.connection is None:
         return
-    table_function = "duckdb_tables()" if relation_type == "table" else "duckdb_views()"
-    cursor = item.connection.execute(
-        f"""
-        select sql
-        from {table_function}
-        where database_name = '{item.parent.parent.label}'
-        and schema_name = '{item.parent.label}'
-        and {relation_type}_name = '{item.label}'
-        limit 1
-        """
+    result = item.connection._get_relation_ddl(
+        item.parent.parent.label, item.parent.label, item.label, relation_type
     )
-    assert cursor is not None
-    result = cursor.fetchone()
     if result is not None:
-        driver.insert_text_in_new_buffer(text=result[0])
+        driver.insert_text_in_new_buffer(text=result)
 
 
 def show_table_ddl(

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import duckdb
 
+from harlequin.autocomplete.completion import HarlequinCompletion
+from harlequin_duckdb.quoting import quote_identifier_if_needed
 
-def get_completion_data(
-    cur: duckdb.DuckDBPyConnection,
-) -> list[tuple[str, str, int, str | None]]:
+
+def get_completion_data(cur: duckdb.DuckDBPyConnection) -> list[HarlequinCompletion]:
     keyword_data = cur.execute(
         """
         select distinct
@@ -79,9 +80,29 @@ def get_completion_data(
         """
     ).fetchall()
 
+    reserved_keywords = {
+        keyword_name.lower()
+        for (keyword_name,) in cur.execute(
+            "select keyword_name from duckdb_keywords() "
+            "where keyword_category = 'reserved'"
+        ).fetchall()
+    }
+    # a user-defined function or type can have any name, and is inserted
+    # quoted when it would not read as itself bare
     return [
-        *keyword_data,
-        *function_data,
-        *settings_data,
-        *type_data,
+        HarlequinCompletion(
+            label=label,
+            type_label=type_label,
+            value=label
+            if context is None
+            else quote_identifier_if_needed(label, reserved_keywords),
+            priority=priority,
+            context=context,
+        )
+        for label, type_label, priority, context in [
+            *keyword_data,
+            *function_data,
+            *settings_data,
+            *type_data,
+        ]
     ]

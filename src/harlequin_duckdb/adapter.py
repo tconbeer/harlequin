@@ -4,7 +4,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 import duckdb
 
@@ -37,6 +37,7 @@ from harlequin_duckdb.catalog import (
 )
 from harlequin_duckdb.cli_options import DUCKDB_OPTIONS
 from harlequin_duckdb.completions import get_completion_data
+from harlequin_duckdb.quoting import quote_identifier, quote_literal
 
 if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
@@ -53,6 +54,9 @@ _BUSY_TIMEOUT_SECONDS = 5.0
 
 _LIST_OR_ARRAY_SUFFIX = re.compile(r"\[\d*\]$")
 """How duckdb ends the name of a LIST or ARRAY type."""
+
+_DOT_COMMAND_ARGUMENT = re.compile(r"""'([^']*)'?|"([^"]*)"?|(\S+)""")
+"""One argument of a dot command: single-quoted, double-quoted, or bare."""
 
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
@@ -359,26 +363,13 @@ class DuckDbConnection(HarlequinConnection):
         return results
 
     def get_completions(self) -> list[HarlequinCompletion]:
-        cur = self.conn.cursor()
-        return [
-            HarlequinCompletion(
-                label=label,
-                type_label=type_label,
-                value=label,
-                priority=priority,
-                context=context,
-            )
-            for label, type_label, priority, context in get_completion_data(cur)
-        ]
+        return get_completion_data(self.conn.cursor())
 
     def validate_sql(self, text: str) -> str:
         cur = self.conn.cursor()
-        escaped = text.replace("'", "''")
         try:
-            [(parsed,)] = cur.execute(
-                f"select json_serialize_sql('{escaped}')"
-            ).fetchall()
-        except HarlequinQueryError:
+            [(parsed,)] = cur.execute("select json_serialize_sql(?)", [text]).fetchall()
+        except duckdb.Error:
             return ""
         result = json.loads(parsed)
         # DDL statements return an error of type "not implemented"
@@ -432,6 +423,35 @@ class DuckDbConnection(HarlequinConnection):
             [database, schema, table],
         ).fetchall()
         return columns
+
+    def _get_relation_ddl(
+        self,
+        database: str,
+        schema: str,
+        relation: str,
+        relation_type: Literal["view", "table"],
+    ) -> str | None:
+        """The statement that created a table or view, or None if there is none."""
+        cur = self.conn.cursor()
+        if relation_type == "table":
+            query = (
+                "select sql from duckdb_tables() "
+                "where database_name = ? and schema_name = ? and table_name = ? "
+                "limit 1"
+            )
+        else:
+            query = (
+                "select sql from duckdb_views() "
+                "where database_name = ? and schema_name = ? and view_name = ? "
+                "limit 1"
+            )
+        try:
+            found = cur.execute(query, [database, schema, relation]).fetchall()
+        except duckdb.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="DuckDB raised an error reading the DDL:"
+            ) from e
+        return found[0][0] if found else None
 
     @staticmethod
     def _relation_item(
@@ -540,9 +560,11 @@ class DuckDbAdapter(HarlequinAdapter):
                 read_only=self.read_only,
                 config=config,
             )
+            # attach takes no parameter for its path, so it is quoted instead
             for db in other_dbs:
                 connection.execute(
-                    f"attach '{db}'{' (READ_ONLY)' if self.read_only else ''}"
+                    f"attach {quote_literal(db)}"
+                    f"{' (READ_ONLY)' if self.read_only else ''}"
                 )
         except (duckdb.CatalogException, duckdb.IOException) as e:
             if "sqlite_scanner" in (msg := str(e)):
@@ -558,7 +580,7 @@ class DuckDbAdapter(HarlequinAdapter):
 
         if self.custom_extension_repo:
             connection.execute(
-                f"SET custom_extension_repository='{self.custom_extension_repo}';"
+                "set custom_extension_repository = ?", [self.custom_extension_repo]
             )
 
         for extension in self.extensions:
@@ -575,16 +597,18 @@ class DuckDbAdapter(HarlequinAdapter):
 
         msg = ""
         if self.init_path is not None and not self.no_init:
+            # deferred, since only an init script needs the splitter
+            from harlequin.statements import split
+
             init_script = self._read_init_script(self.init_path)
             try:
                 count = 0
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command, connection)
-                    for cmd in rewritten_command.split(";"):
-                        if cmd.strip():
-                            # duckdb 2 refuses queries while a result is unread
-                            connection.execute(cmd).fetchall()
-                            count += 1
+                    for statement in split(rewritten_command):
+                        # duckdb 2 refuses queries while a result is unread
+                        connection.execute(statement.sql).fetchall()
+                        count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {self.init_path}\n{e}"
                 raise HarlequinConnectionError(
@@ -630,14 +654,29 @@ Connected to database `{primary_db}`
         return [command.strip() for command in commands if command]
 
     @staticmethod
-    def _rewrite_dot_open(command: str, connection: duckdb.DuckDBPyConnection) -> str:
+    def _dot_command_arguments(command: str) -> list[str]:
+        """The arguments after a dot command's name, as the duckdb CLI reads them.
+
+        An argument that starts with a single or double quote runs to the
+        matching one, so it can hold whitespace.
+        """
+        arguments = [
+            next(group for group in match.groups() if group is not None)
+            for match in _DOT_COMMAND_ARGUMENT.finditer(command)
+        ]
+        return arguments[1:]
+
+    @classmethod
+    def _rewrite_dot_open(
+        cls, command: str, connection: duckdb.DuckDBPyConnection
+    ) -> str:
         """
         Rewrites .open command into its SQL equivalent.
 
         A bare `.open` attaches a fresh in-memory database under a name no
         attached database has, since the one it would replace cannot be closed.
         """
-        args = command.split()[1:]
+        args = cls._dot_command_arguments(command)
         if not args:
             taken_names = {
                 database_name.lower()
@@ -650,7 +689,8 @@ Connected to database `{primary_db}`
             while in_memory_name in taken_names:
                 suffix += 1
                 in_memory_name = f"memory_{suffix}"
-            return f"attach ':memory:' as {in_memory_name}; use {in_memory_name};"
+            database_name = quote_identifier(in_memory_name)
+            return f"attach ':memory:' as {database_name}; use {database_name};"
         else:
             # --readonly is only supported option
             if len(args) == 2 and args[0] == "--readonly":
@@ -659,8 +699,11 @@ Connected to database `{primary_db}`
             else:
                 option = ""
                 db_path = Path(args[0])
-
-            return f"attach '{db_path}'{option} as {db_path.stem}; use {db_path.stem};"
+            database_name = quote_identifier(db_path.stem)
+            return (
+                f"attach {quote_literal(str(db_path))} as {database_name}{option}; "
+                f"use {database_name};"
+            )
 
     @classmethod
     def _rewrite_init_command(

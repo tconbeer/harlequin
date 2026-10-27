@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 - For DuckDB, nanosecond values like `TIMESTAMP_NS` no longer crash the Results Viewer; they show to the microsecond, and infinite timestamps show as ∞ ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
 - For DuckDB, `BIGNUM` (formerly `VARINT`) values now show as integers instead of raw bytes in the Results Viewer ([#1214](https://github.com/tconbeer/harlequin/issues/1214)).
 - With duckdb 2.0, `VARIANT` values now show as the values they hold instead of raw bytes in the Results Viewer.
+- For DuckDB and SQLite, the Data Catalog, its context-menu actions and autocomplete now work with names that contain quotes, spaces, dots or other characters that need quoting ([#1209](https://github.com/tconbeer/harlequin/issues/1209)).
+- In init scripts, `.open` and `.load` now accept quoted paths and paths whose file names need quoting; for DuckDB, `.open --readonly` works, and for SQLite, a bare `.open` attaches an in-memory database instead of failing ([#1209](https://github.com/tconbeer/harlequin/issues/1209)).
 
 ## [2.17.0] - 2026-10-26
 
