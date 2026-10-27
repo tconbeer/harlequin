@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
-from harlequin.exception import HarlequinConnectionError
+from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
 from harlequin.query import execute, fetch
 from harlequin.statements import split
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
@@ -374,7 +374,9 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     )
     commands = DuckDbAdapter._split_script(script)
     assert len(commands) == 5
-    rewritten = [DuckDbAdapter._rewrite_init_command(cmd) for cmd in commands]
+    rewritten = [
+        DuckDbAdapter._rewrite_init_command(cmd, duckdb.connect()) for cmd in commands
+    ]
     assert rewritten[0] == ""
     assert rewritten[1] == commands[1]
     assert rewritten[2] == ""
@@ -394,7 +396,7 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
 def test_a_bare_open_switches_to_a_fresh_in_memory_database(
     tmp_path: Path, primary_is_in_memory: bool
 ) -> None:
-    """As the duckdb CLI's does, whatever the primary database is called."""
+    """As it does in the duckdb CLI, whatever the primary database is called."""
     script_path = tmp_path / "myscript"
     script_path.write_text(
         "create table before_open as select 1;\n"
@@ -471,8 +473,8 @@ def test_duckdb_2_types_have_a_label(native_type: str, expected: str) -> None:
 @pytest.mark.parametrize(
     ("native_type", "expected"),
     [
-        ("ENUM('a', 'b')", "enm"),
-        ("ENUM('a', 'b')[]", "[enm]"),
+        ("ENUM('a', 'b')", "enum"),
+        ("ENUM('a', 'b')[]", "[enum]"),
         ("JSON", "{j}"),
         ("UHUGEINT", "u###"),
         ("BIGNUM", "###"),
@@ -489,35 +491,32 @@ def test_more_types_have_a_label(native_type: str, expected: str) -> None:
     assert DuckDbConnection._short_column_type(native_type) == expected
 
 
-def test_every_type_a_query_returns_has_a_label() -> None:
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("'a'::enum('a', 'b')", "enum"),
+        ("'{}'::json", "{j}"),
+        ("1::uhugeint", "u###"),
+        ("1::varint", "###"),
+        ("'01:02:03'::time_ns", "t"),
+        ("'01:02:03+01'::timetz", "ttz"),
+        ("now()::timestamp_s", "ts"),
+        ("now()::timestamp_ms", "ts"),
+        ("union_value(a := 1)::union(a int, b varchar)", "uni"),
+        ("[1, 2, 3]::int[3]", "[#]"),
+    ],
+)
+def test_every_type_a_query_returns_has_a_label(expression: str, expected: str) -> None:
     """Spelled by the installed duckdb, not by hand."""
     conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    cur = conn.execute(
-        "select "
-        "'a'::enum('a', 'b') as enum_col, "
-        "'{}'::json as json_col, "
-        "1::uhugeint as uhugeint_col, "
-        "1::varint as varint_col, "
-        "'01:02:03'::time_ns as time_ns_col, "
-        "'01:02:03+01'::timetz as timetz_col, "
-        "now()::timestamp_s as timestamp_s_col, "
-        "now()::timestamp_ms as timestamp_ms_col, "
-        "union_value(a := 1)::union(a int, b varchar) as union_col, "
-        "[1, 2, 3]::int[3] as array_col"
-    )
+    try:
+        cur = conn.execute(f"select {expression} as x")
+    except HarlequinQueryError as e:
+        if "Type with name" not in str(e):
+            raise
+        pytest.skip(f"this duckdb has no type for {expression}")
     assert cur is not None
-    assert cur.columns() == [
-        ("enum_col", "enm"),
-        ("json_col", "{j}"),
-        ("uhugeint_col", "u###"),
-        ("varint_col", "###"),
-        ("time_ns_col", "t"),
-        ("timetz_col", "ttz"),
-        ("timestamp_s_col", "ts"),
-        ("timestamp_ms_col", "ts"),
-        ("union_col", "uni"),
-        ("array_col", "[#]"),
-    ]
+    assert cur.columns() == [("x", expected)]
 
 
 BIT_QUERY = (
@@ -585,6 +584,24 @@ def test_a_bit_in_an_unnamed_struct_leaves_the_other_columns_readable() -> None:
     assert isinstance(table, pa.Table)
     assert table.column(0).to_pylist() == ["101"]
     assert table.column_names == ["b", "bit_tuple"]
+    # duckdb 1.x has no spelling for an unnamed struct, so only 2.x can cast one
+    if str(cur.relation.dtypes[1]).startswith("TUPLE"):
+        assert table.column(1).to_pylist() == [{"element1": "11", "element2": 1}]
+
+
+def test_a_bit_that_cannot_be_cast_leaves_only_its_own_column_alone() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute(
+        "select {'a': '1'::bit, 'u': row('1'::bit, 1)} as s, '10'::bit as top"
+    )
+    assert cur is not None
+    table = cur.fetchall()
+    assert isinstance(table, pa.Table)
+    assert table.column("top").to_pylist() == ["10"]
+    if "TUPLE" in str(cur.relation.dtypes[0]):
+        assert table.column("s").to_pylist() == [
+            {"a": "1", "u": {"element1": "1", "element2": 1}}
+        ]
 
 
 def test_a_bit_value_reaches_the_results_viewer_as_its_digits() -> None:

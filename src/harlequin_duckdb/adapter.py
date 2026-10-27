@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import itertools
 import json
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Collection, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 import duckdb
 
@@ -146,7 +145,7 @@ def _bits_as_text(native_type: DuckDBPyType) -> str | None:
     type_id = native_type.id
     if type_id == "bit":
         return "VARCHAR"
-    if type_id not in ("list", "array", "struct", "map", "union"):
+    if type_id not in ("list", "array", "struct", "tuple", "map", "union"):
         return None
     # a union's first child is its tag, and an array's last is its size
     fields = [
@@ -154,9 +153,6 @@ def _bits_as_text(native_type: DuckDBPyType) -> str | None:
         for name, child in native_type.children[1 if type_id == "union" else 0 :]
         if isinstance(child, DuckDBPyType)
     ]
-    # an unnamed struct has no spelling a cast accepts
-    if type_id == "struct" and not all(name for name, _ in fields):
-        return None
     field_texts = [_bits_as_text(field_type) for _, field_type in fields]
     if all(field_text is None for field_text in field_texts):
         return None
@@ -164,36 +160,44 @@ def _bits_as_text(native_type: DuckDBPyType) -> str | None:
         array_size = dict(native_type.children).get("size", "")
         return f"{field_texts[0]}[{array_size}]"
     spelled_fields = [
-        ("" if type_id == "map" else f"{_quoted(name)} ")
+        ("" if type_id == "map" or not name else f"{_quoted(name)} ")
         + (str(field_type) if field_text is None else field_text)
         for (name, field_type), field_text in zip(fields, field_texts, strict=True)
     ]
-    type_keyword = str(native_type).split("(")[0]
-    return f"{type_keyword}({', '.join(spelled_fields)})"
+    return f"{type_id.upper()}({', '.join(spelled_fields)})"
+
+
+def _parses(relation: duckdb.DuckDBPyRelation, expression: str) -> bool:
+    try:
+        relation.project(expression)
+    except duckdb.Error:
+        return False
+    return True
 
 
 def _with_bits_as_text(relation: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRelation:
-    """`relation`, casting each column that holds a BIT so it exports as digits."""
-    column_texts = [_bits_as_text(column_type) for column_type in relation.dtypes]
-    if all(column_text is None for column_text in column_texts):
-        return relation
+    """`relation`, casting each column that holds a BIT so it exports as digits.
+
+    Each cast is tried on its own, because a type duckdb cannot read back as it
+    spelled it (an unnamed struct, in duckdb 1.x) should leave only its column.
+    """
+    projections: list[str] = []
+    casts_any_column = False
     # by position, since a result may repeat a column name
-    projections = [
-        (
-            f"#{position}"
-            if column_text is None
-            else f"cast(#{position} as {column_text})"
-        )
-        + f" as {_quoted(column_name)}"
-        for position, (column_name, column_text) in enumerate(
-            zip(relation.columns, column_texts, strict=True), start=1
-        )
-    ]
-    try:
-        return relation.project(", ".join(projections))
-    except duckdb.Error:
-        # a type duckdb cannot read back as it spelled it leaves the result as is
+    for position, (column_name, column_type) in enumerate(
+        zip(relation.columns, relation.dtypes, strict=True), start=1
+    ):
+        column_expression = f"#{position}"
+        column_text = _bits_as_text(column_type)
+        if column_text is not None and _parses(
+            relation, f"cast(#{position} as {column_text})"
+        ):
+            column_expression = f"cast(#{position} as {column_text})"
+            casts_any_column = True
+        projections.append(f"{column_expression} as {_quoted(column_name)}")
+    if not casts_any_column:
         return relation
+    return relation.project(", ".join(projections))
 
 
 class DuckDbCursor(HarlequinCursor):
@@ -283,7 +287,7 @@ class DuckDbConnection(HarlequinConnection):
         "TIMESTAMP WITH TIME ZONE": "ttz",
         "VARCHAR": "s",
         "JSON": "{j}",
-        "ENUM": "enm",
+        "ENUM": "enum",
         "BLOB": "0b",
         "BIT": "010",
         "INTERVAL": "|-|",
@@ -643,12 +647,7 @@ class DuckDbAdapter(HarlequinAdapter):
             try:
                 count = 0
                 for command in self._split_script(init_script):
-                    rewritten_command = self._rewrite_init_command(
-                        command,
-                        attached_database_names=self._attached_database_names(
-                            connection
-                        ),
-                    )
+                    rewritten_command = self._rewrite_init_command(command, connection)
                     for cmd in rewritten_command.split(";"):
                         if cmd.strip():
                             # duckdb 2 refuses queries while a result is unread
@@ -699,17 +698,7 @@ Connected to database `{primary_db}`
         return [command.strip() for command in commands if command]
 
     @staticmethod
-    def _attached_database_names(connection: duckdb.DuckDBPyConnection) -> list[str]:
-        """Every database `connection` has attached, internal ones included."""
-        rows = connection.execute(
-            "select database_name from duckdb_databases()"
-        ).fetchall()
-        return [database_name for (database_name,) in rows]
-
-    @staticmethod
-    def _rewrite_dot_open(
-        command: str, attached_database_names: Collection[str] = ()
-    ) -> str:
+    def _rewrite_dot_open(command: str, connection: duckdb.DuckDBPyConnection) -> str:
         """
         Rewrites .open command into its SQL equivalent.
 
@@ -718,14 +707,17 @@ Connected to database `{primary_db}`
         """
         args = command.split()[1:]
         if not args:
-            taken_names = {name.lower() for name in attached_database_names}
-            in_memory_name = next(
-                name
-                for name in itertools.chain(
-                    ["memory"], (f"memory_{n}" for n in itertools.count(1))
-                )
-                if name not in taken_names
-            )
+            taken_names = {
+                database_name.lower()
+                for (database_name,) in connection.execute(
+                    "select database_name from duckdb_databases()"
+                ).fetchall()
+            }
+            in_memory_name = "memory"
+            suffix = 0
+            while in_memory_name in taken_names:
+                suffix += 1
+                in_memory_name = f"memory_{suffix}"
             return f"attach ':memory:' as {in_memory_name}; use {in_memory_name};"
         else:
             # --readonly is only supported option
@@ -740,7 +732,7 @@ Connected to database `{primary_db}`
 
     @classmethod
     def _rewrite_init_command(
-        cls, command: str, attached_database_names: Collection[str] = ()
+        cls, command: str, connection: duckdb.DuckDBPyConnection
     ) -> str:
         """
         DuckDB init scripts can contain dot commands, which can only be executed
@@ -750,6 +742,6 @@ Connected to database `{primary_db}`
         if not command.startswith("."):
             return command
         elif command.startswith(".open"):
-            return cls._rewrite_dot_open(command, attached_database_names)
+            return cls._rewrite_dot_open(command, connection)
         else:
             return ""
