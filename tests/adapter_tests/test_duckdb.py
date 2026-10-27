@@ -407,16 +407,15 @@ def test_a_bare_open_switches_to_a_fresh_in_memory_database(
     conn = DuckDbAdapter([primary], init_path=script_path).connect()
 
     [(current_database,)] = conn.conn.sql("select current_database()").fetchall()
-    tables_by_database = conn.conn.sql(
-        "select database_name, table_name from duckdb_tables() order by table_name"
-    ).fetchall()
+    database_by_table = dict(
+        conn.conn.sql(
+            "select table_name, database_name from duckdb_tables()"
+        ).fetchall()
+    )
     primary_name = "memory" if primary_is_in_memory else "primary"
-    assert tables_by_database == [
-        (current_database, "after_second_open"),
-        (tables_by_database[1][0], "after_first_open"),
-        (primary_name, "before_open"),
-    ]
-    assert len({primary_name, tables_by_database[1][0], current_database}) == 3
+    assert database_by_table["before_open"] == primary_name
+    assert database_by_table["after_second_open"] == current_database
+    assert len(set(database_by_table.values())) == 3
 
 
 def test_initialize_adapter_ignores_extra_kwargs() -> None:

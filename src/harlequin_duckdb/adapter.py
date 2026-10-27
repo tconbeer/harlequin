@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Collection, Sequence
 
 import duckdb
 
@@ -579,7 +580,12 @@ class DuckDbAdapter(HarlequinAdapter):
             try:
                 count = 0
                 for command in self._split_script(init_script):
-                    rewritten_command = self._rewrite_init_command(command)
+                    rewritten_command = self._rewrite_init_command(
+                        command,
+                        attached_database_names=self._attached_database_names(
+                            connection
+                        ),
+                    )
                     for cmd in rewritten_command.split(";"):
                         if cmd.strip():
                             # duckdb 2 refuses queries while a result is unread
@@ -630,13 +636,34 @@ Connected to database `{primary_db}`
         return [command.strip() for command in commands if command]
 
     @staticmethod
-    def _rewrite_dot_open(command: str) -> str:
+    def _attached_database_names(connection: duckdb.DuckDBPyConnection) -> list[str]:
+        """Every database `connection` has attached, internal ones included."""
+        rows = connection.execute(
+            "select database_name from duckdb_databases()"
+        ).fetchall()
+        return [database_name for (database_name,) in rows]
+
+    @staticmethod
+    def _rewrite_dot_open(
+        command: str, attached_database_names: Collection[str] = ()
+    ) -> str:
         """
         Rewrites .open command into its SQL equivalent.
+
+        A bare `.open` attaches a fresh in-memory database under a name no
+        attached database has, since the one it would replace cannot be closed.
         """
         args = command.split()[1:]
         if not args:
-            return "attach ':memory:'; use memory;"
+            taken_names = {name.lower() for name in attached_database_names}
+            in_memory_name = next(
+                name
+                for name in itertools.chain(
+                    ["memory"], (f"memory_{n}" for n in itertools.count(1))
+                )
+                if name not in taken_names
+            )
+            return f"attach ':memory:' as {in_memory_name}; use {in_memory_name};"
         else:
             # --readonly is only supported option
             if len(args) == 2 and args[0] == "--readonly":
@@ -649,7 +676,9 @@ Connected to database `{primary_db}`
             return f"attach '{db_path}'{option} as {db_path.stem}; use {db_path.stem};"
 
     @classmethod
-    def _rewrite_init_command(cls, command: str) -> str:
+    def _rewrite_init_command(
+        cls, command: str, attached_database_names: Collection[str] = ()
+    ) -> str:
         """
         DuckDB init scripts can contain dot commands, which can only be executed
         by the CLI, not the python API. Here, we rewrite some common ones into
@@ -658,6 +687,6 @@ Connected to database `{primary_db}`
         if not command.startswith("."):
             return command
         elif command.startswith(".open"):
-            return cls._rewrite_dot_open(command)
+            return cls._rewrite_dot_open(command, attached_database_names)
         else:
             return ""
