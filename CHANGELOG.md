@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
+
 ## [2.17.0] - 2026-10-26
 
 ### Features

@@ -7,8 +7,12 @@ from pathlib import Path
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
+from harlequin.driver import HarlequinDriver
 from harlequin.exception import HarlequinConfigError, HarlequinConnectionError
 from harlequin_sqlite import HarlequinSqliteAdapter
+from harlequin_sqlite.adapter import HarlequinSqliteConnection
+from harlequin_sqlite.catalog import DatabaseCatalogItem, RelationCatalogItem
+from harlequin_sqlite.interactions import show_describe_relation, show_relation_ddl
 
 
 @pytest.fixture
@@ -319,6 +323,82 @@ def test_search_catalog_matches_every_level(tmp_path: Path) -> None:
         (("sales",), "sales", "t"),
         (("sales", "sales"), "sales", "##"),
     ]
+
+
+class NewBufferDriver(HarlequinDriver):
+    """Keeps the text an interaction opens a new buffer with."""
+
+    def __init__(self) -> None:
+        self.new_buffers: list[str] = []
+
+    def insert_text_in_new_buffer(self, text: str) -> None:
+        self.new_buffers.append(text)
+
+
+@pytest.fixture
+def two_databases(tmp_path: Path) -> HarlequinSqliteConnection:
+    """main and an attached archive, each with a table called orders; archive
+    also has a view with a quote in its name and a trigger called orders."""
+    conn = HarlequinSqliteAdapter(
+        [str(tmp_path / "sales.sqlite"), str(tmp_path / "archive.sqlite")]
+    ).connect()
+    conn.execute("create table main.orders (id bigint)")
+    conn.execute("""create view archive."Bob's orders" as select 1 as id""")
+    # created before archive's table, so it is the first row in archive's
+    # sqlite_schema that is named orders
+    conn.execute(
+        """create trigger archive.orders instead of insert on "Bob's orders" """
+        "begin select 1; end"
+    )
+    conn.execute("create table archive.orders (id bigint, total real)")
+    return conn
+
+
+def _relation_items(
+    conn: HarlequinSqliteConnection,
+) -> dict[str, RelationCatalogItem]:
+    relation_items: dict[str, RelationCatalogItem] = {}
+    for database_item in conn.get_catalog().items:
+        assert isinstance(database_item, DatabaseCatalogItem)
+        for relation_item in database_item.fetch_children():
+            relation_items[relation_item.qualified_identifier] = relation_item
+    return relation_items
+
+
+def test_describe_inserts_a_pragma_that_runs(
+    two_databases: HarlequinSqliteConnection,
+) -> None:
+    """The database qualifies the pragma, not its argument."""
+    described_columns: dict[str, list[str]] = {}
+    for identifier, relation_item in _relation_items(two_databases).items():
+        driver = NewBufferDriver()
+        show_describe_relation(relation_item, driver)
+        (pragma,) = driver.new_buffers
+        described_columns[identifier] = [
+            row[1] for row in two_databases.conn.execute(pragma)
+        ]
+    assert described_columns == {
+        '"main"."orders"': ["id"],
+        '"archive"."orders"': ["id", "total"],
+        '"archive"."Bob\'s orders"': ["id"],
+    }
+
+
+def test_show_ddl_reads_the_database_the_relation_is_in(
+    two_databases: HarlequinSqliteConnection,
+) -> None:
+    inserted_ddl: dict[str, list[str]] = {}
+    for identifier, relation_item in _relation_items(two_databases).items():
+        driver = NewBufferDriver()
+        show_relation_ddl(relation_item, driver)
+        inserted_ddl[identifier] = driver.new_buffers
+    assert inserted_ddl == {
+        '"main"."orders"': ["CREATE TABLE orders (id bigint)"],
+        '"archive"."orders"': ["CREATE TABLE orders (id bigint, total real)"],
+        '"archive"."Bob\'s orders"': [
+            """CREATE VIEW "Bob's orders" as select 1 as id"""
+        ],
+    }
 
 
 def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
