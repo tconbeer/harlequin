@@ -494,44 +494,51 @@ def test_an_init_script_that_ends_in_a_query_leaves_the_connection_usable(
     assert cur.relation.fetchall() == [(1,)]
 
 
-def _busy(connection: DuckDbConnection) -> bool:
-    """Whether another thread is using the connection."""
-    try:
-        connection.conn.extract_statements("select 1")
-    except Exception as e:
-        return type(e).__name__ == "ResourceInUseException"
-    return False
-
-
 @pytest.mark.skipif(
     not hasattr(duckdb, "ResourceInUseException"),
     reason="before duckdb 2, a busy connection is not refused",
 )
 def test_a_query_submitted_while_one_runs_interrupts_it() -> None:
     conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    # query_progress() is -1 unless a query is executing, which binding one is not
+    conn.conn.execute(
+        "set enable_progress_bar = true;"
+        "set enable_progress_bar_print = false;"
+        "set progress_bar_time = 0"
+    ).fetchall()
     slow_results: list[object] = []
 
     def run_slow_query() -> None:
         cursor = conn.execute(
             "select count(*) from range(100_000_000_000) t(i) where i % 7 = 3"
         )
-        assert cursor is not None
-        slow_results.append(cursor.fetchall())
+        slow_results.append(None if cursor is None else cursor.fetchall())
 
     slow_query = threading.Thread(target=run_slow_query, daemon=True)
     slow_query.start()
-    wait_until(lambda: _busy(conn), description="the slow query to start")
-
     try:
+        wait_until(
+            lambda: conn.conn.query_progress() >= 0,
+            description="the slow query to be executing",
+        )
         cursor = conn.execute("select 42")
+        assert cursor is not None
+        assert cursor.relation.fetchall() == [(42,)]
     finally:
-        conn.cancel()  # so a failure here does not leave the slow query running
-    assert cursor is not None
-    assert cursor.relation.fetchall() == [(42,)]
-    slow_query.join(timeout=10)
-    assert not slow_query.is_alive()
+        # so a failure above does not leave the slow query running
+        wait_until(
+            lambda: _cancelled(conn, slow_query),
+            description="the slow query to stop",
+        )
     # an interrupted fetch returns no data
     assert slow_results == [None]
+
+
+def _cancelled(connection: DuckDbConnection, thread: threading.Thread) -> bool:
+    """Interrupt whatever runs on the connection; True once `thread` has ended."""
+    if thread.is_alive():
+        connection.cancel()
+    return not thread.is_alive()
 
 
 def test_every_statement_runs_before_any_is_fetched() -> None:
