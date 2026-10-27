@@ -5,13 +5,10 @@ import threading
 from pathlib import Path
 
 import duckdb
-import pyarrow as pa
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
-from harlequin.query import execute, fetch
-from harlequin.statements import split
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
 from tests.waiting import wait_until
 
@@ -517,108 +514,6 @@ def test_every_type_a_query_returns_has_a_label(expression: str, expected: str) 
         pytest.skip(f"this duckdb has no type for {expression}")
     assert cur is not None
     assert cur.columns() == [("x", expected)]
-
-
-BIT_QUERY = (
-    "select "
-    "'101'::bit as b, "
-    "'0011'::bit as b, "
-    "2 as n, "
-    "['1'::bit, null] as bit_list, "
-    "['1'::bit, '0'::bit]::bit[2] as bit_array, "
-    "{'f': '10'::bit, 'g': 1} as bit_struct, "
-    "map {'1'::bit: '01'::bit} as bit_map, "
-    "union_value(k := '1'::bit)::union(k bit, j int) as bit_union, "
-    "null::bit as null_bit"
-)
-"""BIT at the top level and inside every nested type, under a repeated name."""
-
-
-def test_a_bit_value_arrives_as_its_digits() -> None:
-    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    cur = conn.execute(BIT_QUERY)
-    assert cur is not None
-    table = cur.fetchall()
-    assert isinstance(table, pa.Table)
-    assert table.column_names == [
-        "b",
-        "b",
-        "n",
-        "bit_list",
-        "bit_array",
-        "bit_struct",
-        "bit_map",
-        "bit_union",
-        "null_bit",
-    ]
-    assert [column.to_pylist() for column in table.columns] == [
-        ["101"],
-        ["0011"],
-        [2],
-        [["1", None]],
-        [["1", "0"]],
-        [{"f": "10", "g": 1}],
-        [[("1", "01")]],
-        ["1"],
-        [None],
-    ]
-    # the cursor still describes the columns as duckdb typed them
-    assert [label for _, label in cur.columns()] == [
-        "010",
-        "010",
-        "#",
-        "[010]",
-        "[010]",
-        "{}",
-        "{m}",
-        "uni",
-        "010",
-    ]
-
-
-def test_a_bit_in_an_unnamed_struct_leaves_the_other_columns_readable() -> None:
-    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    cur = conn.execute("select '101'::bit as b, row('11'::bit, 1) as bit_tuple")
-    assert cur is not None
-    table = cur.fetchall()
-    assert isinstance(table, pa.Table)
-    assert table.column(0).to_pylist() == ["101"]
-    assert table.column_names == ["b", "bit_tuple"]
-    # duckdb 1.x has no spelling for an unnamed struct, so only 2.x can cast one
-    if str(cur.relation.dtypes[1]).startswith("TUPLE"):
-        assert table.column(1).to_pylist() == [{"element1": "11", "element2": 1}]
-
-
-def test_a_bit_that_cannot_be_cast_leaves_only_its_own_column_alone() -> None:
-    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    cur = conn.execute(
-        "select {'a': '1'::bit, 'u': row('1'::bit, 1)} as s, '10'::bit as top"
-    )
-    assert cur is not None
-    table = cur.fetchall()
-    assert isinstance(table, pa.Table)
-    assert table.column("top").to_pylist() == ["10"]
-    if "TUPLE" in str(cur.relation.dtypes[0]):
-        assert table.column("s").to_pylist() == [
-            {"a": "1", "u": {"element1": "1", "element2": 1}}
-        ]
-
-
-def test_a_bit_value_reaches_the_results_viewer_as_its_digits() -> None:
-    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    [executed] = list(execute(conn, split("select '101'::bit as b")))
-    result = fetch(executed)
-    assert result.backend.get_row_at(0) == ["101"]
-    assert result.text_columns().column(0).to_pylist() == ["101"]
-
-
-def test_a_limited_bit_query_still_arrives_as_digits() -> None:
-    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
-    cur = conn.execute("select (i % 2)::varchar::bit as b from range(5) t(i)")
-    assert cur is not None
-    table = cur.set_limit(2).fetchall()
-    assert isinstance(table, pa.Table)
-    assert table.column(0).to_pylist() == ["0", "1"]
 
 
 @pytest.mark.parametrize(

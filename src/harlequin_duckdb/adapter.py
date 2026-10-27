@@ -132,74 +132,6 @@ def _contains_pattern(term: str) -> str:
     return f"%{escaped}%"
 
 
-def _quoted(identifier: str) -> str:
-    return '"' + identifier.replace('"', '""') + '"'
-
-
-def _bits_as_text(native_type: DuckDBPyType) -> str | None:
-    """`native_type` spelled with VARCHAR for each BIT in it; None if it has none.
-
-    Arrow has no bit string type, so duckdb exports a BIT as the bytes it is
-    stored in, and only duckdb's own cast spells it as digits.
-    """
-    type_id = native_type.id
-    if type_id == "bit":
-        return "VARCHAR"
-    if type_id not in ("list", "array", "struct", "tuple", "map", "union"):
-        return None
-    # a union's first child is its tag, and an array's last is its size
-    fields = [
-        (name, child)
-        for name, child in native_type.children[1 if type_id == "union" else 0 :]
-        if isinstance(child, DuckDBPyType)
-    ]
-    field_texts = [_bits_as_text(field_type) for _, field_type in fields]
-    if all(field_text is None for field_text in field_texts):
-        return None
-    if type_id in ("list", "array"):
-        array_size = dict(native_type.children).get("size", "")
-        return f"{field_texts[0]}[{array_size}]"
-    spelled_fields = [
-        ("" if type_id == "map" or not name else f"{_quoted(name)} ")
-        + (str(field_type) if field_text is None else field_text)
-        for (name, field_type), field_text in zip(fields, field_texts, strict=True)
-    ]
-    return f"{type_id.upper()}({', '.join(spelled_fields)})"
-
-
-def _parses(relation: duckdb.DuckDBPyRelation, expression: str) -> bool:
-    try:
-        relation.project(expression)
-    except duckdb.Error:
-        return False
-    return True
-
-
-def _with_bits_as_text(relation: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRelation:
-    """`relation`, casting each column that holds a BIT so it exports as digits.
-
-    Each cast is tried on its own, because a type duckdb cannot read back as it
-    spelled it (an unnamed struct, in duckdb 1.x) should leave only its column.
-    """
-    projections: list[str] = []
-    casts_any_column = False
-    # by position, since a result may repeat a column name
-    for position, (column_name, column_type) in enumerate(
-        zip(relation.columns, relation.dtypes, strict=True), start=1
-    ):
-        column_expression = f"#{position}"
-        column_text = _bits_as_text(column_type)
-        if column_text is not None and _parses(
-            relation, f"cast(#{position} as {column_text})"
-        ):
-            column_expression = f"cast(#{position} as {column_text})"
-            casts_any_column = True
-        projections.append(f"{column_expression} as {_quoted(column_name)}")
-    if not casts_any_column:
-        return relation
-    return relation.project(", ".join(projections))
-
-
 class DuckDbCursor(HarlequinCursor):
     def __init__(
         self, conn: DuckDbConnection, relation: duckdb.DuckDBPyRelation
@@ -225,7 +157,7 @@ class DuckDbCursor(HarlequinCursor):
 
     def fetchall(self) -> AutoBackendType | None:
         try:
-            result = _with_bits_as_text(self.relation).to_arrow_table()
+            result = self.relation.to_arrow_table()
         except duckdb.InterruptException:
             return None
         except duckdb.Error as e:

@@ -213,11 +213,6 @@ def test_null_string(hsql: Hsql, duck: list[str]) -> None:
     )
 
 
-def test_a_bit_value_prints_as_its_digits(hsql: Hsql, duck: list[str]) -> None:
-    assert hsql(*duck, "--csv", "-c", "select '101'::bit as b").stdout == "b\n101\n"
-    assert " 101\n" in hsql(*duck, "-c", "select '101'::bit as b").stdout
-
-
 def test_zero_rows_is_not_an_error(hsql: Hsql, duck: list[str]) -> None:
     """A0 vs A3: "matched nothing" has to be distinguishable from "failed"."""
     res = hsql(*duck, "--csv", "--stats", "-c", "select 1 as a where false")
