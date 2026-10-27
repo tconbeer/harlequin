@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
 - For DuckDB, a bare `.open` in an init script no longer fails when the main database is in-memory ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
 - For DuckDB, more column types (such as `ENUM`, `JSON` and `UNION`) now have a type label instead of `?`, and `ARRAY` columns are labeled as lists ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
+- For DuckDB, nanosecond values like `TIMESTAMP_NS` no longer crash the Results Viewer; they show to the microsecond, and infinite timestamps show as ∞ ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
+- For DuckDB, `BIGNUM` (formerly `VARINT`) values now show as integers instead of raw bytes in the Results Viewer ([#1214](https://github.com/tconbeer/harlequin/issues/1214)).
+- With duckdb 2.0, `VARIANT` values now show as the values they hold instead of raw bytes in the Results Viewer.
 
 ## [2.17.0] - 2026-10-26
 
