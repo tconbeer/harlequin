@@ -5,10 +5,13 @@ import threading
 from pathlib import Path
 
 import duckdb
+import pyarrow as pa
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError
+from harlequin.query import execute, fetch
+from harlequin.statements import split
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
 from tests.waiting import wait_until
 
@@ -387,6 +390,35 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     assert cur.relation.fetchall() == [(2,)]
 
 
+@pytest.mark.parametrize("primary_is_in_memory", [True, False])
+def test_a_bare_open_switches_to_a_fresh_in_memory_database(
+    tmp_path: Path, primary_is_in_memory: bool
+) -> None:
+    """As the duckdb CLI's does, whatever the primary database is called."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(
+        "create table before_open as select 1;\n"
+        ".open\n"
+        "create table after_first_open as select 2;\n"
+        ".open\n"
+        "create table after_second_open as select 3;\n"
+    )
+    primary = ":memory:" if primary_is_in_memory else str(tmp_path / "primary.db")
+    conn = DuckDbAdapter([primary], init_path=script_path).connect()
+
+    [(current_database,)] = conn.conn.sql("select current_database()").fetchall()
+    tables_by_database = conn.conn.sql(
+        "select database_name, table_name from duckdb_tables() order by table_name"
+    ).fetchall()
+    primary_name = "memory" if primary_is_in_memory else "primary"
+    assert tables_by_database == [
+        (current_database, "after_second_open"),
+        (tables_by_database[1][0], "after_first_open"),
+        (primary_name, "before_open"),
+    ]
+    assert len({primary_name, tables_by_database[1][0], current_database}) == 3
+
+
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
@@ -435,6 +467,128 @@ def test_spatial_types_have_a_label(native_type: str, expected: str) -> None:
 )
 def test_duckdb_2_types_have_a_label(native_type: str, expected: str) -> None:
     assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("native_type", "expected"),
+    [
+        ("ENUM('a', 'b')", "enm"),
+        ("ENUM('a', 'b')[]", "[enm]"),
+        ("JSON", "{j}"),
+        ("UHUGEINT", "u###"),
+        ("BIGNUM", "###"),
+        ("VARINT", "###"),
+        ("TIME_NS", "t"),
+        ("TIME WITH TIME ZONE", "ttz"),
+        ("UNION(a INTEGER, b VARCHAR)", "uni"),
+        ("INTEGER[3]", "[#]"),
+        ("STRUCT(a INTEGER)[2]", "[{}]"),
+        ("INTEGER[][]", "[#]"),
+    ],
+)
+def test_more_types_have_a_label(native_type: str, expected: str) -> None:
+    assert DuckDbConnection._short_column_type(native_type) == expected
+
+
+def test_every_type_a_query_returns_has_a_label() -> None:
+    """Spelled by the installed duckdb, not by hand."""
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute(
+        "select "
+        "'a'::enum('a', 'b') as enum_col, "
+        "'{}'::json as json_col, "
+        "1::uhugeint as uhugeint_col, "
+        "1::varint as varint_col, "
+        "'01:02:03'::time_ns as time_ns_col, "
+        "'01:02:03+01'::timetz as timetz_col, "
+        "now()::timestamp_s as timestamp_s_col, "
+        "now()::timestamp_ms as timestamp_ms_col, "
+        "union_value(a := 1)::union(a int, b varchar) as union_col, "
+        "[1, 2, 3]::int[3] as array_col"
+    )
+    assert cur is not None
+    assert cur.columns() == [
+        ("enum_col", "enm"),
+        ("json_col", "{j}"),
+        ("uhugeint_col", "u###"),
+        ("varint_col", "###"),
+        ("time_ns_col", "t"),
+        ("timetz_col", "ttz"),
+        ("timestamp_s_col", "ts"),
+        ("timestamp_ms_col", "ts"),
+        ("union_col", "uni"),
+        ("array_col", "[#]"),
+    ]
+
+
+BIT_QUERY = (
+    "select "
+    "'101'::bit as b, "
+    "'0011'::bit as b, "
+    "2 as n, "
+    "['1'::bit, null] as bit_list, "
+    "['1'::bit, '0'::bit]::bit[2] as bit_array, "
+    "{'f': '10'::bit, 'g': 1} as bit_struct, "
+    "map {'1'::bit: '01'::bit} as bit_map, "
+    "null::bit as null_bit"
+)
+"""BIT at the top level and inside every nested type, under a repeated name."""
+
+
+def test_a_bit_value_arrives_as_its_digits() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute(BIT_QUERY)
+    assert cur is not None
+    table = cur.fetchall()
+    assert isinstance(table, pa.Table)
+    assert table.column_names == [
+        "b",
+        "b",
+        "n",
+        "bit_list",
+        "bit_array",
+        "bit_struct",
+        "bit_map",
+        "null_bit",
+    ]
+    assert [column.to_pylist() for column in table.columns] == [
+        ["101"],
+        ["0011"],
+        [2],
+        [["1", None]],
+        [["1", "0"]],
+        [{"f": "10", "g": 1}],
+        [[("1", "01")]],
+        [None],
+    ]
+    # the cursor still describes the columns as duckdb typed them
+    assert [label for _, label in cur.columns()] == [
+        "010",
+        "010",
+        "#",
+        "[010]",
+        "[010]",
+        "{}",
+        "{m}",
+        "010",
+    ]
+
+
+def test_a_bit_value_reaches_the_results_viewer_as_its_digits() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    [executed] = list(execute(conn, split("select '101'::bit as b")))
+    result = fetch(executed)
+    assert result.backend.get_row_at(0) == ["101"]
+    assert result.text_columns().column(0).to_pylist() == ["101"]
+
+
+def test_a_limited_bit_query_still_arrives_as_digits() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute("select (i % 2)::varchar::bit as b from range(5) t(i)")
+    assert cur is not None
+    table = cur.set_limit(2).fetchall()
+    assert isinstance(table, pa.Table)
+    assert table.column(0).to_pylist() == ["0", "1"]
 
 
 @pytest.mark.parametrize(
