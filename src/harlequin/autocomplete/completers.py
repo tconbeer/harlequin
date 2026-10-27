@@ -293,9 +293,14 @@ class MemberCompleter(WordCompleter):
         value_prefix: str,
         label_fn: Callable[[HarlequinCompletion, str, str], tuple[str, str]],
     ) -> tuple[tuple[str, str], str]:
+        value = completion.value
+        # The editor closes the quote the user typed, so a value the adapter
+        # already quoted with the same character keeps only what is inside.
+        if quote_char and len(value) > 1 and value[0] == value[-1] == quote_char:
+            value = value[1:-1]
         return (
             label_fn(completion, value_prefix, quote_char),
-            f"{value_prefix}{quote_char}{completion.value}",
+            f"{value_prefix}{quote_char}{value}",
         )
 
     def _build_known_keys(self) -> set[object]:
