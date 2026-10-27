@@ -529,6 +529,7 @@ BIT_QUERY = (
     "['1'::bit, '0'::bit]::bit[2] as bit_array, "
     "{'f': '10'::bit, 'g': 1} as bit_struct, "
     "map {'1'::bit: '01'::bit} as bit_map, "
+    "union_value(k := '1'::bit)::union(k bit, j int) as bit_union, "
     "null::bit as null_bit"
 )
 """BIT at the top level and inside every nested type, under a repeated name."""
@@ -548,6 +549,7 @@ def test_a_bit_value_arrives_as_its_digits() -> None:
         "bit_array",
         "bit_struct",
         "bit_map",
+        "bit_union",
         "null_bit",
     ]
     assert [column.to_pylist() for column in table.columns] == [
@@ -558,6 +560,7 @@ def test_a_bit_value_arrives_as_its_digits() -> None:
         [["1", "0"]],
         [{"f": "10", "g": 1}],
         [[("1", "01")]],
+        ["1"],
         [None],
     ]
     # the cursor still describes the columns as duckdb typed them
@@ -569,8 +572,19 @@ def test_a_bit_value_arrives_as_its_digits() -> None:
         "[010]",
         "{}",
         "{m}",
+        "uni",
         "010",
     ]
+
+
+def test_a_bit_in_an_unnamed_struct_leaves_the_other_columns_readable() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    cur = conn.execute("select '101'::bit as b, row('11'::bit, 1) as bit_tuple")
+    assert cur is not None
+    table = cur.fetchall()
+    assert isinstance(table, pa.Table)
+    assert table.column(0).to_pylist() == ["101"]
+    assert table.column_names == ["b", "bit_tuple"]
 
 
 def test_a_bit_value_reaches_the_results_viewer_as_its_digits() -> None:
