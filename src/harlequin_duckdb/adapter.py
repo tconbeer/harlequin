@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
@@ -49,6 +50,9 @@ _RESOURCE_IN_USE: type[Exception] | None = getattr(
 
 _BUSY_TIMEOUT_SECONDS = 5.0
 """How long a query waits for an interrupted one to give up the connection."""
+
+_LIST_OR_ARRAY_SUFFIX = re.compile(r"\[\d*\]$")
+"""How duckdb ends the name of a LIST or ARRAY type."""
 
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
@@ -195,6 +199,9 @@ class DuckDbConnection(HarlequinConnection):
         "BIGINT": "##",
         "UBIGINT": "u##",
         "HUGEINT": "###",
+        "UHUGEINT": "u###",
+        "BIGNUM": "###",
+        "VARINT": "###",
         "UUID": "uid",
         "FLOAT": "#.#",
         "DOUBLE": "#.#",
@@ -204,11 +211,15 @@ class DuckDbConnection(HarlequinConnection):
         "TIMESTAMP_NS": "ts",
         "TIMESTAMP_S": "ts",
         "TIME": "t",
+        "TIME_NS": "t",
         "TIME_TZ": "ttz",
+        "TIME WITH TIME ZONE": "ttz",
         "TIMESTAMP_TZ": "ttz",
         "TIMESTAMPTZ_NS": "ttz",
         "TIMESTAMP WITH TIME ZONE": "ttz",
         "VARCHAR": "s",
+        "JSON": "{j}",
+        "ENUM": "enm",
         "BLOB": "0b",
         "BIT": "010",
         "INTERVAL": "|-|",
@@ -219,6 +230,7 @@ class DuckDbConnection(HarlequinConnection):
         "TUPLE": "{}",
         "VARIANT": "var",
         "MAP": "{m}",
+        "UNION": "uni",
         # the spatial extension's types. WKB_BLOB is bytes and shows as bytes;
         # the rest are geometry, whether stored as a blob or as a struct of
         # doubles, and the label says so rather than what holds it.
@@ -451,9 +463,10 @@ class DuckDbConnection(HarlequinConnection):
         to check class members. So we just convert to a string and split
         complex types on their first paren to match our dictionary.
         """
-        base_type = str(native_type).split("(")[0].split("[")[0]
+        type_name = str(native_type)
+        base_type = type_name.split("(")[0].split("[")[0]
         short_base_type = cls.COLUMN_TYPE_MAPPING.get(base_type, cls.UNKNOWN_TYPE)
-        if str(native_type).endswith("[]"):
+        if _LIST_OR_ARRAY_SUFFIX.search(type_name):
             return f"[{short_base_type}]"
         else:
             return short_base_type
