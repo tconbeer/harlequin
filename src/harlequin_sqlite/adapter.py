@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import suppress
 from itertools import cycle, zip_longest
@@ -31,12 +32,15 @@ from harlequin_sqlite.catalog import (
 )
 from harlequin_sqlite.cli_options import SQLITE_OPTIONS
 from harlequin_sqlite.completions import get_completion_data
-from harlequin_sqlite.quoting import quote_identifier
+from harlequin_sqlite.quoting import quote_identifier, quote_literal
 
 if TYPE_CHECKING:
     from textual_fastdatatable.backend import AutoBackendType
 
 IN_MEMORY_CONN_STR = (":memory:",)
+
+_DOT_COMMAND_ARGUMENT = re.compile(r"""'([^']*)'?|"([^"]*)"?|(\S+)""")
+"""One argument of a dot command: single-quoted, double-quoted, or bare."""
 
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
@@ -337,16 +341,32 @@ class HarlequinSqliteConnection(HarlequinConnection):
         return [db_name for _, db_name, _ in objects]
 
     def _get_relations(self, db_name: str) -> list[tuple[str, str]]:
+        # every attached database has its own sqlite_schema, which is named
+        # rather than bound
         objects = self.conn.execute(
-            f'select type, name from "{db_name}".sqlite_schema'
+            f"select type, name from {quote_identifier(db_name)}.sqlite_schema"
         ).fetchall()
         relations = [(name, typ) for typ, name in objects if typ in ("table", "view")]
         return relations
 
     def _get_columns(self, db_name: str, rel_name: str) -> list[tuple[str, str, str]]:
         return self.conn.execute(
-            f"pragma {db_name}.table_info('{rel_name}')"
+            "select * from pragma_table_info(?, ?)", [rel_name, db_name]
         ).fetchall()
+
+    def _get_relation_ddl(self, db_name: str, rel_name: str) -> str | None:
+        """The statement that created a table or view, or None if there is none."""
+        try:
+            found = self.conn.execute(
+                f"select sql from {quote_identifier(db_name)}.sqlite_schema "
+                "where name = ? and type in ('table', 'view') limit 1",
+                [rel_name],
+            ).fetchall()
+        except sqlite3.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e), title="SQLite raised an error reading the DDL:"
+            ) from e
+        return found[0][0] if found else None
 
     @staticmethod
     def _relation_item(
@@ -548,7 +568,7 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
 
         for uri, name in zip(other_dbs, db_names[1:], strict=False):
             try:
-                conn.execute(f"attach database '{uri}' as {name}")
+                conn.execute("attach database ? as ?", [uri, name])
             except sqlite3.Error as e:
                 if "file is not a database" in (msg := str(e)):
                     msg = (
@@ -575,38 +595,40 @@ class HarlequinSqliteAdapter(HarlequinAdapter):
 
         init_msg = ""
         if self.init_path is not None and not self.no_init:
+            # deferred, since only an init script needs the splitter
+            from harlequin.statements import split
+
             init_script = self._read_init_script(self.init_path)
             count = 0
             for command in self._split_script(init_script):
-                rewritten_command = self._rewrite_init_command(command)
-                for cmd in rewritten_command.split(";"):
-                    if cmd.strip():
-                        try:
-                            conn.execute(cmd)
-                        except sqlite3.Error as e:
-                            msg = (
-                                f"Attempted to execute script at {self.init_path}. "
-                                f"Contents:\n{command}\nRewritten to:\n"
-                                f"{rewritten_command}\nCurrently executing:\n"
-                                f"{cmd}\nError:\n{e}"
+                rewritten_command = self._rewrite_init_command(command, conn)
+                for statement in split(rewritten_command):
+                    cmd = statement.sql
+                    try:
+                        conn.execute(cmd)
+                    except sqlite3.Error as e:
+                        msg = (
+                            f"Attempted to execute script at {self.init_path}. "
+                            f"Contents:\n{command}\nRewritten to:\n"
+                            f"{rewritten_command}\nCurrently executing:\n"
+                            f"{cmd}\nError:\n{e}"
+                        )
+                        if not self.can_load_extensions and isinstance(
+                            e, sqlite3.OperationalError
+                        ):
+                            msg += (
+                                "\nWarning: Cannot load extensions with this "
+                                "SQLite distribution. See "
+                                "https://harlequin.sh/docs/sqlite/extensions"
                             )
-                            if not self.can_load_extensions and isinstance(
-                                e, sqlite3.OperationalError
-                            ):
-                                msg += (
-                                    "\nWarning: Cannot load extensions with this "
-                                    "SQLite distribution. See "
-                                    "https://harlequin.sh/docs/sqlite/extensions"
-                                )
-                            raise HarlequinConnectionError(
-                                msg,
-                                title=(
-                                    "SQLite could not execute your initialization "
-                                    "script."
-                                ),
-                            ) from e
-                        else:
-                            count += 1
+                        raise HarlequinConnectionError(
+                            msg,
+                            title=(
+                                "SQLite could not execute your initialization script."
+                            ),
+                        ) from e
+                    else:
+                        count += 1
             if count > 0:
                 init_msg = (
                     f"Executed {count} {'command' if count == 1 else 'commands'} "
@@ -650,7 +672,7 @@ Connected to database `{primary_db}`
         return [command.strip() for command in commands if command]
 
     @classmethod
-    def _rewrite_init_command(cls, command: str) -> str:
+    def _rewrite_init_command(cls, command: str, conn: sqlite3.Connection) -> str:
         """
         SQLite init scripts can contain dot commands, which can only be executed
         by the CLI, not the python API. Here, we rewrite some common ones into
@@ -659,42 +681,68 @@ Connected to database `{primary_db}`
         if not command.startswith("."):
             return command
         elif command.startswith(".open"):
-            return cls._rewrite_dot_open(command)
+            return cls._rewrite_dot_open(command, conn)
         elif command.startswith(".load"):
             return cls._rewrite_dot_load(command)
         else:
             return ""
 
     @staticmethod
-    def _rewrite_dot_open(command: str) -> str:
+    def _dot_command_arguments(command: str) -> list[str]:
+        """The arguments after a dot command's name, split on whitespace.
+
+        An argument that starts with a single or double quote runs to the
+        matching one, so it can hold whitespace. Backslashes are kept as they
+        are, even inside double quotes, so a Windows path survives.
+        """
+        arguments = [
+            next(group for group in match.groups() if group is not None)
+            for match in _DOT_COMMAND_ARGUMENT.finditer(command)
+        ]
+        return arguments[1:]
+
+    @classmethod
+    def _rewrite_dot_open(cls, command: str, conn: sqlite3.Connection) -> str:
         """
         Rewrites .open command into its approx SQL equivalent.
         (This attaches databases instead of opening a new connection).
 
-        Options (--readonly, etc.) are not supported.
+        A bare `.open` or `.open :memory:` attaches a fresh in-memory database
+        under a name no attached database has. Options (--readonly, etc.) are
+        not supported.
         """
-        args = command.split()[1:]
-        if not args:
-            return "attach ''"
-        elif args[-1] == ":memory:":
-            return "attach ':memory:';"
+        args = cls._dot_command_arguments(command)
+        if not args or args[-1] == ":memory:":
+            taken_names = {
+                database_name.lower()
+                for _, database_name, _ in conn.execute(
+                    "pragma database_list"
+                ).fetchall()
+            }
+            in_memory_name = "memory"
+            suffix = 0
+            while in_memory_name in taken_names:
+                suffix += 1
+                in_memory_name = f"memory_{suffix}"
+            return f"attach ':memory:' as {quote_identifier(in_memory_name)};"
         else:
             # options are not supported.
             db_path = Path(args[-1])
-            return f"attach '{db_path}' as {db_path.stem};"
+            return (
+                f"attach {quote_literal(str(db_path))} "
+                f"as {quote_identifier(db_path.stem)};"
+            )
 
-    @staticmethod
-    def _rewrite_dot_load(command: str) -> str:
+    @classmethod
+    def _rewrite_dot_load(cls, command: str) -> str:
         """
         Rewrites .load command into its SQL equivalent, load_extension().
         """
-        args = command.split()[1:]
+        args = cls._dot_command_arguments(command)
         if not args:
             raise sqlite3.ProgrammingError("Could not execute .load with no args.")
-        elif len(args) == 1:
-            return f"select load_extension('{args[0]}');"
-        elif len(args) == 2:
-            return f"select load_extension('{args[0]}', '{args[1]}');"
+        elif len(args) <= 2:
+            return f"select load_extension({', '.join(map(quote_literal, args))});"
         else:
             raise sqlite3.ProgrammingError(
                 f"Could not execute .load with following args: {args}"
