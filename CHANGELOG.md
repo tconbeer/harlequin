@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - For DuckDB, nanosecond values like `TIMESTAMP_NS` no longer crash the Results Viewer; they show to the microsecond, and infinite timestamps show as ∞ ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
 - For DuckDB, `BIGNUM` (formerly `VARINT`) values now show as integers instead of raw bytes in the Results Viewer ([#1214](https://github.com/tconbeer/harlequin/issues/1214)).
 - With duckdb 2.0, `VARIANT` values now show as the values they hold instead of raw bytes in the Results Viewer.
+- Member autocompletion (`table.`) now offers columns when the table or schema name has uppercase or mixed-case letters and you type it in a different case ([#1200](https://github.com/tconbeer/harlequin/issues/1200)).
 
 ## [2.17.0] - 2026-10-26
 
