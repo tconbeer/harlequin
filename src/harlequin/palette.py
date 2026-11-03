@@ -44,6 +44,10 @@ def _has_many_buffers(app: Harlequin) -> bool:
     return app.editor_collection.tab_count > 1
 
 
+def _has_closed_buffers(app: Harlequin) -> bool:
+    return bool(app.editor_collection.closed_buffer_states)
+
+
 def _has_result_columns(app: Harlequin) -> bool:
     table = app.results_viewer.get_visible_table()
     return table is not None and table.row_count > 0
@@ -116,12 +120,26 @@ PALETTE_COMMANDS: tuple[PaletteCommand, ...] = (
     # buffers
     PaletteCommand("New Buffer", "Open a new buffer", "code_editor.new_buffer"),
     PaletteCommand(
-        "Close Buffer", "Close the current buffer", "code_editor.close_buffer"
+        "Close Buffer",
+        "Hide the current buffer, or delete it if empty",
+        "code_editor.close_buffer",
     ),
     PaletteCommand(
         "Close All Buffers",
-        "Close every buffer and start over with an empty one",
+        "Hide buffers holding text and leave one new empty buffer",
         "code_editor.close_all_buffers",
+    ),
+    PaletteCommand(
+        "Reopen Closed Buffer",
+        "Reopen the most recently closed buffer",
+        "code_editor.reopen_buffer",
+        is_available=_has_closed_buffers,
+    ),
+    PaletteCommand(
+        "Closed Buffers",
+        "Find and reopen a closed buffer",
+        "code_editor.show_closed_buffers",
+        is_available=_has_closed_buffers,
     ),
     PaletteCommand(
         "Next Buffer",
