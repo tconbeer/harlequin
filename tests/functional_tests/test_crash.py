@@ -311,7 +311,7 @@ def render_panel(message: str) -> str:
     with console.capture() as capture:
         console.print(
             pretty_error_message(
-                HarlequinCrashError(_as_markup(message), title="Harlequin crashed.")
+                HarlequinCrashError(_as_markup(message), title="Harlequin crashed.", markup=True)
             )
         )
     return capture.get()
