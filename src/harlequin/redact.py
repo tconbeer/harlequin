@@ -40,20 +40,21 @@ _URI_PASSWORD = re.compile(r"://[^/?#@\s]*?:([^/?#@\s]+)@")
 
 _DSN_PASSWORD = re.compile(
     r"[\w.\-]*(?:" + _SECRET_NAME.pattern + r")[\w.\-]*"
-    r"\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^&;\s]*))",
+    r"\s*=\s*(?:'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|([^&;\s]*))",
     re.IGNORECASE,
 )
 """`password=hunter2`, in a URL's query string or in libpq's space-separated
-pairs, quoted or bare."""
+pairs, quoted or bare. libpq escapes a quote inside a quoted value with a
+backslash, so `\\'` does not end the value."""
 
 _SQL_SECRET_LITERAL = re.compile(
     r"[\w.]*(?:" + _SECRET_NAME.pattern + r"|key[_-]?id)[\w.]*"
-    r"\s*=?\s*'([^']*)'",
+    r"\s*=?\s*'((?:[^']|'')*)'",
     re.IGNORECASE,
 )
 """A credential written into a statement: a name that reads like one, then a
 quoted literal. `create secret (… key_id 'AKIA…', secret '…')`, and `set
-s3_secret_access_key = '…'`."""
+s3_secret_access_key = '…'`. A doubled `''` is a quote inside the literal."""
 
 _TOO_SHORT_TO_HIDE = 4
 """Below this, substituting a secret into prose would mangle the message."""

@@ -16,6 +16,7 @@ from harlequin.redact import (
     hide_secrets_in,
     redact_conn_str,
     redact_profile,
+    redact_sql,
     redact_text,
 )
 
@@ -132,6 +133,10 @@ def test_a_profile_with_nothing_to_hide_is_unchanged() -> None:
             f"host=warehouse password='{REDACTED}' user=reporting",
         ),
         (
+            r"host=warehouse password='hunter2 \'x' user=reporting",
+            f"host=warehouse password='{REDACTED}' user=reporting",
+        ),
+        (
             "md:my_db?motherduck_token=hunter2",
             f"md:my_db?motherduck_token={REDACTED}",
         ),
@@ -143,6 +148,7 @@ def test_a_profile_with_nothing_to_hide_is_unchanged() -> None:
         "url query string",
         "libpq pairs",
         "libpq pairs, quoted",
+        "libpq pairs, quoted with an escaped quote",
         "motherduck",
         "odbc",
     ],
@@ -312,3 +318,26 @@ def test_one_bad_item_does_not_take_the_conn_strs_beside_it() -> None:
         f"postgres://ted:{REDACTED}@db/x",
         REDACTED,
     ]
+
+
+@pytest.mark.parametrize(
+    "sql,expected",
+    [
+        (
+            "create secret (type s3, secret 'hunter2''s')",
+            f"create secret (type s3, secret '{REDACTED}')",
+        ),
+        (
+            "set s3_secret_access_key = 'it''s hunter2'",
+            f"set s3_secret_access_key = '{REDACTED}'",
+        ),
+    ],
+    ids=["create secret", "set"],
+)
+def test_a_sql_secret_with_a_doubled_quote_is_masked_whole(
+    sql: str, expected: str
+) -> None:
+    """SQL escapes a quote inside a literal by doubling it, so the literal does
+    not end at the first quote."""
+    assert redact_sql(sql) == expected
+    assert "hunter2" not in redact_sql(sql)

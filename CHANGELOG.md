@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - For DuckDB, nanosecond values like `TIMESTAMP_NS` no longer crash the Results Viewer; they show to the microsecond, and infinite timestamps show as ∞ ([#1207](https://github.com/tconbeer/harlequin/issues/1207)).
 - For DuckDB, `BIGNUM` (formerly `VARINT`) values now show as integers instead of raw bytes in the Results Viewer ([#1214](https://github.com/tconbeer/harlequin/issues/1214)).
 - With duckdb 2.0, `VARIANT` values now show as the values they hold instead of raw bytes in the Results Viewer.
+- Secrets that contain an escaped quote (`\'` in a libpq connection string, `''` in a SQL literal) are now masked whole in the query log, crash reports and printed profiles, instead of leaking the part after the quote ([#1236](https://github.com/tconbeer/harlequin/issues/1236)).
 
 ## [2.17.0] - 2026-10-26
 
