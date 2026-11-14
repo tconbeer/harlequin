@@ -12,13 +12,12 @@ from unittest.mock import MagicMock
 import pytest
 from textual.command import CommandInput, CommandList, CommandPalette
 from textual.pilot import Pilot
-from textual.widgets import Button, Tab, Tabs
+from textual.widgets import Tab, Tabs
 
 from harlequin import Harlequin
 from harlequin.catalog_cache import CatalogCache
 from harlequin.components import HelpScreen
 from harlequin.components.catalog_source_screen import CatalogSourceScreen
-from harlequin.components.confirm_modal import ConfirmModal
 from harlequin.components.data_catalog import S3Tree
 from harlequin.keymap import HarlequinKeyBinding, HarlequinKeyMap
 from harlequin_duckdb.adapter import DuckDbAdapter
@@ -62,18 +61,6 @@ async def run_palette_command(pilot: Pilot, app: Harlequin, title: str) -> None:
         lambda: not isinstance(app.screen, CommandPalette),
         description="the command palette to close",
     )
-
-
-async def click_confirm_modal(pilot: Pilot, app: Harlequin, button_id: str) -> None:
-    await wait_for(
-        pilot,
-        lambda: (
-            isinstance(app.screen, ConfirmModal)
-            and bool(app.screen.query(f"#{button_id}"))
-        ),
-        description="a prompt before discarding text",
-    )
-    await pilot.click(f"#{button_id}")
 
 
 @pytest.mark.asyncio
@@ -208,33 +195,20 @@ async def test_palette_runs_buffer_commands(
         await run_palette_command(pilot, app, "Close All Buffers")
         await wait_for(
             pilot,
-            lambda: (
-                isinstance(app.screen, ConfirmModal)
-                and len(app.screen.query(Button)) == 2
-            ),
-            description="a prompt before discarding text",
-        )
-        assert [str(button.label) for button in app.screen.query(Button)] == [
-            "Cancel",
-            "Close All",
-        ]
-        await click_confirm_modal(pilot, app, "no")
-        await wait_for(
-            pilot,
-            lambda: not isinstance(app.screen, ConfirmModal),
-            description="the prompt to close",
-        )
-        assert collection.tab_count == 2
-        assert [buffer.text for buffer in collection.buffers] == ["select 1", ""]
-
-        await run_palette_command(pilot, app, "Close All Buffers")
-        await click_confirm_modal(pilot, app, "yes")
-        await wait_for(
-            pilot,
             lambda: collection.tab_count == 1 and editor.text == "",
             description="every buffer to close, leaving one empty one",
         )
         assert collection.has_class("hide-tabs")
+        assert [state.text for state in collection.closed_buffer_states] == ["select 1"]
+        assert {"Reopen Closed Buffer", "Closed Buffers"} <= palette_titles(app)
+        await run_palette_command(pilot, app, "Reopen Closed Buffer")
+        await wait_for(
+            pilot,
+            lambda: editor.text == "select 1" and collection.tab_count == 2,
+            description="the closed buffer to reopen",
+        )
+        assert not collection.closed_buffer_states
+        assert "Closed Buffers" not in palette_titles(app)
 
 
 @pytest.mark.asyncio
