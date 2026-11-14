@@ -96,7 +96,7 @@ class AbstractOption(ABC):
                 back -- a password, a token, a key. See the class attribute.
         """
         # names should be valid html/css ids
-        if re.match(r"[A-Za-z](\w|-)*", name):
+        if re.fullmatch(r"[A-Za-z](\w|-)*", name):
             self.name = name
         else:
             raise ValueError(
