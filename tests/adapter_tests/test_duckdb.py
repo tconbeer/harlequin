@@ -9,7 +9,28 @@ import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
 from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
+from harlequin.statements import split
 from harlequin_duckdb.adapter import DuckDbAdapter, DuckDbConnection
+from harlequin_duckdb.catalog import (
+    DatabaseCatalogItem,
+    RelationCatalogItem,
+    SchemaCatalogItem,
+)
+from harlequin_duckdb.interactions import (
+    execute_drop_schema_statement,
+    execute_drop_table_statement,
+    execute_drop_view_statement,
+    execute_use_statement,
+    insert_columns_at_cursor,
+    show_describe_relation,
+    show_export_database,
+    show_select_star,
+    show_summarize_relation,
+    show_table_ddl,
+    show_view_ddl,
+)
+from harlequin_duckdb.quoting import qualified_name, quote_identifier, quote_literal
+from tests.recording_driver import RecordingDriver
 from tests.waiting import wait_until
 
 
@@ -643,3 +664,275 @@ def test_every_statement_runs_before_any_is_fetched() -> None:
     assert plan is not None and plan.relation.fetchall()
     assert deleted is not None and len(deleted.relation.fetchall()) == 99990
     assert count is not None and count.relation.fetchall() == [(10,)]
+
+
+ODD_DATABASE = 'Bob\'s "db";x'
+ODD_SCHEMA = 'a.b "s";c'
+ODD_RELATIONS = [
+    "Bob's orders",
+    'say "hi"',
+    "a.b",
+    "semi;colon",
+    "back\\slash",
+    "tick`s",
+    "brack]et",
+    "Mixed Case",
+    "select",
+    "2024-sales",
+]
+"""Table names that each break a hand-quoted identifier or literal somewhere."""
+
+
+@pytest.fixture
+def odd_names(tmp_path: Path) -> DuckDbConnection:
+    """An attached database and a schema with awkward names, holding a table
+    for each of ODD_RELATIONS, with one column and one row both named like the
+    table, and a view over each called `v <name>`."""
+    conn = DuckDbAdapter([str(tmp_path / "main.db")], no_init=True).connect()
+    other_path = quote_literal(str(tmp_path / "other.db"))
+    conn.conn.execute(f"attach {other_path} as {quote_identifier(ODD_DATABASE)}")
+    conn.conn.execute(f"create schema {qualified_name(ODD_DATABASE, ODD_SCHEMA)}")
+    for name in ODD_RELATIONS:
+        table = qualified_name(ODD_DATABASE, ODD_SCHEMA, name)
+        view = qualified_name(ODD_DATABASE, ODD_SCHEMA, f"v {name}")
+        conn.conn.execute(f"create table {table} ({quote_identifier(name)} varchar)")
+        conn.conn.execute(f"insert into {table} values (?)", [name])
+        conn.conn.execute(f"create view {view} as select * from {table}")
+    return conn
+
+
+def _odd_schema(conn: DuckDbConnection) -> SchemaCatalogItem:
+    (database_item,) = [
+        item for item in conn.get_catalog().items if item.label == ODD_DATABASE
+    ]
+    assert isinstance(database_item, DatabaseCatalogItem)
+    (schema_item,) = [
+        item for item in database_item.fetch_children() if item.label == ODD_SCHEMA
+    ]
+    return schema_item
+
+
+def _odd_relations(conn: DuckDbConnection) -> dict[str, RelationCatalogItem]:
+    return {
+        relation_item.label: relation_item
+        for relation_item in _odd_schema(conn).fetch_children()
+    }
+
+
+def _rows(conn: DuckDbConnection, query: str) -> list[tuple]:
+    cursor = conn.execute(query)
+    assert cursor is not None
+    return cursor.relation.fetchall()
+
+
+def _table_name(relation_label: str) -> str:
+    return relation_label.removeprefix("v ")
+
+
+def test_catalog_loads_names_that_need_quoting(odd_names: DuckDbConnection) -> None:
+    relation_items = _odd_relations(odd_names)
+    assert sorted(relation_items) == sorted(
+        [*ODD_RELATIONS, *(f"v {name}" for name in ODD_RELATIONS)]
+    )
+    for label, relation_item in relation_items.items():
+        assert relation_item.qualified_identifier == qualified_name(
+            ODD_DATABASE, ODD_SCHEMA, label
+        )
+        (column_item,) = relation_item.fetch_children()
+        assert column_item.label == _table_name(label)
+        assert column_item.query_name == quote_identifier(_table_name(label))
+
+
+def test_search_catalog_finds_names_that_need_quoting(
+    odd_names: DuckDbConnection,
+) -> None:
+    for name in ODD_RELATIONS:
+        found = [
+            result.item.qualified_identifier
+            for result in odd_names.search_catalog(name, "relations")
+        ]
+        assert qualified_name(ODD_DATABASE, ODD_SCHEMA, name) in found
+        relation_item = _odd_relations(odd_names)[name]
+        assert _rows(odd_names, f"select * from {found[0]}") == _rows(
+            odd_names, f"select * from {relation_item.qualified_identifier}"
+        )
+
+
+def test_every_relation_interaction_targets_its_own_relation(
+    odd_names: DuckDbConnection,
+) -> None:
+    for label, relation_item in _odd_relations(odd_names).items():
+        table_name = _table_name(label)
+        driver = RecordingDriver()
+        show_select_star(relation_item, driver)
+        show_describe_relation(relation_item, driver)
+        show_summarize_relation(relation_item, driver)
+        insert_columns_at_cursor(relation_item, driver)
+        select_star, describe, summarize = driver.new_buffers
+        (columns,) = driver.inserted_at_selection
+
+        assert _rows(odd_names, select_star) == [(table_name,)]
+        assert [row[0] for row in _rows(odd_names, describe)] == [table_name]
+        assert [row[0] for row in _rows(odd_names, summarize)] == [table_name]
+        assert _rows(
+            odd_names, f"select {columns} from {relation_item.qualified_identifier}"
+        ) == [(table_name,)]
+
+
+def test_show_ddl_reads_the_relation_it_was_asked_about(
+    odd_names: DuckDbConnection,
+) -> None:
+    for label, relation_item in _odd_relations(odd_names).items():
+        driver = RecordingDriver()
+        if label.startswith("v "):
+            show_view_ddl(relation_item, driver)
+            kind = "VIEW"
+        else:
+            show_table_ddl(relation_item, driver)
+            kind = "TABLE"
+        (ddl,) = driver.new_buffers
+        assert ddl.startswith(f"CREATE {kind} {qualified_name(ODD_SCHEMA, label)}")
+
+
+def test_use_switches_to_a_database_and_schema_that_need_quoting(
+    odd_names: DuckDbConnection,
+) -> None:
+    schema_item = _odd_schema(odd_names)
+    assert schema_item.parent is not None
+    execute_use_statement(schema_item.parent, RecordingDriver())
+    assert _rows(odd_names, "select current_database()") == [(ODD_DATABASE,)]
+    execute_use_statement(schema_item, RecordingDriver())
+    assert _rows(odd_names, "select current_schema()") == [(ODD_SCHEMA,)]
+
+    driver = RecordingDriver()
+    show_export_database(schema_item.parent, driver)
+    (export_script,) = driver.new_buffers
+    use_statement = split(export_script)[0].sql
+    odd_names.execute("use main")
+    odd_names.execute(use_statement)
+    assert _rows(odd_names, "select current_database()") == [(ODD_DATABASE,)]
+
+
+def test_drop_removes_only_the_relation_it_was_asked_about(
+    odd_names: DuckDbConnection,
+) -> None:
+    relation_items = _odd_relations(odd_names)
+    # views first, since each one reads the table it is named after
+    for label in sorted(relation_items, key=lambda label: not label.startswith("v ")):
+        relation_item = relation_items[label]
+        if label.startswith("v "):
+            execute_drop_view_statement(relation_item, RecordingDriver())
+        else:
+            execute_drop_table_statement(relation_item, RecordingDriver())
+        remaining = _odd_relations(odd_names)
+        assert label not in remaining
+        assert len(remaining) == len(relation_items) - 1
+        relation_items = remaining
+
+    schema_item = _odd_schema(odd_names)
+    execute_drop_schema_statement(schema_item, RecordingDriver())
+    assert schema_item.parent is not None
+    assert [item.label for item in schema_item.parent.fetch_children()] == ["main"]
+
+
+@pytest.mark.parametrize(
+    "stem", ["it's", "semi;colon", "my file", "2024-sales", "select", "Mixed Case"]
+)
+def test_dot_open_attaches_and_uses_a_path_that_needs_quoting(
+    tmp_path: Path, stem: str
+) -> None:
+    database_path = tmp_path / f"{stem}.db"
+    script_path = tmp_path / "myscript"
+    script_path.write_text(
+        f'.open "{database_path}"\ncreate table opened as select 1;\n'
+    )
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    assert _rows(conn, "select current_database()") == [(stem,)]
+    assert conn.conn.execute(
+        "select database_name from duckdb_tables() where table_name = 'opened'"
+    ).fetchall() == [(stem,)]
+
+
+def test_dot_open_reads_a_bare_path_with_a_quote_in_it(tmp_path: Path) -> None:
+    database_path = tmp_path / "it's.db"
+    duckdb.connect(str(database_path)).close()
+    script_path = tmp_path / "myscript"
+    script_path.write_text(f".open --readonly {database_path}\n")
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    assert conn.conn.execute(
+        "select database_name, readonly from duckdb_databases() where path = ?",
+        [str(database_path)],
+    ).fetchall() == [("it's", True)]
+
+
+def test_connect_attaches_a_path_that_needs_quoting(tmp_path: Path) -> None:
+    other_path = tmp_path / "it's;x.db"
+    conn = DuckDbAdapter(
+        [str(tmp_path / "main.db"), str(other_path)], no_init=True
+    ).connect()
+    assert conn.conn.execute(
+        "select database_name from duckdb_databases() where path = ?",
+        [str(other_path)],
+    ).fetchall() == [("it's;x",)]
+
+
+def test_custom_extension_repo_is_set_verbatim() -> None:
+    repository = "https://example.com/it's\\here"
+    conn = DuckDbAdapter(
+        [":memory:"], custom_extension_repo=repository, no_init=True
+    ).connect()
+    assert _rows(conn, "select current_setting('custom_extension_repository')") == [
+        (repository,)
+    ]
+
+
+def test_validate_sql_reads_a_quote_as_part_of_the_text() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    assert conn.validate_sql("select 'it''s'") == "select 'it''s'"
+    assert conn.validate_sql("select ') union selec 1 --'") == (
+        "select ') union selec 1 --'"
+    )
+    assert conn.validate_sql("select 'it's'") == ""
+
+
+def test_a_user_defined_name_completes_quoted_only_when_it_must_be() -> None:
+    conn = DuckDbAdapter([":memory:"], no_init=True).connect()
+    conn.execute('create macro "my macro"(a) as a')
+    conn.execute('create macro "Select"(a) as a')
+    # a column_name keyword, which is not reserved but cannot name a function
+    conn.execute('create macro "between"(a) as a')
+    # an unreserved keyword, which can
+    conn.execute('create macro "action"(a) as a')
+    conn.execute("create macro my_macro(a) as a")
+    conn.execute("""create type "my type" as enum ('a')""")
+    user_defined_labels = ("my macro", "Select", "between", "action", "my_macro")
+    values = {
+        completion.label: completion.value
+        for completion in conn.get_completions()
+        if completion.label in (*user_defined_labels, "my type", "sum")
+        and completion.type_label != "kw"
+    }
+    assert values == {
+        "my macro": '"my macro"',
+        "Select": '"Select"',
+        "between": '"between"',
+        "action": "action",
+        "my_macro": "my_macro",
+        "my type": '"my type"',
+        "sum": "sum",
+    }
+    for value in (values[label] for label in user_defined_labels):
+        assert _rows(conn, f"select {value}(1)") == [(1,)]
+
+
+@pytest.mark.parametrize(
+    "script", ["select 1;;\ncreate table after as select 2;", "select 1;\n-- done\n"]
+)
+def test_an_init_script_with_a_statement_that_runs_nothing(
+    tmp_path: Path, script: str
+) -> None:
+    """A lone separator or a trailing comment is a statement with no result."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    assert _rows(conn, "select 1") == [(1,)]

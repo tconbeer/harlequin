@@ -208,3 +208,40 @@ def test_one_character_does_not_fuzzy_match(word_completer: WordCompleter) -> No
     word_completer.update_buffer_symbols(BufferSymbols(names=("my_col",)))
     assert "my_col" not in {label for (label, _), _ in word_completer("c")}
     assert "my_col" in {label for (label, _), _ in word_completer("co")}
+
+
+@pytest.fixture
+def quoted_member_completer() -> MemberCompleter:
+    """Members whose values the adapter has already quoted."""
+    return MemberCompleter(
+        [],
+        [],
+        [],
+        [
+            HarlequinCompletion(
+                label=label, type_label="fn", value=value, priority=1, context="public"
+            )
+            for label, value in (("MyFunc", '"MyFunc"'), ('a"b', '"a""b"'))
+        ],
+    )
+
+
+def test_a_quoted_value_is_not_quoted_again(
+    quoted_member_completer: MemberCompleter,
+) -> None:
+    """The user's opening quote stands in for the value's, and the editor has
+    already closed it."""
+    assert quoted_member_completer('public."My') == [
+        (('public."MyFunc', "fn"), 'public."MyFunc')
+    ]
+    assert quoted_member_completer('public."a') == [
+        (('public."a"b', "fn"), 'public."a""b')
+    ]
+
+
+def test_a_quoted_value_is_inserted_whole_without_a_typed_quote(
+    quoted_member_completer: MemberCompleter,
+) -> None:
+    assert quoted_member_completer("public.My") == [
+        (("public.MyFunc", "fn"), 'public."MyFunc"')
+    ]
