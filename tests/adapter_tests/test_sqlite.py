@@ -426,6 +426,18 @@ def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
     assert cur.fetchall() == [(2,)]
 
 
+def test_init_script_is_read_as_utf8(tmp_path: Path) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text(
+        "-- Łukasz ✨\ncreate table test_init as select 'Łukasz ✨' as name;\n",
+        encoding="utf-8",
+    )
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    cur = conn.execute("select name from test_init")
+    assert cur
+    assert cur.fetchall() == [("Łukasz ✨",)]
+
+
 def test_rewrite_load(extension_path: Path) -> None:
     cmd = f".load {extension_path.as_posix()}"
     rewritten = HarlequinSqliteAdapter._rewrite_init_command(cmd)

@@ -389,6 +389,18 @@ def test_init_script(tiny_duck: Path, tmp_path: Path) -> None:
     assert cur.relation.fetchall() == [(2,)]
 
 
+def test_init_script_is_read_as_utf8(tmp_path: Path) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text(
+        "-- Łukasz ✨\ncreate table test_init as select 'Łukasz ✨' as name;\n",
+        encoding="utf-8",
+    )
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    cur = conn.execute("select name from test_init")
+    assert cur
+    assert cur.relation.fetchall() == [("Łukasz ✨",)]
+
+
 @pytest.mark.parametrize("primary_is_in_memory", [True, False])
 def test_a_bare_open_switches_to_a_fresh_in_memory_database(
     tmp_path: Path, primary_is_in_memory: bool
