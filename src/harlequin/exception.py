@@ -15,10 +15,11 @@ class HarlequinExit(Exception):
 
 
 class HarlequinError(Exception):
-    def __init__(self, msg: str, title: str = "") -> None:
+    def __init__(self, msg: str, title: str = "", *, markup: bool = False) -> None:
         super().__init__(msg)
         self.msg = msg
         self.title = title
+        self.markup = markup
 
 
 class HarlequinBindingError(HarlequinError):
@@ -90,10 +91,17 @@ def pretty_print_error(error: HarlequinError) -> None:
 
 
 def pretty_error_message(error: HarlequinError) -> "Panel":
+    from rich.markup import escape
     from rich.panel import Panel
 
+    # Error text is often not ours (a driver message, a caught exception), so
+    # treat it as plain text and escape it. Rich reads a bare string with
+    # markup on, which silently eats anything that looks like a tag, e.g. a
+    # SQL Server identifier such as [orders]. A caller that puts markup in on
+    # purpose can opt back in with markup=True.
+    message = str(error) if getattr(error, "markup", False) else escape(str(error))
     return Panel.fit(
-        str(error),
+        message,
         title=error.title if error.title else ("Harlequin encountered an error."),
         title_align="left",
         border_style="red",

@@ -19,3 +19,43 @@ def test_pretty_print_warning_goes_to_stderr(
     )
     assert proc.stdout == ""
     assert "A message." in proc.stderr
+
+
+def test_pretty_error_message_escapes_markup_in_error_text() -> None:
+    """Error text that is not ours must not lose characters to rich markup."""
+    import io
+
+    from rich.console import Console
+
+    from harlequin.exception import HarlequinQueryError, pretty_error_message
+
+    buf = io.StringIO()
+    Console(file=buf, width=60).print(
+        pretty_error_message(
+            HarlequinQueryError(
+                msg="no column [amount] in table [orders]", title="Query Error"
+            )
+        )
+    )
+    out = buf.getvalue()
+    assert "amount" in out
+    assert "orders" in out
+
+
+def test_pretty_error_message_honors_markup_opt_in() -> None:
+    """A caller that sets markup=True still gets rich markup interpreted."""
+    import io
+
+    from rich.console import Console
+
+    from harlequin.exception import HarlequinError, pretty_error_message
+
+    buf = io.StringIO()
+    Console(file=buf, width=60).print(
+        pretty_error_message(
+            HarlequinError(msg="use [bold]--locale[/]", title="x", markup=True)
+        )
+    )
+    out = buf.getvalue()
+    assert "--locale" in out
+    assert "[bold]" not in out
