@@ -208,3 +208,14 @@ def test_one_character_does_not_fuzzy_match(word_completer: WordCompleter) -> No
     word_completer.update_buffer_symbols(BufferSymbols(names=("my_col",)))
     assert "my_col" not in {label for (label, _), _ in word_completer("c")}
     assert "my_col" in {label for (label, _), _ in word_completer("co")}
+
+
+def test_member_completer_matches_case_insensitively(
+    member_completer: MemberCompleter,
+) -> None:
+    assert [label for label, _ in member_completer("ALPHA.col_a")] == [
+        ("ALPHA.col_a", "#")
+    ]
+    assert [label for label, _ in member_completer("Alpha.col_a")] == [
+        ("Alpha.col_a", "#")
+    ]
