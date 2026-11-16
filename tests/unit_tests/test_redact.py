@@ -133,7 +133,15 @@ def test_a_profile_with_nothing_to_hide_is_unchanged() -> None:
             f"host=warehouse password='{REDACTED}' user=reporting",
         ),
         (
-            r"host=warehouse password='hunter2 \'x' user=reporting",
+            r"host=warehouse password='it\'s hunter2' user=reporting",
+            f"host=warehouse password='{REDACTED}' user=reporting",
+        ),
+        (
+            r'host=warehouse password="it\"s hunter2" user=reporting',
+            f'host=warehouse password="{REDACTED}" user=reporting',
+        ),
+        (
+            r"host=warehouse password='hunter2\\' user=reporting",
             f"host=warehouse password='{REDACTED}' user=reporting",
         ),
         (
@@ -149,6 +157,8 @@ def test_a_profile_with_nothing_to_hide_is_unchanged() -> None:
         "libpq pairs",
         "libpq pairs, quoted",
         "libpq pairs, quoted with an escaped quote",
+        "libpq pairs, double-quoted with an escaped quote",
+        "libpq pairs, quoted with an escaped backslash before the closing quote",
         "motherduck",
         "odbc",
     ],
@@ -161,6 +171,34 @@ def test_a_dsn_keeps_everything_but_the_credential(
     put passwords in one."""
     assert redact_conn_str([conn_str]) == [expected]
     assert "hunter2" not in redact_conn_str([conn_str])[0]
+
+
+@pytest.mark.parametrize(
+    "conn_str",
+    [
+        "host=warehouse password='hunter 2\\' user=reporting",
+        "host=warehouse password='hunter 2\\\n user=reporting",
+        "host=warehouse password='hunter 2",
+        'host=warehouse password="hunter 2\\" user=reporting',
+    ],
+    ids=["escaped quote", "escaped newline", "no closing quote", "double-quoted"],
+)
+def test_a_quoted_value_that_never_closes_is_masked_to_the_end(conn_str: str) -> None:
+    """Not well formed, so there is no right answer about where the value ends,
+    and the safe one is the end of the string. Read as bare instead, it would
+    stop at its first space and leak the rest."""
+    redacted = redact_conn_str([conn_str])[0]
+    assert redacted.startswith("host=warehouse password=")
+    assert " 2" not in redacted
+
+
+def test_a_value_read_two_ways_hides_what_either_reading_finds() -> None:
+    """With the escape, the value below runs on to the `token=` quote; without
+    it, the value ends at `\\'` and the token is a pair of its own. Masking
+    only the first reading would leave the token's value outside it."""
+    redacted = redact_conn_str([r"password='a\' token='hunter2 too' sslmode=x"])[0]
+    assert "hunter2" not in redacted
+    assert redacted.endswith(" sslmode=x")
 
 
 @pytest.mark.parametrize(
@@ -261,6 +299,14 @@ def test_a_profiles_declared_values_and_its_dsn_are_both_hidden(
     assert redact_text("connected to warehouse") == "connected to warehouse"
 
 
+def test_a_conn_str_with_an_escaped_quote_is_hidden_whole() -> None:
+    """A driver error that echoes the DSN back has to lose the part after the
+    escaped quote too, not just the part before it."""
+    conn_str = r"host=warehouse password='it\'s hunter2' user=reporting"
+    hide_secrets_in({"conn_str": [conn_str]})
+    assert "hunter2" not in redact_text(f"could not connect with {conn_str}")
+
+
 def test_only_strings_are_hidden(declared: list[TextOption]) -> None:
     """A port or a flag has no literal to look for in a message, and hunting
     for `True` in prose would redact every sentence containing it."""
@@ -320,11 +366,14 @@ def test_one_bad_item_does_not_take_the_conn_strs_beside_it() -> None:
     ]
 
 
+# --- a statement -------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
     "sql,expected",
     [
         (
-            "create secret (type s3, secret 'hunter2''s')",
+            "create secret (type s3, secret 'it''s hunter2')",
             f"create secret (type s3, secret '{REDACTED}')",
         ),
         (
@@ -339,5 +388,17 @@ def test_a_sql_secret_with_a_doubled_quote_is_masked_whole(
 ) -> None:
     """SQL escapes a quote inside a literal by doubling it, so the literal does
     not end at the first quote."""
-    assert redact_sql(sql) == expected
-    assert "hunter2" not in redact_sql(sql)
+    redacted = redact_sql(sql)
+    assert redacted == expected
+    assert "hunter2" not in redacted
+
+
+def test_a_stray_doubled_quote_does_not_leak_the_next_secret() -> None:
+    """The editor buffer goes into a crash report half typed. Read with the
+    doubled quote, the first literal runs on into the second one's opening
+    quote and the second secret ends up outside any literal."""
+    redacted = redact_sql(
+        "create secret (type s3, key_id 'AKIAEXAMPLE'', secret 'wJalrXUtnFEMI')"
+    )
+    assert "AKIAEXAMPLE" not in redacted
+    assert "wJalrXUtnFEMI" not in redacted
