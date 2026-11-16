@@ -30,7 +30,7 @@ HARLEQUIN_TEXTUAL_THEME = TextualTheme(
     dark=True,
 )
 
-VALID_THEMES = BUILTIN_THEMES
+VALID_THEMES = dict(BUILTIN_THEMES)
 # Harlequin doesn't support ANSI-passthrough themes.
 VALID_THEMES.pop("ansi-dark", None)
 VALID_THEMES.pop("ansi-light", None)
