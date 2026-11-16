@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Literal, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rich.style import Style
 from rich.text import Text
-from textual.command import CommandPalette, DiscoveryHit, Hit, Hits, SimpleProvider
-from textual.content import Content
+from textual.command import CommandPalette, SimpleCommand
 from textual.css.query import NoMatches
 from textual.widgets import (
     ContentSwitcher,
@@ -16,42 +15,15 @@ from textual.widgets import (
 )
 from textual_fastdatatable import DataTable
 
+from harlequin.components.command_provider import PlainTextProvider
 from harlequin.components.text_modal import CellViewModal
 from harlequin.messages import WidgetMounted
 
 if TYPE_CHECKING:
-    from textual.screen import Screen
     from textual_fastdatatable.backend import DataTableBackend
     from textual_fastdatatable.data_table import CursorType
 
     from harlequin.query import ResultSet
-
-
-class _ColumnProvider(SimpleProvider):
-    def __init__(
-        self, screen: Screen[Any], columns: Sequence[tuple[str, Callable[[], None]]]
-    ) -> None:
-        super().__init__(
-            screen,
-            [
-                (label, callback, f"Column {index + 1}")
-                for index, (label, callback) in enumerate(columns)
-            ],
-        )
-
-    async def discover(self) -> Hits:
-        for label, callback, help_text in self._commands:
-            yield DiscoveryHit(Content(label), callback, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for label, callback, help_text in self._commands:
-            score, offsets = matcher.fuzzy_search.match(matcher.query, label)
-            if score:
-                content = Content(label)
-                for offset in offsets:
-                    content = content.stylize(matcher.match_style, offset, offset + 1)
-                yield Hit(score, content, callback, help=help_text)
 
 
 class ResultsTable(DataTable, inherit_bindings=False):
@@ -266,13 +238,17 @@ class ResultsViewer(TabbedContent, can_focus=True):
         if visible_table is None or not visible_table.row_count:
             return
         columns = [
-            (label, partial(self._jump_to_column, visible_table, index))
+            SimpleCommand(
+                label,
+                partial(self._jump_to_column, visible_table, index),
+                f"Column {index + 1}",
+            )
             for index, label in enumerate(visible_table.plain_column_labels)
         ]
         self.app.push_screen(
             CommandPalette(
                 # Textual's provider type omits SimpleProvider instances.
-                providers=[_ColumnProvider(self.screen, columns)],  # type: ignore[list-item]
+                providers=[PlainTextProvider(self.screen, columns)],  # type: ignore[list-item]
                 placeholder="Jump to column…",
             )
         )

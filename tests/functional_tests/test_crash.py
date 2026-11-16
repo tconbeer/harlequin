@@ -26,7 +26,7 @@ from harlequin.adapter import HarlequinAdapter
 from harlequin.app import QuerySubmitted
 from harlequin.app_base import _as_markup
 from harlequin.crash import ISSUE_URL, crash_message
-from harlequin.editor_cache import BufferState, Cache, get_cache_file
+from harlequin.editor_cache import BufferState, Cache, _read, get_cache_file, load_cache
 from harlequin.exception import HarlequinCrashError, pretty_error_message
 from harlequin.query import fetch
 from tests.functional_tests.helpers import wait_for_editor
@@ -104,12 +104,13 @@ async def test_a_crash_saves_the_open_buffers(
             crash(app, RuntimeError("boom"))
             await pilot.pause()
 
-    (recovered,) = list(mock_user_cache_dir.glob("recovered-*.pickle"))
-    cache = pickle.loads(recovered.read_bytes())
+    (recovered,) = list(get_cache_file().parent.glob("recovered-*.db"))
+    cache = _read(recovered, app.connection_hash or "")
+    assert cache is not None
     assert cache.buffers[0].text == "select 'work in progress'"
     # the last clean quit's cache is untouched: if the recovered buffers are
     # themselves the problem, that is still on disk
-    assert not get_cache_file().exists()
+    assert load_cache(app.connection_hash or "") is None
 
     assert "Your buffers have been saved" in panel_text(capsys)
 
@@ -241,18 +242,18 @@ async def test_a_crash_while_replaying_recovered_buffers_cannot_repeat(
     async def _boom(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("crash while replaying")
 
-    monkeypatch.setattr(
-        "harlequin.components.code_editor.EditorCollection.action_new_buffer", _boom
-    )
-    with pytest.raises(RuntimeError):
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.pause()
+    with monkeypatch.context() as replay_patch:
+        replay_patch.setattr(
+            "harlequin.components.code_editor.EditorCollection.action_new_buffer", _boom
+        )
+        with pytest.raises(RuntimeError):
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                await pilot.pause()
 
-    assert not poisoned.exists()
-    assert poisoned.with_suffix(".replayed").exists()
+        assert not poisoned.exists()
+        assert poisoned.with_suffix(".replayed").exists()
 
-    monkeypatch.undo()
     async with app_all_adapters.run_test() as pilot:
         editor = await wait_for_editor(pilot, app_all_adapters)
         assert app_all_adapters.editor_collection.tab_count == 1
