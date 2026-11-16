@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import Awaitable, Callable, List, Sequence
 
+import duckdb
 import pytest
 from textual import events
 from textual.app import App
@@ -17,6 +18,10 @@ from harlequin.autocomplete import BufferSymbols
 from harlequin.autocomplete import find_symbols as real_find_symbols
 from harlequin.components.code_editor import CodeEditor
 from harlequin.statements import find_separators, split
+from harlequin_duckdb.adapter import DuckDbAdapter
+from harlequin_duckdb.completions import (
+    get_completion_data as real_get_completion_data,
+)
 from tests.functional_tests.helpers import (
     expand_catalog_node,
     wait_for_catalog_tree,
@@ -652,6 +657,49 @@ async def test_numbers_do_not_open_the_completion_list(
         await pilot.press("enter")
         await pilot.pause()
         assert editor.text == "1\n"
+
+
+@pytest.mark.asyncio
+async def test_a_quoted_word_completion_keeps_one_pair_of_quotes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    wait_for_workers: Callable[[Harlequin], Awaitable[None]],
+) -> None:
+    """The adapter quotes a name that needs it, and the editor has already
+    closed the quote the user typed before it."""
+    monkeypatch.setattr(
+        "harlequin_duckdb.adapter.get_completion_data", real_get_completion_data
+    )
+    database_path = tmp_path / "macros.db"
+    with duckdb.connect(str(database_path)) as conn:
+        conn.execute('create macro "zebra crossing"(a) as a')
+    app = Harlequin(
+        DuckDbAdapter([str(database_path)], no_init=True), connection_hash="zebra"
+    )
+    async with app.run_test() as pilot:
+        await wait_for_workers(app)
+        editor = await wait_for_editor(pilot, app)
+        await wait_for(
+            pilot,
+            lambda: (
+                app.editor_collection.word_completer is not None
+                and (("zebra crossing", "macro"), '"zebra crossing"')
+                in app.editor_collection.word_completer("zebra")
+            ),
+            description="the macro to reach the word completer",
+        )
+        editor.focus()
+
+        await pilot.press("quotation_mark", *"zebra")
+        # the editor auto-closes the quote
+        await completions_for(pilot, editor, '"zebra"')
+        await pilot.press("enter")
+        await wait_for(
+            pilot,
+            lambda: not editor.completion_list.is_open,
+            description="the completion to be accepted",
+        )
+        assert editor.text == '"zebra crossing"'
 
 
 def press_alt_e(app: Harlequin) -> None:

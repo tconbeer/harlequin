@@ -49,10 +49,6 @@ def execute_drop_view_statement(
     execute_drop_relation_statement(item=item, driver=driver, relation_type="view")
 
 
-def _quote_literal(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
-
-
 def show_describe_relation(
     item: "RelationCatalogItem",
     driver: "HarlequinDriver",
@@ -74,19 +70,9 @@ def show_relation_ddl(
 ) -> None:
     if item.parent is None or item.connection is None:
         return
-    # every attached database has its own sqlite_schema
-    cursor = item.connection.execute(
-        f"""
-        select sql
-        from {quote_identifier(item.parent.label)}.sqlite_schema
-        where name = {_quote_literal(item.label)} and type in ('table', 'view')
-        limit 1
-        """
-    )
-    assert cursor is not None
-    result = cursor.fetchone()
+    result = item.connection._get_relation_ddl(item.parent.label, item.label)
     if result is not None:
-        driver.insert_text_in_new_buffer(text=result[0])
+        driver.insert_text_in_new_buffer(text=result)
 
 
 def show_select_star(

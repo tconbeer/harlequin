@@ -17,6 +17,7 @@ from harlequin_duckdb.interactions import (
     show_table_ddl,
     show_view_ddl,
 )
+from harlequin_duckdb.quoting import qualified_name, quote_identifier
 
 if TYPE_CHECKING:
     from harlequin_duckdb.adapter import DuckDbConnection
@@ -34,8 +35,10 @@ class ColumnCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
         type_label: str,
         type_name: str,
     ) -> "ColumnCatalogItem":
-        column_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
-        column_query_name = f'"{label}"'
+        column_query_name = quote_identifier(label)
+        column_qualified_identifier = (
+            f"{parent.qualified_identifier}.{column_query_name}"
+        )
         return cls(
             qualified_identifier=column_qualified_identifier,
             query_name=column_query_name,
@@ -88,8 +91,10 @@ class ViewCatalogItem(RelationCatalogItem):
         label: str,
         type_name: str,
     ) -> "ViewCatalogItem":
-        relation_query_name = f'"{parent.label}"."{label}"'
-        relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
+        relation_query_name = qualified_name(parent.label, label)
+        relation_qualified_identifier = (
+            f"{parent.qualified_identifier}.{quote_identifier(label)}"
+        )
         return cls(
             qualified_identifier=relation_qualified_identifier,
             query_name=relation_query_name,
@@ -114,8 +119,10 @@ class TableCatalogItem(RelationCatalogItem):
         label: str,
         type_name: str,
     ) -> "TableCatalogItem":
-        relation_query_name = f'"{parent.label}"."{label}"'
-        relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
+        relation_query_name = qualified_name(parent.label, label)
+        relation_qualified_identifier = (
+            f"{parent.qualified_identifier}.{quote_identifier(label)}"
+        )
         return cls(
             qualified_identifier=relation_qualified_identifier,
             query_name=relation_query_name,
@@ -140,8 +147,10 @@ class TempTableCatalogItem(TableCatalogItem):
         label: str,
         type_name: str,
     ) -> "TempTableCatalogItem":
-        relation_query_name = f'"{parent.label}"."{label}"'
-        relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
+        relation_query_name = qualified_name(parent.label, label)
+        relation_qualified_identifier = (
+            f"{parent.qualified_identifier}.{quote_identifier(label)}"
+        )
         return cls(
             qualified_identifier=relation_qualified_identifier,
             query_name=relation_query_name,
@@ -167,7 +176,7 @@ class SchemaCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
         parent: "DatabaseCatalogItem",
         label: str,
     ) -> "SchemaCatalogItem":
-        schema_identifier = f'{parent.qualified_identifier}."{label}"'
+        schema_identifier = f"{parent.qualified_identifier}.{quote_identifier(label)}"
         return cls(
             qualified_identifier=schema_identifier,
             query_name=schema_identifier,
@@ -222,7 +231,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["DuckDbConnection"]):
     def from_label(
         cls, label: str, connection: "DuckDbConnection"
     ) -> "DatabaseCatalogItem":
-        database_identifier = f'"{label}"'
+        database_identifier = quote_identifier(label)
         return cls(
             qualified_identifier=database_identifier,
             query_name=database_identifier,

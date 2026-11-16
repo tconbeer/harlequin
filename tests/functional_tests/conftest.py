@@ -148,15 +148,6 @@ def mock_completions(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
     completions = [*keyword_completions, *function_completions]
-    duckdb_completions = [
-        (
-            completion.label,
-            completion.type_label,
-            completion.priority,
-            completion.context,
-        )
-        for completion in completions
-    ]
     monkeypatch.setattr(
         "harlequin_sqlite.adapter.get_completion_data",
         lambda *_: completions,
@@ -164,7 +155,7 @@ def mock_completions(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "harlequin_duckdb.adapter.get_completion_data",
-        lambda *_: duckdb_completions,
+        lambda *_: completions,
         raising=True,
     )
 

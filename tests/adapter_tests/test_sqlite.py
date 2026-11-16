@@ -7,12 +7,20 @@ from pathlib import Path
 import pytest
 
 from harlequin.catalog import Catalog, CatalogItem, InteractiveCatalogItem
-from harlequin.driver import HarlequinDriver
 from harlequin.exception import HarlequinConfigError, HarlequinConnectionError
 from harlequin_sqlite import HarlequinSqliteAdapter
 from harlequin_sqlite.adapter import HarlequinSqliteConnection
 from harlequin_sqlite.catalog import DatabaseCatalogItem, RelationCatalogItem
-from harlequin_sqlite.interactions import show_describe_relation, show_relation_ddl
+from harlequin_sqlite.interactions import (
+    execute_drop_table_statement,
+    execute_drop_view_statement,
+    insert_columns_at_cursor,
+    show_describe_relation,
+    show_relation_ddl,
+    show_select_star,
+)
+from harlequin_sqlite.quoting import qualified_name, quote_identifier
+from tests.recording_driver import RecordingDriver
 
 
 @pytest.fixture
@@ -325,16 +333,6 @@ def test_search_catalog_matches_every_level(tmp_path: Path) -> None:
     ]
 
 
-class NewBufferDriver(HarlequinDriver):
-    """Keeps the text an interaction opens a new buffer with."""
-
-    def __init__(self) -> None:
-        self.new_buffers: list[str] = []
-
-    def insert_text_in_new_buffer(self, text: str) -> None:
-        self.new_buffers.append(text)
-
-
 @pytest.fixture
 def two_databases(tmp_path: Path) -> HarlequinSqliteConnection:
     """main and an attached archive, each with a table called orders; archive
@@ -371,7 +369,7 @@ def test_describe_inserts_a_pragma_that_runs(
     """The database qualifies the pragma, not its argument."""
     described_columns: dict[str, list[str]] = {}
     for identifier, relation_item in _relation_items(two_databases).items():
-        driver = NewBufferDriver()
+        driver = RecordingDriver()
         show_describe_relation(relation_item, driver)
         (pragma,) = driver.new_buffers
         described_columns[identifier] = [
@@ -389,7 +387,7 @@ def test_show_ddl_reads_the_database_the_relation_is_in(
 ) -> None:
     inserted_ddl: dict[str, list[str]] = {}
     for identifier, relation_item in _relation_items(two_databases).items():
-        driver = NewBufferDriver()
+        driver = RecordingDriver()
         show_relation_ddl(relation_item, driver)
         inserted_ddl[identifier] = driver.new_buffers
     assert inserted_ddl == {
@@ -408,7 +406,10 @@ def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
     )
     commands = HarlequinSqliteAdapter._split_script(script)
     assert len(commands) == 5
-    rewritten = [HarlequinSqliteAdapter._rewrite_init_command(cmd) for cmd in commands]
+    rewritten = [
+        HarlequinSqliteAdapter._rewrite_init_command(cmd, sqlite3.connect(":memory:"))
+        for cmd in commands
+    ]
     assert rewritten[0] == ""
     assert rewritten[1] == commands[1]
     assert rewritten[2] == ""
@@ -428,7 +429,9 @@ def test_init_script(tiny_sqlite: Path, tmp_path: Path) -> None:
 
 def test_rewrite_load(extension_path: Path) -> None:
     cmd = f".load {extension_path.as_posix()}"
-    rewritten = HarlequinSqliteAdapter._rewrite_init_command(cmd)
+    rewritten = HarlequinSqliteAdapter._rewrite_init_command(
+        cmd, sqlite3.connect(":memory:")
+    )
     assert rewritten.startswith("select load_extension")
 
 
@@ -538,3 +541,186 @@ def test_transaction_mode() -> None:
     assert conn.transaction_mode.label == "Manual"
     assert conn.toggle_transaction_mode()
     assert conn.transaction_mode.label == "Auto"
+
+
+ODD_DATABASE = 'Bob\'s "db";x'
+ODD_RELATIONS = [
+    "Bob's orders",
+    'say "hi"',
+    "a.b",
+    "semi;colon",
+    "back\\slash",
+    "tick`s",
+    "brack]et",
+    "Mixed Case",
+    "select",
+    "2024-sales",
+]
+"""Table names that each break a hand-quoted identifier or literal somewhere."""
+
+
+@pytest.fixture
+def odd_names(tmp_path: Path) -> HarlequinSqliteConnection:
+    """An attached database with an awkward name, holding a table for each of
+    ODD_RELATIONS, with one column and one row both named like the table, and a
+    view over each called `v <name>`."""
+    conn = HarlequinSqliteAdapter([str(tmp_path / "main.sqlite")]).connect()
+    conn.conn.execute(
+        "attach database ? as ?", [str(tmp_path / "other.sqlite"), ODD_DATABASE]
+    )
+    for name in ODD_RELATIONS:
+        table = qualified_name(ODD_DATABASE, name)
+        view = qualified_name(ODD_DATABASE, f"v {name}")
+        conn.conn.execute(f"create table {table} ({quote_identifier(name)} text)")
+        conn.conn.execute(f"insert into {table} values (?)", [name])
+        # a view's query is resolved in the view's own database
+        conn.conn.execute(
+            f"create view {view} as select * from {quote_identifier(name)}"
+        )
+    return conn
+
+
+def _odd_relations(
+    conn: HarlequinSqliteConnection,
+) -> dict[str, RelationCatalogItem]:
+    (database_item,) = [
+        item for item in conn.get_catalog().items if item.label == ODD_DATABASE
+    ]
+    assert isinstance(database_item, DatabaseCatalogItem)
+    return {
+        relation_item.label: relation_item
+        for relation_item in database_item.fetch_children()
+    }
+
+
+def _table_name(relation_label: str) -> str:
+    return relation_label.removeprefix("v ")
+
+
+def test_catalog_loads_names_that_need_quoting(
+    odd_names: HarlequinSqliteConnection,
+) -> None:
+    relation_items = _odd_relations(odd_names)
+    assert sorted(relation_items) == sorted(
+        [*ODD_RELATIONS, *(f"v {name}" for name in ODD_RELATIONS)]
+    )
+    for label, relation_item in relation_items.items():
+        assert relation_item.qualified_identifier == qualified_name(ODD_DATABASE, label)
+        (column_item,) = relation_item.fetch_children()
+        assert column_item.label == _table_name(label)
+        assert column_item.query_name == quote_identifier(_table_name(label))
+
+
+def test_search_catalog_finds_names_that_need_quoting(
+    odd_names: HarlequinSqliteConnection,
+) -> None:
+    for name in ODD_RELATIONS:
+        found = [
+            result.item.qualified_identifier
+            for result in odd_names.search_catalog(name, "relations")
+        ]
+        assert qualified_name(ODD_DATABASE, name) in found
+
+
+def test_every_relation_interaction_targets_its_own_relation(
+    odd_names: HarlequinSqliteConnection,
+) -> None:
+    for label, relation_item in _odd_relations(odd_names).items():
+        table_name = _table_name(label)
+        driver = RecordingDriver()
+        show_select_star(relation_item, driver)
+        show_describe_relation(relation_item, driver)
+        show_relation_ddl(relation_item, driver)
+        insert_columns_at_cursor(relation_item, driver)
+        select_star, describe, ddl = driver.new_buffers
+        (columns,) = driver.inserted_at_selection
+
+        assert odd_names.conn.execute(select_star).fetchall() == [(table_name,)]
+        assert [row[1] for row in odd_names.conn.execute(describe)] == [table_name]
+        kind = "view" if label.startswith("v ") else "table"
+        assert ddl.startswith(f"CREATE {kind.upper()} {quote_identifier(label)}")
+        assert odd_names.conn.execute(
+            f"select {columns} from {relation_item.qualified_identifier}"
+        ).fetchall() == [(table_name,)]
+
+
+def test_drop_removes_only_the_relation_it_was_asked_about(
+    odd_names: HarlequinSqliteConnection,
+) -> None:
+    relation_items = _odd_relations(odd_names)
+    for label in sorted(relation_items, key=lambda label: not label.startswith("v ")):
+        relation_item = relation_items[label]
+        if label.startswith("v "):
+            execute_drop_view_statement(relation_item, RecordingDriver())
+        else:
+            execute_drop_table_statement(relation_item, RecordingDriver())
+        remaining = _odd_relations(odd_names)
+        assert label not in remaining
+        assert len(remaining) == len(relation_items) - 1
+        relation_items = remaining
+    assert relation_items == {}
+
+
+@pytest.mark.parametrize(
+    "stem", ["it's", "semi;colon", "my file", "2024-sales", "select", "Mixed Case"]
+)
+def test_dot_open_attaches_a_path_that_needs_quoting(tmp_path: Path, stem: str) -> None:
+    database_path = tmp_path / f"{stem}.sqlite"
+    script_path = tmp_path / "myscript"
+    script_path.write_text(f'.open "{database_path}"\n')
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    assert (stem, str(database_path)) in [
+        (name, path) for _, name, path in conn.conn.execute("pragma database_list")
+    ]
+
+
+def test_dot_open_reads_a_bare_path_with_a_quote_in_it(tmp_path: Path) -> None:
+    database_path = tmp_path / "it's.sqlite"
+    script_path = tmp_path / "myscript"
+    script_path.write_text(f".open {database_path}\n")
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    assert ("it's", str(database_path)) in [
+        (name, path) for _, name, path in conn.conn.execute("pragma database_list")
+    ]
+
+
+def test_dot_open_without_a_file_attaches_a_fresh_in_memory_database(
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text(".open\n.open :memory:\n")
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    assert conn._get_databases() == ["main", "memory", "memory_1"]
+
+
+def test_dot_load_quotes_its_arguments() -> None:
+    rewritten = HarlequinSqliteAdapter._rewrite_init_command(
+        """.load "/tmp/it's here/ext" 'entry'""", sqlite3.connect(":memory:")
+    )
+    assert rewritten == "select load_extension('/tmp/it''s here/ext', 'entry');"
+    # compiles, but does not run
+    sqlite3.connect(":memory:").execute(f"explain {rewritten}")
+
+
+def test_connect_attaches_paths_that_need_quoting(tmp_path: Path) -> None:
+    conn = HarlequinSqliteAdapter(
+        [
+            str(tmp_path / "main.sqlite"),
+            str(tmp_path / "it's;x.sqlite"),
+            str(tmp_path / "2024-sales.sqlite"),
+        ]
+    ).connect()
+    assert conn._get_databases() == ["main", "it's;x", "2024-sales"]
+
+
+@pytest.mark.parametrize(
+    "script", ["select 1;;\ncreate table after as select 2;", "select 1;\n-- done\n"]
+)
+def test_an_init_script_with_a_statement_that_runs_nothing(
+    tmp_path: Path, script: str
+) -> None:
+    """A lone separator or a trailing comment is a statement with no result."""
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = HarlequinSqliteAdapter([":memory:"], init_path=script_path).connect()
+    assert conn.conn.execute("select 1").fetchall() == [(1,)]

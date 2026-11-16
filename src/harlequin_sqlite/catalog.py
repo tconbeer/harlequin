@@ -12,6 +12,7 @@ from harlequin_sqlite.interactions import (
     show_relation_ddl,
     show_select_star,
 )
+from harlequin_sqlite.quoting import qualified_name, quote_identifier
 
 if TYPE_CHECKING:
     from harlequin_sqlite.adapter import HarlequinSqliteConnection
@@ -29,8 +30,10 @@ class ColumnCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
         type_label: str,
         type_name: str | None,
     ) -> "ColumnCatalogItem":
-        column_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
-        column_query_name = f'"{label}"'
+        column_query_name = quote_identifier(label)
+        column_qualified_identifier = (
+            f"{parent.qualified_identifier}.{column_query_name}"
+        )
         return cls(
             qualified_identifier=column_qualified_identifier,
             query_name=column_query_name,
@@ -82,8 +85,10 @@ class ViewCatalogItem(RelationCatalogItem):
         label: str,
         type_name: str,
     ) -> "ViewCatalogItem":
-        relation_query_name = f'"{parent.label}"."{label}"'
-        relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
+        relation_query_name = qualified_name(parent.label, label)
+        relation_qualified_identifier = (
+            f"{parent.qualified_identifier}.{quote_identifier(label)}"
+        )
         return cls(
             qualified_identifier=relation_qualified_identifier,
             query_name=relation_query_name,
@@ -107,8 +112,10 @@ class TableCatalogItem(RelationCatalogItem):
         label: str,
         type_name: str,
     ) -> "TableCatalogItem":
-        relation_query_name = f'"{parent.label}"."{label}"'
-        relation_qualified_identifier = f'{parent.qualified_identifier}."{label}"'
+        relation_query_name = qualified_name(parent.label, label)
+        relation_qualified_identifier = (
+            f"{parent.qualified_identifier}.{quote_identifier(label)}"
+        )
         return cls(
             qualified_identifier=relation_qualified_identifier,
             query_name=relation_query_name,
@@ -127,7 +134,7 @@ class DatabaseCatalogItem(InteractiveCatalogItem["HarlequinSqliteConnection"]):
     def from_label(
         cls, label: str, connection: "HarlequinSqliteConnection"
     ) -> "DatabaseCatalogItem":
-        database_identifier = f'"{label}"'
+        database_identifier = quote_identifier(label)
         return cls(
             qualified_identifier=database_identifier,
             query_name=database_identifier,
