@@ -90,11 +90,16 @@ def pretty_print_error(error: HarlequinError) -> None:
 
 
 def pretty_error_message(error: HarlequinError) -> "Panel":
+    from rich.markup import escape
     from rich.panel import Panel
 
+    # Error text is data (column lists, paths), not markup: escape it so
+    # bracketed text like "[amount]" is not swallowed as a style tag.
     return Panel.fit(
-        str(error),
-        title=error.title if error.title else ("Harlequin encountered an error."),
+        escape(str(error)),
+        title=escape(error.title)
+        if error.title
+        else ("Harlequin encountered an error."),
         title_align="left",
         border_style="red",
     )
