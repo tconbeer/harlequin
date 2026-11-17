@@ -302,9 +302,9 @@ def test_a_profiles_declared_values_and_its_dsn_are_both_hidden(
 def test_a_conn_str_with_an_escaped_quote_is_hidden_whole() -> None:
     """A driver error that echoes the DSN back has to lose the part after the
     escaped quote too, not just the part before it."""
-    conn_str = r"host=warehouse password='it\'s hunter2' user=reporting"
+    conn_str = r"host=warehouse password='it\'s hunter4-escaped' user=reporting"
     hide_secrets_in({"conn_str": [conn_str]})
-    assert "hunter2" not in redact_text(f"could not connect with {conn_str}")
+    assert "hunter4-escaped" not in redact_text(f"could not connect with {conn_str}")
 
 
 def test_only_strings_are_hidden(declared: list[TextOption]) -> None:

@@ -47,18 +47,15 @@ _DSN_PASSWORD = re.compile(
 """`password=hunter2`, in a URL's query string or in libpq's space-separated
 pairs, quoted or bare. A backslash escapes the character after it, so `\\'`
 does not end the value. A quoted value that never closes runs to the end of
-the string: falling back to the bare reading would stop at its first space."""
+the string."""
 
 _DSN_PASSWORD_UNESCAPED = re.compile(
     r"[\w.\-]*(?:" + _SECRET_NAME.pattern + r")[\w.\-]*"
     r"\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^&;\s]*))",
     re.IGNORECASE,
 )
-"""The same pairs read as if nothing were escaped, so a quoted value ends at
-its first quote. On input that is not well formed the two readings disagree
-about where a value ends, and the other one can then swallow the next key and
-leave its value outside the match; masking what either reading finds means
-neither one leaks."""
+"""The same pairs with no escapes, so a quoted value ends at its first quote.
+Masking what either reading finds keeps malformed input from leaking."""
 
 _SQL_SECRET_LITERAL = re.compile(
     r"[\w.]*(?:" + _SECRET_NAME.pattern + r"|key[_-]?id)[\w.]*"
@@ -252,9 +249,7 @@ def _mask_spans(text: str, spans: Sequence[tuple[int, int, str]]) -> str:
 
     By position rather than by substitution, so a password that happens to
     spell the host name does not take the host with it. Spans that overlap are
-    masked as one: two patterns can find the same literal, and masking it twice
-    would eat the quotes around it, while skipping either would leave the part
-    only it covered.
+    masked as one, since two patterns can find the same literal.
     """
     merged: list[list[int]] = []
     for start, end, _ in sorted(spans):
