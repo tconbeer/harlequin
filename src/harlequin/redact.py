@@ -40,20 +40,40 @@ _URI_PASSWORD = re.compile(r"://[^/?#@\s]*?:([^/?#@\s]+)@")
 
 _DSN_PASSWORD = re.compile(
     r"[\w.\-]*(?:" + _SECRET_NAME.pattern + r")[\w.\-]*"
-    r"\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^&;\s]*))",
+    r"\s*=\s*(?:'((?:[^'\\]|\\[\s\S]?)*)(?:'|\Z)"
+    r"|\"((?:[^\"\\]|\\[\s\S]?)*)(?:\"|\Z)|([^&;\s]*))",
     re.IGNORECASE,
 )
 """`password=hunter2`, in a URL's query string or in libpq's space-separated
-pairs, quoted or bare."""
+pairs, quoted or bare. A backslash escapes the character after it, so `\\'`
+does not end the value. A quoted value that never closes runs to the end of
+the string."""
+
+_DSN_PASSWORD_UNESCAPED = re.compile(
+    r"[\w.\-]*(?:" + _SECRET_NAME.pattern + r")[\w.\-]*"
+    r"\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^&;\s]*))",
+    re.IGNORECASE,
+)
+"""The same pairs with no escapes, so a quoted value ends at its first quote.
+Masking what either reading finds keeps malformed input from leaking."""
 
 _SQL_SECRET_LITERAL = re.compile(
     r"[\w.]*(?:" + _SECRET_NAME.pattern + r"|key[_-]?id)[\w.]*"
-    r"\s*=?\s*'([^']*)'",
+    r"\s*=?\s*'((?:[^']|'')*)'",
     re.IGNORECASE,
 )
 """A credential written into a statement: a name that reads like one, then a
 quoted literal. `create secret (… key_id 'AKIA…', secret '…')`, and `set
-s3_secret_access_key = '…'`."""
+s3_secret_access_key = '…'`. A doubled `''` is a quote inside the literal."""
+
+_SQL_SECRET_LITERAL_UNDOUBLED = re.compile(
+    r"[\w.]*(?:" + _SECRET_NAME.pattern + r"|key[_-]?id)[\w.]*"
+    r"\s*=?\s*'([^']*)'",
+    re.IGNORECASE,
+)
+"""The same literal ending at its first quote. A stray `''` in a statement
+that is still being typed makes the literal above run on into the next one's
+opening quote, and the next secret then sits outside it."""
 
 _TOO_SHORT_TO_HIDE = 4
 """Below this, substituting a secret into prose would mangle the message."""
@@ -201,7 +221,7 @@ def _masked(value: Any) -> Any:
 def _secret_spans(conn_str: str) -> list[tuple[int, int, str]]:
     """Every `(start, end, value)` in one DSN that is a credential."""
     spans: list[tuple[int, int, str]] = []
-    for pattern in (_URI_PASSWORD, _DSN_PASSWORD):
+    for pattern in (_URI_PASSWORD, _DSN_PASSWORD, _DSN_PASSWORD_UNESCAPED):
         for match in pattern.finditer(conn_str):
             # one group per alternative the value could have been written as,
             # and exactly one of them matched
@@ -218,7 +238,8 @@ def _sql_literal_spans(sql: str) -> list[tuple[int, int, str]]:
     """Every `(start, end, value)` in one statement that is a credential."""
     return [
         (match.start(1), match.end(1), match.group(1))
-        for match in _SQL_SECRET_LITERAL.finditer(sql)
+        for pattern in (_SQL_SECRET_LITERAL, _SQL_SECRET_LITERAL_UNDOUBLED)
+        for match in pattern.finditer(sql)
         if match.group(1)
     ]
 
@@ -227,15 +248,16 @@ def _mask_spans(text: str, spans: Sequence[tuple[int, int, str]]) -> str:
     """`text` with each of `spans` replaced where it stands.
 
     By position rather than by substitution, so a password that happens to
-    spell the host name does not take the host with it.
+    spell the host name does not take the host with it. Spans that overlap are
+    masked as one, since two patterns can find the same literal.
     """
+    merged: list[list[int]] = []
+    for start, end, _ in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
     masked = text
-    covered = len(text)
-    for start, end, _ in sorted(spans, reverse=True):
-        if end > covered:
-            # two patterns can find the same literal, and masking it twice
-            # would eat the quotes around it
-            continue
+    for start, end in reversed(merged):
         masked = masked[:start] + REDACTED + masked[end:]
-        covered = start
     return masked
