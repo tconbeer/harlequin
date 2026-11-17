@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.17.1] - 2026-11-17
+
 ### Bug Fixes
 
 - For SQLite, the Data Catalog's **Describe** action now inserts a query that runs, and **Show DDL** shows the right DDL for tables and views in an attached database.
@@ -1183,7 +1185,8 @@ All notable changes to this project will be documented in this file.
 
 - Use the DuckDB CLI.
 
-[unreleased]: https://github.com/tconbeer/harlequin/compare/2.17.0...HEAD
+[unreleased]: https://github.com/tconbeer/harlequin/compare/2.17.1...HEAD
+[2.17.1]: https://github.com/tconbeer/harlequin/compare/2.17.0...2.17.1
 [2.17.0]: https://github.com/tconbeer/harlequin/compare/2.16.2...2.17.0
 [2.16.2]: https://github.com/tconbeer/harlequin/compare/2.16.1...2.16.2
 [2.16.1]: https://github.com/tconbeer/harlequin/compare/2.16.0...2.16.1
