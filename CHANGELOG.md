@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - For DuckDB, `BIGNUM` (formerly `VARINT`) values now show as integers instead of raw bytes in the Results Viewer ([#1214](https://github.com/tconbeer/harlequin/issues/1214)).
 - With duckdb 2.0, `VARIANT` values now show as the values they hold instead of raw bytes in the Results Viewer.
 - Member autocompletion (`table.`) now offers columns when the table or schema name has uppercase or mixed-case letters and you type it in a different case ([#1200](https://github.com/tconbeer/harlequin/issues/1200)).
+- Secrets that contain an escaped quote (`\'` in a connection string, `''` in SQL) are now masked whole instead of leaking the part after the quote ([#1236](https://github.com/tconbeer/harlequin/issues/1236)).
 
 ## [2.17.0] - 2026-10-26
 
