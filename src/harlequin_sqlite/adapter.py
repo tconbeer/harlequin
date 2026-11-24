@@ -620,7 +620,7 @@ Connected to database `{primary_db}`
     @staticmethod
     def _read_init_script(init_path: Path) -> str:
         try:
-            with open(init_path.expanduser(), "r") as f:
+            with open(init_path.expanduser(), "r", encoding="utf-8") as f:
                 init_script = f.read()
         except OSError:
             init_script = ""
