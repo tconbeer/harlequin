@@ -54,6 +54,9 @@ _BUSY_TIMEOUT_SECONDS = 5.0
 _LIST_OR_ARRAY_SUFFIX = re.compile(r"\[\d*\]$")
 """How duckdb ends the name of a LIST or ARRAY type."""
 
+_DOLLAR_QUOTE = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+"""A SQL dollar-quote delimiter such as `$$` or `$tag$`."""
+
 _LIKE_ESCAPE = "\\"
 """What escapes a LIKE metacharacter in a term the caller typed."""
 
@@ -619,21 +622,39 @@ Connected to database `{primary_db}`
 
     @staticmethod
     def _split_script(script: str) -> list[str]:
+        """Split a DuckDB init script into SQL chunks and dot commands.
+
+        SQL statements may span lines, while dot commands occupy one line and
+        only start outside open block comments and quoted literals.
         """
-        DuckDB init scripts can contain SQL queries or dot commands. The SQL
-        queries may contain newlines, but the dot commands are newline-terminated.
-        This takes a raw script and returns a list of executable commands
-        """
-        lines = script.splitlines()
         commands: list[str] = []
-        i = 0
-        for j, line in enumerate(lines):
-            if line.startswith("."):
-                commands.append("\n".join(lines[i:j]))
-                commands.append(line)
-                i = j + 1
-        commands.append("\n".join(lines[i:]))
-        return [command.strip() for command in commands if command]
+        sql_lines: list[str] = []
+        block_comment_depth = 0
+        open_quote: str | None = None
+        escaped_string = False
+
+        for line in script.splitlines():
+            stripped_line = line.lstrip()
+            if (
+                block_comment_depth == 0
+                and open_quote is None
+                and stripped_line.startswith(".")
+                and not stripped_line[1:2].isdigit()
+            ):
+                if sql_chunk := "\n".join(sql_lines).strip():
+                    commands.append(sql_chunk)
+                sql_lines = []
+                commands.append(stripped_line.rstrip())
+                continue
+
+            sql_lines.append(line)
+            block_comment_depth, open_quote, escaped_string = _advance_sql_state(
+                line, block_comment_depth, open_quote, escaped_string
+            )
+
+        if sql_chunk := "\n".join(sql_lines).strip():
+            commands.append(sql_chunk)
+        return commands
 
     @staticmethod
     def _rewrite_dot_open(command: str, connection: duckdb.DuckDBPyConnection) -> str:
@@ -677,9 +698,82 @@ Connected to database `{primary_db}`
         by the CLI, not the python API. Here, we rewrite some common ones into
         SQL, and rewrite the others to be no-ops.
         """
-        if not command.startswith("."):
+        stripped_command = command.lstrip()
+        if not stripped_command.startswith("."):
             return command
-        elif command.startswith(".open"):
-            return cls._rewrite_dot_open(command, connection)
+        elif stripped_command.startswith(".open") and (
+            len(stripped_command) == 5 or stripped_command[5].isspace()
+        ):
+            return cls._rewrite_dot_open(stripped_command, connection)
         else:
             return ""
+
+
+def _advance_sql_state(
+    line: str,
+    block_comment_depth: int,
+    open_quote: str | None,
+    escaped_string: bool,
+) -> tuple[int, str | None, bool]:
+    """Advance SQL comment and quote state across a single physical line."""
+    position = 0
+    length = len(line)
+    while position < length:
+        if block_comment_depth > 0:
+            if line.startswith("/*", position):
+                block_comment_depth += 1
+                position += 2
+            elif line.startswith("*/", position):
+                block_comment_depth -= 1
+                position += 2
+            else:
+                position += 1
+        elif open_quote is not None:
+            if open_quote.startswith("$"):
+                if line.startswith(open_quote, position):
+                    position += len(open_quote)
+                    open_quote = None
+                else:
+                    position += 1
+            elif escaped_string and line[position] == "\\":
+                position += 2
+            elif line[position] == open_quote:
+                if position + 1 < length and line[position + 1] == open_quote:
+                    position += 2
+                else:
+                    open_quote = None
+                    escaped_string = False
+                    position += 1
+            else:
+                position += 1
+        elif line.startswith("--", position):
+            break
+        elif line.startswith("/*", position):
+            block_comment_depth = 1
+            position += 2
+        elif line[position] in ("'", '"'):
+            is_escaped = (
+                line[position] == "'"
+                and position > 0
+                and line[position - 1] in ("e", "E")
+                and (
+                    position == 1
+                    or not (line[position - 2].isalnum() or line[position - 2] == "_")
+                )
+            )
+            open_quote = line[position]
+            escaped_string = is_escaped
+            position += 1
+        elif (
+            line[position] == "$"
+            and (
+                position == 0
+                or not (line[position - 1].isalnum() or line[position - 1] == "_")
+            )
+            and (dollar_match := _DOLLAR_QUOTE.match(line, position)) is not None
+        ):
+            open_quote = dollar_match.group(0)
+            position = dollar_match.end()
+        else:
+            position += 1
+    return block_comment_depth, open_quote, escaped_string
