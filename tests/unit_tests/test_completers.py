@@ -208,3 +208,24 @@ def test_one_character_does_not_fuzzy_match(word_completer: WordCompleter) -> No
     word_completer.update_buffer_symbols(BufferSymbols(names=("my_col",)))
     assert "my_col" not in {label for (label, _), _ in word_completer("c")}
     assert "my_col" in {label for (label, _), _ in word_completer("co")}
+
+
+def test_member_completions_are_case_insensitive_for_the_context() -> None:
+    table = CatalogItem(
+        qualified_identifier='"MY_TABLE"',
+        query_name='"MY_TABLE"',
+        label="MY_TABLE",
+        type_label="t",
+        children=[
+            CatalogItem(
+                qualified_identifier='"MY_TABLE"."id"',
+                query_name='"id"',
+                label="id",
+                type_label="#",
+            )
+        ],
+    )
+    _, member = completer_factory(catalog=Catalog(items=[table]))
+    for typed in ("my_table.", "MY_TABLE.", "My_Table.i"):
+        labels = [label for (label, _), _ in member(typed)]
+        assert labels == [f"{typed.split('.')[0]}.id"], typed
