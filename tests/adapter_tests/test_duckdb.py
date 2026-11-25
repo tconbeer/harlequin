@@ -460,6 +460,83 @@ def test_an_init_script_of_only_comments_executes_nothing(tmp_path: Path) -> Non
     assert conn.init_message == ""
 
 
+def test_an_init_script_with_indented_dot_commands_connects(
+    tiny_duck: Path, tmp_path: Path
+) -> None:
+    script = f"  .bail on\n\t.mode box\n  .open {tiny_duck}\nSET threads=2;\n"
+    assert DuckDbAdapter._split_script(script) == [
+        ".bail on",
+        ".mode box",
+        f".open {tiny_duck}",
+        "SET threads=2;",
+    ]
+
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+
+    [(threads,)] = conn.conn.sql("select current_setting('threads')").fetchall()
+    assert threads == 2
+    cur = conn.execute("select * from foo")
+    assert cur is not None
+    assert cur.relation.fetchall() == [(3,), (2,), (1,)]
+
+
+@pytest.mark.parametrize(
+    "script_template",
+    [
+        "/*\n.mode box\n.open {unopened}\n*/\nSET threads=2;\n",
+        "/*\n  .mode box\n*/\nSET threads=2;\n",
+        "/* outer\n/* inner */\n.mode box\n*/\nSET threads=2;\n",
+        "/*\n.mode box\n*/ /*\n.bail on\n*/\nSET threads=2;\n",
+        "-- ignore /*\n  .bail on\nSET threads=2;\n",
+        "  .prompt '/* > '\nSET threads=2;\n",
+        (
+            "CREATE TABLE note AS SELECT '\n.mode box\n' AS body;\n"
+            "  .bail on\nSET threads=2;\n"
+        ),
+        (
+            "CREATE TABLE note AS SELECT e'it\\'s\n.mode box\n' AS body;\n"
+            "  .bail on\nSET threads=2;\n"
+        ),
+        (
+            "CREATE TABLE note AS SELECT $$\n.mode box\n$$ AS body;\n"
+            "  .bail on\nSET threads=2;\n"
+        ),
+        "CREATE TABLE half AS SELECT\n  .5 AS val;\nSET threads=2;\n",
+    ],
+    ids=[
+        "dot_line_in_block_comment",
+        "indented_dot_line_in_block_comment",
+        "dot_line_in_nested_block_comment",
+        "dot_line_in_reopened_block_comment",
+        "comment_marker_in_line_comment",
+        "comment_marker_in_dot_command",
+        "dot_line_in_multiline_string",
+        "dot_line_in_escaped_string",
+        "dot_line_in_dollar_quoted_string",
+        "decimal_continuation_line",
+    ],
+)
+def test_an_init_script_ignores_dot_lines_in_comments_and_strings(
+    tmp_path: Path, script_template: str
+) -> None:
+    unopened = tmp_path / "unopened.db"
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script_template.format(unopened=unopened))
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+
+    [(threads,)] = conn.conn.sql("select current_setting('threads')").fetchall()
+    assert threads == 2
+    databases = {
+        name
+        for (name,) in conn.conn.sql(
+            "select database_name from duckdb_databases()"
+        ).fetchall()
+    }
+    assert "unopened" not in databases
+
+
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
