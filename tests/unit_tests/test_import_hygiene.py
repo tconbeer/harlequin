@@ -153,6 +153,19 @@ def test_importing_the_completers_does_not_parse_sql(
     assert not proc.stdout.strip(), f"importing the completers loaded {proc.stdout}"
 
 
+def test_importing_the_duckdb_adapter_does_not_parse_sql(
+    run_python: Callable[[str], subprocess.CompletedProcess[str]],
+) -> None:
+    """`connect()` defers `harlequin.statements` to the init script that needs it."""
+    proc = run_python(
+        "import harlequin_duckdb\n"
+        "import sys\n"
+        "print(','.join(m for m in ('tree_sitter', 'tree_sitter_sql') "
+        "if m in sys.modules))\n"
+    )
+    assert not proc.stdout.strip(), f"importing harlequin_duckdb loaded {proc.stdout}"
+
+
 @pytest.mark.parametrize("argv", [["--help"], ["--version"]])
 def test_building_the_hsql_command_imports_no_adapter(
     argv: list[str], run_python: Callable[[str], subprocess.CompletedProcess[str]]

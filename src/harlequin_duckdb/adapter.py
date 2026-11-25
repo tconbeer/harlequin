@@ -575,15 +575,16 @@ class DuckDbAdapter(HarlequinAdapter):
 
         msg = ""
         if self.init_path is not None and not self.no_init:
+            # deferred so importing the adapter loads no SQL grammar
+            from harlequin.statements import split
+
             init_script = self._read_init_script(self.init_path)
             try:
                 count = 0
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command, connection)
-                    for cmd in rewritten_command.split(";"):
-                        if not cmd.strip():
-                            continue
-                        result = connection.execute(cmd)
+                    for statement in split(rewritten_command):
+                        result = connection.execute(statement.sql)
                         # duckdb returns None for a comment-only statement
                         if result is None:
                             continue
