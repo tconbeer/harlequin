@@ -581,10 +581,15 @@ class DuckDbAdapter(HarlequinAdapter):
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command, connection)
                     for cmd in rewritten_command.split(";"):
-                        if cmd.strip():
-                            # duckdb 2 refuses queries while a result is unread
-                            connection.execute(cmd).fetchall()
-                            count += 1
+                        if not cmd.strip():
+                            continue
+                        result = connection.execute(cmd)
+                        # duckdb returns None for a comment-only statement
+                        if result is None:
+                            continue
+                        # duckdb 2 refuses queries while a result is unread
+                        result.fetchall()
+                        count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {self.init_path}\n{e}"
                 raise HarlequinConnectionError(

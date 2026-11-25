@@ -417,6 +417,34 @@ def test_a_bare_open_switches_to_a_fresh_in_memory_database(
     assert len(set(database_by_table.values())) == 3
 
 
+@pytest.mark.parametrize(
+    "script",
+    [
+        "SET threads=2;\nSET memory_limit='1GB'; -- keep it small\n",
+        "SET threads=2;\n-- settings\n.bail on\nSET memory_limit='1GB';\n",
+    ],
+    ids=["trailing_comment", "comment_before_dot_command"],
+)
+def test_an_init_script_with_a_comment_only_statement_connects(
+    tmp_path: Path, script: str
+) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+
+    [(threads, memory_limit)] = conn.conn.sql(
+        "select current_setting('threads'), current_setting('memory_limit')"
+    ).fetchall()
+    assert threads == 2
+    reference_connection = duckdb.connect()
+    reference_connection.execute("SET memory_limit='1GB'")
+    [(expected_memory_limit,)] = reference_connection.sql(
+        "select current_setting('memory_limit')"
+    ).fetchall()
+    assert memory_limit == expected_memory_limit
+    assert conn.init_message == f"Executed 2 commands from {script_path}"
+
+
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
