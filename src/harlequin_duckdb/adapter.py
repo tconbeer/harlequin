@@ -575,16 +575,22 @@ class DuckDbAdapter(HarlequinAdapter):
 
         msg = ""
         if self.init_path is not None and not self.no_init:
+            # deferred so importing the adapter loads no SQL grammar
+            from harlequin.statements import split
+
             init_script = self._read_init_script(self.init_path)
             try:
                 count = 0
                 for command in self._split_script(init_script):
                     rewritten_command = self._rewrite_init_command(command, connection)
-                    for cmd in rewritten_command.split(";"):
-                        if cmd.strip():
-                            # duckdb 2 refuses queries while a result is unread
-                            connection.execute(cmd).fetchall()
-                            count += 1
+                    for statement in split(rewritten_command):
+                        result = connection.execute(statement.sql)
+                        # duckdb returns None for a comment-only statement
+                        if result is None:
+                            continue
+                        # duckdb 2 refuses queries while a result is unread
+                        result.fetchall()
+                        count += 1
             except duckdb.Error as e:
                 msg = f"Attempted to execute script at {self.init_path}\n{e}"
                 raise HarlequinConnectionError(

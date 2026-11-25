@@ -417,6 +417,49 @@ def test_a_bare_open_switches_to_a_fresh_in_memory_database(
     assert len(set(database_by_table.values())) == 3
 
 
+@pytest.mark.parametrize(
+    "script",
+    [
+        "SET threads=2;\nSET memory_limit='1GB'; -- keep it small\n",
+        "SET threads=2;\n-- settings\n.bail on\nSET memory_limit='1GB';\n",
+        "SET threads=2; -- keep it small; really\nSET memory_limit='1GB';\n",
+        "/* setup; stuff */\nSET threads=2;\nSET memory_limit='1GB';\n",
+        "SET threads=2;\nSET memory_limit='1GB'; SELECT 'a;b' AS s;\n",
+    ],
+    ids=[
+        "trailing_comment",
+        "comment_before_dot_command",
+        "semicolon_in_line_comment",
+        "semicolon_in_block_comment",
+        "semicolon_in_string",
+    ],
+)
+def test_an_init_script_with_comments_connects(tmp_path: Path, script: str) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text(script)
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+
+    [(threads, memory_limit)] = conn.conn.sql(
+        "select current_setting('threads'), current_setting('memory_limit')"
+    ).fetchall()
+    assert threads == 2
+    with duckdb.connect() as reference_connection:
+        reference_connection.execute("SET memory_limit='1GB'")
+        [(expected_memory_limit,)] = reference_connection.sql(
+            "select current_setting('memory_limit')"
+        ).fetchall()
+    assert memory_limit == expected_memory_limit
+    expected_count = 3 if "'a;b'" in script else 2
+    assert conn.init_message == f"Executed {expected_count} commands from {script_path}"
+
+
+def test_an_init_script_of_only_comments_executes_nothing(tmp_path: Path) -> None:
+    script_path = tmp_path / "myscript"
+    script_path.write_text("-- settings; none yet\n/* maybe; later */\n")
+    conn = DuckDbAdapter([":memory:"], init_path=script_path).connect()
+    assert conn.init_message == ""
+
+
 def test_initialize_adapter_ignores_extra_kwargs() -> None:
     adapter = DuckDbAdapter((":memory:",), foo="bar")
     assert adapter
