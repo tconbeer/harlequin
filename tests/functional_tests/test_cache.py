@@ -9,12 +9,15 @@ from harlequin import Harlequin
 from harlequin.editor_cache import (
     BufferState,
     Cache,
+    _read,
     get_cache_file,
     get_recovery_file,
     load_cache,
     write_cache,
+    write_recovery,
 )
 from tests.functional_tests.helpers import wait_for_editor
+from tests.waiting import wait_for
 
 
 @pytest.fixture
@@ -43,6 +46,7 @@ def cache(buffer_states: List[BufferState]) -> Cache:
 @pytest.fixture(autouse=True)
 def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setattr("harlequin.editor_cache.user_cache_dir", lambda **_: tmp_path)
+    monkeypatch.setattr("harlequin.editor_cache.user_state_path", lambda **_: tmp_path)
     return tmp_path
 
 
@@ -50,12 +54,12 @@ def mock_user_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path
 def test_cache_ops(mock_user_cache_dir: Path, cache: Cache) -> None:
     assert mock_user_cache_dir.exists()
     assert len(list(mock_user_cache_dir.iterdir())) == 0
-    write_cache(cache)
+    write_cache(cache, "foo")
     children = list(mock_user_cache_dir.iterdir())
     assert len(children) == 1
-    assert children[0].suffix == ".pickle"
+    assert children[0].suffix == ".db"
     assert get_cache_file() == children[0]
-    loaded_cache = load_cache()
+    loaded_cache = load_cache("foo")
     assert loaded_cache == cache
 
 
@@ -65,7 +69,7 @@ async def test_harlequin_loads_cache(
     cache: Cache,
     app: Harlequin,
 ) -> None:
-    write_cache(cache)
+    write_cache(cache, "foo")
     async with app.run_test() as pilot:
         await wait_for_editor(pilot, app)
         assert app.editor_collection is not None
@@ -95,8 +99,7 @@ async def test_harlequin_writes_cache(
         editor.text = "second"
         await pilot.press("ctrl+q")
     assert cache_path.exists()
-    with open(cache_path, "rb") as f:
-        cache = pickle.load(f)
+    cache = load_cache("foo")
     assert isinstance(cache, Cache)
     assert [buffer.text for buffer in cache.buffers] == ["first", "second"]
     assert cache.focus_index == 1
@@ -109,7 +112,9 @@ async def test_harlequin_recovers_buffers(
     app: Harlequin,
 ) -> None:
     """A recovered session started from the cache, so it wins over one."""
-    write_cache(Cache(focus_index=0, buffers=[BufferState(Selection(), "stale\n")]))
+    write_cache(
+        Cache(focus_index=0, buffers=[BufferState(Selection(), "stale\n")]), "foo"
+    )
     recovery_file = get_cache_file().with_name("recovered-20260904T120000Z-99.pickle")
     recovery_file.write_bytes(pickle.dumps(cache))
 
@@ -130,9 +135,8 @@ async def test_harlequin_recovers_buffers(
 async def test_harlequin_clears_its_recovery_file_on_quit(
     app: Harlequin,
 ) -> None:
-    recovery_file = get_recovery_file()
-    recovery_file.parent.mkdir(parents=True, exist_ok=True)
-    recovery_file.write_bytes(pickle.dumps(Cache(focus_index=0, buffers=[])))
+    recovery_file = get_recovery_file("foo")
+    assert write_recovery(Cache(focus_index=0, buffers=[]), "foo")
 
     async with app.run_test() as pilot:
         await wait_for_editor(pilot, app)
@@ -147,7 +151,7 @@ async def test_harlequin_clears_its_recovery_file_on_quit(
 async def test_harlequin_checkpoints_buffers(
     app: Harlequin,
 ) -> None:
-    recovery_file = get_recovery_file()
+    recovery_file = get_recovery_file("foo")
     async with app.run_test() as pilot:
         editor = await wait_for_editor(pilot, app)
         app._checkpoint_editor_cache()
@@ -156,7 +160,9 @@ async def test_harlequin_checkpoints_buffers(
 
         editor.text = "select 1"
         app._checkpoint_editor_cache()
-        assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"
+        checkpoint = _read(recovery_file, "foo")
+        assert checkpoint is not None
+        assert checkpoint.buffers[0].text == "select 1"
 
         # and an idle session does not rewrite what it already wrote
         written_at = recovery_file.stat().st_mtime_ns
@@ -166,4 +172,125 @@ async def test_harlequin_checkpoints_buffers(
         # a blank buffer cannot destroy a good checkpoint, either
         editor.text = ""
         app._checkpoint_editor_cache()
-        assert pickle.loads(recovery_file.read_bytes()).buffers[0].text == "select 1"
+        checkpoint = _read(recovery_file, "foo")
+        assert checkpoint is not None
+        assert checkpoint.buffers[0].text == "select 1"
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_closed_buffers_survive_clean_quit_without_opening_their_tabs(
+    app: Harlequin,
+) -> None:
+    async with app.run_test() as pilot:
+        editor = await wait_for_editor(pilot, app)
+        await pilot.press(*"select 1", "ctrl+w")
+        editor.text = "select 2"
+        await pilot.press("ctrl+q")
+    cache = load_cache("foo")
+    assert cache is not None
+    assert [buffer.text for buffer in cache.buffers] == ["select 2"]
+    assert [buffer.text for buffer in cache.closed_buffers] == ["select 1"]
+
+    restarted = Harlequin(app.adapter, connection_hash=app.connection_hash)
+    async with restarted.run_test() as pilot:
+        editor = await wait_for_editor(pilot, restarted)
+        assert restarted.editor_collection.tab_count == 1
+        assert editor.text == "select 2"
+        await pilot.press("ctrl+f2")
+        assert editor.text == "select 1"
+        assert editor.selection == cache.closed_buffers[0].selection
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_closed_buffers_are_checkpointed_and_recovered(
+    app: Harlequin,
+) -> None:
+    async with app.run_test() as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "select retained"
+        await pilot.press("ctrl+w")
+        await wait_for(
+            pilot,
+            lambda: app._last_checkpointed_cache == app.editor_collection.cache,
+            description="the close to be checkpointed",
+        )
+        checkpoint = _read(get_recovery_file("foo"), "foo")
+        assert checkpoint is not None
+        assert [buffer.text for buffer in checkpoint.closed_buffers] == [
+            "select retained"
+        ]
+        assert app._save_work_on_crash()
+
+    restarted = Harlequin(app.adapter, connection_hash=app.connection_hash)
+    async with restarted.run_test() as pilot:
+        editor = await wait_for_editor(pilot, restarted)
+        assert editor.text == ""
+        assert restarted.editor_collection.tab_count == 1
+        await pilot.press("ctrl+f2")
+        assert editor.text == "select retained"
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_explicit_deletion_does_not_recover_old_text(app: Harlequin) -> None:
+    write_cache(
+        Cache(focus_index=0, buffers=[BufferState(Selection(), "old text")]), "foo"
+    )
+    async with app.run_test() as pilot:
+        editor = await wait_for_editor(pilot, app)
+        assert editor.text == "old text"
+        await pilot.press("ctrl+w", "ctrl+f2")
+        editor.text = ""
+        await pilot.press("ctrl+w")
+        await wait_for(
+            pilot,
+            lambda: app._last_checkpointed_cache == app.editor_collection.cache,
+            description="the deletion to be checkpointed",
+        )
+        checkpoint = _read(get_recovery_file("foo"), "foo")
+        assert checkpoint is not None
+        assert checkpoint.closed_buffers == []
+        assert not any(buffer.text.strip() for buffer in checkpoint.buffers)
+        assert app._save_work_on_crash()
+
+    restarted = Harlequin(app.adapter, connection_hash=app.connection_hash)
+    async with restarted.run_test() as pilot:
+        editor = await wait_for_editor(pilot, restarted)
+        await pilot.press("ctrl+f2")
+        assert editor.text == ""
+        assert restarted.editor_collection.tab_count == 1
+        assert not restarted.editor_collection.closed_buffer_states
+
+
+@pytest.mark.use_cache
+@pytest.mark.asyncio
+async def test_open_closed_and_recovered_buffers_stay_with_their_connection(
+    app: Harlequin,
+) -> None:
+    async with app.run_test() as pilot:
+        editor = await wait_for_editor(pilot, app)
+        editor.text = "closed on foo"
+        await pilot.press("ctrl+w")
+        editor.text = "open on foo"
+        assert app._save_work_on_crash()
+
+    other = Harlequin(app.adapter, connection_hash="other")
+    async with other.run_test() as pilot:
+        editor = await wait_for_editor(pilot, other)
+        assert editor.text == ""
+        assert not other.editor_collection.closed_buffer_states
+        editor.text = "open on other"
+        await pilot.press("ctrl+q")
+
+    recovered = Harlequin(app.adapter, connection_hash="foo")
+    async with recovered.run_test() as pilot:
+        editor = await wait_for_editor(pilot, recovered)
+        assert editor.text == "open on foo"
+        await pilot.press("ctrl+f2")
+        assert editor.text == "closed on foo"
+        await pilot.press("ctrl+q")
+    other_cache = load_cache("other")
+    assert other_cache is not None
+    assert [buffer.text for buffer in other_cache.buffers] == ["open on other"]

@@ -127,6 +127,12 @@ HARLEQUIN_ACTIONS = {
     "code_editor.close_all_buffers": Action(
         target=EditorCollection, action="close_all_buffers"
     ),
+    "code_editor.reopen_buffer": Action(
+        target=EditorCollection, action="reopen_buffer"
+    ),
+    "code_editor.show_closed_buffers": Action(
+        target=EditorCollection, action="show_closed_buffers"
+    ),
     "code_editor.next_buffer": Action(target=EditorCollection, action="next_buffer"),
     "code_editor.run_query": Action(
         target=CodeEditor, action="submit", description="Run Query", show=True
