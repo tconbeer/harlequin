@@ -146,6 +146,7 @@ class AppBase(App, inherit_bindings=False):
                     HarlequinCrashError(
                         _as_markup(crash_message(report_path, error, saved)),
                         title="Harlequin crashed.",
+                        markup=True,
                     )
                 )
             )
